@@ -7,6 +7,9 @@
  * `submit` resolves when the server acknowledges; the command names the
  * version it was decided on, so a stale click is refused (STALE_VERSION)
  * instead of being applied to a different state.
+ *
+ * With no seat it is a spectator's session: it shows what the server
+ * streams to spectators (no hand on either side) and submits nothing.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
@@ -15,6 +18,7 @@ export class RemoteMatchSession {
   #seat;
   #request;
   #newCommandId;
+  #onStop;
   /** @type {any} */
   #snapshot = null;
   #version = 0;
@@ -25,13 +29,14 @@ export class RemoteMatchSession {
   #listeners = new Set();
 
   /**
-   * @param {{ gameId: string, seat: string, request: import("../ports/Realtime.contract.js").RealtimeConnection["request"], newCommandId: () => string }} deps
+   * @param {{ gameId: string, seat: string | null, request: import("../ports/Realtime.contract.js").RealtimeConnection["request"], newCommandId: () => string, onStop?: () => void }} deps seat null: watching
    */
-  constructor({ gameId, seat, request, newCommandId }) {
+  constructor({ gameId, seat, request, newCommandId, onStop = () => undefined }) {
     this.#gameId = gameId;
     this.#seat = seat;
     this.#request = request;
     this.#newCommandId = newCommandId;
+    this.#onStop = onStop;
   }
 
   get gameId() {
@@ -43,7 +48,11 @@ export class RemoteMatchSession {
   }
 
   get humanPlayerIds() {
-    return Object.freeze([this.#seat]);
+    return Object.freeze(this.#seat === null ? [] : [this.#seat]);
+  }
+
+  get isSpectating() {
+    return this.#seat === null;
   }
 
   get version() {
@@ -103,6 +112,9 @@ export class RemoteMatchSession {
     if (this.#stopped) {
       return fail("GAME_OVER", "the match was left");
     }
+    if (this.#seat === null) {
+      return fail("SPECTATOR", "spectators cannot play");
+    }
     const withoutPlayer = { ...command };
     delete withoutPlayer.playerId;
     const reply = await this.#request("game.command", { gameId: this.#gameId, commandId: this.#newCommandId(), expectedVersion: this.#version, command: withoutPlayer });
@@ -119,15 +131,19 @@ export class RemoteMatchSession {
 
   /** Stops showing the match; the game goes on (or ends) on the server. */
   stop() {
+    if (this.#stopped) {
+      return;
+    }
     this.#stopped = true;
     this.#listeners.clear();
+    this.#onStop();
   }
 
   whenIdle() {
     return Promise.resolve();
   }
 
-  /** @param {string | null} _perspectivePlayerId the server only ever sends our own perspective */
+  /** @param {string | null} _perspectivePlayerId the server only ever sends our own perspective (or the spectators') */
   snapshotFor(_perspectivePlayerId) {
     return this.#snapshot;
   }

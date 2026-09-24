@@ -8,6 +8,9 @@
  * the server is bound to its randomness and to both decks before either
  * player contributes entropy, and the first player is decided by lot from
  * the resulting seed.
+ *
+ * Anyone signed in may watch one live game at a time (docs/tcg/10); the
+ * watch ends when they stop, disconnect, or the game ends.
  */
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
 import { GameMode, GameRecorder, PROTOCOL_VERSION, bytesToHex, canonicalDeck, deckCommitment, hexToBytes, seedCommitment } from "@magic8/protocol";
@@ -43,6 +46,8 @@ export class GameService {
   #finishedListeners = [];
   /** @type {Map<string, GameActor>} */
   #actors = new Map();
+  /** @type {Map<string, string>} spectator user id → game id */
+  #watching = new Map();
   /** @type {Map<string, Promise<GameActor | null>>} actors being rebuilt */
   #loading = new Map();
 
@@ -252,11 +257,53 @@ export class GameService {
   }
 
   /**
+   * Starts watching a live game (and stops watching any other).
+   * @param {string} userId
+   * @param {unknown} gameId
+   */
+  async watch(userId, gameId) {
+    const actor = await this.#actorFor(gameId);
+    if (actor === null) {
+      return notInGame();
+    }
+    if (this.#watching.get(userId) !== actor.id) {
+      this.unwatch(userId);
+    }
+    const result = await actor.watch(userId);
+    if (result.ok) {
+      this.#watching.set(userId, actor.id);
+    }
+    return result;
+  }
+
+  /** @param {string} userId */
+  unwatch(userId) {
+    const gameId = this.#watching.get(userId);
+    if (gameId !== undefined) {
+      this.#watching.delete(userId);
+      this.#actors.get(gameId)?.unwatch(userId);
+    }
+  }
+
+  /**
+   * Games being played now, the most watched first.
+   * @param {number} [limit]
+   */
+  liveGames(limit = 50) {
+    const live = [...this.#actors.values()].filter((actor) => actor.status === GameStatus.ACTIVE && !actor.isOver).map((actor) => actor.summary());
+    live.sort((left, right) => right.spectators - left.spectators || (right.startedAt ?? 0) - (left.startedAt ?? 0));
+    return Object.freeze(live.slice(0, limit));
+  }
+
+  /**
    * A user connected or left: their games' clocks take it into account.
    * @param {string} userId
    * @param {boolean} connected
    */
   async presence(userId, connected) {
+    if (!connected) {
+      this.unwatch(userId);
+    }
     const gameId = await this.activeGameOf(userId);
     const actor = gameId === null ? null : await this.#actorFor(gameId);
     await actor?.presence(userId, connected);
@@ -267,6 +314,7 @@ export class GameService {
     for (const actor of [...this.#actors.values()]) {
       if (actor.isOver) {
         this.#actors.delete(actor.id);
+        this.#forgetSpectators(actor.id);
         continue;
       }
       try {
@@ -290,6 +338,15 @@ export class GameService {
       }
     }
     return restored;
+  }
+
+  /** @param {string} gameId */
+  #forgetSpectators(gameId) {
+    for (const [userId, watched] of this.#watching) {
+      if (watched === gameId) {
+        this.#watching.delete(userId);
+      }
+    }
   }
 
   /** @param {unknown} gameId */
@@ -327,6 +384,12 @@ export class GameService {
     const actor = this.#newActor(game, recorder, version.content);
     actor.replay(await this.#repository.listEvents(gameId));
     this.#actors.set(gameId, actor);
+    // A rebuilt actor keeps streaming to whoever watched the one it replaces.
+    for (const [userId, watched] of this.#watching) {
+      if (watched === gameId) {
+        actor.watch(userId).catch(() => this.#watching.delete(userId));
+      }
+    }
     return actor;
   }
 

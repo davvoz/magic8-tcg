@@ -202,6 +202,17 @@ describe("WebSocket gateway", () => {
     const [mover, idle] = first === "s0" ? [a, b] : [b, a];
     const moverView = first === "s0" ? startA : startB;
 
+    // Carol finds the game in the public list and watches it; a player cannot.
+    const live = (await new ApiClient(server.base).get("/api/games/live")).json.games;
+    assert.deepEqual(live.map((game) => [game.gameId, game.players.map((player) => player.account)]), [[gameId, ["alice", "bob"]]]);
+    const watcher = await connect("carol");
+    const watching = await watcher.request("watch.start", { gameId });
+    assert.equal(watching.t, "watch.state");
+    assert.ok(watching.d.snapshot.players.every((player) => player.hand === null), "a spectator sees no hand");
+    assert.equal(watching.d.snapshot.legalMoves, null);
+    const own = await a.request("watch.start", { gameId });
+    assert.deepEqual([own.t, own.d.code, own.d.details.code], ["error", "CONFLICT", "PLAYER_CANNOT_WATCH"]);
+
     const wrong = await idle.request("game.command", { gameId, commandId: randomUUID(), expectedVersion: moverView.version, command: { type: "END_PHASE" } });
     assert.deepEqual([wrong.t, wrong.d.ok, wrong.d.error.code], ["game.ack", false, "NOT_YOUR_TURN"]);
     const spoofed = await idle.request("game.command", { gameId, commandId: randomUUID(), expectedVersion: moverView.version, command: { type: "END_PHASE", playerId: first } });
@@ -212,6 +223,8 @@ describe("WebSocket gateway", () => {
     assert.equal(ack.d.ok, true, JSON.stringify(ack));
     const seen = await idle.waitFor("game.events", (d) => d.version === ack.d.version);
     assert.equal(seen.head, ack.d.head, "both see the same chain head");
+    const streamed = await watcher.waitFor("watch.events", (d) => d.version === ack.d.version);
+    assert.equal(streamed.head, ack.d.head, "and so does the spectator");
     const again = await mover.request("game.command", { gameId, commandId, expectedVersion: moverView.version, command: { type: "END_PHASE" } });
     assert.deepEqual(again.d, ack.d, "a re-sent command gets the same ack");
 
@@ -230,6 +243,8 @@ describe("WebSocket gateway", () => {
     const [overMover, overBack] = await Promise.all([mover.waitFor("game.over"), back.waitFor("game.over")]);
     assert.equal(overMover.winner, first, "the player who conceded lost");
     assert.equal(overBack.winner, first);
+    assert.equal((await watcher.waitFor("watch.over")).winner, first, "the spectator sees the end");
+    await watcher.close();
     const noGame = await back.request("game.sync", { gameId: "0".repeat(26) });
     assert.deepEqual([noGame.t, noGame.d.code], ["error", "NOT_FOUND"]);
     await Promise.all([mover.close(), back.close()]);

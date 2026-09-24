@@ -60,6 +60,7 @@
 | GET | `/api/games/{id}` | Metadati, esito, record e transazioni on-chain |
 | GET | `/api/games/{id}/verification` | Esito del verificatore (§14 di 03) eseguito dal server; il client può rieseguirlo in locale |
 | GET | `/api/games?mine=1` | Storico partite |
+| GET | `/api/games/live` | Partite in corso da guardare, prima le più seguite (pubblica; 10) |
 
 ### Admin (ruolo separato, sessione con ri-autenticazione Keychain recente)
 
@@ -93,6 +94,8 @@
 | `game.command` | `{ "gameId", "commandId": "<uuid>", "expectedVersion": 41, "command": { "type": "PLAY_CARD", "cardId": "c17", "targets": ["c3"] } }` | Il `playerId` non si invia: il server usa il posto dell'utente |
 | `game.sync` | `{ "gameId", "sinceSeq" }` | Recupero eventi persi o snapshot completo |
 | `game.concede` | `{ "gameId", "commandId" }` | Scorciatoia per `CONCEDE` |
+| `watch.start` | `{ "gameId" }` | Guarda una partita (una alla volta); risposta `watch.state` (10) |
+| `watch.stop` | `{}` | Smette di guardare; risposta `watch.stopped` |
 
 ### 3.4 Server → client
 
@@ -106,6 +109,7 @@
 | `game.events` | la vista della partita più `events`: gli eventi del motore redatti per prospettiva, per le animazioni. Il client **sostituisce** il proprio stato con lo snapshot ricevuto: non applica eventi e non ha mai un motore di una partita online |
 | `game.ack` | `{ "commandId", "ok": true, "version", "head" }` oppure `{ "commandId", "ok": false, "error": { "code" } }` |
 | `game.over` | `{ "gameId", "winner", "reason", "you" }` (l'URL di verifica arriva con M5) |
+| `watch.state`, `watch.events`, `watch.over` | la vista dello spettatore, gli aggiornamenti dopo ogni mossa, la fine (10) |
 | `session.replaced` | `{}`: la connessione sta per essere chiusa (4000) perché l'utente si è connesso da un'altra scheda |
 | `order.updated` | `{ "orderId", "status", "cards"?: [...] }` |
 | `error` | `{ "code", "message" }` |
@@ -134,6 +138,6 @@ Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN
 - Allo scadere, il server esegue la mossa forzata minima (`END_PHASE`, blocchi vuoti) registrata come `FORCED_MOVE` con `why: "timeout"`.
 - I timer vivono nel `GameActor` (orologio iniettato → testabili con orologio finto).
 
-### 3.8 Spettatori (predisposto)
+### 3.8 Spettatori
 
-Il motore produce già snapshot per prospettiva e uno omnisciente. Serve una prospettiva **pubblica** (nessuna mano visibile) con un ritardo configurabile per evitare lo streaming delle informazioni al giocatore. Il canale sarà `spectate.join { gameId }`, sola lettura.
+Fatto in M7.2, vedi 10. La prospettiva è pubblica (`SPECTATOR`: nessuna mano, nessuna carta pescata) e **senza ritardo**: uno spettatore vede meno di ciascun giocatore, quindi non ha niente da passare a nessuno dei due. Il ritardo previsto qui all'inizio non serve; servirà solo per una eventuale modalità con le mani visibili. Il canale è `watch.start { gameId }`, sola lettura.

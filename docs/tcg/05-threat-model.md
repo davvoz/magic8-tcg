@@ -48,7 +48,7 @@ Account shop: nessuna chiave sul server.  Account root: chiave active solo offli
 | T8 | **Pagamento revertito** | la tx finisce in un blocco poi scartato da un micro-fork | Fulfilment solo dopo il blocco irreversibile | test con provider finto che "perde" la tx |
 | T9 | **Duplicazione di carte** | ripetere il fulfilment, race sul serial | Conio solo dentro la transazione `PAYMENT_VERIFIED → FULFILLED`; serial da contatore con lock; chiave di origine univoca; nessun endpoint di conio | test `InventoryService` concorrente |
 | T10 | **Manipolazione dello stato di partita** | modificare lo snapshot nel client | Il client riceve solo proiezioni; lo stato del client viene sostituito a ogni `game.state` | — |
-| T11 | **Informazioni nascoste** | leggere la mano avversaria dai messaggi | Snapshot per prospettiva e redazione degli eventi (già nel motore); checkpoint salati; seed segreto fino alla fine; mazzo avversario solo come impegno | test di redazione |
+| T11 | **Informazioni nascoste** | leggere la mano avversaria dai messaggi | Snapshot per prospettiva e redazione degli eventi (già nel motore; gli spettatori ricevono la prospettiva `SPECTATOR`, senza nessuna mano, 10); checkpoint salati; seed segreto fino alla fine; mazzo avversario solo come impegno | test di redazione |
 | T12 | **Predizione del RNG** | brute-force del seed a 32 bit (vedi 00, E1) | ChaCha20 con chiave 256 bit; seed da commit-reveal con entropia dei giocatori | test del generatore (vettori RFC 8439), test commit-reveal |
 | T13 | **Abuso del WebSocket** | flood di messaggi, messaggi enormi, mille connessioni | Autenticazione all'upgrade, controllo `Origin`, limite dimensione, token bucket, una connessione per utente, timeout di heartbeat, backpressure sui buffer in uscita | test del gateway WS |
 | T14 | **Cross-site WebSocket hijacking / CSRF** | pagina malevola apre `wss://…/ws` con i cookie dell'utente | allowlist `Origin` sull'upgrade; `SameSite=Strict`; header custom sulle richieste mutanti | test HTTP/WS |
@@ -68,6 +68,7 @@ Account shop: nessuna chiave sul server.  Account root: chiave active solo offli
 | T28 | **Verifica usata per sovraccaricare** | chiamate a raffica a `/api/games/:id/verification` (ognuna legge la catena) | Rate limit per indirizzo, al massimo 2 verifiche contemporanee, risultato VALID in cache | test `GameVerification` |
 | T29 | **Pacchetti decisi dopo il pagamento** | il server sceglie il segreto dell'epoca dopo aver visto il txId del pagamento | L'impegno dell'epoca deve essere in un blocco prima dell'ordine (vendite bloccate finché non lo è); il verificatore dei pacchetti controlla impegno < pagamento | test pubblicazione, `verifyOrderPacks` |
 | T30 | **Rimborso dichiarato ma non pagato** | un operatore (o un attaccante nel pannello) segna un rimborso come pagato | Il pannello non può chiudere rimborsi: li chiude solo il trasferimento esatto visto sulla catena e confermato da 2 nodi | test admin |
+| T31 | **Spettatori usati per sovraccaricare** | molti utenti guardano la stessa partita, o uno guarda molte partite, per moltiplicare i messaggi del server | Al massimo 50 spettatori per partita e una partita per utente; limiti di messaggi della connessione; lista delle partite con limite per indirizzo e cache (10) | test `spectators` |
 
 ## 5. Rischi residui accettati (v1)
 

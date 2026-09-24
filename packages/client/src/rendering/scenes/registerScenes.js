@@ -9,6 +9,7 @@ import { DeckBuilderScene } from "./DeckBuilderScene.js";
 import { DeckSelectionScene } from "./DeckSelectionScene.js";
 import { ErrorScene } from "./ErrorScene.js";
 import { LeaderboardScene } from "./LeaderboardScene.js";
+import { LiveGamesScene } from "./LiveGamesScene.js";
 import { LoginScene } from "./LoginScene.js";
 import { MainMenuScene } from "./MainMenuScene.js";
 import { MatchScene } from "./MatchScene.js";
@@ -36,6 +37,9 @@ export function registerScenes(sceneManager, app) {
   }
   if (app.online !== undefined) {
     sceneManager.register(SceneId.ONLINE, (services) => new OnlineScene(services, app));
+  }
+  if (app.online?.canWatch === true) {
+    sceneManager.register(SceneId.LIVE_GAMES, (services) => new LiveGamesScene(services, app));
   }
   if (app.ranking !== undefined) {
     sceneManager.register(SceneId.LEADERBOARD, (services) => new LeaderboardScene(services, app));

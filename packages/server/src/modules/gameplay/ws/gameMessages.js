@@ -50,4 +50,19 @@ export function registerGameMessages({ router, games }) {
     }
     return { t: "game.state", d: view };
   });
+
+  router.on("watch.start", async ({ principal }, data) => {
+    const body = validated(data, ["gameId"], (issues, object) => checkString(issues, object.gameId, "d.gameId", GAME_ID));
+    const result = await games.watch(principal.user.id, body.gameId);
+    if (!result.ok) {
+      throw new AppError(result.error.code === "NOT_IN_GAME" ? "NOT_FOUND" : "CONFLICT", result.error.message, { code: result.error.code });
+    }
+    return { t: "watch.state", d: result.view };
+  });
+
+  router.on("watch.stop", async ({ principal }, data) => {
+    validated(data, [], () => undefined);
+    games.unwatch(principal.user.id);
+    return { t: "watch.stopped", d: {} };
+  });
 }

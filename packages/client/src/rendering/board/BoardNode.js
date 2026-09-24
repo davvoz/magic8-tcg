@@ -43,7 +43,7 @@ export class BoardNode extends UiNode {
     this.#paintZone(context, theme, layout.opponent.battlefield, this.#activePlayerId === layout.opponent.id);
     this.#paintZone(context, theme, layout.me.battlefield, this.#activePlayerId === layout.me.id);
     this.#paintBanner(context, theme);
-    for (const slot of layout.opponent.handSlots) {
+    for (const slot of [...layout.opponent.handSlots, ...layout.me.handSlots]) {
       drawCardBack(context, theme, slot);
     }
   }

@@ -4,14 +4,21 @@
  * - Plain data, deep-frozen: the renderer, input layer and AI cannot mutate
  *   the game through it, by construction.
  * - Perspective-filtered: a player's snapshot shows the opponent's hand and
- *   both libraries as counts only. `perspectivePlayerId === null` yields an
- *   omniscient view (tests, debugging, future spectator mode).
+ *   both libraries as counts only. `SPECTATOR` sees what the table shows (no
+ *   hand, no legal moves); `perspectivePlayerId === null` yields an
+ *   omniscient view (tests, debugging, replay).
  * - Self-describing cards: printed values are copied in so presentation does
  *   not need the catalog to draw the board.
  */
 import { deepFreeze } from "../../shared/deepFreeze.js";
 import { GameEventType } from "./GameEventType.js";
 import { computeLegalMoves } from "./LegalMoves.js";
+
+/**
+ * The perspective of someone watching a game they do not play: every hand is
+ * hidden. Never a valid player id (ids match LIMITS.ID_PATTERN).
+ */
+export const SPECTATOR = "#spectator";
 
 /**
  * @typedef {Readonly<{
@@ -96,6 +103,7 @@ function projectPlayer(player, revealHand, rules) {
  */
 export function createSnapshot(state, perspectivePlayerId, rules) {
   const omniscient = perspectivePlayerId === null;
+  const spectator = perspectivePlayerId === SPECTATOR;
   return deepFreeze({
     version: state.version,
     perspectivePlayerId,
@@ -108,7 +116,7 @@ export function createSnapshot(state, perspectivePlayerId, rules) {
     endReason: state.endReason,
     players: state.players.map((player) => projectPlayer(player, omniscient || player.id === perspectivePlayerId, rules)),
     combat: state.combat.toPlain(),
-    legalMoves: omniscient ? null : computeLegalMoves(state, perspectivePlayerId, rules),
+    legalMoves: omniscient || spectator ? null : computeLegalMoves(state, perspectivePlayerId, rules),
   });
 }
 
@@ -118,7 +126,8 @@ const PRIVATE_EVENT_FIELDS = Object.freeze({
 });
 
 /**
- * Removes hidden information from events before they reach a player.
+ * Removes hidden information from events before they reach a player (or,
+ * with SPECTATOR, anyone watching: every private field goes).
  * @param {readonly Readonly<Record<string, unknown>>[]} events
  * @param {string | null} perspectivePlayerId
  */

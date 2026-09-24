@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { endPhase, endTurn } from "../../../src/domain/commands/commandFactories.js";
 import { GameEventType } from "../../../src/domain/game/GameEventType.js";
-import { redactEventsFor } from "../../../src/domain/game/GameSnapshot.js";
+import { SPECTATOR, redactEventsFor } from "../../../src/domain/game/GameSnapshot.js";
 import { createInitialState, SetupError } from "../../../src/domain/game/MatchSetup.js";
 import { createResourceSystem } from "../../../src/domain/resources/IncrementalResourceSystem.js";
 import { ChaChaRandom } from "../../../src/domain/random/ChaChaRandom.js";
@@ -52,6 +52,13 @@ describe("GameSnapshot", () => {
     assert.equal(snapshot.legalMoves, null);
   });
 
+  it("spectator view hides both hands and carries no legal moves", () => {
+    const snapshot = createEngine().engine.getSnapshot(SPECTATOR);
+    assert.ok(snapshot.players.every((p) => p.hand === null && p.handSize > 0));
+    assert.equal(snapshot.legalMoves, null);
+    assert.equal(snapshot.perspectivePlayerId, SPECTATOR);
+  });
+
   it("projects cards with current stats and printed values", () => {
     const { engine } = createEngine();
     const card = engine.getSnapshot(P1).players[0].hand[0];
@@ -74,6 +81,8 @@ describe("GameSnapshot", () => {
     assert.equal(forP1.instanceId, drawn.instanceId);
     assert.equal(forP2.definitionId, drawn.definitionId);
     assert.equal(redactEventsFor(result.value.events, null), result.value.events);
+    const forSpectator = redactEventsFor(result.value.events, SPECTATOR).find((event) => event.type === GameEventType.CARD_DRAWN);
+    assert.equal(forSpectator.definitionId, undefined, "a spectator sees no drawn card");
   });
 });
 

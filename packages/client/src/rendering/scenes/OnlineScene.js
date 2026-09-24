@@ -101,6 +101,9 @@ export class OnlineScene extends Scene {
     if (this.#app.ranking !== undefined && this.services.hasScene(SceneId.LEADERBOARD)) {
       this.root.add(new Button({ id: "online.leaderboard", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Leaderboard", onActivate: () => this.services.navigate(SceneId.LEADERBOARD) }));
     }
+    if (this.services.hasScene(SceneId.LIVE_GAMES)) {
+      this.root.add(new Button({ id: "online.watch", x: viewport.logicalWidth - HEADER.sideMargin - 3 * HEADER.backWidth - 32, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Watch", onActivate: () => this.services.navigate(SceneId.LIVE_GAMES) }));
+    }
     const firstDeck = this.#buildDecks();
     const action = this.#buildActions();
     this.focus(this.root.findById(focusedId) ?? action ?? firstDeck ?? back);

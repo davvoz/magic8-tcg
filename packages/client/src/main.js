@@ -22,6 +22,7 @@ import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/register
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
+import { HttpLiveGamesApi } from "./infrastructure/api/HttpLiveGamesApi.js";
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
@@ -209,6 +210,7 @@ async function boot() {
         const ref = accountDecks.describe(deck.id);
         return ref === undefined ? [] : [{ id: ref.serverId, name: deck.name, faction: deck.faction, totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
       }),
+    liveGames: new HttpLiveGamesApi({ fetch: httpFetch }),
     logger,
   });
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });

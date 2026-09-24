@@ -8,6 +8,10 @@
  * The widget tree is rebuilt on every snapshot and on every interaction
  * step; card visuals live in the presenter and survive rebuilds, which is
  * what keeps animations continuous.
+ *
+ * A session with no human player is a spectator's: the first seat sits at
+ * the bottom, no hand is shown (the server never sends one), and nothing
+ * can be played.
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
@@ -48,6 +52,7 @@ export class MatchScene extends Scene {
   /** @type {(() => void) | null} */
   #unsubscribe = null;
   #playerId = "";
+  #spectating = false;
   /** @type {MatchInteraction | null} */
   #interaction = null;
   #presenter;
@@ -76,6 +81,9 @@ export class MatchScene extends Scene {
     }
     this.#session = session;
     this.#playerId = session.humanPlayerIds[0] ?? "";
+    this.#spectating = session.humanPlayerIds.length === 0;
+    this.#gameOverShown = false;
+    this.#log = [];
     this.#interaction = new MatchInteraction(this.#playerId);
     this.#unsubscribe = session.subscribe((update) => this.#onUpdate(update));
     this.#refresh([], false);
@@ -220,7 +228,7 @@ export class MatchScene extends Scene {
     const reopenGameOver = this.modal?.id === "gameOver";
     this.closeModal();
     this.root.clear();
-    this.root.add(new BoardNode({ layout, banner: bannerFor(snapshot, this.#playerId), activePlayerId: activeSeatFor(snapshot) }));
+    this.root.add(new BoardNode({ layout, banner: bannerFor(snapshot, this.#viewer()), activePlayerId: activeSeatFor(snapshot) }));
     this.#buildPlayers(snapshot, layout, interaction);
     this.#buildCards(snapshot, layout, interaction);
     this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction) }));
@@ -246,7 +254,7 @@ export class MatchScene extends Scene {
       if (player === undefined) {
         continue;
       }
-      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: seat === layout.me, isActive: snapshot.activePlayerId === player.id, highlight: interaction.highlightFor(player.id), onTap: (id) => this.#tap(id), lifeShown: () => this.#presenter.lifeFor(player) }));
+      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: snapshot.activePlayerId === player.id, highlight: interaction.highlightFor(player.id), onTap: (id) => this.#tap(id), lifeShown: () => this.#presenter.lifeFor(player) }));
     }
   }
 
@@ -282,7 +290,8 @@ export class MatchScene extends Scene {
     const width = sidebar.width - 2 * SIDEBAR.inset;
     panel.add(new Label({ x: SIDEBAR.inset, y: SIDEBAR.inset, width, height: SIDEBAR.titleHeight, text: snapshot.isOver ? "Match over" : `Turn ${snapshot.turnNumber}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     panel.add(new Label({ x: SIDEBAR.inset, y: SIDEBAR.inset + SIDEBAR.titleHeight, width, height: SIDEBAR.phaseHeight, text: phaseName(snapshot.phase), size: "small", colorKey: "textMuted", align: "left", fit: true }));
-    panel.add(new TextBlock({ x: SIDEBAR.inset, y: SIDEBAR.promptTop, width, height: SIDEBAR.promptHeight, text: interaction.prompt, size: "small", colorKey: "accent" }));
+    const prompt = this.#spectating ? `Watching ${snapshot.players.map((player) => nameOf(snapshot, player.id)).join(" vs ")}` : interaction.prompt;
+    panel.add(new TextBlock({ x: SIDEBAR.inset, y: SIDEBAR.promptTop, width, height: SIDEBAR.promptHeight, text: prompt, size: "small", colorKey: "accent" }));
     let y = SIDEBAR.buttonsTop;
     for (const spec of this.#sidebarButtons(snapshot, interaction)) {
       if (!spec.visible) {
@@ -302,11 +311,15 @@ export class MatchScene extends Scene {
     const moves = snapshot.legalMoves;
     const busy = interaction.mode === InteractionMode.TARGETING;
     const confirmLabel = interaction.confirmLabel;
+    const playing = !snapshot.isOver && !this.#spectating;
+    if (this.#spectating) {
+      return [{ id: "leave", text: "Stop watching", visible: true, enabled: true, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
+    }
     return [
       { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: true, variant: "primary", onActivate: () => this.#confirm() },
       { id: "cancel", text: "Cancel", visible: interaction.canCancel, enabled: true, variant: "secondary", onActivate: () => this.onCancel() },
-      { id: "endPhase", text: "End phase", visible: !snapshot.isOver, enabled: moves?.canEndPhase === true && !busy, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
-      { id: "endTurn", text: "End turn (E)", visible: !snapshot.isOver, enabled: moves?.canEndTurn === true && !busy, variant: "primary", onActivate: () => this.#submit(endTurn(this.#playerId)) },
+      { id: "endPhase", text: "End phase", visible: playing, enabled: moves?.canEndPhase === true && !busy, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
+      { id: "endTurn", text: "End turn (E)", visible: playing, enabled: moves?.canEndTurn === true && !busy, variant: "primary", onActivate: () => this.#submit(endTurn(this.#playerId)) },
       { id: "leave", text: snapshot.isOver ? "Back to menu" : "Concede", visible: true, enabled: true, variant: snapshot.isOver ? "secondary" : "danger", onActivate: () => (snapshot.isOver ? this.#leave(SceneId.MAIN_MENU) : this.#confirmConcede()) },
     ];
   }
@@ -356,12 +369,12 @@ export class MatchScene extends Scene {
     const modal = new Modal({ id: "gameOver", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: GAME_OVER.width, panelHeight: GAME_OVER.height, onDismiss: () => this.closeModal() });
     const { panel } = modal;
     const width = GAME_OVER.width - 40;
-    const victory = snapshot.winnerId === this.#playerId;
-    panel.add(new Label({ x: 20, y: 40, width, height: 90, text: outcomeFor(snapshot, this.#playerId), size: "title", weight: "bold", colorKey: victory ? "accentLight" : "danger", glow: true }));
+    const victory = this.#spectating || snapshot.winnerId === this.#playerId;
+    panel.add(new Label({ x: 20, y: 40, width, height: 90, text: outcomeFor(snapshot, this.#viewer()), size: "title", weight: "bold", colorKey: victory ? "accentLight" : "danger", glow: true }));
     panel.add(new Label({ x: 20, y: 140, width, height: 30, text: reasonFor(snapshot), size: "body", colorKey: "textMuted" }));
     const third = (width - 2 * 14) / 3;
     const y = GAME_OVER.height - 20 - 52;
-    panel.add(new Button({ id: "gameOver.again", x: 20, y, width: third, height: 52, text: "Play again", variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
+    panel.add(new Button({ id: "gameOver.again", x: 20, y, width: third, height: 52, text: this.#spectating ? "Watch another" : "Play again", variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
     panel.add(new Button({ id: "gameOver.menu", x: 20 + third + 14, y, width: third, height: 52, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
     panel.add(new Button({ id: "gameOver.board", x: 20 + 2 * (third + 14), y, width: third, height: 52, text: "View board", onActivate: () => this.closeModal() }));
     this.openModal(modal);
@@ -375,6 +388,11 @@ export class MatchScene extends Scene {
     panel.add(new CardDetail({ id: "inspect.card", x: (INSPECT.width - INSPECT.card.width) / 2, y: 20, width: INSPECT.card.width, height: INSPECT.card.height, card }));
     panel.add(new Button({ id: "inspect.close", x: (INSPECT.width - INSPECT.card.width) / 2, y: INSPECT.height - 20 - 48, width: INSPECT.card.width, height: 48, text: "Close", onActivate: () => this.closeModal() }));
     this.openModal(modal);
+  }
+
+  /** Who is looking at the board. */
+  #viewer() {
+    return Object.freeze({ playerId: this.#playerId, spectating: this.#spectating });
   }
 
   /** @param {string} sceneId */
@@ -402,27 +420,41 @@ function activeSeatFor(snapshot) {
   return snapshot.isOver ? null : snapshot.activePlayerId;
 }
 
+/** @typedef {Readonly<{ playerId: string, spectating: boolean }>} Viewer */
+
 /**
  * @param {Snapshot} snapshot
- * @param {string} playerId
+ * @param {string | null} playerId
  */
-function bannerFor(snapshot, playerId) {
+const nameOf = (snapshot, playerId) => `@${snapshot.players.find((player) => player.id === playerId)?.name ?? "?"}`;
+
+/**
+ * @param {Snapshot} snapshot
+ * @param {Viewer} viewer
+ */
+function bannerFor(snapshot, viewer) {
   if (snapshot.isOver) {
-    return outcomeFor(snapshot, playerId);
+    return outcomeFor(snapshot, viewer);
   }
-  const whose = snapshot.activePlayerId === playerId ? "Your turn" : "Opponent's turn";
+  let whose = snapshot.activePlayerId === viewer.playerId ? "Your turn" : "Opponent's turn";
+  if (viewer.spectating) {
+    whose = `${nameOf(snapshot, snapshot.activePlayerId)}'s turn`;
+  }
   return `Turn ${snapshot.turnNumber} · ${whose} · ${phaseName(snapshot.phase)}`;
 }
 
 /**
  * @param {Snapshot} snapshot
- * @param {string} playerId
+ * @param {Viewer} viewer
  */
-function outcomeFor(snapshot, playerId) {
+function outcomeFor(snapshot, viewer) {
   if (snapshot.winnerId === null) {
     return "Draw";
   }
-  return snapshot.winnerId === playerId ? "Victory" : "Defeat";
+  if (viewer.spectating) {
+    return `${nameOf(snapshot, snapshot.winnerId)} wins`;
+  }
+  return snapshot.winnerId === viewer.playerId ? "Victory" : "Defeat";
 }
 
 /** @param {Snapshot} snapshot */

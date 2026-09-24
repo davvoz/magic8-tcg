@@ -12,8 +12,13 @@
  * Players never choose their seat or player id: the seat comes from the
  * authenticated user (T1), the engine validates every command, and a
  * command must name the version it was decided on (STALE_VERSION otherwise).
+ *
+ * Spectators (docs/tcg/10-spettatori.md) get the table as the SPECTATOR
+ * perspective: no hand, no drawn card. That is less than either player
+ * sees, so a spectator relaying what they watch to a player tells them
+ * nothing new, and the stream needs no delay.
  */
-import { redactEventsFor } from "@magic8/engine/domain/game/GameSnapshot.js";
+import { SPECTATOR, redactEventsFor } from "@magic8/engine/domain/game/GameSnapshot.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
 import { EntropySource, ForcedMoveReason, LIMITS, SEATS, bytesToHex, canonicalize, createGameEngine, utf8Length } from "@magic8/protocol";
 import { CONCEDE_COMMAND, forcedCommandFor } from "../domain/forcedCommand.js";
@@ -27,7 +32,12 @@ export const GameError = Object.freeze({
   STALE_VERSION: "STALE_VERSION",
   INVALID_COMMAND: "INVALID_COMMAND",
   INVALID_ENTROPY: "INVALID_ENTROPY",
+  PLAYER_CANNOT_WATCH: "PLAYER_CANNOT_WATCH",
+  SPECTATORS_FULL: "SPECTATORS_FULL",
 });
+
+/** Spectators one game streams to (each move is sent to every one of them). */
+export const MAX_SPECTATORS = 50;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ENTROPY_PATTERN = /^[0-9a-f]{32}$/;
@@ -64,6 +74,8 @@ export class GameActor {
   #entropies = new Map();
   /** @type {Map<string, Ack>} */
   #rejected = new Map();
+  /** @type {Set<string>} user ids */
+  #spectators = new Set();
   /** @type {Promise<unknown>} */
   #mailbox = Promise.resolve();
   #broken = false;
@@ -119,6 +131,23 @@ export class GameActor {
 
   get isOver() {
     return this.#status === GameStatus.FINISHED || this.#status === GameStatus.ABORTED;
+  }
+
+  get spectatorCount() {
+    return this.#spectators.size;
+  }
+
+  /** What a live-games list shows about this game. */
+  summary() {
+    return Object.freeze({
+      gameId: this.id,
+      mode: this.#game.mode,
+      status: this.#status,
+      players: this.#seats(),
+      turn: this.#engine?.getSnapshot(SPECTATOR).turnNumber ?? 0,
+      startedAt: this.#game.startedAt,
+      spectators: this.#spectators.size,
+    });
   }
 
   /** @param {string} userId */
@@ -271,6 +300,31 @@ export class GameActor {
   }
 
   /**
+   * Starts streaming the game to a user who does not play it; returns what the table shows now.
+   * @param {string} userId
+   */
+  watch(userId) {
+    return this.#enqueue(async () => {
+      if (this.seatOf(userId) !== null) {
+        return fail(GameError.PLAYER_CANNOT_WATCH, "you play this game");
+      }
+      if (this.isOver) {
+        return fail(GameError.GAME_NOT_ACTIVE, "the game is over");
+      }
+      if (!this.#spectators.has(userId) && this.#spectators.size >= MAX_SPECTATORS) {
+        return fail(GameError.SPECTATORS_FULL, `at most ${MAX_SPECTATORS} spectators per game`);
+      }
+      this.#spectators.add(userId);
+      return Object.freeze({ ok: true, view: this.#spectatorView() });
+    });
+  }
+
+  /** @param {string} userId */
+  unwatch(userId) {
+    this.#spectators.delete(userId);
+  }
+
+  /**
    * @param {string} seat
    * @param {"timeout" | "disconnect" | "abandon"} why
    */
@@ -398,6 +452,43 @@ export class GameActor {
         this.#notifier.send(player.userId, "game.over", { gameId: this.id, winner: applied.winner, reason: applied.reason, you: player.seat });
       }
     }
+    this.#stream(applied);
+  }
+
+  /** Tells the spectators what the table now shows; lets them go when the game ends. */
+  #stream(applied) {
+    if (this.#spectators.size === 0) {
+      return;
+    }
+    const update = { ...this.#spectatorView(), events: redactEventsFor(applied.events, SPECTATOR) };
+    for (const userId of this.#spectators) {
+      this.#notifier.send(userId, "watch.events", update);
+      if (applied.over) {
+        this.#notifier.send(userId, "watch.over", { gameId: this.id, winner: applied.winner, reason: applied.reason });
+      }
+    }
+    if (applied.over) {
+      this.#spectators.clear();
+    }
+  }
+
+  #seats() {
+    return Object.freeze(this.#game.players.map((player) => Object.freeze({ seat: player.seat, account: player.account })));
+  }
+
+  #spectatorView() {
+    return Object.freeze({
+      gameId: this.id,
+      mode: this.#game.mode,
+      status: this.#status,
+      players: this.#seats(),
+      version: this.#engine?.version ?? 0,
+      lastSeq: this.#lastSeq,
+      head: this.#recorder.head,
+      snapshot: this.#engine === null ? null : this.#engine.getSnapshot(SPECTATOR),
+      clock: this.#turnClock.view(),
+      spectators: this.#spectators.size,
+    });
   }
 
   /**

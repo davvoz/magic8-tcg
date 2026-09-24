@@ -23,7 +23,7 @@ import { ChainBroadcaster, ChainOutbox, ChainTracker, GameVerification, Manifest
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository, RefundWatcher } from "./modules/payments/index.js";
 import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, registerMonitoringRoutes } from "./modules/admin/index.js";
-import { GameService, PgGameRepository, registerGameMessages } from "./modules/gameplay/index.js";
+import { GameService, PgGameRepository, registerGameMessages, registerGameRoutes } from "./modules/gameplay/index.js";
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
@@ -140,6 +140,7 @@ export async function createServerApp(deps) {
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
   registerChainRoutes({ router, verification });
   registerRankingRoutes({ router, ranking });
+  registerGameRoutes({ router, games });
   const readModel = new PgOperationsReadModel(database);
   const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
   const monitor = new Monitor({ readModel, runtime, clock, logger, policy: alarmPolicy });
