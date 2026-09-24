@@ -130,8 +130,8 @@ export class LibraryView {
       message: "The deck is removed from storage. This cannot be undone.",
       confirmText: "Delete",
       destructive: true,
-      onConfirm: () => {
-        const removed = this.#host.app.deckBuilding.delete(deck.id);
+      onConfirm: async () => {
+        const removed = await this.#host.app.deckBuilding.delete(deck.id);
         if (!removed.ok) {
           this.#host.app.logger.warn("could not delete deck", removed.error);
         }

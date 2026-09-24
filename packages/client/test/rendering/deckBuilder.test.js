@@ -49,6 +49,8 @@ const click = (node) => {
   assert.equal(node.isEffectivelyEnabled, true, `${node.id} is enabled`);
   node.activate();
 };
+/** Lets a save or delete started by a click reach storage and redraw. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const key = (name) => ({ type: "keydown", key: name, repeat: false });
 function rendered(scene) {
   const context = new FakeContext2D();
@@ -126,7 +128,7 @@ describe("DeckBuilderScene — editor", () => {
     assert.equal(scene.focusedNode.id, addButton.id, "focus restored by id");
   });
 
-  it("renames through the text field, refuses empty names without losing the typed text, and saves", () => {
+  it("renames through the text field, refuses empty names without losing the typed text, and saves", async () => {
     const { scene, app, repository } = harness();
     click(byId(scene, "library.new.iron"));
     const field = byId(scene, "editor.name");
@@ -153,6 +155,9 @@ describe("DeckBuilderScene — editor", () => {
     }
     assert.ok(rendered(scene).includes("Legal deck"));
     click(byId(scene, "editor.save"));
+    assert.equal(byId(scene, "editor.save").text, "Saving…");
+    assert.equal(byId(scene, "editor.save").enabled, false, "one save at a time");
+    await settle();
     assert.equal(byId(scene, "editor.save").enabled, false, "nothing left to save");
     assert.ok(rendered(scene).some((text) => text.endsWith("· saved")));
     assert.equal(repository.list().value[0].name, "Wall Time");
@@ -193,7 +198,7 @@ describe("DeckBuilderScene — editor", () => {
     assert.equal(scene.isEditing, true);
   });
 
-  it("copies a preconstructed deck, asks before discarding changes, and deletes custom decks after confirmation", () => {
+  it("copies a preconstructed deck, asks before discarding changes, and deletes custom decks after confirmation", async () => {
     const { scene, app, repository } = harness();
     const precon = content.preconDecks[0];
     click(byId(scene, `library.edit.${precon.id}`));
@@ -215,6 +220,7 @@ describe("DeckBuilderScene — editor", () => {
 
     click(byId(scene, `library.edit.${precon.id}`));
     click(byId(scene, "editor.save"));
+    await settle();
     click(byId(scene, "editor.close"));
     assert.equal(repository.list().value.length, 1);
     click(byId(scene, "library.delete.custom_1"));
@@ -223,11 +229,12 @@ describe("DeckBuilderScene — editor", () => {
     assert.equal(repository.list().value.length, 1, "Escape cancels");
     click(byId(scene, "library.delete.custom_1"));
     click(byId(scene, "confirm.ok"));
+    await settle();
     assert.equal(repository.list().value.length, 0);
     assert.equal(byId(scene, "library.delete.custom_1"), null);
   });
 
-  it("resumes an open draft when re-entered and surfaces refused saves", () => {
+  it("resumes an open draft when re-entered and surfaces refused saves", async () => {
     const { scene, app } = harness();
     click(byId(scene, "library.new.iron"));
     click(byId(scene, "catalog.add.iron_watcher"));
@@ -238,11 +245,12 @@ describe("DeckBuilderScene — editor", () => {
 
     for (let index = 0; index < content.deckRules.maxSavedDecks; index += 1) {
       app.deckBuilding.startNew("ember", `Filler ${index}`);
-      assert.equal(app.deckBuilding.save().ok, true);
+      assert.equal((await app.deckBuilding.save()).ok, true);
     }
     app.deckBuilding.startNew("ember", "One too many");
     scene.enter({});
     click(byId(scene, "editor.save"));
+    await settle();
     assert.ok(rendered(scene).some((text) => text.includes("at most 50 saved decks")));
     assert.equal(byId(scene, "editor.notice").text, "at most 50 saved decks");
     assert.equal(scene.isEditing, true);

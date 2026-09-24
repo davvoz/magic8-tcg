@@ -82,7 +82,7 @@ describe("ContentService", () => {
 });
 
 describe("DeckBuildingService", () => {
-  it("builds a legal deck from scratch, reports progress and saves it", () => {
+  it("builds a legal deck from scratch, reports progress and saves it", async () => {
     const { builder, repository } = services();
     assert.equal(builder.startNew("iron", "Wall Time").ok, true);
     assert.equal(builder.report().valid, false);
@@ -100,7 +100,7 @@ describe("DeckBuildingService", () => {
     assert.equal(builder.draft.totalCards, 30);
     assert.equal(builder.report().valid, true);
     assert.equal(builder.hasUnsavedChanges, true);
-    const saved = builder.save();
+    const saved = await builder.save();
     assert.equal(saved.ok, true, JSON.stringify(saved));
     assert.equal(builder.hasUnsavedChanges, false);
     assert.equal(repository.list().value[0].id, "custom_1");
@@ -130,24 +130,24 @@ describe("DeckBuildingService", () => {
     assert.equal(builder.removeCard("ember_imp").value.countOf("ember_imp"), 2);
   });
 
-  it("copies preconstructed decks instead of editing them, and caps saved decks", () => {
+  it("copies preconstructed decks instead of editing them, and caps saved decks", async () => {
     const { builder, repository } = services();
     const precon = content.preconDecks[0];
     const draft = builder.edit(precon).value;
     assert.notEqual(draft.id, precon.id);
     assert.equal(draft.preconstructed, false);
     assert.equal(draft.totalCards, precon.totalCards);
-    assert.equal(builder.save().ok, true);
+    assert.equal((await builder.save()).ok, true);
     assert.equal(repository.list().value.length, 1);
 
     for (let index = 2; index <= content.deckRules.maxSavedDecks; index += 1) {
       builder.startNew("ember", `Deck ${index}`);
-      assert.equal(builder.save().ok, true);
+      assert.equal((await builder.save()).ok, true);
     }
     builder.startNew("ember", "One too many");
-    assert.equal(builder.save().error.code, DeckBuildingError.TOO_MANY_DECKS);
-    assert.equal(builder.delete("custom_3").ok, true);
-    assert.equal(builder.save().ok, true, "a slot freed up");
+    assert.equal((await builder.save()).error.code, DeckBuildingError.TOO_MANY_DECKS);
+    assert.equal((await builder.delete("custom_3")).ok, true);
+    assert.equal((await builder.save()).ok, true, "a slot freed up");
   });
 
   it("refuses operations without a draft", () => {
@@ -159,11 +159,11 @@ describe("DeckBuildingService", () => {
 });
 
 describe("DeckSelectionService", () => {
-  it("lists preconstructed decks first, then custom decks with their reports", () => {
+  it("lists preconstructed decks first, then custom decks with their reports", async () => {
     const { builder, selection } = services();
     builder.startNew("iron", "WIP");
     builder.addCard("iron_watcher");
-    builder.save();
+    await builder.save();
     const options = selection.listDecks();
     assert.deepEqual(
       options.map((option) => [option.source, option.report.valid]),

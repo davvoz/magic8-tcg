@@ -101,7 +101,7 @@ describe("DeckSelectionScene", () => {
     assert.deepEqual(navigated[0].params.session.humanPlayerIds, ["player"]);
   });
 
-  it("shows unplayable decks disabled with the reason, and disables start when nothing is playable", () => {
+  it("shows unplayable decks disabled with the reason, and disables start when nothing is playable", async () => {
     const app = appContext();
     app.deckSelection = { listDecks: () => [], listPlayableDecks: () => [] };
     const empty = new DeckSelectionScene(services(), app);
@@ -117,7 +117,7 @@ describe("DeckSelectionScene", () => {
     const builder = new DeckBuildingService({ content, repository: real.repository });
     builder.startNew("iron", "Work in progress");
     builder.addCard("iron_watcher");
-    assert.equal(builder.save().ok, true);
+    assert.equal((await builder.save()).ok, true);
     const scene = new DeckSelectionScene(services({ hasScene: (id) => id === SceneId.DECK_BUILDER }), real);
     scene.enter({});
     const wip = buttons(scene).find((node) => node.id === "deck-custom_1");
@@ -126,12 +126,12 @@ describe("DeckSelectionScene", () => {
     assert.equal(buttonNamed(scene, "Deck builder").enabled, true);
   });
 
-  it("scrolls a long deck list with the wheel and keeps the selection reachable", () => {
+  it("scrolls a long deck list with the wheel and keeps the selection reachable", async () => {
     const real = appContext();
     const builder = new DeckBuildingService({ content, repository: real.repository });
     for (let index = 0; index < 20; index += 1) {
       builder.edit(content.preconDecks[0]);
-      assert.equal(builder.save().ok, true);
+      assert.equal((await builder.save()).ok, true);
     }
     const scene = new DeckSelectionScene(services(), real);
     scene.enter({});
