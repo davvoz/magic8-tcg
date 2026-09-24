@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_foundry",
+  "name": "Iron Foundry",
+  "faction": "iron",
+  "preconstructed": true,
+  "cards": [
+    {
+      "cardId": "rivet_hound",
+      "count": 3
+    },
+    {
+      "cardId": "scrap_golem",
+      "count": 2
+    },
+    {
+      "cardId": "gear_smith",
+      "count": 3
+    },
+    {
+      "cardId": "iron_watcher",
+      "count": 3
+    },
+    {
+      "cardId": "sentry_turret",
+      "count": 2
+    },
+    {
+      "cardId": "clockwork_knight",
+      "count": 2
+    },
+    {
+      "cardId": "master_artificer",
+      "count": 2
+    },
+    {
+      "cardId": "forge_warden",
+      "count": 2
+    },
+    {
+      "cardId": "iron_colossus",
+      "count": 1
+    },
+    {
+      "cardId": "salvage",
+      "count": 2
+    },
+    {
+      "cardId": "overclock",
+      "count": 2
+    },
+    {
+      "cardId": "reinforce",
+      "count": 2
+    },
+    {
+      "cardId": "plains_scout",
+      "count": 2
+    },
+    {
+      "cardId": "traveling_merchant",
+      "count": 2
+    }
+  ]
+}

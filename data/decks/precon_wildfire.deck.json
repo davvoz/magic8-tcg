@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_wildfire",
+  "name": "Ember Wildfire",
+  "faction": "ember",
+  "preconstructed": true,
+  "cards": [
+    {
+      "cardId": "kindling_sprite",
+      "count": 3
+    },
+    {
+      "cardId": "ember_imp",
+      "count": 2
+    },
+    {
+      "cardId": "flame_scout",
+      "count": 3
+    },
+    {
+      "cardId": "ember_zealot",
+      "count": 3
+    },
+    {
+      "cardId": "ash_raider",
+      "count": 2
+    },
+    {
+      "cardId": "magma_hurler",
+      "count": 2
+    },
+    {
+      "cardId": "pyre_drake",
+      "count": 3
+    },
+    {
+      "cardId": "volcanic_wyrm",
+      "count": 1
+    },
+    {
+      "cardId": "ember_bolt",
+      "count": 3
+    },
+    {
+      "cardId": "fire_surge",
+      "count": 2
+    },
+    {
+      "cardId": "searing_lash",
+      "count": 3
+    },
+    {
+      "cardId": "quick_strike",
+      "count": 3
+    }
+  ]
+}

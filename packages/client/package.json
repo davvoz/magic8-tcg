@@ -1,0 +1,18 @@
+{
+  "name": "@magic8/client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Canvas-rendered browser client",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@magic8/engine": "0.1.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info",
+    "simulate": "node tools/simulate.js"
+  }
+}

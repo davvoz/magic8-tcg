@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_verdant",
+  "name": "Verdant Grove",
+  "faction": "verdant",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "moss_beetle", "count": 2 },
+    { "cardId": "grove_sprite", "count": 3 },
+    { "cardId": "root_tender", "count": 2 },
+    { "cardId": "thornback_bear", "count": 3 },
+    { "cardId": "spore_cap", "count": 2 },
+    { "cardId": "stampeding_boar", "count": 2 },
+    { "cardId": "ironbark_guardian", "count": 2 },
+    { "cardId": "elder_treant", "count": 2 },
+    { "cardId": "great_elk", "count": 1 },
+    { "cardId": "worldroot_colossus", "count": 1 },
+    { "cardId": "wild_growth", "count": 3 },
+    { "cardId": "entangle", "count": 2 },
+    { "cardId": "overgrowth", "count": 2 },
+    { "cardId": "poison_bloom", "count": 2 },
+    { "cardId": "harvest", "count": 1 }
+  ]
+}

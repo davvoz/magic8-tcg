@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 2,
+  "layout": { "logicalWidth": 1600, "logicalHeight": 900 },
+  "colors": {
+    "background": "#0a0c14",
+    "backgroundGlow": "#1d2238",
+    "letterbox": "#000000",
+    "panel": "#151a27",
+    "panelLight": "#232a3d",
+    "panelDark": "#0d1019",
+    "panelBorder": "#33405a",
+    "text": "#eef0f5",
+    "textMuted": "#8f98ad",
+    "accent": "#e2b25c",
+    "accentLight": "#f7dfa0",
+    "accentDark": "#8a5f1e",
+    "accentText": "#1c1305",
+    "danger": "#e0483f",
+    "success": "#4fc48a",
+    "disabled": "#2a3040",
+    "disabledText": "#5f677a",
+    "focus": "#78c6ff",
+    "hover": "#2b3348",
+    "resource": "#4d9dff",
+    "attack": "#ff7a45",
+    "health": "#5ad36f",
+    "cardFace": "#11141d",
+    "cardText": "#1b1f2c",
+    "factions": {
+      "ember": { "base": "#c8472f", "light": "#ffb347", "dark": "#3b0d0a" },
+      "iron": { "base": "#5b7fa6", "light": "#bcd4ee", "dark": "#101b2c" },
+      "shadow": { "base": "#6f3fa8", "light": "#d3a8ff", "dark": "#150a24" },
+      "verdant": { "base": "#3f8a4a", "light": "#b6e88a", "dark": "#0c2214" },
+      "arcane": { "base": "#3a5fd0", "light": "#8fe0ff", "dark": "#0a1036" },
+      "neutral": { "base": "#8a8f7a", "light": "#d9d6b5", "dark": "#23261c" }
+    }
+  },
+  "fonts": {
+    "family": "system-ui, 'Segoe UI', Roboto, sans-serif",
+    "displayFamily": "'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif",
+    "sizes": { "title": 72, "heading": 32, "body": 20, "small": 15, "tiny": 12, "micro": 10 }
+  },
+  "spacing": { "unit": 8, "radius": 10 },
+  "animation": { "shortMs": 120, "mediumMs": 260, "longMs": 500 }
+}

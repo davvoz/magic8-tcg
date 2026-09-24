@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_iron",
+  "name": "Iron Legion",
+  "faction": "iron",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "scrap_golem", "count": 3 },
+    { "cardId": "steel_sentinel", "count": 3 },
+    { "cardId": "gear_smith", "count": 3 },
+    { "cardId": "iron_watcher", "count": 3 },
+    { "cardId": "bulwark_engine", "count": 2 },
+    { "cardId": "clockwork_knight", "count": 3 },
+    { "cardId": "forge_warden", "count": 2 },
+    { "cardId": "iron_colossus", "count": 2 },
+    { "cardId": "salvage", "count": 3 },
+    { "cardId": "reinforce", "count": 2 },
+    { "cardId": "repair_drones", "count": 2 },
+    { "cardId": "mending_herbs", "count": 2 }
+  ]
+}

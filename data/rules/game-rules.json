@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "startingLife": 20,
+  "startingHandSize": 5,
+  "cardsDrawnPerTurn": 1,
+  "firstPlayerSkipsFirstDraw": true,
+  "maxHandSize": 10,
+  "maxBattlefieldCreatures": 7,
+  "resource": { "type": "incremental", "gainPerTurn": 1, "max": 10, "startingMax": 0 },
+  "combat": { "blockersEnabled": true, "summoningSickness": true, "maxBlockersPerAttacker": 1 },
+  "emptyLibrary": { "mode": "fatigue", "damagePerDraw": 1 },
+  "limits": { "maxEffectsPerResolution": 200, "maxEventsPerCommand": 500 }
+}

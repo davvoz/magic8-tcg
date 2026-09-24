@@ -1,0 +1,35 @@
+/**
+ * Events emitted by the engine while executing a command. They drive
+ * presentation (animations, log) and are the basis for replays; the renderer
+ * never diffs state to discover what happened.
+ */
+export const GameEventType = Object.freeze({
+  GAME_STARTED: "GAME_STARTED",
+  TURN_STARTED: "TURN_STARTED",
+  PHASE_CHANGED: "PHASE_CHANGED",
+  CARD_DRAWN: "CARD_DRAWN",
+  FATIGUE_DAMAGE: "FATIGUE_DAMAGE",
+  CARD_DISCARDED: "CARD_DISCARDED",
+  RESOURCES_CHANGED: "RESOURCES_CHANGED",
+  LIFE_CHANGED: "LIFE_CHANGED",
+  CARD_PLAYED: "CARD_PLAYED",
+  ABILITY_TRIGGERED: "ABILITY_TRIGGERED",
+  ATTACKERS_DECLARED: "ATTACKERS_DECLARED",
+  BLOCKERS_DECLARED: "BLOCKERS_DECLARED",
+  DAMAGE_DEALT: "DAMAGE_DEALT",
+  HEALED: "HEALED",
+  STATS_MODIFIED: "STATS_MODIFIED",
+  CREATURE_SACRIFICED: "CREATURE_SACRIFICED",
+  CREATURE_DESTROYED: "CREATURE_DESTROYED",
+  CARD_RETURNED: "CARD_RETURNED",
+  CARD_MILLED: "CARD_MILLED",
+  CREATURE_DIED: "CREATURE_DIED",
+  PLAYER_CONCEDED: "PLAYER_CONCEDED",
+  GAME_ENDED: "GAME_ENDED",
+});
+
+export const GameEndReason = Object.freeze({
+  LIFE_DEPLETED: "life_depleted",
+  CONCEDE: "concede",
+  DRAW: "draw",
+});

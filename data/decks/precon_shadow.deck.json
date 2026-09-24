@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_shadow",
+  "name": "Shadow Pact",
+  "faction": "shadow",
+  "preconstructed": true,
+  "cards": [
+    {
+      "cardId": "restless_ghoul",
+      "count": 3
+    },
+    {
+      "cardId": "grave_rat",
+      "count": 3
+    },
+    {
+      "cardId": "bone_acolyte",
+      "count": 3
+    },
+    {
+      "cardId": "crypt_stalker",
+      "count": 2
+    },
+    {
+      "cardId": "plague_bearer",
+      "count": 2
+    },
+    {
+      "cardId": "soul_leech",
+      "count": 2
+    },
+    {
+      "cardId": "bone_colossus",
+      "count": 2
+    },
+    {
+      "cardId": "dread_wraith",
+      "count": 1
+    },
+    {
+      "cardId": "gravelord",
+      "count": 1
+    },
+    {
+      "cardId": "mind_rot",
+      "count": 2
+    },
+    {
+      "cardId": "soul_drain",
+      "count": 3
+    },
+    {
+      "cardId": "dark_bargain",
+      "count": 2
+    },
+    {
+      "cardId": "blood_tithe",
+      "count": 2
+    },
+    {
+      "cardId": "withering_curse",
+      "count": 2
+    }
+  ]
+}

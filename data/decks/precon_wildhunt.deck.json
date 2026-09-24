@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_wildhunt",
+  "name": "Wild Hunt",
+  "faction": "verdant",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "kindling_sprite", "count": 2 },
+    { "cardId": "flame_scout", "count": 3 },
+    { "cardId": "grove_sprite", "count": 2 },
+    { "cardId": "crypt_stalker", "count": 3 },
+    { "cardId": "stampeding_boar", "count": 3 },
+    { "cardId": "forge_warden", "count": 1 },
+    { "cardId": "great_elk", "count": 2 },
+    { "cardId": "fire_surge", "count": 2 },
+    { "cardId": "wild_growth", "count": 3 },
+    { "cardId": "overclock", "count": 2 },
+    { "cardId": "reinforce", "count": 2 },
+    { "cardId": "overgrowth", "count": 2 },
+    { "cardId": "ember_bolt", "count": 3 }
+  ]
+}

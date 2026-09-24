@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_arcane",
+  "name": "Arcane Conclave",
+  "faction": "arcane",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "arcane_apprentice", "count": 2 },
+    { "cardId": "phase_wisp", "count": 3 },
+    { "cardId": "rune_scribe", "count": 2 },
+    { "cardId": "spellbinder", "count": 3 },
+    { "cardId": "mind_sifter", "count": 2 },
+    { "cardId": "astral_owl", "count": 2 },
+    { "cardId": "banishing_mage", "count": 2 },
+    { "cardId": "storm_djinn", "count": 2 },
+    { "cardId": "void_conjurer", "count": 1 },
+    { "cardId": "archmage_of_the_spire", "count": 1 },
+    { "cardId": "unsummon", "count": 2 },
+    { "cardId": "arcane_insight", "count": 2 },
+    { "cardId": "mind_drain", "count": 1 },
+    { "cardId": "frost_bind", "count": 2 },
+    { "cardId": "disintegrate", "count": 3 }
+  ]
+}

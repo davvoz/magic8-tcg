@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_ember",
+  "name": "Ember Vanguard",
+  "faction": "ember",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "ember_imp", "count": 3 },
+    { "cardId": "cinder_hound", "count": 3 },
+    { "cardId": "flame_scout", "count": 3 },
+    { "cardId": "ash_raider", "count": 3 },
+    { "cardId": "ember_shaman", "count": 2 },
+    { "cardId": "magma_hurler", "count": 3 },
+    { "cardId": "lava_brute", "count": 3 },
+    { "cardId": "pyre_drake", "count": 2 },
+    { "cardId": "blazing_titan", "count": 1 },
+    { "cardId": "ember_bolt", "count": 3 },
+    { "cardId": "fire_surge", "count": 2 },
+    { "cardId": "quick_strike", "count": 2 }
+  ]
+}

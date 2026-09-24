@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_bastion",
+  "name": "Spire Bastion",
+  "faction": "arcane",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "steel_sentinel", "count": 2 },
+    { "cardId": "rune_scribe", "count": 2 },
+    { "cardId": "bulwark_engine", "count": 2 },
+    { "cardId": "iron_watcher", "count": 2 },
+    { "cardId": "mind_sifter", "count": 3 },
+    { "cardId": "clockwork_knight", "count": 2 },
+    { "cardId": "banishing_mage", "count": 2 },
+    { "cardId": "forge_warden", "count": 1 },
+    { "cardId": "master_artificer", "count": 1 },
+    { "cardId": "storm_djinn", "count": 2 },
+    { "cardId": "void_conjurer", "count": 1 },
+    { "cardId": "iron_colossus", "count": 1 },
+    { "cardId": "unsummon", "count": 2 },
+    { "cardId": "frost_bind", "count": 2 },
+    { "cardId": "mind_drain", "count": 2 },
+    { "cardId": "disintegrate", "count": 3 }
+  ]
+}

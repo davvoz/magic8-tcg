@@ -1,0 +1,48 @@
+# 06 — Roadmap incrementale
+
+**Stato:** proposta, 2026-09-24. Ogni milestone è una *vertical slice* funzionante e testata, con commit dedicati e aggiornamento di questo file.
+
+| # | Milestone | Contenuto | Criterio di completamento |
+|---|---|---|---|
+| **M0** | Fondamenta | Fork in monorepo (`engine`, `client`); **RNG crittografico** (ChaCha20) nel motore; **digest di stato** canonico; pacchetto `protocol` (JSON canonico, hashing, catena di eventi, record, verificatore strutturale); lint e Sonar sul monorepo | Test verdi; vettori di test ChaCha20 (RFC 8439) e del protocollo; nessuna regressione del client |
+| **M1** | Identità | Pacchetto `steem` (client RPC con failover, nomi account, chiavi `STM…`, recupero chiave pubblica dalla firma Keychain); modulo `identity` del server (challenge, verifica, sessioni revocabili); kernel HTTP del server (router, cookie, CSRF, header, rate limit, validazione); schermata di login Keychain nel client | Login end-to-end con Keychain su mainnet; test di replay, scadenza, firma errata, chiave non autorizzata |
+| **M2** | Collezione e mazzi | Contenuti versionati per hash; `InventoryService` (conio, serial, storia); starter deck omaggio idempotente, scelto fra tre; `DeckService` con validazione regole + possesso; persistenza PostgreSQL con `Database` (pg in produzione, PGlite in sviluppo e nei test); identity su PostgreSQL; client: scelta dello starter, collezione e mazzi online | Un nuovo utente fa login, sceglie lo starter, costruisce un mazzo legale; utenti, sessioni e carte sopravvivono al riavvio del server |
+| **M3** | Marketplace e pagamenti STEEM | Prodotti e drop table data-driven; ordini idempotenti con prezzo del server; `SteemTransferPaymentProvider` (storico dell'account shop, conferma all'irreversibilità, doppio nodo); fulfilment atomico; pacchetti provably fair (epoche + manifest); ricevute `m8tcg_receipt`; coda rimborsi; client: negozio e apertura pacchetti con `requestTransfer` | Acquisto reale su mainnet (importi minimi) fino a `FULFILLED`; test di tutte le minacce T3–T9 |
+| **M4** | Multiplayer autoritativo | Gateway WebSocket; matchmaking; `GameActor` con mailbox, versioni, idempotenza, timer, riconnessione; commit-reveal del seed con entropia dei client; client: `RemoteMatchSession` al posto di `MatchSession` | Due browser giocano una partita completa; disconnessione e ripresa; test di race e comandi ostili |
+| **M5** | Storia on-chain delle partite | Eventi di protocollo nel `GameActor`; outbox, batching, `SteemTransactionProvider` (serializzazione e firma), pool di broadcaster, `RcMonitor`; `ChainReconciler`; verificatore completo con replay (CLI + endpoint + verifica nel browser) | Partite reali verificate `VALID` leggendo solo la catena; test di duplicati, buchi, fork, record falsi |
+| **M6** | Hardening | Revisione di sicurezza completa; test di carico (partite concorrenti, flood WS); cifratura dei segreti a riposo con rotazione; pannello admin (rimborsi, anomalie catena, audit); monitoraggio e allarmi; manuali operativi (rotazione chiavi, incidenti) | Sonar: 0 bug / 0 vulnerabilità / 0 hotspot aperti; report di carico; runbook |
+| **M7** | Oltre la v1 | Firma delle mosse con chiave di sessione (protocollo v2); ack firmati; classificata e rating; anti-collusione; spettatori; trading P2P con escrow; altre catene/pagamenti tramite nuovi adattatori | — |
+
+## Stato
+
+| Milestone | Stato |
+|---|---|
+| M0 | **fatto** (2026-09-24): monorepo; ChaCha20 e digest di stato nel motore; `@magic8/protocol` con JSON canonico, hashing con separazione di dominio, catena di eventi, commit-reveal, sigillatura record ed envelope, manifest, verificatore strutturale e replay, 73 test inclusa la verifica end-to-end di partite reali con manomissioni |
+| M1 | **codice fatto** (2026-09-24): `@magic8/steem` (chiavi, verifica firme Keychain con vettori `steem-js`, client RPC con failover), server con piattaforma HTTP sicura e modulo identity, schermata di login nel client. Utenti e sessioni in memoria fino a M2. **Da fare a mano:** login reale da browser con l'estensione Keychain (vedi nota sotto). |
+| M2 | **server fatto** (2026-09-24): PostgreSQL (pg in produzione, PGlite in sviluppo e nei test) con migrazioni e UnitOfWork; identity e audit persistenti; contenuti validati dal motore e identificati per hash (`/api/content`); `InventoryService` (serial per stampa, storia append-only, omaggi idempotenti); `DeckService` (possesso, bozze, giocabilità, `If-Match`); starter a scelta fra tre. **In corso:** client (scelta dello starter, collezione, mazzi online). |
+| M3–M7 | da fare |
+
+**Nota M1 — verifica manuale con Keychain.** La CSP delle pagine consente script solo da `'self'` e per hash. Chrome e Firefox esentano gli script iniettati dalle estensioni dalla CSP della pagina, quindi `window.steem_keychain` dovrebbe comparire normalmente; va comunque confermato con l'estensione vera (`npm start`, apri http://127.0.0.1:8080/, *Sign in with Keychain*).
+
+## Decisioni prese (2026-09-24)
+
+1. **Nome e account on-chain: `luciojolly`** (provvisorio). L'account esiste (creato 2023-11-04). È l'account **root** (firma il manifest dei broadcaster con la chiave active, via Keychain) e l'account **shop** (riceve i `transfer`). Le sue chiavi non vanno mai sul server: i rimborsi li firma l'operatore con Keychain. È anche la prima riga del messaggio di login (`M8_APP_NAME`).
+   - Gli id `custom_json` restano `m8tcg_game`, `m8tcg_receipt`, `m8tcg_manifest`: nominano il **protocollo**, non il marchio. Cambiarli dopo il lancio spezzerebbe la storia on-chain in due; così un eventuale cambio di nome non tocca i dati già pubblicati.
+   - **Da fare prima di M5:** un account broadcaster separato (es. `luciojolly.b1`), autorizzato dal manifest, con **solo** la chiave posting sul server. Se il server fosse compromesso, l'attaccante potrebbe al massimo pubblicare `custom_json` a nome di quell'account, mai muovere fondi né parlare a nome di `luciojolly`.
+2. **Solo STEEM.** SBD non è accettato: un transfer in SBD all'account shop non paga nessun ordine e finisce nella coda rimborsi.
+3. **Starter deck gratuito: il giocatore ne sceglie uno fra tre** (`data/economy/starter-offer.json`). La scelta è stata misurata con `npm run simulate`, IA contro IA, 1000 partite per ogni scontro diretto con i posti alternati:
+
+   | | Iron Foundry | Grave Harvest | Verdant Grove |
+   |---|---|---|---|
+   | **Iron Foundry** (iron) | — | 45,3% | 52,7% |
+   | **Grave Harvest** (shadow) | 54,7% | — | 50,9% |
+   | **Verdant Grove** (verdant) | 47,3% | 49,1% | — |
+
+   È la terna di tre fazioni diverse con lo scarto massimo più basso (±4,7 punti) fra le dieci precostruite. Lo scarto è non transitivo (Harvest > Foundry > Verdant ≈ Harvest), quindi nessuno dei tre è la scelta ovvia. Il test è fatto con l'IA di base, non con giocatori umani: va rimisurato con dati reali dopo il lancio.
+4. **Parere legale** sui pacchetti casuali: resta da fare prima di M3 in produzione.
+5. **Nodi STEEM:** primario `https://api.moecki.online`, poi `api.justyy.com`, `api.steemit.com`, `api.steemitdev.com` in failover (`M8_STEEM_NODES`). Per le decisioni di pagamento (M3) la conferma va letta da **due nodi diversi**: se il primario dà una risposta falsa o vecchia, il secondo non concorda e l'ordine resta in attesa.
+6. **PostgreSQL:** in sviluppo e nei test gira **PGlite** (PostgreSQL compilato in WebAssembly, dentro il processo Node, dati in una cartella locale): niente da installare. In produzione il server si collega a un PostgreSQL vero con `M8_DATABASE_URL`. La scelta fra servizio gestito (Neon, Supabase, AWS RDS… con backup e aggiornamenti inclusi) e installazione propria su una VPS si fa al momento del deploy (M6) e non cambia il codice.
+
+## Problemi aperti emersi
+
+- **Vantaggio del primo giocatore: 67–70%** nelle simulazioni IA contro IA (9000 partite). In multiplayer il primo posto è sorteggiato con il commit-reveal, quindi la partita resta equa in media, ma ogni singola partita è sbilanciata. Proposta da valutare sul motore prima di M4: il secondo giocatore pesca una carta in più o riceve una risorsa temporanea al primo turno, poi si rimisura con `npm run simulate`.

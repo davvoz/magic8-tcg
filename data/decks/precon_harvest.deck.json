@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "precon_harvest",
+  "name": "Grave Harvest",
+  "faction": "shadow",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "restless_ghoul", "count": 3 },
+    { "cardId": "grave_rat", "count": 3 },
+    { "cardId": "bone_acolyte", "count": 2 },
+    { "cardId": "plague_bearer", "count": 3 },
+    { "cardId": "plains_scout", "count": 2 },
+    { "cardId": "wandering_sellsword", "count": 2 },
+    { "cardId": "stone_guardian", "count": 2 },
+    { "cardId": "bone_colossus", "count": 3 },
+    { "cardId": "gravelord", "count": 2 },
+    { "cardId": "giant_of_the_hills", "count": 1 },
+    { "cardId": "dark_bargain", "count": 3 },
+    { "cardId": "blood_tithe", "count": 2 },
+    { "cardId": "quick_strike", "count": 2 }
+  ]
+}

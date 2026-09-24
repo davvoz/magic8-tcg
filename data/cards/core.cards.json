@@ -1,0 +1,1616 @@
+{
+  "schemaVersion": 1,
+  "cards": [
+    {
+      "id": "ember_imp",
+      "name": "Ember Imp",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 1,
+      "attack": 2,
+      "health": 1,
+      "text": "A spark with teeth."
+    },
+    {
+      "id": "cinder_hound",
+      "name": "Cinder Hound",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 2,
+      "attack": 3,
+      "health": 1,
+      "text": "Fast, hungry, and unconcerned with defence."
+    },
+    {
+      "id": "flame_scout",
+      "name": "Flame Scout",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 2,
+      "attack": 2,
+      "health": 2,
+      "keywords": [
+        "haste"
+      ],
+      "text": "Haste."
+    },
+    {
+      "id": "ash_raider",
+      "name": "Ash Raider",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 3,
+      "attack": 3,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "deal_damage",
+          "params": {
+            "amount": 1
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "any",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Ash Raider enters the battlefield, deal 1 damage to any target."
+    },
+    {
+      "id": "ember_shaman",
+      "name": "Ember Shaman",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 3,
+      "attack": 2,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "heal",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Ember Shaman enters the battlefield, heal 2 on a friendly creature or yourself."
+    },
+    {
+      "id": "magma_hurler",
+      "name": "Magma Hurler",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 4,
+      "attack": 3,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "deal_damage",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Magma Hurler enters the battlefield, deal 2 damage to an enemy creature."
+    },
+    {
+      "id": "lava_brute",
+      "name": "Lava Brute",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 4,
+      "attack": 4,
+      "health": 3,
+      "text": "It does not stop. It cools."
+    },
+    {
+      "id": "pyre_drake",
+      "name": "Pyre Drake",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 5,
+      "attack": 5,
+      "health": 4,
+      "abilities": [
+        {
+          "trigger": "on_death",
+          "effect": "deal_damage",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Pyre Drake dies, deal 2 damage to the opposing player."
+    },
+    {
+      "id": "blazing_titan",
+      "name": "Blazing Titan",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 6,
+      "attack": 6,
+      "health": 5,
+      "text": "The mountain walks."
+    },
+    {
+      "id": "ember_bolt",
+      "name": "Ember Bolt",
+      "type": "spell",
+      "faction": "ember",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "deal_damage",
+          "params": {
+            "amount": 3
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "any",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Deal 3 damage to any target."
+    },
+    {
+      "id": "fire_surge",
+      "name": "Fire Surge",
+      "type": "spell",
+      "faction": "ember",
+      "cost": 1,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": 2,
+            "health": 0,
+            "duration": "end_of_turn"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "A friendly creature gets +2/+0 until end of turn."
+    },
+    {
+      "id": "scrap_golem",
+      "name": "Scrap Golem",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 1,
+      "attack": 1,
+      "health": 2,
+      "text": "Assembled from whatever was left."
+    },
+    {
+      "id": "steel_sentinel",
+      "name": "Steel Sentinel",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 2,
+      "attack": 1,
+      "health": 4,
+      "text": "It holds the line because it was built to."
+    },
+    {
+      "id": "gear_smith",
+      "name": "Gear Smith",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 2,
+      "attack": 2,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "on_death",
+          "effect": "draw_card",
+          "params": {
+            "amount": 1
+          }
+        }
+      ],
+      "text": "When Gear Smith dies, draw a card."
+    },
+    {
+      "id": "iron_watcher",
+      "name": "Iron Watcher",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 3,
+      "attack": 2,
+      "health": 4,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "draw_card",
+          "params": {
+            "amount": 1
+          }
+        }
+      ],
+      "text": "When Iron Watcher enters the battlefield, draw a card."
+    },
+    {
+      "id": "bulwark_engine",
+      "name": "Bulwark Engine",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 3,
+      "attack": 0,
+      "health": 7,
+      "text": "It cannot strike, but nothing gets past it."
+    },
+    {
+      "id": "clockwork_knight",
+      "name": "Clockwork Knight",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 4,
+      "attack": 4,
+      "health": 4,
+      "text": "Wound, released, relentless."
+    },
+    {
+      "id": "forge_warden",
+      "name": "Forge Warden",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 5,
+      "attack": 4,
+      "health": 6,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "modify_stats",
+          "params": {
+            "attack": 1,
+            "health": 1,
+            "duration": "permanent"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Forge Warden enters the battlefield, another friendly creature gets +1/+1."
+    },
+    {
+      "id": "iron_colossus",
+      "name": "Iron Colossus",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 6,
+      "attack": 5,
+      "health": 7,
+      "text": "The forge's final answer."
+    },
+    {
+      "id": "salvage",
+      "name": "Salvage",
+      "type": "spell",
+      "faction": "iron",
+      "cost": 1,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "draw_card",
+          "params": {
+            "amount": 2
+          }
+        }
+      ],
+      "text": "Draw two cards."
+    },
+    {
+      "id": "reinforce",
+      "name": "Reinforce",
+      "type": "spell",
+      "faction": "iron",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": 2,
+            "health": 2,
+            "duration": "permanent"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "A friendly creature gets +2/+2."
+    },
+    {
+      "id": "repair_drones",
+      "name": "Repair Drones",
+      "type": "spell",
+      "faction": "iron",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "heal",
+          "params": {
+            "amount": 4
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Heal 4 on a friendly creature or yourself."
+    },
+    {
+      "id": "plains_scout",
+      "name": "Plains Scout",
+      "type": "creature",
+      "faction": "neutral",
+      "cost": 2,
+      "attack": 1,
+      "health": 1,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "draw_card",
+          "params": {
+            "amount": 1
+          }
+        }
+      ],
+      "text": "When Plains Scout enters the battlefield, draw a card."
+    },
+    {
+      "id": "wandering_sellsword",
+      "name": "Wandering Sellsword",
+      "type": "creature",
+      "faction": "neutral",
+      "cost": 3,
+      "attack": 3,
+      "health": 3,
+      "text": "Loyal to whoever paid last."
+    },
+    {
+      "id": "stone_guardian",
+      "name": "Stone Guardian",
+      "type": "creature",
+      "faction": "neutral",
+      "cost": 4,
+      "attack": 3,
+      "health": 5,
+      "text": "Older than the road it guards."
+    },
+    {
+      "id": "giant_of_the_hills",
+      "name": "Giant of the Hills",
+      "type": "creature",
+      "faction": "neutral",
+      "cost": 7,
+      "attack": 7,
+      "health": 7,
+      "text": "Slow to anger. Slower to stop."
+    },
+    {
+      "id": "quick_strike",
+      "name": "Quick Strike",
+      "type": "spell",
+      "faction": "neutral",
+      "cost": 1,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "deal_damage",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "any",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Deal 2 damage to a creature."
+    },
+    {
+      "id": "mending_herbs",
+      "name": "Mending Herbs",
+      "type": "spell",
+      "faction": "neutral",
+      "cost": 1,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "heal",
+          "params": {
+            "amount": 3
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "any",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Heal 3 on any target."
+    },
+    {
+      "id": "kindling_sprite",
+      "name": "Kindling Sprite",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 1,
+      "attack": 1,
+      "health": 1,
+      "keywords": [
+        "haste"
+      ],
+      "text": "Haste."
+    },
+    {
+      "id": "ember_zealot",
+      "name": "Ember Zealot",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 2,
+      "attack": 3,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "on_death",
+          "effect": "deal_damage",
+          "params": {
+            "amount": 1
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Ember Zealot dies, deal 1 damage to the opposing player."
+    },
+    {
+      "id": "searing_lash",
+      "name": "Searing Lash",
+      "type": "spell",
+      "faction": "ember",
+      "cost": 3,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "deal_damage",
+          "params": {
+            "amount": 4
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Deal 4 damage to an enemy creature."
+    },
+    {
+      "id": "volcanic_wyrm",
+      "name": "Volcanic Wyrm",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 7,
+      "attack": 7,
+      "health": 6,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "deal_damage",
+          "params": {
+            "amount": 3
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "any",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Volcanic Wyrm enters the battlefield, deal 3 damage to any target."
+    },
+    {
+      "id": "rivet_hound",
+      "name": "Rivet Hound",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 2,
+      "attack": 2,
+      "health": 3,
+      "text": "Bolted together, and it shows."
+    },
+    {
+      "id": "sentry_turret",
+      "name": "Sentry Turret",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 4,
+      "attack": 2,
+      "health": 6,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "heal",
+          "params": {
+            "amount": 3
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Sentry Turret enters the battlefield, heal 3 on a friendly creature or yourself."
+    },
+    {
+      "id": "master_artificer",
+      "name": "Master Artificer",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 5,
+      "attack": 3,
+      "health": 5,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "draw_card",
+          "params": {
+            "amount": 2
+          }
+        }
+      ],
+      "text": "When Master Artificer enters the battlefield, draw two cards."
+    },
+    {
+      "id": "overclock",
+      "name": "Overclock",
+      "type": "spell",
+      "faction": "iron",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": 3,
+            "health": 3,
+            "duration": "end_of_turn"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "A friendly creature gets +3/+3 until end of turn."
+    },
+    {
+      "id": "caravan_guard",
+      "name": "Caravan Guard",
+      "type": "creature",
+      "faction": "neutral",
+      "cost": 3,
+      "attack": 2,
+      "health": 4,
+      "text": "Paid by the mile."
+    },
+    {
+      "id": "traveling_merchant",
+      "name": "Traveling Merchant",
+      "type": "creature",
+      "faction": "neutral",
+      "cost": 4,
+      "attack": 2,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "draw_card",
+          "params": {
+            "amount": 1
+          }
+        }
+      ],
+      "text": "When Traveling Merchant enters the battlefield, draw a card."
+    },
+    {
+      "id": "restless_ghoul",
+      "name": "Restless Ghoul",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 1,
+      "attack": 2,
+      "health": 1,
+      "abilities": [
+        {
+          "trigger": "on_death",
+          "effect": "drain",
+          "params": {
+            "amount": 1
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it dies, drain 1 life from the opponent."
+    },
+    {
+      "id": "grave_rat",
+      "name": "Grave Rat",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 1,
+      "attack": 1,
+      "health": 1,
+      "abilities": [
+        {
+          "trigger": "on_death",
+          "effect": "draw_card",
+          "params": {
+            "amount": 1
+          }
+        }
+      ],
+      "text": "When it dies, draw a card."
+    },
+    {
+      "id": "bone_acolyte",
+      "name": "Bone Acolyte",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 2,
+      "attack": 2,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "discard",
+          "params": {
+            "amount": 1
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, the opponent discards a random card."
+    },
+    {
+      "id": "crypt_stalker",
+      "name": "Crypt Stalker",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 3,
+      "attack": 3,
+      "health": 2,
+      "keywords": [
+        "haste"
+      ],
+      "text": "Haste. Nothing in the crypt sleeps for long."
+    },
+    {
+      "id": "plague_bearer",
+      "name": "Plague Bearer",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 3,
+      "attack": 2,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_death",
+          "effect": "discard",
+          "params": {
+            "amount": 1
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it dies, the opponent discards a random card."
+    },
+    {
+      "id": "soul_leech",
+      "name": "Soul Leech",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 4,
+      "attack": 2,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "drain",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, drain 2 life from an enemy creature or the opponent."
+    },
+    {
+      "id": "bone_colossus",
+      "name": "Bone Colossus",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 5,
+      "attack": 5,
+      "health": 5,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "sacrifice",
+          "mandatory": true,
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Tribute: when it enters, sacrifice another friendly creature."
+    },
+    {
+      "id": "lich_acolyte",
+      "name": "Lich Acolyte",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 4,
+      "attack": 2,
+      "health": 4,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "discard",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, the opponent discards two random cards."
+    },
+    {
+      "id": "dread_wraith",
+      "name": "Dread Wraith",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 6,
+      "attack": 4,
+      "health": 4,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "drain",
+          "params": {
+            "amount": 3
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, drain 3 life from the opponent."
+    },
+    {
+      "id": "gravelord",
+      "name": "Gravelord",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 7,
+      "attack": 6,
+      "health": 6,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "drain",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        },
+        {
+          "trigger": "on_death",
+          "effect": "drain",
+          "params": {
+            "amount": 3
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, drain 2 life from the opponent. When it dies, drain 3 more."
+    },
+    {
+      "id": "mind_rot",
+      "name": "Mind Rot",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "discard",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "The opponent discards two random cards."
+    },
+    {
+      "id": "soul_drain",
+      "name": "Soul Drain",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 3,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "drain",
+          "params": {
+            "amount": 3
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Drain 3 life from an enemy creature or the opponent."
+    },
+    {
+      "id": "dark_bargain",
+      "name": "Dark Bargain",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 1,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "sacrifice",
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        },
+        {
+          "trigger": "on_cast",
+          "effect": "draw_card",
+          "params": {
+            "amount": 2
+          }
+        }
+      ],
+      "text": "Sacrifice a friendly creature. Draw two cards."
+    },
+    {
+      "id": "blood_tithe",
+      "name": "Blood Tithe",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "drain",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Drain 2 life from the opponent."
+    },
+    {
+      "id": "withering_curse",
+      "name": "Withering Curse",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 3,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": -3,
+            "health": -3,
+            "duration": "end_of_turn"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "An enemy creature gets -3/-3 until end of turn."
+    },
+    {
+      "id": "moss_beetle",
+      "name": "Moss Beetle",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 1,
+      "attack": 1,
+      "health": 2,
+      "text": "It eats the stone, slowly."
+    },
+    {
+      "id": "grove_sprite",
+      "name": "Grove Sprite",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 2,
+      "attack": 2,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "modify_stats",
+          "params": {
+            "attack": 1,
+            "health": 1,
+            "duration": "permanent"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Grove Sprite enters the battlefield, another friendly creature gets +1/+1."
+    },
+    {
+      "id": "root_tender",
+      "name": "Root Tender",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 2,
+      "attack": 1,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "heal",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Root Tender enters the battlefield, heal 2 on a friendly creature or yourself."
+    },
+    {
+      "id": "thornback_bear",
+      "name": "Thornback Bear",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 3,
+      "attack": 3,
+      "health": 4,
+      "text": "Every hunter who found it wishes they had not."
+    },
+    {
+      "id": "spore_cap",
+      "name": "Spore Cap",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 3,
+      "attack": 2,
+      "health": 4,
+      "abilities": [
+        {
+          "trigger": "on_death",
+          "effect": "draw_card",
+          "params": {
+            "amount": 1
+          }
+        }
+      ],
+      "text": "When Spore Cap dies, draw a card."
+    },
+    {
+      "id": "stampeding_boar",
+      "name": "Stampeding Boar",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 4,
+      "attack": 3,
+      "health": 3,
+      "keywords": [
+        "haste"
+      ],
+      "text": "Haste. It charges before the dust has settled."
+    },
+    {
+      "id": "ironbark_guardian",
+      "name": "Ironbark Guardian",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 4,
+      "attack": 2,
+      "health": 6,
+      "text": "Bark like plate, roots like anchors."
+    },
+    {
+      "id": "elder_treant",
+      "name": "Elder Treant",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 5,
+      "attack": 3,
+      "health": 7,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "modify_stats",
+          "params": {
+            "attack": 2,
+            "health": 2,
+            "duration": "permanent"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Elder Treant enters the battlefield, another friendly creature gets +2/+2."
+    },
+    {
+      "id": "great_elk",
+      "name": "Great Elk of the Glade",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 6,
+      "attack": 5,
+      "health": 5,
+      "keywords": [
+        "haste"
+      ],
+      "text": "Haste. The forest moves when it does."
+    },
+    {
+      "id": "worldroot_colossus",
+      "name": "Worldroot Colossus",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 7,
+      "attack": 6,
+      "health": 8,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "heal",
+          "params": {
+            "amount": 4
+          },
+          "target": {
+            "kind": "creature_or_player",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When Worldroot Colossus enters the battlefield, heal 4 on a friendly creature or yourself."
+    },
+    {
+      "id": "wild_growth",
+      "name": "Wild Growth",
+      "type": "spell",
+      "faction": "verdant",
+      "cost": 1,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": 1,
+            "health": 2,
+            "duration": "permanent"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "A friendly creature gets +1/+2."
+    },
+    {
+      "id": "entangle",
+      "name": "Entangle",
+      "type": "spell",
+      "faction": "verdant",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": -3,
+            "health": 0,
+            "duration": "permanent"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "An enemy creature gets -3/-0."
+    },
+    {
+      "id": "overgrowth",
+      "name": "Overgrowth",
+      "type": "spell",
+      "faction": "verdant",
+      "cost": 3,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": 3,
+            "health": 3,
+            "duration": "permanent"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "A friendly creature gets +3/+3."
+    },
+    {
+      "id": "poison_bloom",
+      "name": "Poison Bloom",
+      "type": "spell",
+      "faction": "verdant",
+      "cost": 3,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": -2,
+            "health": -2,
+            "duration": "permanent"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "An enemy creature gets -2/-2."
+    },
+    {
+      "id": "harvest",
+      "name": "Harvest",
+      "type": "spell",
+      "faction": "verdant",
+      "cost": 3,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "draw_card",
+          "params": {
+            "amount": 2
+          }
+        },
+        {
+          "trigger": "on_cast",
+          "effect": "heal",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "player",
+            "owner": "ally",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Draw two cards and heal 2 on yourself."
+    },
+    {
+      "id": "arcane_apprentice",
+      "name": "Arcane Apprentice",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 1,
+      "attack": 1,
+      "health": 2,
+      "text": "Every archmage once swept the tower stairs."
+    },
+    {
+      "id": "phase_wisp",
+      "name": "Phase Wisp",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 2,
+      "attack": 2,
+      "health": 1,
+      "keywords": [
+        "haste"
+      ],
+      "text": "Haste. It is already where it is going."
+    },
+    {
+      "id": "rune_scribe",
+      "name": "Rune Scribe",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 2,
+      "attack": 1,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "mill",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, the top two cards of the opponent's library go to their graveyard."
+    },
+    {
+      "id": "spellbinder",
+      "name": "Spellbinder",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 3,
+      "attack": 1,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "return_to_hand",
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, return an enemy creature to its owner's hand."
+    },
+    {
+      "id": "mind_sifter",
+      "name": "Mind Sifter",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 3,
+      "attack": 1,
+      "health": 5,
+      "abilities": [
+        {
+          "trigger": "on_turn_start",
+          "effect": "mill",
+          "params": {
+            "amount": 1
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "At the start of your turn, the opponent's top library card goes to their graveyard."
+    },
+    {
+      "id": "astral_owl",
+      "name": "Astral Owl",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 4,
+      "attack": 3,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "draw_card",
+          "params": {
+            "amount": 1
+          }
+        }
+      ],
+      "text": "When Astral Owl enters the battlefield, draw a card."
+    },
+    {
+      "id": "banishing_mage",
+      "name": "Banishing Mage",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 5,
+      "attack": 3,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "return_to_hand",
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, return an enemy creature to its owner's hand."
+    },
+    {
+      "id": "storm_djinn",
+      "name": "Storm Djinn",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 5,
+      "attack": 4,
+      "health": 4,
+      "keywords": [
+        "haste"
+      ],
+      "text": "Haste. It arrives with the thunder."
+    },
+    {
+      "id": "void_conjurer",
+      "name": "Void Conjurer",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 6,
+      "attack": 2,
+      "health": 3,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "destroy",
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "When it enters, destroy an enemy creature."
+    },
+    {
+      "id": "archmage_of_the_spire",
+      "name": "Archmage of the Spire",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 7,
+      "attack": 5,
+      "health": 5,
+      "abilities": [
+        {
+          "trigger": "on_play",
+          "effect": "return_to_hand",
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        },
+        {
+          "trigger": "on_play",
+          "effect": "draw_card",
+          "params": {
+            "amount": 1
+          }
+        }
+      ],
+      "text": "When it enters, return an enemy creature to its owner's hand and draw a card."
+    },
+    {
+      "id": "unsummon",
+      "name": "Unsummon",
+      "type": "spell",
+      "faction": "arcane",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "return_to_hand",
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Return an enemy creature to its owner's hand."
+    },
+    {
+      "id": "arcane_insight",
+      "name": "Arcane Insight",
+      "type": "spell",
+      "faction": "arcane",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "draw_card",
+          "params": {
+            "amount": 2
+          }
+        },
+        {
+          "trigger": "on_cast",
+          "effect": "mill",
+          "params": {
+            "amount": 2
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Draw two cards. The top two cards of the opponent's library go to their graveyard."
+    },
+    {
+      "id": "mind_drain",
+      "name": "Mind Drain",
+      "type": "spell",
+      "faction": "arcane",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "mill",
+          "params": {
+            "amount": 4
+          },
+          "target": {
+            "kind": "player",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "The top four cards of the opponent's library go to their graveyard."
+    },
+    {
+      "id": "frost_bind",
+      "name": "Frost Bind",
+      "type": "spell",
+      "faction": "arcane",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "modify_stats",
+          "params": {
+            "attack": -2,
+            "health": -2,
+            "duration": "end_of_turn"
+          },
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "An enemy creature gets -2/-2 until end of turn."
+    },
+    {
+      "id": "disintegrate",
+      "name": "Disintegrate",
+      "type": "spell",
+      "faction": "arcane",
+      "cost": 5,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "destroy",
+          "target": {
+            "kind": "creature",
+            "owner": "enemy",
+            "count": 1
+          }
+        }
+      ],
+      "text": "Destroy an enemy creature."
+    }
+  ]
+}

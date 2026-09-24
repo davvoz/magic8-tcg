@@ -1,0 +1,30 @@
+{
+  "name": "magic8-tcg",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multiplayer collectible card game: authoritative server, STEEM identity and payments, game history anchored on-chain",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/engine",
+    "packages/protocol",
+    "packages/steem",
+    "packages/server",
+    "packages/client"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "lint": "eslint packages tools",
+    "check": "npm run lint && npm test",
+    "serve": "node tools/dev-server.js",
+    "start": "npm start -w @magic8/server",
+    "simulate": "npm run simulate -w @magic8/client --"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0"
+  }
+}

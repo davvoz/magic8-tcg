@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "edition": "core-1",
+  "finish": "standard",
+  "choices": ["precon_foundry", "precon_harvest", "precon_verdant"]
+}
