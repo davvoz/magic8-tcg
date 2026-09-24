@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "deck_arcane_conclave",
+  "kind": "deck",
+  "name": "Arcane Conclave",
+  "description": "The complete preconstructed arcane deck, saved to your account ready to play.",
+  "prices": [
+    {
+      "asset": "STEEM",
+      "amount": "6.000"
+    }
+  ],
+  "contents": [
+    {
+      "type": "deck",
+      "ref": "precon_arcane",
+      "count": 1
+    }
+  ],
+  "limits": {
+    "perOrder": 3
+  },
+  "active": true
+}

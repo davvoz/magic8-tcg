@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "core_booster",
+  "edition": "core-1",
+  "slots": [
+    {
+      "count": 3,
+      "weights": {
+        "common": 1
+      }
+    },
+    {
+      "count": 1,
+      "weights": {
+        "uncommon": 1
+      }
+    },
+    {
+      "count": 1,
+      "weights": {
+        "rare": 88,
+        "epic": 10,
+        "legendary": 2
+      }
+    }
+  ],
+  "foil": {
+    "numerator": 1,
+    "denominator": 20
+  }
+}

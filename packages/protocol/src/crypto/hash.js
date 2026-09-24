@@ -26,6 +26,8 @@ export const HashTag = Object.freeze({
   CONTENT: "content",
   DECK_SALT: "deck-salt",
   DECK: "deck",
+  DROP_TABLE: "drop-table",
+  PACK_EPOCH: "pack-epoch",
 });
 
 /**

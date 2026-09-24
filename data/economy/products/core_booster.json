@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "core_booster",
+  "kind": "booster",
+  "name": "Core Booster",
+  "description": "5 cards: 3 common, 1 uncommon and 1 rare or better. 1 card in 20 is foil.",
+  "prices": [
+    {
+      "asset": "STEEM",
+      "amount": "1.000"
+    }
+  ],
+  "contents": [
+    {
+      "type": "pack",
+      "ref": "core_booster",
+      "count": 1
+    }
+  ],
+  "limits": {
+    "perOrder": 20
+  },
+  "active": true
+}
