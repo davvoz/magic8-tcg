@@ -28,8 +28,10 @@ const INLINE_BLOCK = /<(script|style)\b[^>]*>([\s\S]*?)<\/\1>/g;
 /**
  * The page CSP for an HTML document: inline <script> (with content) and <style> blocks are allowed by hash only.
  * @param {string} html
+ * @param {readonly string[]} [connectSources] origins the page may also connect to (the game's WebSocket origin:
+ *   not every browser counts ws:/wss: as 'self')
  */
-export function pageCsp(html) {
+export function pageCsp(html, connectSources = []) {
   const hashes = { script: [], style: [] };
   for (const [, tag, content] of html.matchAll(INLINE_BLOCK)) {
     if (content.trim().length > 0) {
@@ -41,7 +43,7 @@ export function pageCsp(html) {
     `script-src 'self' ${hashes.script.join(" ")}`.trim(),
     `style-src 'self' ${hashes.style.join(" ")}`.trim(),
     "img-src 'self' data:",
-    "connect-src 'self'",
+    `connect-src 'self' ${connectSources.join(" ")}`.trim(),
     "font-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",
@@ -52,10 +54,15 @@ export function pageCsp(html) {
 
 export class StaticFiles {
   #mounts;
+  #connectSources;
 
-  /** @param {readonly Mount[]} mounts first matching prefix wins; prefixes end with "/" */
-  constructor(mounts) {
+  /**
+   * @param {readonly Mount[]} mounts first matching prefix wins; prefixes end with "/"
+   * @param {{ connectSources?: readonly string[] }} [options]
+   */
+  constructor(mounts, { connectSources = [] } = {}) {
     this.#mounts = Object.freeze(mounts.map((mount) => Object.freeze({ ...mount })));
+    this.#connectSources = Object.freeze([...connectSources]);
   }
 
   /**
@@ -82,7 +89,7 @@ export class StaticFiles {
     const content = await readFile(path);
     const headers = { "Content-Type": type, "Content-Length": content.length, "Cache-Control": "no-cache" };
     if (type.startsWith("text/html")) {
-      headers["Content-Security-Policy"] = pageCsp(content.toString("utf8"));
+      headers["Content-Security-Policy"] = pageCsp(content.toString("utf8"), this.#connectSources);
     }
     response.writeHead(200, headers);
     response.end(request.method === "HEAD" ? undefined : content);

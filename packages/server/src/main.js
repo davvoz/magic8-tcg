@@ -49,7 +49,7 @@ async function main() {
         { prefix: "/data/", directory: join(REPOSITORY_ROOT, "data") },
         { prefix: "/engine/", directory: join(REPOSITORY_ROOT, "packages", "engine", "src") },
         { prefix: "/", directory: join(REPOSITORY_ROOT, "packages", "client") },
-      ])
+      ], { connectSources: [config.publicOrigin.replace(/^http/, "ws")] })
     : null;
   const app = await createServerApp({
     config,

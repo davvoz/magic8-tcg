@@ -11,6 +11,7 @@ import { AccountService } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
 import { AccountDeckRepository } from "./application/decks/AccountDeckRepository.js";
+import { OnlineService } from "./application/online/OnlineService.js";
 import { ShopService } from "./application/shop/ShopService.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
@@ -20,6 +21,7 @@ import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/register
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
+import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
 import { ConsoleLogger } from "./infrastructure/logging/ConsoleLogger.js";
@@ -194,10 +196,24 @@ async function boot() {
   const account = new AccountService({ identity, collection, decks: accountDecks, deckBuilding, logger });
   account.start();
   const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID() });
-  // A purchase belongs to the account that started it.
+  const timers = { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (handle) => globalThis.clearTimeout(handle) };
+  const online = new OnlineService({
+    connection: new WebSocketConnection({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`, createSocket: (url) => new WebSocket(url), timers }),
+    randomHex: (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    newCommandId: () => crypto.randomUUID(),
+    // The account's decks as the server judged them (ownership included).
+    accountDecks: () =>
+      accountDecks.list().value.flatMap((deck) => {
+        const ref = accountDecks.describe(deck.id);
+        return ref === undefined ? [] : [{ id: ref.serverId, name: deck.name, faction: deck.faction, totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
+      }),
+    logger,
+  });
+  // A purchase and a connection belong to the account that started them.
   account.subscribe((state) => {
     if (state.account === null) {
       shop.dismiss();
+      online.stop();
     }
   });
 
@@ -213,6 +229,7 @@ async function boot() {
     identity,
     account,
     shop,
+    online,
   });
 
   const { sceneManager } = buildPresentation(theme.value);

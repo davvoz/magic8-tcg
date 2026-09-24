@@ -15,14 +15,14 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const BUTTON_WIDTH = 360;
-const BUTTON_HEIGHT = 52;
-const BUTTON_GAP = 12;
+const BUTTON_HEIGHT = 48;
+const BUTTON_GAP = 10;
 const HERO = Object.freeze({ y: 20, height: 280 });
 const TITLE = Object.freeze({ y: 150, height: 110 });
 const SUBTITLE_Y = 268;
 const ORNAMENT_Y = 314;
 const BUTTONS_Y = 360;
-const SUMMARY = Object.freeze({ y: 690, lineHeight: 28, width: 900 });
+const SUMMARY = Object.freeze({ y: 718, lineHeight: 28, width: 900 });
 
 export class MainMenuScene extends Scene {
   #app;
@@ -63,7 +63,8 @@ export class MainMenuScene extends Scene {
     this.root.add(new Ornament({ x: centerX - 220, y: ORNAMENT_Y, width: 440, height: 16 }));
 
     const entries = [
-      { id: "play", text: "Play", scene: SceneId.DECK_SELECTION, variant: "primary" },
+      ...this.#onlineEntries(),
+      { id: "play", text: this.#onlineEntries().length > 0 ? "Practice vs AI" : "Play", scene: SceneId.DECK_SELECTION, variant: this.#onlineEntries().length > 0 ? "secondary" : "primary" },
       { id: "deckBuilder", text: "Deck Builder", scene: SceneId.DECK_BUILDER, variant: "secondary" },
       ...this.#collectionEntries(),
       ...(this.#app.shop === undefined ? [] : [{ id: "shop", text: "Shop", scene: SceneId.SHOP, variant: "secondary" }]),
@@ -108,6 +109,12 @@ export class MainMenuScene extends Scene {
     const { theme, viewport } = this.services;
     drawSceneBackdrop(context, theme, viewport.bounds, { seed: "menu" });
     super.render(context);
+  }
+
+  /** Online play, once signed in and the account is loaded. */
+  #onlineEntries() {
+    const ready = this.#app.online !== undefined && this.#app.account?.state.status === AccountStatus.READY;
+    return ready ? [{ id: "online", text: "Play online", scene: SceneId.ONLINE, variant: "primary" }] : [];
   }
 
   /** The free starter deck until it is taken, the collection afterwards. */

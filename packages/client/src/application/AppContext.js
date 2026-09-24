@@ -13,6 +13,7 @@
  * @property {import("./identity/IdentityService.js").IdentityService} [identity] absent when the client runs without a game server (tools, previews)
  * @property {import("./account/AccountService.js").AccountService} [account] the signed-in player's collection and decks; absent with `identity`
  * @property {import("./shop/ShopService.js").ShopService} [shop] the marketplace; absent with `identity`
+ * @property {import("./online/OnlineService.js").OnlineService} [online] online games; absent with `identity`
  */
 
 export const APP_CONTEXT_KEYS = Object.freeze(["content", "deckSelection", "deckBuilding", "matchSetup", "createSeed", "logger", "environment"]);
