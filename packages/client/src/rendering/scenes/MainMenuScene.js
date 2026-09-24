@@ -15,14 +15,14 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const BUTTON_WIDTH = 360;
-const BUTTON_HEIGHT = 56;
-const BUTTON_GAP = 14;
+const BUTTON_HEIGHT = 52;
+const BUTTON_GAP = 12;
 const HERO = Object.freeze({ y: 20, height: 280 });
 const TITLE = Object.freeze({ y: 150, height: 110 });
 const SUBTITLE_Y = 268;
 const ORNAMENT_Y = 314;
-const BUTTONS_Y = 370;
-const SUMMARY = Object.freeze({ y: 660, lineHeight: 30, width: 900 });
+const BUTTONS_Y = 360;
+const SUMMARY = Object.freeze({ y: 690, lineHeight: 28, width: 900 });
 
 export class MainMenuScene extends Scene {
   #app;
@@ -66,6 +66,7 @@ export class MainMenuScene extends Scene {
       { id: "play", text: "Play", scene: SceneId.DECK_SELECTION, variant: "primary" },
       { id: "deckBuilder", text: "Deck Builder", scene: SceneId.DECK_BUILDER, variant: "secondary" },
       ...this.#collectionEntries(),
+      ...(this.#app.shop === undefined ? [] : [{ id: "shop", text: "Shop", scene: SceneId.SHOP, variant: "secondary" }]),
       ...this.#accountEntries(),
     ];
     /** @type {Button | null} */

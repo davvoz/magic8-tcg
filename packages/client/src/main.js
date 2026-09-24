@@ -11,6 +11,7 @@ import { AccountService } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
 import { AccountDeckRepository } from "./application/decks/AccountDeckRepository.js";
+import { ShopService } from "./application/shop/ShopService.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
 import { IdentityService } from "./application/identity/IdentityService.js";
@@ -18,6 +19,7 @@ import { MatchSetupService } from "./application/match/MatchSetupService.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
+import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
 import { ConsoleLogger } from "./infrastructure/logging/ConsoleLogger.js";
@@ -161,13 +163,11 @@ function showFatal(title, message) {
 async function boot() {
   const httpFetch = (url, init) => fetch(url, init);
   const source = new FetchContentSource(CONTENT_MANIFEST, httpFetch);
-  const identity = new IdentityService({
-    api: new HttpAuthApi({ fetch: httpFetch }),
-    wallet: new KeychainWalletConnector({
-      locate: () => globalThis.steem_keychain,
-      timers: { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
-    }),
+  const wallet = new KeychainWalletConnector({
+    locate: () => globalThis.steem_keychain,
+    timers: { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
   });
+  const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet });
   const [rawTheme, content] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), identity.restore()]);
   if (!content.ok) {
     showFatal("Content failed to load", content.error.message);
@@ -193,6 +193,13 @@ async function boot() {
   const deckBuilding = new DeckBuildingService({ content: content.value, repository, ownership: () => collection.ownedCounts() });
   const account = new AccountService({ identity, collection, decks: accountDecks, deckBuilding, logger });
   account.start();
+  const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID() });
+  // A purchase belongs to the account that started it.
+  account.subscribe((state) => {
+    if (state.account === null) {
+      shop.dismiss();
+    }
+  });
 
   /** @type {import("./application/AppContext.js").AppContext} */
   const app = Object.freeze({
@@ -205,6 +212,7 @@ async function boot() {
     environment: Object.freeze({ version: ENGINE_VERSION, storage: storageAvailable ? "local" : "memory" }),
     identity,
     account,
+    shop,
   });
 
   const { sceneManager } = buildPresentation(theme.value);

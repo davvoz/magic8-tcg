@@ -12,6 +12,7 @@ import { LoginScene } from "./LoginScene.js";
 import { MainMenuScene } from "./MainMenuScene.js";
 import { MatchScene } from "./MatchScene.js";
 import { SceneId } from "./sceneIds.js";
+import { ShopScene } from "./ShopScene.js";
 import { StarterScene } from "./StarterScene.js";
 
 /**
@@ -30,5 +31,8 @@ export function registerScenes(sceneManager, app) {
     sceneManager
       .register(SceneId.STARTER, (services) => new StarterScene(services, app))
       .register(SceneId.COLLECTION, (services) => new CollectionScene(services, app));
+  }
+  if (app.shop !== undefined) {
+    sceneManager.register(SceneId.SHOP, (services) => new ShopScene(services, app));
   }
 }

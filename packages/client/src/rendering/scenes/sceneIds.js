@@ -6,6 +6,7 @@ export const SceneId = Object.freeze({
   DECK_BUILDER: "deckBuilder",
   STARTER: "starter",
   COLLECTION: "collection",
+  SHOP: "shop",
   MATCH: "match",
   ERROR: "error",
 });
