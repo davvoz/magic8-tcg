@@ -16,6 +16,8 @@ const browserGlobals = {
   setTimeout: "readonly",
   clearTimeout: "readonly",
   URL: "readonly",
+  WebSocket: "readonly",
+  location: "readonly",
 };
 
 const nodeGlobals = {

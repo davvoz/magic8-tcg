@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "single_pyre_drake_foil",
+  "kind": "single",
+  "name": "Pyre Drake (foil)",
+  "description": "One foil Pyre Drake.",
+  "edition": "core-1",
+  "prices": [
+    {
+      "asset": "STEEM",
+      "amount": "2.500"
+    }
+  ],
+  "contents": [
+    {
+      "type": "card",
+      "ref": "pyre_drake",
+      "count": 1,
+      "finish": "foil"
+    }
+  ],
+  "limits": {
+    "perOrder": 1
+  },
+  "active": true
+}

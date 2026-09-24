@@ -13,6 +13,8 @@
  * @property {(userId: string) => Promise<ReadonlyMap<string, number>>} activeCounts definition → active copies
  * @property {(userId: string, instanceId: string) => Promise<import("../domain/CardInstance.js").CardInstance | null>} findOwned
  * @property {(instanceId: string) => Promise<readonly import("../domain/CardInstance.js").InstanceEvent[]>} history oldest first
+ * @property {(ownerId: string, origins: readonly { kind: string, ref: string }[]) => Promise<readonly import("../domain/CardInstance.js").CardInstance[]>} listByOrigins
+ *   copies minted for those origins (e.g. an order and its packs), by definition then serial
  */
 
-export const INVENTORY_REPOSITORY_METHODS = Object.freeze(["reserveSerials", "insertMinted", "insertGrant", "hasGrant", "listOwned", "activeCounts", "findOwned", "history"]);
+export const INVENTORY_REPOSITORY_METHODS = Object.freeze(["reserveSerials", "insertMinted", "insertGrant", "hasGrant", "listOwned", "activeCounts", "findOwned", "history", "listByOrigins"]);

@@ -98,6 +98,15 @@ export class InventoryService {
     });
   }
 
+  /**
+   * What was minted for these origins (an order, its packs), still owned by `ownerId`.
+   * @param {string} ownerId
+   * @param {readonly { kind: string, ref: string }[]} origins
+   */
+  mintedFor(ownerId, origins) {
+    return origins.length === 0 ? Promise.resolve(Object.freeze([])) : this.#repository.listByOrigins(ownerId, origins);
+  }
+
   /** @param {string} key */
   hasGrant(key) {
     return this.#repository.hasGrant(key);

@@ -43,6 +43,8 @@ const INSPECT = Object.freeze({ width: 440, height: 640, card: Object.freeze({ w
 export class MatchScene extends Scene {
   /** @type {import("../../application/match/MatchSession.js").MatchSession | null} */
   #session = null;
+  /** Where "Play again" leads: deck selection for practice, the lobby for online games. */
+  #againScene = SceneId.DECK_SELECTION;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
   #playerId = "";
@@ -63,8 +65,9 @@ export class MatchScene extends Scene {
     this.#presenter = new MatchPresenter(services.theme.animation);
   }
 
-  /** @param {Readonly<Record<string, unknown>>} params `{ session: MatchSession }` */
+  /** @param {Readonly<Record<string, unknown>>} params `{ session: MatchSession | RemoteMatchSession, againScene?: string }` */
   enter(params) {
+    this.#againScene = typeof params.againScene === "string" ? params.againScene : SceneId.DECK_SELECTION;
     const session = /** @type {import("../../application/match/MatchSession.js").MatchSession | undefined} */ (params.session);
     if (session === undefined) {
       this.services.logger.error("MatchScene entered without a session");
@@ -174,10 +177,22 @@ export class MatchScene extends Scene {
     }
   }
 
-  /** @param {Readonly<Record<string, unknown>>} command */
+  /**
+   * A local session answers at once; an online one when the server acknowledges.
+   * @param {Readonly<Record<string, unknown>>} command
+   */
   #submit(command) {
     const result = this.#session?.submit(command);
-    if (result !== undefined && !result.ok) {
+    if (result instanceof Promise) {
+      result.then((settled) => this.#onSubmitted(settled));
+    } else if (result !== undefined) {
+      this.#onSubmitted(result);
+    }
+  }
+
+  /** @param {import("@magic8/engine/shared/Result.js").Result<unknown>} result */
+  #onSubmitted(result) {
+    if (!result.ok) {
       this.#log = [...this.#log, `Rejected: ${result.error.message}`].slice(-MAX_LOG_LINES);
       this.#interaction?.cancel();
       this.#rebuild();
@@ -346,7 +361,7 @@ export class MatchScene extends Scene {
     panel.add(new Label({ x: 20, y: 140, width, height: 30, text: reasonFor(snapshot), size: "body", colorKey: "textMuted" }));
     const third = (width - 2 * 14) / 3;
     const y = GAME_OVER.height - 20 - 52;
-    panel.add(new Button({ id: "gameOver.again", x: 20, y, width: third, height: 52, text: "Play again", variant: "primary", onActivate: () => this.#leave(SceneId.DECK_SELECTION) }));
+    panel.add(new Button({ id: "gameOver.again", x: 20, y, width: third, height: 52, text: "Play again", variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
     panel.add(new Button({ id: "gameOver.menu", x: 20 + third + 14, y, width: third, height: 52, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
     panel.add(new Button({ id: "gameOver.board", x: 20 + 2 * (third + 14), y, width: third, height: 52, text: "View board", onActivate: () => this.closeModal() }));
     this.openModal(modal);

@@ -97,6 +97,17 @@ export class PgInventoryRepository {
     return row === null ? null : toInstance(row);
   }
 
+  async listByOrigins(ownerId, origins) {
+    const rows = await this.#db.rows(
+      `SELECT c.* FROM card_instances c
+         JOIN unnest($2::text[], $3::text[]) AS o(kind, ref) ON c.origin_kind = o.kind AND c.origin_ref = o.ref
+        WHERE c.owner_id = $1
+        ORDER BY c.origin_ref, c.definition_id, c.serial`,
+      [ownerId, origins.map((origin) => origin.kind), origins.map((origin) => origin.ref)],
+    );
+    return Object.freeze(rows.map(toInstance));
+  }
+
   async history(instanceId) {
     const rows = await this.#db.rows("SELECT kind, from_user_id, to_user_id, ref, at FROM card_instance_events WHERE card_instance_id = $1 ORDER BY id", [instanceId]);
     return Object.freeze(rows.map((row) => Object.freeze({ kind: row.kind, fromUserId: row.from_user_id, toUserId: row.to_user_id, ref: row.ref, at: fromTimestamp(row.at) })));

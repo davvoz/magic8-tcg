@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "deck_ember_vanguard",
+  "kind": "starter",
+  "name": "Ember Vanguard",
+  "description": "A second starter: the preconstructed ember deck, saved to your account.",
+  "edition": "core-1",
+  "prices": [
+    {
+      "asset": "STEEM",
+      "amount": "5.000"
+    }
+  ],
+  "contents": [
+    {
+      "type": "deck",
+      "ref": "precon_ember",
+      "count": 1
+    }
+  ],
+  "limits": {
+    "perOrder": 3
+  },
+  "active": true
+}

@@ -31,6 +31,11 @@ export class ApiClient {
     return session.json.user;
   }
 
+  /** The session cookie ("m8_session=…"), for opening a WebSocket as this user. */
+  get cookie() {
+    return this.#cookie;
+  }
+
   /** @param {string} path @param {Record<string, string>} [headers] */
   get(path, headers = {}) {
     return this.request("GET", path, undefined, headers);

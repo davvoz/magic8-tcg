@@ -15,6 +15,7 @@ import { readServerContent } from "../src/contentFiles.js";
 import { MemoryLogger } from "../src/kernel/logger.js";
 import { ManualClock } from "../src/kernel/time.js";
 import { freshDatabase } from "./support/database.js";
+import { FakeSteemLedger } from "./support/fakeSteemLedger.js";
 
 export const ORIGIN = "http://127.0.0.1:8080";
 export const DATA_DIRECTORY = resolvePath(import.meta.dirname, "../../../data");
@@ -79,13 +80,15 @@ export class FakeChain {
 
 export const TEST_APP_NAME = "magic8-tcg";
 
+
 /**
  * The application on an emptied test database. Everything the server keeps
  * lives in `database`: building a second app on it is a server restart.
  * A restarted app needs its own `random` label, or it would mint the same ids again.
  * @param {{ policy?: object, env?: Record<string, string>, database?: import("../src/platform/db/Database.js").Database, clock?: ManualClock, chain?: FakeChain, random?: ReturnType<typeof deterministicRandom> }} [options]
  */
-export async function buildTestApp({ policy = {}, env = {}, database, clock = new ManualClock(Date.UTC(2026, 8, 24, 10, 0, 0)), chain = new FakeChain(), random = deterministicRandom() } = {}) {
+export async function buildTestApp({ policy = {}, marketplacePolicy = {}, timePolicy = {}, env = {}, database, clock = new ManualClock(Date.UTC(2026, 8, 24, 10, 0, 0)), chain = new FakeChain(), random = deterministicRandom(), ledger = new FakeSteemLedger() } = {}) {
+  const paymentProviders = new Map([["steem", ledger.paymentProvider()]]);
   const db = database ?? (await freshDatabase());
   const wallet = new SteemWalletProvider({ chain, appName: TEST_APP_NAME });
   const logger = new MemoryLogger();
@@ -96,12 +99,15 @@ export async function buildTestApp({ policy = {}, env = {}, database, clock = ne
     random,
     logger,
     wallets: new Map([["steem", wallet]]),
+    paymentProviders,
     defaultNetwork: "steem",
     database: db,
     content: await bundledContent(),
     identityPolicyOverrides: policy,
+    marketplacePolicy,
+    timePolicy,
   });
-  return { app, clock, chain, users: app.users, sessions: app.sessions, challenges: app.challenges, logger, config, database: db };
+  return { app, clock, chain, ledger, users: app.users, sessions: app.sessions, challenges: app.challenges, logger, config, database: db };
 }
 
 /**
@@ -119,9 +125,16 @@ export function keychainSign(message, privateKey) {
  */
 export async function listen(app) {
   const server = createServer(app.http.listener);
+  app.realtime?.attach(server);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
-  return { base: `http://127.0.0.1:${port}`, close: () => new Promise((resolve) => server.close(resolve)) };
+  return {
+    base: `http://127.0.0.1:${port}`,
+    close: () => {
+      app.realtime?.close();
+      return new Promise((resolve) => server.close(resolve));
+    },
+  };
 }
 
 /** Headers of a legitimate same-origin state-changing request from our client. */

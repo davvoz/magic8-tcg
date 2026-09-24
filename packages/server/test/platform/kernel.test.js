@@ -84,7 +84,8 @@ describe("RateLimiter", () => {
 });
 
 describe("config", () => {
-  const PRODUCTION = Object.freeze({ M8_PUBLIC_ORIGIN: "https://play.example", M8_DATABASE_URL: "postgres://app@db.internal:5432/tcg?sslmode=require" });
+  const DATA_KEY = "ab".repeat(32);
+  const PRODUCTION = Object.freeze({ M8_PUBLIC_ORIGIN: "https://play.example", M8_DATABASE_URL: "postgres://app@db.internal:5432/tcg?sslmode=require", M8_DATA_KEY: DATA_KEY });
 
   it("derives secure settings from an https origin", () => {
     const config = loadConfig({ ...PRODUCTION, M8_PORT: "9000" });
@@ -93,6 +94,18 @@ describe("config", () => {
     assert.deepEqual(config.allowedOrigins, ["https://play.example"]);
     assert.equal(config.port, 9000);
     assert.equal(config.databaseUrl, PRODUCTION.M8_DATABASE_URL);
+    assert.equal(config.dataKeyIsDevelopment, false);
+    assert.deepEqual([...config.dataKeys], [[1, DATA_KEY]]);
+  });
+
+  it("keeps retired data keys for rotation, and uses the public development key only locally", () => {
+    const rotated = loadConfig({ ...PRODUCTION, M8_DATA_KEY_ID: "2", M8_DATA_KEYS_OLD: `1:${"cd".repeat(32)}` });
+    assert.equal(rotated.dataKeyId, 2);
+    assert.deepEqual([...rotated.dataKeys.keys()].sort(), [1, 2]);
+    const local = loadConfig({});
+    assert.equal(local.dataKeyIsDevelopment, true);
+    assert.equal(local.shopAccounts.steem, "luciojolly");
+    assert.equal(loadConfig({ M8_SHOP_ACCOUNT: "shop.m8" }).shopAccounts.steem, "shop.m8");
   });
 
   it("defaults to the launch settings for local development", () => {
@@ -116,6 +129,13 @@ describe("config", () => {
       { ...PRODUCTION, M8_DATABASE_URL: "pglite:.data/pglite" },
       { M8_DATABASE_URL: "mysql://db/tcg" },
       { M8_DATABASE_URL: "not a url" },
+      { ...PRODUCTION, M8_DATA_KEY: "" },
+      { ...PRODUCTION, M8_DATA_KEY: "AB".repeat(32) },
+      { ...PRODUCTION, M8_DATA_KEY: "ab".repeat(31) },
+      { ...PRODUCTION, M8_DATA_KEY_ID: "256" },
+      { ...PRODUCTION, M8_DATA_KEYS_OLD: `1:${"cd".repeat(32)}` },
+      { ...PRODUCTION, M8_DATA_KEYS_OLD: "2:short" },
+      { M8_SHOP_ACCOUNT: "Not An Account" },
     ]) {
       assert.throws(() => loadConfig(env), ConfigError, JSON.stringify(env));
     }

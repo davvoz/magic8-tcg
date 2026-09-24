@@ -40,15 +40,21 @@ export class HttpJsonTransport {
       return fail(ApiFailure.NETWORK, "the game server could not be reached");
     }
     const payload = await readJson(response);
-    if (response.ok) {
-      return ok(payload);
-    }
-    const error = /** @type {any} */ (payload)?.error;
-    if (typeof error?.code === "string" && typeof error?.message === "string") {
-      return fail(error.code, error.message, error.details ?? null);
-    }
-    return fail(response.status === 404 || response.status >= 500 ? ApiFailure.UNAVAILABLE : ApiFailure.BAD_RESPONSE, `the game server answered ${response.status}`);
+    return response.ok ? ok(payload) : failureOf(response.status, payload);
   }
+}
+
+/**
+ * The server's own error when the body carries one, a generic one otherwise.
+ * @param {number} status
+ * @param {unknown} payload
+ */
+function failureOf(status, payload) {
+  const error = /** @type {any} */ (payload)?.error;
+  if (typeof error?.code === "string" && typeof error?.message === "string") {
+    return fail(error.code, error.message, error.details ?? null);
+  }
+  return fail(status === 404 || status >= 500 ? ApiFailure.UNAVAILABLE : ApiFailure.BAD_RESPONSE, `the game server answered ${status}`);
 }
 
 /** @param {Response} response */

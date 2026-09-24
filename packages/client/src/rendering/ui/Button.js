@@ -4,16 +4,18 @@ import { ellipsize } from "../text/textUtils.js";
 import { shade, withAlpha } from "../theme/color.js";
 import { fontFor } from "../theme/Theme.js";
 
-const TEXT_PADDING = 14;
+const TEXT_PADDING = Object.freeze({ body: 14, small: 8 });
 const GLOW_BLUR = 16;
 const FOCUS_LINE_WIDTH = 3;
 
 /** @typedef {"primary" | "secondary" | "danger"} ButtonVariant */
+/** @typedef {"body" | "small"} ButtonTextSize */
 
 /**
  * Clickable, focusable text button, drawn as a bevelled slab with a
  * gradient in the variant's colour; hover lifts it, pressing sinks it,
  * focus and hover add a halo. `onActivate` fires on click, tap, Enter or Space.
+ * `textSize: "small"` fits short labels into narrow buttons (filter rows).
  */
 export class Button extends UiNode {
   text;
@@ -23,9 +25,11 @@ export class Button extends UiNode {
   variant;
   /** @type {CanvasTextAlign} */
   align;
+  /** @type {ButtonTextSize} */
+  textSize;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, onActivate: () => void, variant?: ButtonVariant, align?: CanvasTextAlign }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, onActivate: () => void, variant?: ButtonVariant, align?: CanvasTextAlign, textSize?: ButtonTextSize }} options
    */
   constructor(options) {
     super(options);
@@ -33,6 +37,7 @@ export class Button extends UiNode {
     this.onActivate = options.onActivate;
     this.variant = options.variant ?? "secondary";
     this.align = options.align ?? "center";
+    this.textSize = options.textSize ?? "body";
     this.interactive = true;
     this.focusable = true;
   }
@@ -67,10 +72,11 @@ export class Button extends UiNode {
    * @param {string} color
    */
   #paintText(context, theme, color) {
-    const font = fontFor(theme, "body", "bold");
+    const font = fontFor(theme, this.textSize, "bold");
+    const padding = TEXT_PADDING[this.textSize];
     context.font = font;
-    const text = ellipsize((candidate) => context.measureText(candidate).width, this.text, Math.max(0, this.width - 2 * TEXT_PADDING));
-    drawTextInRect(context, text, this.bounds, { font, color, align: this.align, padding: TEXT_PADDING });
+    const text = ellipsize((candidate) => context.measureText(candidate).width, this.text, Math.max(0, this.width - 2 * padding));
+    drawTextInRect(context, text, this.bounds, { font, color, align: this.align, padding });
   }
 
   /**

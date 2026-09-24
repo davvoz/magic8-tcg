@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "single_pyre_drake",
+  "kind": "single",
+  "name": "Pyre Drake",
+  "description": "One Pyre Drake (rare).",
+  "edition": "core-1",
+  "prices": [
+    {
+      "asset": "STEEM",
+      "amount": "0.500"
+    }
+  ],
+  "contents": [
+    {
+      "type": "card",
+      "ref": "pyre_drake",
+      "count": 1
+    }
+  ],
+  "limits": {
+    "perOrder": 3
+  },
+  "active": true
+}

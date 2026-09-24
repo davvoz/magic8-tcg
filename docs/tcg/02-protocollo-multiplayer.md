@@ -43,12 +43,15 @@
 
 | Metodo | Percorso | Corpo | Note |
 |---|---|---|---|
-| GET | `/api/products` | — | Prodotti attivi con prezzi per asset e contenuti dichiarati (probabilità dei pacchetti incluse) |
+| GET | `/api/products` | — | Pubblico. `{ products, dropTables, rarities }`: prodotti in vendita con prezzi (stringhe decimali esatte) e contenuti; drop table risolte con hash, probabilità per slot, probabilità foil e pool di carte |
+| GET | `/api/pack-epochs` | — | Pubblico. Epoche dei pacchetti: impegno (`commit`), apertura, chiusura e, solo quando tutti gli ordini dell'epoca sono chiusi, il segreto rivelato |
 | POST | `/api/orders` | `{ "productId", "quantity", "asset" }` + `Idempotency-Key` | Il prezzo **non** si invia: lo calcola il server dal listino. Risposta con istruzioni di pagamento `{ to, amount, asset, memo, expiresAt }` |
 | GET | `/api/orders/{id}` | — | Solo il proprietario |
-| POST | `/api/orders/{id}/payment-hint` | `{ "txId" }` | Suggerimento per accelerare la verifica; mai creduto senza lettura dalla catena |
+| POST | `/api/orders/{id}/payment-hint` | `{ "txId" }` | 202 `{ order }`. Fa solo leggere prima lo storico dell'account shop (al massimo una volta ogni 3 s); il txId non viene mai creduto |
 | POST | `/api/orders/{id}/cancel` | — | Solo da `CREATED`/`PAYMENT_PENDING` |
-| GET | `/api/orders` | — | Storico ordini dell'utente |
+| GET | `/api/orders` | — | Storico ordini dell'utente (ultimi 50) |
+
+**Ordine come lo vede il client:** `{ id, status, items: [{ productId, name, quantity, unitAmount }], total: { asset, amount }, payment: { network, from, to, asset, amount, memo, expiresAt } | null, rngEpochId, failureReason, createdAt, updatedAt }`; `payment` c'è solo finché l'ordine si può pagare. `GET /api/orders/{id}` aggiunge `fulfilment` per gli ordini evasi: `{ txId, cards: [{ id, definitionId, edition, serial, finish }], packs: [{ index, epoch, table, cards }] }`. Creare un ordine senza `Idempotency-Key` (16–64 caratteri) dà 428; la stessa chiave con un corpo diverso 409; più di 5 ordini non pagati 409 `LIMIT_REACHED`.
 
 ### Partite e verifica
 
@@ -95,28 +98,35 @@
 
 | `t` | `d` |
 |---|---|
-| `welcome` | `{ "user", "serverTime", "activeGame": { "gameId" } \| null }` |
+| `welcome` | `{ "user", "serverTime", "activeGame": <vista della partita> \| null, "queue": { "state" } }` (risposta a `hello`: chi rientra riceve subito lo stato completo della sua partita) |
 | `queue.status` | `{ "state": "searching"\|"idle", "since", "estimatedWaitMs" }` |
 | `match.found` | `{ "gameId", "seat", "opponent": { "account" }, "seedCommit": "<hex64>", "entropyDeadline" }` |
-| `game.state` | `{ "gameId", "version", "lastSeq", "snapshot": <snapshot per prospettiva>, "clock": { "activeSeat", "turnEndsAt", "reserveMs": { "s0", "s1" } } }` |
-| `game.events` | `{ "gameId", "fromSeq", "toSeq", "version", "events": [<eventi del motore redatti per prospettiva>], "head": "<hex64>" }` |
+| `game.joined` | `{ "gameId" }` (risposta a `game.entropy`) |
+| `game.state` | la **vista della partita** (risposta a `game.sync`): `{ "gameId", "seat", "status", "opponent": { "account" }, "seedCommit", "entropyDeadline", "version", "lastSeq", "head", "snapshot": <snapshot per prospettiva> \| null, "clock": { "activeSeat", "deadline", "reserveMs": { "s0", "s1" } } }` |
+| `game.events` | la vista della partita più `events`: gli eventi del motore redatti per prospettiva, per le animazioni. Il client **sostituisce** il proprio stato con lo snapshot ricevuto: non applica eventi e non ha mai un motore di una partita online |
 | `game.ack` | `{ "commandId", "ok": true, "version", "head" }` oppure `{ "commandId", "ok": false, "error": { "code" } }` |
-| `game.over` | `{ "gameId", "winner", "reason", "verificationUrl" }` |
+| `game.over` | `{ "gameId", "winner", "reason", "you" }` (l'URL di verifica arriva con M5) |
+| `session.replaced` | `{}`: la connessione sta per essere chiusa (4000) perché l'utente si è connesso da un'altra scheda |
 | `order.updated` | `{ "orderId", "status", "cards"?: [...] }` |
 | `error` | `{ "code", "message" }` |
 
-Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN_PHASE`, `INVALID_COMMAND`, …) più `STALE_VERSION`, `NOT_IN_GAME`, `GAME_NOT_ACTIVE`, `RATE_LIMITED`.
+Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN_PHASE`, `INVALID_COMMAND`, …) più `STALE_VERSION`, `NOT_IN_GAME`, `GAME_NOT_ACTIVE`, `RATE_LIMITED`. Errori del canale: `BAD_MESSAGE` (envelope malformato; 10 volte → chiusura 4002), `UNKNOWN_MESSAGE`, `VALIDATION` (campi sconosciuti inclusi, come per HTTP). Ogni messaggio con `id` riceve una risposta.
+
+**Implementazione (M4).** Gateway su `ws` 8.21.3 (versione fissata, nessuna dipendenza propria: Node non ha un server WebSocket incluso e un'implementazione verificata è più sicura di un parser RFC 6455 scritto a mano). La sessione viene riverificata ogni minuto: una sessione revocata chiude anche il socket (4001). La CSP della pagina elenca esplicitamente l'origine `ws(s)://` in `connect-src`.
 
 ### 3.5 Ordine, concorrenza e idempotenza
 
 - **Un attore per partita**: i comandi di una partita sono eseguiti uno alla volta nell'ordine di arrivo alla mailbox. Due comandi simultanei dello stesso giocatore non possono entrambi passare: il secondo trova `expectedVersion` superata → `STALE_VERSION`.
-- **`commandId`** univoco per partita (vincolo DB): un reinvio dopo una disconnessione restituisce lo stesso ack.
+- **`commandId`** univoco per partita (vincolo DB): un reinvio dopo una disconnessione restituisce lo stesso ack. Gli ack dei comandi accettati sono nel DB; quelli dei rifiutati solo in memoria (ultimi 64 per partita), così un client ostile non può riempire il DB di comandi rifiutati.
+- `game.concede` viene eseguito dentro la mailbox dell'attore alla versione corrente: arrendersi non è mai "vecchio".
 - **Eventi numerati** (`seq`): il client applica solo `fromSeq = lastSeq + 1`; se vede un buco chiede `game.sync`.
 
 ### 3.6 Riconnessione e disconnessione
 
 - Il client si riconnette con `hello { resume }`: riceve `game.state` completo e riprende da lì (lo stato del client è sempre sostituibile, mai sorgente di verità).
 - Alla disconnessione il turno continua a scorrere; dopo 60 s di assenza (configurabile) il server esegue `FORCED_MOVE` `END_TURN` ai suoi turni; dopo 3 turni consecutivi forzati o 3 minuti di assenza totale, `FORCED_MOVE` `CONCEDE` (`why: "abandon"`).
+- Chi si disconnette esce dalla coda di matchmaking (non potrebbe vedere la partita iniziare).
+- Al riavvio del server le partite non finite vengono ricostruite rigiocando le mosse salvate; i giocatori risultano assenti finché non si riconnettono.
 
 ### 3.7 Timer
 

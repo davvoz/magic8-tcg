@@ -41,7 +41,73 @@ export function loadConfig(env) {
     maxBodyBytes: 16 * 1024,
     serveClient: parseBoolean(env.M8_SERVE_CLIENT ?? "true", "M8_SERVE_CLIENT"),
     databaseUrl: parseDatabaseUrl(env.M8_DATABASE_URL, secure),
+    shopAccounts: Object.freeze({ steem: parseAccount(env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_SHOP_ACCOUNT") }),
+    ...parseDataKeys(env, secure),
   });
+}
+
+/** Development only: a fixed, public data key so local epochs survive restarts. Never accepted over https. */
+export const DEVELOPMENT_DATA_KEY = "6d38746367206465762064617461206b6579206e6f7420736563726574202020";
+
+/**
+ * Keys that encrypt secrets at rest (SecretBox). M8_DATA_KEY is the current
+ * key, 64 hex characters; M8_DATA_KEY_ID its id (0..255, default 1).
+ * M8_DATA_KEYS_OLD lists retired keys as "id:hex,id:hex" so rows sealed
+ * before a rotation still open.
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @param {boolean} secure
+ */
+function parseDataKeys(env, secure) {
+  const current = env.M8_DATA_KEY;
+  if ((current === undefined || current === "") && secure) {
+    throw new ConfigError("M8_DATA_KEY: required for an https deployment (64 hex characters, e.g. openssl rand -hex 32)");
+  }
+  const dataKeyId = parseKeyId(env.M8_DATA_KEY_ID ?? "1", "M8_DATA_KEY_ID");
+  /** @type {Map<number, string>} */
+  const keys = new Map([[dataKeyId, parseKeyHex(current || DEVELOPMENT_DATA_KEY, "M8_DATA_KEY")]]);
+  for (const entry of (env.M8_DATA_KEYS_OLD ?? "").split(",").filter((text) => text.trim() !== "")) {
+    const [id, hex] = entry.trim().split(":");
+    const oldId = parseKeyId(id ?? "", "M8_DATA_KEYS_OLD");
+    if (keys.has(oldId)) {
+      throw new ConfigError(`M8_DATA_KEYS_OLD: key id ${oldId} is listed twice`);
+    }
+    keys.set(oldId, parseKeyHex(hex ?? "", "M8_DATA_KEYS_OLD"));
+  }
+  return { dataKeyId, dataKeys: keys, dataKeyIsDevelopment: current === undefined || current === "" };
+}
+
+/**
+ * @param {string} value
+ * @param {string} name
+ */
+function parseKeyId(value, name) {
+  const id = Number(value);
+  if (!/^\d{1,3}$/.test(value) || id > 255) {
+    throw new ConfigError(`${name}: key ids are integers 0..255`);
+  }
+  return id;
+}
+
+/**
+ * @param {string} value
+ * @param {string} name
+ */
+function parseKeyHex(value, name) {
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw new ConfigError(`${name}: expected 64 lowercase hex characters`);
+  }
+  return value;
+}
+
+/**
+ * @param {string} value
+ * @param {string} name
+ */
+function parseAccount(value, name) {
+  if (!/^[a-z][a-z0-9.-]{2,15}$/.test(value)) {
+    throw new ConfigError(`${name}: not a valid account name`);
+  }
+  return value;
 }
 
 /**

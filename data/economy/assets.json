@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "accepted": [
+    {
+      "network": "steem",
+      "asset": "STEEM",
+      "precision": 3
+    }
+  ]
+}
