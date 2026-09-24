@@ -13,7 +13,3 @@ CREATE INDEX blockchain_transactions_signer_open ON blockchain_transactions (net
 -- One alert per anomaly: the tracker may see the same operation again after a restart.
 ALTER TABLE chain_alerts ADD COLUMN fingerprint TEXT NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX chain_alerts_once ON chain_alerts (network, kind, fingerprint) WHERE fingerprint <> '';
-
--- A pack epoch's commitment and reveal each go to the outbox once.
-ALTER TABLE rng_epochs ADD COLUMN commitment_published BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE rng_epochs ADD COLUMN reveal_published BOOLEAN NOT NULL DEFAULT false;

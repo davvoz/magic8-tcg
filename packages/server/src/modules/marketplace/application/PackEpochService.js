@@ -11,11 +11,14 @@
  *   (a transaction's id changes with its expiration time) until the seed
  *   gives a good pack.
  *
- * Secrets are sealed with SecretBox; only this service opens them. On-chain
- * publication of commitments and reveals (m8tcg_manifest) comes with the
- * broadcaster in M5; until then they are public through the API.
+ * Secrets are sealed with SecretBox; only this service opens them. The
+ * commitment and the reveal are published on chain (`m8tcg_epoch`, by the
+ * broadcaster pool): each goes to the outbox in the same unit of work that
+ * opens or reveals the epoch, so neither can happen without the other. The
+ * commitment is the most urgent kind of record: it must be on chain before
+ * the payments it binds.
  */
-import { bytesToHex, packEpochCommitment } from "@magic8/protocol";
+import { bytesToHex, packEpochAnnouncement, packEpochCommitment, packEpochReveal } from "@magic8/protocol";
 
 const SECRET_BYTES = 32;
 
@@ -30,6 +33,7 @@ export class PackEpochService {
   #clock;
   #unitOfWork;
   #maxAgeMs;
+  #publisher;
 
   /**
    * @param {{
@@ -39,15 +43,17 @@ export class PackEpochService {
    *   clock: import("../../../kernel/time.js").Clock,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   maxAgeMs: number,
+   *   publisher: import("./ports.js").EpochPublisher,
    * }} deps
    */
-  constructor({ repository, secrets, random, clock, unitOfWork, maxAgeMs }) {
+  constructor({ repository, secrets, random, clock, unitOfWork, maxAgeMs, publisher }) {
     this.#repository = repository;
     this.#secrets = secrets;
     this.#random = random;
     this.#clock = clock;
     this.#unitOfWork = unitOfWork;
     this.#maxAgeMs = maxAgeMs;
+    this.#publisher = publisher;
   }
 
   /**
@@ -69,6 +75,7 @@ export class PackEpochService {
       const secret = this.#random.bytes(SECRET_BYTES);
       const commit = packEpochCommitment(bytesToHex(secret));
       await this.#repository.insertEpoch({ id, commit, sealedSecret: this.#secrets.seal(secret, epochContext(id)), openedAt: now });
+      await this.#publisher.publishEpoch(packEpochAnnouncement(id, commit));
       return Object.freeze({ id, commit });
     });
   }
@@ -94,7 +101,11 @@ export class PackEpochService {
     const revealed = [];
     for (const epoch of await this.#repository.listUnrevealedClosed(50)) {
       if ((await this.#repository.countOpenForEpoch(epoch.id)) === 0) {
-        await this.#repository.markEpochRevealed(epoch.id, this.#clock.now());
+        await this.#unitOfWork(async () => {
+          if (await this.#repository.markEpochRevealed(epoch.id, this.#clock.now())) {
+            await this.#publisher.publishEpoch(packEpochReveal(epoch.id, bytesToHex(this.#secrets.open(epoch.sealedSecret, epochContext(epoch.id)))));
+          }
+        });
         revealed.push(epoch.id);
       }
     }

@@ -98,7 +98,7 @@ export const TEST_APP_NAME = "magic8-tcg";
  * @param {{ policy?: object, env?: Record<string, string>, database?: import("../src/platform/db/Database.js").Database, clock?: ManualClock, chain?: FakeChain, random?: ReturnType<typeof deterministicRandom> }} [options]
  */
 export async function buildTestApp(options = {}) {
-  const { policy = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {}, publishing = null, chainPolicies = {}, env = {}, database } = options;
+  const { policy = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {}, publishing = null, chainPolicies = {}, env = {}, database, content } = options;
   const { clock, chain, random, ledger } = testDoubles(options);
   const paymentProviders = new Map([["steem", ledger.paymentProvider()]]);
   const db = database ?? (await freshDatabase());
@@ -114,7 +114,7 @@ export async function buildTestApp(options = {}) {
     paymentProviders,
     defaultNetwork: "steem",
     database: db,
-    content: await bundledContent(),
+    content: content ?? (await bundledContent()),
     identityPolicyOverrides: policy,
     marketplacePolicy,
     timePolicy,

@@ -27,6 +27,7 @@ const SECRET_BYTES = 32;
 export class GameService {
   #repository;
   #currentContent;
+  #contentVersion;
   #effects;
   #secrets;
   #notifier;
@@ -47,6 +48,7 @@ export class GameService {
    * @param {{
    *   repository: import("./ports.js").GameRepository,
    *   currentContent: () => { hash: string, engineVersion: string, content: import("@magic8/engine/domain/content/GameContent.js").GameContent },
+   *   contentVersion: (hash: string) => Promise<{ hash: string, engineVersion: string, content: import("@magic8/engine/domain/content/GameContent.js").GameContent } | null>,
    *   effects: import("@magic8/engine/domain/effects/EffectRegistry.js").EffectRegistry,
    *   secrets: import("../../../kernel/crypto/SecretBox.js").SecretBox,
    *   notifier: import("./ports.js").GameNotifier,
@@ -61,10 +63,11 @@ export class GameService {
    *   sealingPolicy?: Partial<typeof import("./RecordSealer.js").DEFAULT_SEALING_POLICY>,
    * }} deps
    */
-  constructor({ repository, currentContent, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, outbox, timePolicy = {}, sealingPolicy = {} }) {
+  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, outbox, timePolicy = {}, sealingPolicy = {} }) {
     assertImplements(repository, GAME_REPOSITORY_METHODS, "GameRepository");
     this.#repository = repository;
     this.#currentContent = currentContent;
+    this.#contentVersion = contentVersion;
     this.#effects = effects;
     this.#secrets = secrets;
     this.#notifier = notifier;
@@ -158,7 +161,7 @@ export class GameService {
    * @param {Readonly<{ game: import("./ports.js").StoredGame, recorder: GameRecorder }>} staged
    */
   launchGame({ game, recorder }) {
-    this.#actors.set(game.id, this.#newActor(game, recorder));
+    this.#actors.set(game.id, this.#newActor(game, recorder, this.#currentContent().content));
     for (const player of game.players) {
       const opponent = game.players.find((other) => other.seat !== player.seat);
       this.#notifier.send(player.userId, "match.found", { gameId: game.id, seat: player.seat, opponent: { account: opponent?.account ?? null }, seedCommit: game.seedCommit, entropyDeadline: game.createdAt + this.#timePolicy.entropyMs });
@@ -287,16 +290,15 @@ export class GameService {
     if (game === null || game.status === GameStatus.FINISHED || game.status === GameStatus.ABORTED) {
       return null;
     }
-    const { hash } = this.#currentContent();
-    if (game.contentHash !== hash) {
-      // M5 brings content by hash; until then a game cannot outlive a content change.
-      this.#logger.error("game content is no longer loaded; the game cannot resume", { game: gameId, content: game.contentHash });
+    const version = game.engineVersion === this.#currentContent().engineVersion ? await this.#contentVersion(game.contentHash) : null;
+    if (version === null) {
+      this.#logger.error("the game's content or engine version cannot be loaded; the game cannot resume", { game: gameId, content: game.contentHash, engine: game.engineVersion });
       return null;
     }
     const secret = bytesToHex(this.#secrets.open(game.sealedSecret, secretContext(gameId)));
     const entropies = Object.fromEntries(game.players.filter((player) => player.entropy !== null).map((player) => [player.seat, player.entropy]));
     const recorder = new GameRecorder({ gameId, secret, decks: game.players.map((player) => player.deck), head: game.chainHead, nextSeq: game.lastEventSeq + 1, entropies });
-    const actor = this.#newActor(game, recorder);
+    const actor = this.#newActor(game, recorder, version.content);
     actor.replay(await this.#repository.listEvents(gameId));
     this.#actors.set(gameId, actor);
     return actor;
@@ -305,9 +307,9 @@ export class GameService {
   /**
    * @param {import("./ports.js").StoredGame} game
    * @param {GameRecorder} recorder
+   * @param {import("@magic8/engine/domain/content/GameContent.js").GameContent} content the version the game was created with
    */
-  #newActor(game, recorder) {
-    const { content } = this.#currentContent();
+  #newActor(game, recorder, content) {
     return new GameActor({
       game,
       recorder,

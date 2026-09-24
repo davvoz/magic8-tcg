@@ -193,7 +193,8 @@ export class PgMarketplaceRepository {
   }
 
   async markEpochRevealed(id, at) {
-    await this.#db.query("UPDATE rng_epochs SET revealed_at = $2 WHERE id = $1 AND closed_at IS NOT NULL AND revealed_at IS NULL", [id, toTimestamp(at)]);
+    const row = await this.#db.maybeOne("UPDATE rng_epochs SET revealed_at = $2 WHERE id = $1 AND closed_at IS NOT NULL AND revealed_at IS NULL RETURNING id", [id, toTimestamp(at)]);
+    return row !== null;
   }
 
   async listEpochs() {

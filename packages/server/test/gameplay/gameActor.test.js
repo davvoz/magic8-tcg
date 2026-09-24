@@ -14,7 +14,7 @@ import { ChaChaRandom } from "@magic8/engine/domain/random/ChaChaRandom.js";
 import { OperationId, Verdict, firstSeatFor, genesisHead, packEnvelopes, verifyGame } from "@magic8/protocol";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { GameService, PgGameRepository } from "../../src/modules/gameplay/index.js";
-import { buildTestApp, deterministicRandom } from "../helpers.js";
+import { buildTestApp, bundledContent, deterministicRandom } from "../helpers.js";
 
 const SECOND = 1000;
 const ENTROPY = Object.freeze({ s0: "0a".repeat(16), s1: "0b".repeat(16) });
@@ -302,6 +302,7 @@ describe("GameService", () => {
     const restarted = new GameService({
       repository: new PgGameRepository(w.setup.database),
       currentContent: () => w.setup.app.catalog.current(),
+      contentVersion: (hash) => w.setup.app.catalog.version(hash),
       effects: createCoreEffectRegistry(),
       secrets: /** @type {any} */ (w.setup.app).secrets,
       notifier: w.setup.app.hub,
@@ -311,6 +312,7 @@ describe("GameService", () => {
       audit: w.setup.app.audit,
       logger: w.setup.logger,
       network: "steem",
+      outbox: w.setup.app.outbox,
     });
     assert.equal(await restarted.restoreAll(), 1);
     const after = await restarted.view(w.alice.user.id, w.gameId);
@@ -319,6 +321,25 @@ describe("GameService", () => {
     assert.deepEqual(after.snapshot, before.snapshot, "replayed to the same state");
     const w2 = { ...w, games: restarted };
     assert.ok((await playOut(w2, { seed: "after-restart" })) > 0);
+  });
+
+  it("keeps a game on the content it started with when the server restarts on new content", async () => {
+    const w = await started();
+    await passTurn(w, seatUser(w, (await w.games.view(w.alice.user.id, w.gameId)).snapshot.activePlayerId), "before-change");
+    const before = await w.games.view(w.alice.user.id, w.gameId);
+    const oldHash = w.setup.app.catalog.current().hash;
+
+    const bundled = await bundledContent();
+    const raw = structuredClone(bundled.raw);
+    raw.cardSets[0].cards[0].name = `${raw.cardSets[0].cards[0].name} (revised)`;
+    const restarted = await buildTestApp({ database: w.setup.database, clock: w.setup.clock, random: deterministicRandom("new-content"), content: { ...bundled, raw } });
+    assert.notEqual(restarted.app.catalog.current().hash, oldHash, "a new content version");
+    assert.equal(await restarted.app.games.restoreAll(), 1, "the running game resumes");
+    const after = await restarted.app.games.view(w.alice.user.id, w.gameId);
+    assert.deepEqual(after.snapshot, before.snapshot, "on its own content");
+    const [game] = await restarted.database.rows("SELECT content_hash FROM games WHERE id = $1", [w.gameId]);
+    assert.equal(game.content_hash, oldHash);
+    assert.ok((await playOut({ ...w, games: restarted.app.games }, { seed: "old-content" })) > 0);
   });
 
   it("rebuilds an actor from the database when a write fails", async () => {

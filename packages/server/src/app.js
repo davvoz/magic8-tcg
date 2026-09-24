@@ -90,7 +90,7 @@ export async function createServerApp(deps) {
   const secrets = new SecretBox({ keys: new Map([...config.dataKeys].map(([id, hex]) => [id, hexToBytes(hex)])), currentKeyId: config.dataKeyId, random });
   const marketRepository = new PgMarketplaceRepository(database);
   const policy = { ...DEFAULT_MARKETPLACE_POLICY, ...marketplacePolicy };
-  const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs });
+
   const receiverFor = (network) => {
     const account = /** @type {Record<string, string>} */ (config.shopAccounts)[network];
     if (account === undefined) {
@@ -100,12 +100,13 @@ export async function createServerApp(deps) {
   };
   const payments = new PaymentService({ repository: new PgPaymentRepository(database), random, clock, unitOfWork });
   const outbox = new ChainOutbox({ repository: new PgOutboxRepository(database), clock });
+  const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
   const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, audit, clock, unitOfWork, logger });
   const marketplace = new MarketplaceService({ catalog: market.value, economy, repository: marketRepository, epochs, receiverFor, audit, clock, random, unitOfWork, policy, describeFulfilment: (order) => fulfilment.describe(order) });
   await marketplace.syncProducts();
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
-  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy });
+  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy });
   const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger });
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
 

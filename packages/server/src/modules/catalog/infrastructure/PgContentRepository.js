@@ -33,4 +33,9 @@ export class PgContentRepository {
     const row = await this.#db.maybeOne("SELECT payload FROM content_versions WHERE hash = $1", [hash]);
     return row === null ? null : row.payload;
   }
+
+  async engineVersion(hash) {
+    const row = await this.#db.maybeOne("SELECT engine_version FROM content_versions WHERE hash = $1", [hash]);
+    return row === null ? null : row.engine_version;
+  }
 }

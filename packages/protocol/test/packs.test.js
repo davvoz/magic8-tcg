@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { Finish, ProtocolError, drawPack, dropTableHash, dropTableOdds, packEpochCommitment, packSeed, validateDropTable } from "../src/index.js";
+import { Finish, PackEpochKind, ProtocolError, drawPack, dropTableHash, dropTableOdds, packEpochAnnouncement, packEpochCommitment, packEpochReveal, packSeed, validateDropTable } from "../src/index.js";
 
 const SECRET = "11".repeat(32);
 const ORDER = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -118,3 +118,16 @@ describe("packs", () => {
 });
 
 const PINNED = Object.freeze({ seed: "d1bc3dc2c0d3b1b3ebf7b2222fbc1b5f60f3eb492514e4cd254d8ecfddb36260", cards: ["c4:standard", "c3:standard", "c3:standard", "u1:standard", "r2:standard"] });
+
+describe("pack epoch publications", () => {
+  it("announces a commitment and reveals a secret as canonical m8tcg_epoch payloads", () => {
+    const secret = "5e".repeat(32);
+    const commit = packEpochCommitment(secret);
+    assert.equal(packEpochAnnouncement(3, commit), `{"commit":"${commit}","epoch":3,"kind":"pack_epoch","v":1}`);
+    assert.equal(packEpochReveal(3, secret), `{"epoch":3,"kind":"pack_epoch_reveal","secret":"${secret}","v":1}`);
+    assert.equal(PackEpochKind.REVEAL, "pack_epoch_reveal");
+    assert.throws(() => packEpochAnnouncement(0, commit), ProtocolError);
+    assert.throws(() => packEpochAnnouncement(1, "zz"), ProtocolError);
+    assert.throws(() => packEpochReveal(1, "ab"), ProtocolError);
+  });
+});

@@ -45,6 +45,14 @@ export class ChainOutbox {
   }
 
   /**
+   * A pack epoch commitment or reveal (m8tcg_epoch).
+   * @param {{ network: string, payload: string }} entry canonical JSON
+   */
+  async enqueueEpoch({ network, payload }) {
+    await this.#repository.insert({ network, kind: OutboxKind.EPOCH, payload, payloadHash: sha256Hex(utf8(payload)), priority: RECEIPT_PRIORITY, at: this.#clock.now() });
+  }
+
+  /**
    * @param {string} orderId
    * @returns {Promise<readonly Readonly<{ payload: string, status: string }>[]>}
    */
