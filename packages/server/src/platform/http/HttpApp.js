@@ -13,6 +13,7 @@ import { AppError } from "../../kernel/AppError.js";
 import { readJsonBody } from "./body.js";
 import { parseCookies } from "./cookies.js";
 import { Auth } from "./Router.js";
+import { clientAddress } from "./clientAddress.js";
 
 export const CSRF_HEADER = "x-m8-request";
 const MAX_URL_LENGTH = 2048;
@@ -208,14 +209,7 @@ export class HttpApp {
 
   /** @param {import("node:http").IncomingMessage} request */
   #clientIp(request) {
-    if (this.#config.trustProxy) {
-      const forwarded = request.headers["x-forwarded-for"];
-      const first = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "";
-      if (/^[0-9a-fA-F:.]{2,45}$/.test(first)) {
-        return first;
-      }
-    }
-    return request.socket.remoteAddress ?? "unknown";
+    return clientAddress(request, this.#config.trustProxy);
   }
 }
 

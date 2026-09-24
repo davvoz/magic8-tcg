@@ -6,14 +6,33 @@
  *   with the same code a player runs in the browser or the CLI. It reads
  *   only irreversible blocks and the root account's manifests; the database
  *   contributes nothing but the index of blocks to read.
+ *
+ * Verifying reads the chain, so it is bounded: at most `maxConcurrent` at
+ * once (others are told to retry), a VALID result is kept (irreversible
+ * blocks cannot change it), any other result for a minute.
  */
 import { GAME_ID_PATTERN, HistoryStatus, verifyGameOnChain } from "@magic8/protocol";
+
+export class VerificationBusyError extends Error {
+  constructor() {
+    super("too many verifications in progress");
+    this.name = "VerificationBusyError";
+  }
+}
+
+const FINAL_CACHE_SIZE = 1000;
+const RETRY_CACHE_MS = 60_000;
 
 export class GameVerification {
   #repository;
   #reader;
   #rootAccount;
   #fetchContent;
+  #clock;
+  #maxConcurrent;
+  #running = 0;
+  /** @type {Map<string, { result: Readonly<Record<string, unknown>>, until: number }>} */
+  #cache = new Map();
 
   /**
    * @param {{
@@ -21,13 +40,17 @@ export class GameVerification {
    *   reader: import("./ports.js").PublicationReader | null,
    *   rootAccount: string,
    *   fetchContent: (hash: string) => Promise<string | null>,
+   *   clock: import("../../../kernel/time.js").Clock,
+   *   maxConcurrent?: number,
    * }} deps
    */
-  constructor({ repository, reader, rootAccount, fetchContent }) {
+  constructor({ repository, reader, rootAccount, fetchContent, clock, maxConcurrent = 2 }) {
     this.#repository = repository;
     this.#reader = reader;
     this.#rootAccount = rootAccount;
     this.#fetchContent = fetchContent;
+    this.#clock = clock;
+    this.#maxConcurrent = maxConcurrent;
   }
 
   get rootAccount() {
@@ -62,8 +85,34 @@ export class GameVerification {
     if (this.#reader === null) {
       throw new Error("no chain reader configured");
     }
-    const result = await verifyGameOnChain({ gameId: index.gameId, reader: this.#reader, rootAccount: this.#rootAccount, blocks: index.blocks, fetchContent: this.#fetchContent });
-    return summarize(result);
+    const cached = this.#cache.get(index.gameId);
+    if (cached !== undefined && cached.until > this.#clock.now()) {
+      return cached.result;
+    }
+    if (this.#running >= this.#maxConcurrent) {
+      throw new VerificationBusyError();
+    }
+    this.#running += 1;
+    try {
+      const result = summarize(await verifyGameOnChain({ gameId: index.gameId, reader: this.#reader, rootAccount: this.#rootAccount, blocks: index.blocks, fetchContent: this.#fetchContent }));
+      this.#remember(index.gameId, result);
+      return result;
+    } finally {
+      this.#running -= 1;
+    }
+  }
+
+  /**
+   * @param {string} gameId
+   * @param {Readonly<Record<string, unknown>>} result
+   */
+  #remember(gameId, result) {
+    const final = result.verdict === "VALID";
+    this.#cache.delete(gameId);
+    this.#cache.set(gameId, { result, until: final ? Number.POSITIVE_INFINITY : this.#clock.now() + RETRY_CACHE_MS });
+    while (this.#cache.size > FINAL_CACHE_SIZE) {
+      this.#cache.delete(/** @type {string} */ (this.#cache.keys().next().value));
+    }
   }
 }
 

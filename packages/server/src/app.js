@@ -114,7 +114,7 @@ export async function createServerApp(deps) {
   const rootAccount = /** @type {Record<string, string>} */ (config.rootAccounts)[defaultNetwork];
   const chain = publishing === null ? null : buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies: chainPolicies });
 
-  const verification = new GameVerification({ repository: new PgChainRepository(database), reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash) });
+  const verification = new GameVerification({ repository: new PgChainRepository(database), reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash), clock });
 
   const router = new Router();
   registerIdentityRoutes({ router, auth, cookie: { name: config.sessionCookieName, secure: config.secure }, clock });
@@ -124,11 +124,12 @@ export async function createServerApp(deps) {
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
   registerChainRoutes({ router, verification });
+  const rateLimiter = new RateLimiter({ now: () => clock.now() });
   const http = new HttpApp({
     router,
     config: { allowedOrigins: config.allowedOrigins, trustProxy: config.trustProxy, maxBodyBytes: config.maxBodyBytes, hsts: config.secure, sessionCookieName: config.sessionCookieName },
     logger,
-    rateLimiter: new RateLimiter({ now: () => clock.now() }),
+    rateLimiter,
     authenticate: (token) => auth.authenticate(token),
     staticFiles,
   });
@@ -144,6 +145,7 @@ export async function createServerApp(deps) {
     clock,
     logger,
     config: { allowedOrigins: config.allowedOrigins, sessionCookieName: config.sessionCookieName, trustProxy: config.trustProxy },
+    rateLimiter,
   });
   logger.info("content published", { hash: published.hash, engineVersion: published.engineVersion });
   if (chain === null) {

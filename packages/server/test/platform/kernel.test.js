@@ -258,3 +258,16 @@ describe("parseJson (untrusted input)", () => {
     assert.throws(() => parseJson("{nope}"), /not valid JSON/);
   });
 });
+
+describe("clientAddress", () => {
+  const request = (forwarded, remoteAddress = "10.0.0.2") => ({ headers: forwarded === undefined ? {} : { "x-forwarded-for": forwarded }, socket: { remoteAddress } });
+
+  it("trusts only the entry the reverse proxy appended, never what the client wrote", async () => {
+    const { clientAddress } = await import("../../src/platform/http/clientAddress.js");
+    assert.equal(clientAddress(request("203.0.113.9"), true), "203.0.113.9");
+    assert.equal(clientAddress(request("1.2.3.4, 203.0.113.9"), true), "203.0.113.9", "a forged first entry is ignored");
+    assert.equal(clientAddress(request("203.0.113.9, not-an-address"), true), "10.0.0.2");
+    assert.equal(clientAddress(request(undefined), true), "10.0.0.2");
+    assert.equal(clientAddress(request("203.0.113.9"), false), "10.0.0.2", "without a proxy the header means nothing");
+  });
+});

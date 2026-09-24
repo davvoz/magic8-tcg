@@ -3,6 +3,7 @@
  * chain anyway, and verifying must not need an account.
  */
 import { AppError } from "../../../kernel/AppError.js";
+import { VerificationBusyError } from "../application/GameVerification.js";
 import { Auth } from "../../../platform/http/Router.js";
 
 const INDEX_RATE = Object.freeze({ name: "chain-index", capacity: 30, refillPerSecond: 0.5, by: /** @type {const} */ ("ip") });
@@ -36,7 +37,10 @@ export function registerChainRoutes({ router, verification }) {
       let result;
       try {
         result = await verification.verify(context.params.id);
-      } catch {
+      } catch (error) {
+        if (error instanceof VerificationBusyError) {
+          throw new AppError("RATE_LIMITED", "the server is busy verifying other games; retry in a few seconds");
+        }
         throw new AppError("CHAIN_UNAVAILABLE", "the chain cannot be read right now");
       }
       if (result === null) {

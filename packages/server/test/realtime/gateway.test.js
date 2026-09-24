@@ -107,6 +107,7 @@ describe("WebSocket gateway", () => {
   after(() => server.close());
 
   const connect = async (name) => {
+    setup.clock.advance(2000); // one upgrade token per 2 s per address
     const peer = new Peer(server.base, { cookie: clients[name].cookie });
     await peer.opened;
     return peer;
@@ -149,6 +150,28 @@ describe("WebSocket gateway", () => {
     }
     assert.equal(await peer.closed, 4008);
     assert.ok(peer.messages.some((message) => message.d?.code === "RATE_LIMITED"));
+  });
+
+  it("limits upgrade attempts per address before looking up any session", async () => {
+    setup.clock.advance(60_000);
+    const refused = [];
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      refused.push(await new Peer(server.base, { cookie: "m8_session=guess" }).opened.catch((error) => error.message));
+    }
+    assert.deepEqual(refused.slice(0, 10), new Array(10).fill("401"));
+    assert.deepEqual(refused.slice(10), ["429", "429"], "a burst of guesses is cut off");
+  });
+
+  it("drops a client that stops reading instead of buffering for it without bound", async () => {
+    const peer = await connect("carol");
+    peer.socket.pause();
+    const big = "x".repeat(64 * 1024);
+    const userId = (await setup.users.findOrCreate({ network: "steem", account: "carol" }, setup.clock.now(), randomUUID())).id;
+    for (let index = 0; index < 200; index += 1) {
+      setup.app.hub.send(userId, "noise", { big });
+    }
+    peer.socket.resume();
+    assert.equal(await peer.closed, 1006, "terminated");
   });
 
   it("replaces an older connection of the same user", async () => {
