@@ -54,6 +54,7 @@ export class GameActor {
   #unitOfWork;
   #logger;
   #onBroken;
+  #sealer;
   #turnClock;
   #status;
   #lastSeq;
@@ -79,9 +80,10 @@ export class GameActor {
    *   logger: import("../../../kernel/logger.js").Logger,
    *   timePolicy: import("../domain/TurnClock.js").TimePolicy,
    *   onBroken: (gameId: string) => void,
+   *   sealer: { afterAppend: (gameId: string, chained: readonly import("@magic8/protocol").ChainedEvent[]) => Promise<void> },
    * }} deps
    */
-  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken }) {
+  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, sealer }) {
     this.#game = game;
     this.#recorder = recorder;
     this.#content = content;
@@ -92,6 +94,7 @@ export class GameActor {
     this.#unitOfWork = unitOfWork;
     this.#logger = logger;
     this.#onBroken = onBroken;
+    this.#sealer = sealer;
     this.#status = game.status;
     this.#lastSeq = game.lastEventSeq;
     this.#turnClock = new TurnClock(timePolicy, SEATS);
@@ -426,6 +429,7 @@ export class GameActor {
       throw error;
     }
     this.#lastSeq = chained[chained.length - 1].event.i;
+    await this.#sealer.afterAppend(this.id, chained);
   }
 
   #createEngine() {

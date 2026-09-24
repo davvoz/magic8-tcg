@@ -25,8 +25,22 @@
  * @property {() => Promise<readonly string[]>} listActive ids of games not finished or aborted
  * @property {(userId: string) => Promise<string | null>} activeGameOf
  *
+ * @typedef {object} RecordStore sealing of game events into protocol records (docs/tcg/03 §9)
+ * @property {(gameId: string) => Promise<Readonly<{ network: string }> | null>} lockForSealing locks the game row until the unit of work ends
+ * @property {(gameId: string) => Promise<readonly ChainedEvent[]>} listUnsealed in sequence order
+ * @property {(gameId: string) => Promise<number>} countUnsealed
+ * @property {(gameId: string, seq: number) => Promise<string | null>} headAt the chain head after event `seq`
+ * @property {(gameId: string) => Promise<number>} nextRecordSeq
+ * @property {(gameId: string, fromSeq: number, toSeq: number, recordSeq: number) => Promise<void>} markSealed
+ * @property {(before: number) => Promise<readonly string[]>} gamesWithUnsealedBefore games whose oldest unsealed event happened at or before `before`
+ *
+ * @typedef {object} RecordOutbox where sealed records wait to be published (the chain module)
+ * @property {(entry: { network: string, records: readonly import("@magic8/protocol").SealedRecord[] }) => Promise<void>} enqueueGameRecords
+ *
  * @typedef {object} GameNotifier delivers messages to a user's live connection, if any
  * @property {(userId: string, type: string, data: unknown) => void} send
  */
 
 export const GAME_REPOSITORY_METHODS = Object.freeze(["insertGame", "findGame", "listEvents", "appendEvents", "setEntropy", "setResults", "findAck", "insertCommand", "insertSnapshot", "listActive", "activeGameOf"]);
+
+export const RECORD_STORE_METHODS = Object.freeze(["lockForSealing", "listUnsealed", "countUnsealed", "headAt", "nextRecordSeq", "markSealed", "gamesWithUnsealedBefore"]);

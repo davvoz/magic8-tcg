@@ -16,6 +16,7 @@ import { ulid } from "../../../kernel/ulid.js";
 import { DEFAULT_TIME_POLICY } from "../domain/TurnClock.js";
 import { GameActor, GameError, GameStatus } from "./GameActor.js";
 import { GAME_REPOSITORY_METHODS } from "./ports.js";
+import { RecordSealer } from "./RecordSealer.js";
 
 const SECRET_BYTES = 32;
 
@@ -36,6 +37,7 @@ export class GameService {
   #logger;
   #timePolicy;
   #network;
+  #sealer;
   /** @type {Map<string, GameActor>} */
   #actors = new Map();
   /** @type {Map<string, Promise<GameActor | null>>} actors being rebuilt */
@@ -54,10 +56,12 @@ export class GameService {
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
    *   logger: import("../../../kernel/logger.js").Logger,
    *   network: string,
+   *   outbox: import("./ports.js").RecordOutbox,
    *   timePolicy?: Partial<import("../domain/TurnClock.js").TimePolicy>,
+   *   sealingPolicy?: Partial<typeof import("./RecordSealer.js").DEFAULT_SEALING_POLICY>,
    * }} deps
    */
-  constructor({ repository, currentContent, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, timePolicy = {} }) {
+  constructor({ repository, currentContent, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, outbox, timePolicy = {}, sealingPolicy = {} }) {
     assertImplements(repository, GAME_REPOSITORY_METHODS, "GameRepository");
     this.#repository = repository;
     this.#currentContent = currentContent;
@@ -71,6 +75,12 @@ export class GameService {
     this.#logger = logger;
     this.#network = network;
     this.#timePolicy = Object.freeze({ ...DEFAULT_TIME_POLICY, ...timePolicy });
+    this.#sealer = new RecordSealer({ store: /** @type {any} */ (repository), outbox, clock, unitOfWork, logger, policy: sealingPolicy });
+  }
+
+  /** Seals the records of games whose pending events waited too long (periodic job). */
+  sealStale() {
+    return this.#sealer.sealStale();
   }
 
   get timePolicy() {
@@ -313,6 +323,7 @@ export class GameService {
         this.#logger.error("game actor failed to persist; it will be rebuilt from the database", { game: gameId });
         this.#actors.delete(gameId);
       },
+      sealer: this.#sealer,
     });
   }
 

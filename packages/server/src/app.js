@@ -47,9 +47,10 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   identityPolicyOverrides?: Parameters<typeof identityPolicy>[0],
  *   marketplacePolicy?: Partial<typeof DEFAULT_MARKETPLACE_POLICY>,
  *   timePolicy?: Partial<import("./modules/gameplay/domain/TurnClock.js").TimePolicy>,
+ *   sealingPolicy?: Partial<typeof import("./modules/gameplay/index.js").DEFAULT_SEALING_POLICY>,
  * }} deps
  */
-export async function createServerApp({ config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content, staticFiles = null, identityPolicyOverrides = {}, marketplacePolicy = {}, timePolicy = {} }) {
+export async function createServerApp({ config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content, staticFiles = null, identityPolicyOverrides = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {} }) {
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
 
@@ -100,7 +101,7 @@ export async function createServerApp({ config, clock, random, logger, wallets, 
   await marketplace.syncProducts();
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
-  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, timePolicy });
+  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy });
   const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger });
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
 

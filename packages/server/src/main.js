@@ -22,6 +22,7 @@ const PAYMENT_POLL_INTERVAL_MS = 5000;
 const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
 const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
 const GAME_TICK_INTERVAL_MS = 1000;
+const RECORD_SEAL_INTERVAL_MS = 5000;
 const SHUTDOWN_GRACE_MS = 10_000;
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -79,6 +80,7 @@ async function main() {
     every(ORDER_EXPIRY_INTERVAL_MS, "order expiry", () => app.marketplace.expireDue(), logger),
     every(EPOCH_REVEAL_INTERVAL_MS, "pack epoch reveal", () => app.epochs.revealSettled(), logger),
     every(GAME_TICK_INTERVAL_MS, "game timers", () => app.games.tick(), logger),
+    every(RECORD_SEAL_INTERVAL_MS, "record sealing", () => app.games.sealStale(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "matchmaking", async () => {
       await app.matchmaking.expireStale();
       await app.matchmaking.pair();

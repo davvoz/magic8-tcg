@@ -3,14 +3,15 @@
  * (docs/tcg/03-game-blockchain-protocol.md §16). A record is written in the
  * same transaction as the state it describes — a fulfilled order and its
  * receipt commit together — and is immutable afterwards (database
- * triggers). The broadcaster that publishes BUILT records arrives in M5; the
- * outbox guarantees nothing is lost until then.
+ * triggers). The ChainBroadcaster publishes BUILT records; the ChainTracker
+ * follows them until they are irreversible.
  */
 import { sha256Hex, utf8 } from "@magic8/protocol";
 
-export const OutboxKind = Object.freeze({ GAME_RECORD: "GAME_RECORD", RECEIPT: "RECEIPT" });
-/** Receipts go out before game records: players wait for them. */
+export const OutboxKind = Object.freeze({ GAME_RECORD: "GAME_RECORD", RECEIPT: "RECEIPT", EPOCH: "EPOCH" });
+/** Receipts and pack epochs go out before game records: buyers wait for them, and a commitment must precede the sales it binds. */
 const RECEIPT_PRIORITY = 0;
+const GAME_RECORD_PRIORITY = 1;
 
 export class ChainOutbox {
   #repository;
@@ -30,6 +31,16 @@ export class ChainOutbox {
   async enqueueReceipt({ network, orderId, parts }) {
     for (const payload of parts) {
       await this.#repository.insert({ network, kind: OutboxKind.RECEIPT, orderId, payload, payloadHash: sha256Hex(utf8(payload)), priority: RECEIPT_PRIORITY, at: this.#clock.now() });
+    }
+  }
+
+  /**
+   * Sealed game records, in record order; each is published exactly as sealed.
+   * @param {{ network: string, records: readonly Readonly<{ gameId: string, seq: number, json: string }>[] }} entry
+   */
+  async enqueueGameRecords({ network, records }) {
+    for (const { gameId, seq, json } of records) {
+      await this.#repository.insert({ network, kind: OutboxKind.GAME_RECORD, gameId, recordSeq: seq, payload: json, payloadHash: sha256Hex(utf8(json)), priority: GAME_RECORD_PRIORITY, at: this.#clock.now() });
     }
   }
 
