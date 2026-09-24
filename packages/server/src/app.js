@@ -23,6 +23,7 @@ import { ChainOutbox, PgOutboxRepository } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository } from "./modules/payments/index.js";
 import { GameService, PgGameRepository } from "./modules/gameplay/index.js";
+import { MatchmakingService, PgMatchmakingRepository } from "./modules/matchmaking/index.js";
 import { ConnectionHub } from "./platform/realtime/ConnectionHub.js";
 import { assertImplements } from "./kernel/contracts.js";
 import { AuthService, PgChallengeRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, registerIdentityRoutes } from "./modules/identity/index.js";
@@ -97,6 +98,7 @@ export async function createServerApp({ config, clock, random, logger, wallets, 
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
   const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, timePolicy });
+  const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger });
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
 
   const router = new Router();
@@ -118,5 +120,5 @@ export async function createServerApp({ config, clock, random, logger, wallets, 
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, hub, games, gameRepository, secrets });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, hub, games, gameRepository, secrets, matchmaking });
 }

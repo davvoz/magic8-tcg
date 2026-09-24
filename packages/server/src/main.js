@@ -78,6 +78,10 @@ async function main() {
     every(ORDER_EXPIRY_INTERVAL_MS, "order expiry", () => app.marketplace.expireDue(), logger),
     every(EPOCH_REVEAL_INTERVAL_MS, "pack epoch reveal", () => app.epochs.revealSettled(), logger),
     every(GAME_TICK_INTERVAL_MS, "game timers", () => app.games.tick(), logger),
+    every(ORDER_EXPIRY_INTERVAL_MS, "matchmaking", async () => {
+      await app.matchmaking.expireStale();
+      await app.matchmaking.pair();
+    }, logger),
   ];
   server.listen(config.port, config.host, () => logger.info("server listening", { host: config.host, port: config.port, origin: config.publicOrigin }));
 
