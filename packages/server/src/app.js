@@ -147,7 +147,7 @@ export async function createServerApp(deps) {
   });
   logger.info("content published", { hash: published.hash, engineVersion: published.engineVersion });
   if (chain === null) {
-    logger.warn("no broadcaster keys: records wait in the outbox and nothing is published on chain");
+    logger.warn("publishing is off (no broadcaster keys, or they could not be checked): records wait in the outbox");
   }
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");

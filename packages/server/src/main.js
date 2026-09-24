@@ -132,7 +132,8 @@ async function main() {
 /**
  * The broadcaster pool, when keys are configured. Every key is checked
  * against its account first: a key that is not a posting key, or that also
- * controls active or owner, stops the start.
+ * controls active or owner, stops the start. If the chain cannot be read,
+ * the server starts without publishing (records wait in the outbox).
  * @param {ReturnType<typeof loadConfig>} config
  * @param {SteemRpcClient} rpc
  * @param {SteemBlockchainProvider} chain
@@ -149,7 +150,9 @@ async function openPublishing(config, rpc, chain) {
       process.stderr.write(`broadcaster error: ${error.message}\n`);
       process.exit(1);
     }
-    throw error;
+    // The chain is not on the game's critical path: play on, publish after a restart with the chain reachable.
+    process.stderr.write(`broadcaster keys could not be checked (${error instanceof Error ? error.message : String(error)}): nothing will be published until the server restarts with the chain reachable\n`);
+    return null;
   }
   return { transactions, reader: new SteemPublicationReader({ chain }) };
 }

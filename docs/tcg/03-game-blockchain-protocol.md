@@ -1,6 +1,6 @@
 # 03 — Game Blockchain Protocol (M8GBP) v1
 
-**Stato:** specifica proposta, 2026-09-24. Implementazione di riferimento: `packages/protocol`.
+**Stato:** specifica v1, implementata (M5, 2026-09-24). Implementazione di riferimento: `packages/protocol` (formato, verifica), `packages/steem` (transazioni), `packages/server` moduli gameplay e chain (sigillatura, pubblicazione, riconciliazione).
 
 Le parole DEVE / NON DEVE / DOVREBBE hanno il significato di RFC 2119.
 
@@ -28,7 +28,8 @@ Il protocollo rende la storia di ogni partita **pubblica, ordinata, concatenata 
 |---|---|---|---|
 | `m8tcg_game` | un account del pool broadcaster | `required_posting_auths = [broadcaster]`, `required_auths = []` | Envelope di record di partita (§6) |
 | `m8tcg_receipt` | un account del pool broadcaster | posting | Ricevute di fulfilment degli ordini (§12) |
-| `m8tcg_manifest` | account **root** del progetto | `required_auths = [root]` (active, firmato a mano con Keychain) | Ancora di fiducia: pool broadcaster autorizzati, hash dei contenuti, impegni delle epoche dei pacchetti (§11) |
+| `m8tcg_epoch` | un account del pool broadcaster | posting | Impegno e rivelazione delle epoche dei pacchetti (§11.1) |
+| `m8tcg_manifest` | account **root** del progetto | `required_auths = [root]` (active, firmato a mano con Keychain) | Ancora di fiducia: pool broadcaster autorizzati (§11) |
 
 Chiunque può pubblicare un `custom_json` con id `m8tcg_game`. Un verificatore **DEVE** ignorare ogni operazione il cui firmatario non sia, al blocco dell'operazione, un broadcaster autorizzato dal manifest.
 
@@ -162,6 +163,8 @@ record.h  = head_{e[last].i}
 
 Tutti i parametri sono configurazione. Valori iniziali: 64 eventi, 20 s, 8192 byte, 1 operazione per account per blocco (prudente finché il limite reale non è misurato), 4 account nel pool.
 
+**Implementazione (M5).** `RecordSealer` (modulo gameplay) sigilla dopo che la mossa è stata salvata, bloccando la riga della partita: non si intreccia mai con l'attore e un errore di sigillatura non fa mai fallire una mossa (lo riprova il job periodico). `ChainBroadcaster` (modulo chain) fa un giro ogni 3 s; ogni account invia al più **una** operazione per giro: una ricevuta o un'epoca da sola, oppure quanti record di partita stanno in un envelope. L'account di un record è scelto da `sha256(gameId)` modulo la dimensione del pool, così i record di una partita escono dallo stesso account. La transazione firmata e i record che porta sono salvati come `BROADCAST` **prima** di mandarla a un nodo; un errore del nodo non dimostra niente (il nodo può averla già inoltrata), quindi decide il tracker (§16). Priorità: ricevute ed epoche (0) prima dei record di partita (1).
+
 ## 10. Capacità, latenza e costi
 
 **Dimensioni misurate sulla forma canonica** (partite complete giocate con il motore e registrate con `GameRecorder`, fixture `packages/protocol/test/fixtures/referenceGame.js`):
@@ -187,16 +190,26 @@ Con 1 operazione per blocco per account (valore prudente) un broadcaster pubblic
 
 ## 11. Manifest (ancora di fiducia)
 
-Pubblicato dall'account root con la chiave active (Keychain, manualmente). Payload:
+Pubblicato dall'account root con la chiave active (Keychain, manualmente: pagina `/manifest.html`). Payload (canonico, `broadcastersManifest` in `@magic8/protocol`):
 
 ```json
-{"kind":"broadcasters","accounts":["m8tcg.b1","m8tcg.b2"],"from_block":95000000,"v":1}
-{"kind":"content","hash":"<hex64>","eng":"0.1.0","uri":"https://…/content/<hash>.json","v":1}
-{"kind":"pack_epoch","epoch":3,"commit":"<hex64>","v":1}
-{"kind":"pack_epoch_reveal","epoch":3,"secret":"<hex64>","v":1}
+{"accounts":["m8tcg-b1","m8tcg-b2"],"from_block":95000000,"kind":"broadcasters","v":1}
 ```
 
-Un verificatore conosce solo il nome dell'account root (configurazione). Da lì ricava quali broadcaster erano validi a ogni blocco: una chiave compromessa si revoca pubblicando un nuovo manifest.
+Un verificatore conosce solo il nome dell'account root (configurazione). Da lì ricava quali broadcaster erano validi a ogni blocco: una chiave compromessa si revoca pubblicando un nuovo manifest (una lista vuota revoca tutti).
+
+**Nessuna autorizzazione retroattiva.** Un manifest vale dal blocco `max(from_block, blocco del manifest)`: un record incluso prima è invalido per sempre. Per questo il server (`ManifestWatcher`) legge i manifest del root come un verificatore e un broadcaster pubblica solo quando il manifest lo autorizza **al blocco irreversibile**; fino ad allora i suoi record aspettano nell'outbox. Il manifest va quindi pubblicato prima di dare le chiavi al server.
+
+*Nomi degli account:* su STEEM ogni parte di un nome separata da punti deve avere almeno 3 caratteri: `luciojolly.b1` non è valido, `luciojolly-b1` sì.
+
+### 11.1 Epoche dei pacchetti (`m8tcg_epoch`)
+
+```json
+{"commit":"<hex64>","epoch":3,"kind":"pack_epoch","v":1}
+{"epoch":3,"kind":"pack_epoch_reveal","secret":"<hex64>","v":1}
+```
+
+Pubblicati dal pool broadcaster (non dal root, come previsto in una prima versione di questa specifica: la pubblicazione è automatica e la fiducia passa comunque dal root, che autorizza i broadcaster). L'impegno entra nell'outbox nella stessa transazione DB che apre l'epoca, con la priorità più alta; la rivelazione nella stessa transazione che la segna rivelata, una volta sola. Un verificatore dei pacchetti controlla che l'impegno sia on-chain in un blocco precedente al pagamento dell'ordine.
 
 I contenuti sono pubblicati anche come post STEEM (fino a 64 KB) o scaricabili per hash: il verificatore DEVE controllare che l'hash dei contenuti ottenuti coincida con `content` di `GAME_CREATED`.
 
@@ -237,6 +250,13 @@ Algoritmo del verificatore (implementato in `packages/protocol`, usabile da CLI,
 
 Esito complessivo: `VALID` oppure uno dei codici sopra, con l'indice del primo evento problematico. Il verificatore produce anche il log derivato completo (turni, effetti, danni) per replay visivo e spettatori.
 
+**Implementazione (M5).** `verifyGameOnChain` in `@magic8/protocol` esegue i passi 1–11 attraverso una porta di lettura della catena (network-neutral) ed è lo stesso codice in tre posti:
+- **riga di comando:** `node tools/verify-game.js <gameId> [--root account] [--server origin] [--scan]`;
+- **browser:** `/verify.html?game=<gameId>`, che legge direttamente i nodi STEEM (la pagina è servita dal server del gioco: per non dipendere nemmeno da quella, si usa la CLI o una copia salvata della pagina);
+- **server:** `GET /api/games/:id/verification`.
+
+Le operazioni della partita si trovano in due modi: da un **indice** di blocchi (`GET /api/games/:id/chain`, dal server) oppure **scansionando** lo storico di ogni broadcaster autorizzato (`--scan`, nessun server). L'indice è solo un suggerimento: può omettere blocchi (si vede come buco, `INCOMPLETE`) ma non aggiungere o cambiare nulla. I contenuti si scaricano per hash (`/api/content/<hash>`) e si accettano solo se l'hash coincide. L'account root **non** si prende dal server: è l'ancora di fiducia del verificatore.
+
 ## 15. Anomalie e come vengono gestite
 
 | Anomalia | Dove si rileva | Gestione |
@@ -269,6 +289,10 @@ Il `ChainReconciler` confronta periodicamente i record del DB con le operazioni 
 | `MISSING_ON_CHAIN` | nel DB, non on-chain dopo la scadenza | ribroadcast |
 | `UNKNOWN_ON_CHAIN` | on-chain dal nostro broadcaster, assente nel DB | allarme di sicurezza |
 | `CONFLICT` | stessi `(g, s)`, byte diversi | allarme, partita contestata |
+
+**Implementazione (M5): `ChainTracker`.** Per ogni broadcaster, a ogni giro: (1) legge testa e blocco irreversibile; (2) legge lo storico dell'account da un cursore persistente: ogni nostra operazione deve corrispondere a una transazione nota con esattamente i record che dice il DB (`MATCH` → `INCLUDED`); un'operazione firmata dal nostro broadcaster che il DB non conosce è `UNKNOWN_ON_CHAIN`, un record con byte diversi è `CONFLICT` (allarme in `chain_alerts`, una volta per impronta); (3) conferma contro il blocco le transazioni `INCLUDED` sotto l'irreversibile (se un micro-fork le ha tolte tornano `BROADCAST`); (4) solo dopo aver letto lo storico fino in fondo, dichiara `EXPIRED` le transazioni la cui scadenza (60 s) è più vecchia del tempo del blocco irreversibile: non possono più entrare in un blocco, quindi i loro record tornano `BUILT` (`MISSING_ON_CHAIN`) e ripartono con gli stessi byte. Oltre 5 tentativi: allarme `REPEATED_REBROADCAST`.
+
+Le chiavi dei broadcaster (`M8_BROADCASTER_KEYS`) sono **solo posting**: all'avvio il server controlla le autorità dell'account e si rifiuta di partire se la chiave controlla anche active o owner. `RcMonitor` rallenta un broadcaster sotto il 20% di Resource Credits (i record si accumulano in envelope più pieni) e lo ferma sotto il 5% con un allarme; le partite continuano.
 
 Regola fondamentale: **gli eventi nel DB sono append-only** (nessun `UPDATE`/`DELETE` concesso all'utente applicativo sulla tabella, vedi 04). Una volta ancorato, un evento non può più cambiare nemmeno nel DB; la catena è la versione "notarile" di ciò che il DB ha registrato.
 
