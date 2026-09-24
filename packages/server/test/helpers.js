@@ -87,7 +87,7 @@ export const TEST_APP_NAME = "magic8-tcg";
  * A restarted app needs its own `random` label, or it would mint the same ids again.
  * @param {{ policy?: object, env?: Record<string, string>, database?: import("../src/platform/db/Database.js").Database, clock?: ManualClock, chain?: FakeChain, random?: ReturnType<typeof deterministicRandom> }} [options]
  */
-export async function buildTestApp({ policy = {}, marketplacePolicy = {}, env = {}, database, clock = new ManualClock(Date.UTC(2026, 8, 24, 10, 0, 0)), chain = new FakeChain(), random = deterministicRandom(), ledger = new FakeSteemLedger() } = {}) {
+export async function buildTestApp({ policy = {}, marketplacePolicy = {}, timePolicy = {}, env = {}, database, clock = new ManualClock(Date.UTC(2026, 8, 24, 10, 0, 0)), chain = new FakeChain(), random = deterministicRandom(), ledger = new FakeSteemLedger() } = {}) {
   const paymentProviders = new Map([["steem", ledger.paymentProvider()]]);
   const db = database ?? (await freshDatabase());
   const wallet = new SteemWalletProvider({ chain, appName: TEST_APP_NAME });
@@ -105,6 +105,7 @@ export async function buildTestApp({ policy = {}, marketplacePolicy = {}, env = 
     content: await bundledContent(),
     identityPolicyOverrides: policy,
     marketplacePolicy,
+    timePolicy,
   });
   return { app, clock, chain, ledger, users: app.users, sessions: app.sessions, challenges: app.challenges, logger, config, database: db };
 }

@@ -22,6 +22,8 @@ import { EconomyService, validateAssets } from "./modules/economy/index.js";
 import { ChainOutbox, PgOutboxRepository } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository } from "./modules/payments/index.js";
+import { GameService, PgGameRepository } from "./modules/gameplay/index.js";
+import { ConnectionHub } from "./platform/realtime/ConnectionHub.js";
 import { assertImplements } from "./kernel/contracts.js";
 import { AuthService, PgChallengeRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, registerIdentityRoutes } from "./modules/identity/index.js";
 import { StarterService, registerStarterRoutes, validateStarterOffer } from "./modules/onboarding/index.js";
@@ -40,9 +42,10 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   staticFiles?: import("./platform/http/HttpApp.js").StaticHandler | null,
  *   identityPolicyOverrides?: Parameters<typeof identityPolicy>[0],
  *   marketplacePolicy?: Partial<typeof DEFAULT_MARKETPLACE_POLICY>,
+ *   timePolicy?: Partial<import("./modules/gameplay/domain/TurnClock.js").TimePolicy>,
  * }} deps
  */
-export async function createServerApp({ config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content, staticFiles = null, identityPolicyOverrides = {}, marketplacePolicy = {} }) {
+export async function createServerApp({ config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content, staticFiles = null, identityPolicyOverrides = {}, marketplacePolicy = {}, timePolicy = {} }) {
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
 
@@ -91,6 +94,9 @@ export async function createServerApp({ config, clock, random, logger, wallets, 
   const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, audit, clock, unitOfWork, logger });
   const marketplace = new MarketplaceService({ catalog: market.value, economy, repository: marketRepository, epochs, receiverFor, audit, clock, random, unitOfWork, policy, describeFulfilment: (order) => fulfilment.describe(order) });
   await marketplace.syncProducts();
+  const hub = new ConnectionHub({ logger });
+  const gameRepository = new PgGameRepository(database);
+  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, timePolicy });
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
 
   const router = new Router();
@@ -112,5 +118,5 @@ export async function createServerApp({ config, clock, random, logger, wallets, 
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, hub, games, gameRepository, secrets });
 }

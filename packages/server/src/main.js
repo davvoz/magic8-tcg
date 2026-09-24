@@ -21,6 +21,7 @@ const CHALLENGE_PURGE_INTERVAL_MS = 5 * 60 * 1000;
 const PAYMENT_POLL_INTERVAL_MS = 5000;
 const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
 const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
+const GAME_TICK_INTERVAL_MS = 1000;
 const SHUTDOWN_GRACE_MS = 10_000;
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -63,6 +64,8 @@ async function main() {
     staticFiles,
   });
 
+  const restored = await app.games.restoreAll();
+  logger.info("games restored", { restored });
   const server = createServer({ headersTimeout: 15_000, requestTimeout: 30_000 }, app.http.listener);
   server.maxHeadersCount = 64;
   const jobs = [
@@ -74,6 +77,7 @@ async function main() {
     }, logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "order expiry", () => app.marketplace.expireDue(), logger),
     every(EPOCH_REVEAL_INTERVAL_MS, "pack epoch reveal", () => app.epochs.revealSettled(), logger),
+    every(GAME_TICK_INTERVAL_MS, "game timers", () => app.games.tick(), logger),
   ];
   server.listen(config.port, config.host, () => logger.info("server listening", { host: config.host, port: config.port, origin: config.publicOrigin }));
 
