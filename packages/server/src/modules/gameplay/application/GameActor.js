@@ -172,31 +172,48 @@ export class GameActor {
    * @param {{ commandId: unknown, expectedVersion: unknown, command: unknown }} request
    * @returns {Promise<Ack>}
    */
-  command(userId, { commandId, expectedVersion, command }) {
-    return this.#enqueue(async () => {
-      if (typeof commandId !== "string" || !UUID_PATTERN.test(commandId)) {
-        return rejectedAck(String(commandId).slice(0, 36), GameError.INVALID_COMMAND, "commandId must be a UUID");
-      }
-      const earlier = this.#rejected.get(commandId) ?? (await this.#repository.findAck(this.id, commandId));
-      if (earlier !== null && earlier !== undefined) {
-        return /** @type {Ack} */ (earlier);
-      }
-      const refused = this.#refuse(userId, expectedVersion, command);
-      if (refused !== null) {
-        return this.#remember(rejectedAck(commandId, refused.code, refused.message));
-      }
-      const seat = /** @type {string} */ (this.seatOf(userId));
-      const applied = this.#apply(seat, /** @type {Record<string, unknown>} */ (command), null);
-      if (!applied.ok) {
-        return this.#remember(rejectedAck(commandId, applied.error.code, applied.error.message));
-      }
-      /** @type {Ack} */
-      const ack = Object.freeze({ commandId, ok: true, version: applied.version, head: applied.chained[applied.chained.length - 1].head });
-      await this.#commit(applied, { commandId, seat, expectedVersion: /** @type {number} */ (expectedVersion), payload: command, ack });
-      this.#turnClock.acted(seat, this.#clock.now());
-      this.#afterMove(applied);
-      return ack;
-    });
+  command(userId, request) {
+    return this.#enqueue(() => this.#handleCommand(userId, request));
+  }
+
+  /**
+   * @param {string} userId
+   * @param {{ commandId: unknown, expectedVersion: unknown, command: unknown }} request
+   * @returns {Promise<Ack>}
+   */
+  async #handleCommand(userId, { commandId, expectedVersion, command }) {
+    if (typeof commandId !== "string" || !UUID_PATTERN.test(commandId)) {
+      return rejectedAck(String(commandId).slice(0, 36), GameError.INVALID_COMMAND, "commandId must be a UUID");
+    }
+    const earlier = this.#rejected.get(commandId) ?? (await this.#repository.findAck(this.id, commandId));
+    if (earlier !== null && earlier !== undefined) {
+      return /** @type {Ack} */ (earlier);
+    }
+    const refused = this.#refuse(userId, expectedVersion, command);
+    if (refused !== null) {
+      return this.#remember(rejectedAck(commandId, refused.code, refused.message));
+    }
+    const seat = /** @type {string} */ (this.seatOf(userId));
+    const applied = this.#apply(seat, /** @type {Record<string, unknown>} */ (command), null);
+    if (!applied.ok) {
+      return this.#remember(rejectedAck(commandId, applied.error.code, applied.error.message));
+    }
+    /** @type {Ack} */
+    const ack = Object.freeze({ commandId, ok: true, version: applied.version, head: applied.chained[applied.chained.length - 1].head });
+    await this.#commit(applied, { commandId, seat, expectedVersion: /** @type {number} */ (expectedVersion), payload: command, ack });
+    this.#turnClock.acted(seat, this.#clock.now());
+    this.#afterMove(applied);
+    return ack;
+  }
+
+  /**
+   * Forfeit, at whatever version the game is: read inside the mailbox, so conceding never goes stale.
+   * @param {string} userId
+   * @param {unknown} commandId
+   * @returns {Promise<Ack>}
+   */
+  concede(userId, commandId) {
+    return this.#enqueue(() => this.#handleCommand(userId, { commandId, expectedVersion: this.#engine?.version ?? 0, command: { type: "CONCEDE" } }));
   }
 
   /**

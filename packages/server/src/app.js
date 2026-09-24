@@ -22,8 +22,11 @@ import { EconomyService, validateAssets } from "./modules/economy/index.js";
 import { ChainOutbox, PgOutboxRepository } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository } from "./modules/payments/index.js";
-import { GameService, PgGameRepository } from "./modules/gameplay/index.js";
-import { MatchmakingService, PgMatchmakingRepository } from "./modules/matchmaking/index.js";
+import { GameService, PgGameRepository, registerGameMessages } from "./modules/gameplay/index.js";
+import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
+import { MessageRouter } from "./platform/realtime/MessageRouter.js";
+import { WebSocketGateway } from "./platform/realtime/WebSocketGateway.js";
+import { presenceHandler, registerSessionMessages } from "./realtimeSession.js";
 import { ConnectionHub } from "./platform/realtime/ConnectionHub.js";
 import { assertImplements } from "./kernel/contracts.js";
 import { AuthService, PgChallengeRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, registerIdentityRoutes } from "./modules/identity/index.js";
@@ -116,9 +119,22 @@ export async function createServerApp({ config, clock, random, logger, wallets, 
     authenticate: (token) => auth.authenticate(token),
     staticFiles,
   });
+  const messages = new MessageRouter();
+  registerSessionMessages({ router: messages, games, matchmaking, clock });
+  registerGameMessages({ router: messages, games });
+  registerQueueMessages({ router: messages, matchmaking });
+  const realtime = new WebSocketGateway({
+    hub,
+    router: messages,
+    authenticate: (token) => auth.authenticate(token),
+    onPresence: presenceHandler({ games, matchmaking }),
+    clock,
+    logger,
+    config: { allowedOrigins: config.allowedOrigins, sessionCookieName: config.sessionCookieName, trustProxy: config.trustProxy },
+  });
   logger.info("content published", { hash: published.hash, engineVersion: published.engineVersion });
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, hub, games, gameRepository, secrets, matchmaking });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, hub, games, gameRepository, secrets, matchmaking, realtime });
 }

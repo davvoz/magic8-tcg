@@ -68,6 +68,7 @@ async function main() {
   logger.info("games restored", { restored });
   const server = createServer({ headersTimeout: 15_000, requestTimeout: 30_000 }, app.http.listener);
   server.maxHeadersCount = 64;
+  app.realtime.attach(server);
   const jobs = [
     setInterval(() => app.keyAuditor.run().catch((error) => logger.error("session key audit failed", { error })), KEY_AUDIT_INTERVAL_MS),
     setInterval(() => app.challenges.purgeExpired(systemClock.now()).catch((error) => logger.error("challenge purge failed", { error })), CHALLENGE_PURGE_INTERVAL_MS),
@@ -88,6 +89,7 @@ async function main() {
   const shutdown = (signal) => {
     logger.info("shutting down", { signal });
     jobs.forEach(clearInterval);
+    app.realtime.close();
     setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS).unref();
     server.close(() => {
       database.close().then(

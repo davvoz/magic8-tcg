@@ -191,6 +191,18 @@ export class GameService {
   }
 
   /**
+   * @param {string} userId
+   * @param {{ gameId: unknown, commandId: unknown }} request
+   */
+  async concede(userId, { gameId, commandId }) {
+    const actor = await this.#actorFor(gameId);
+    if (actor === null) {
+      return Object.freeze({ commandId: String(commandId).slice(0, 36), ok: false, error: Object.freeze({ code: GameError.NOT_IN_GAME, message: "no such game" }) });
+    }
+    return actor.concede(userId, commandId);
+  }
+
+  /**
    * The user's view of a game (their own perspective), or null.
    * @param {string} userId
    * @param {unknown} gameId

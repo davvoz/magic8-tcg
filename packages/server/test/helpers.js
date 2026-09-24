@@ -125,9 +125,16 @@ export function keychainSign(message, privateKey) {
  */
 export async function listen(app) {
   const server = createServer(app.http.listener);
+  app.realtime?.attach(server);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = /** @type {import("node:net").AddressInfo} */ (server.address());
-  return { base: `http://127.0.0.1:${port}`, close: () => new Promise((resolve) => server.close(resolve)) };
+  return {
+    base: `http://127.0.0.1:${port}`,
+    close: () => {
+      app.realtime?.close();
+      return new Promise((resolve) => server.close(resolve));
+    },
+  };
 }
 
 /** Headers of a legitimate same-origin state-changing request from our client. */
