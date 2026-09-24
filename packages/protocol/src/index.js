@@ -42,3 +42,4 @@ export { ReplayStatus, replayGame } from "./game/ReplayVerifier.js";
 export { BroadcasterRegistry, ManifestKind, broadcastersManifest } from "./game/manifest.js";
 export { Verdict, verifyGame } from "./game/verifyGame.js";
 export { replayContentOf, verifyGameOnChain } from "./verification/chainVerifier.js";
+export { PackVerdict, verifyOrderOnChain, verifyOrderPacks } from "./verification/packVerifier.js";

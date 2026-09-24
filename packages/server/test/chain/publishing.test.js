@@ -13,12 +13,13 @@ import { describe, it } from "node:test";
 
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
-import { OperationId, Verdict, broadcastersManifest, canonicalize, verifyGame } from "@magic8/protocol";
+import { OperationId, PackVerdict, Verdict, broadcastersManifest, canonicalize, verifyGame, verifyOrderOnChain } from "@magic8/protocol";
 import { SignerError } from "@magic8/steem";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { ResourceMode, signerFor } from "../../src/modules/chain/index.js";
 import { buildTestApp, deterministicRandom, listen, toWif } from "../helpers.js";
 import { verifyCommand } from "../../../../tools/verify-game.js";
+import { verifyOrderCommand } from "../../../../tools/verify-order.js";
 import { ApiClient } from "../support/apiClient.js";
 import { FakeSteemLedger } from "../support/fakeSteemLedger.js";
 
@@ -336,6 +337,58 @@ describe("ChainBroadcaster and ChainTracker", () => {
     assert.equal(placed.order.rngEpochId, 1);
     const [epochOp] = (await chainOperations(w)).filter((operation) => operation.id === "m8tcg_epoch");
     assert.match(epochOp.json, /"kind":"pack_epoch"/);
+  });
+
+  it("publishes a pack purchase so anyone can recompute the packs from the chain alone", async () => {
+    const w = await world({ signers: [B1] });
+    const rounds = async (count) => {
+      for (let round = 0; round < count; round += 1) {
+        await w.chain.broadcaster.runOnce();
+        w.ledger.produceBlock();
+      }
+      w.ledger.finalize();
+      await w.chain.tracker.runOnce();
+    };
+    await w.setup.app.epochs.current();
+    await rounds(1);
+    await w.setup.app.settlement.runOnce(); // the payment watcher starts after the shop's current history
+    const buyer = { id: w.alice.id, account: "alice", network: "steem" };
+    const placed = await w.setup.app.marketplace.createOrder({ buyer, productId: "core_booster", quantity: 2, asset: "STEEM", idempotencyKey: "pack-proof-key-0000000001", ip: "127.0.0.1" });
+    const { payment } = placed.order;
+    w.ledger.time = w.setup.clock.now();
+    const paid = w.ledger.transfer({ from: payment.from, to: payment.to, amount: `${payment.amount} ${payment.asset}`, memo: payment.memo, time: w.setup.clock.now() });
+    await w.setup.app.settlement.runOnce();
+    w.ledger.finalize();
+    await w.setup.app.settlement.runOnce();
+    await w.setup.app.fulfilment.fulfilVerified();
+    await rounds(2);
+
+    const listing = await w.setup.app.marketplace.listing();
+    const dropTables = new Map(listing.dropTables.map((table) => [table.hash, table.table]));
+    const check = () => verifyOrderOnChain({ orderId: placed.order.id, reader: w.publishing.reader, rootAccount: ROOT, dropTables, paymentBlock: paid.blockNum });
+    assert.equal((await check()).verdict, PackVerdict.NOT_REVEALED, "the receipt is on chain, the secret is not");
+
+    // The epoch ages out, its orders are settled: the secret is revealed on chain.
+    w.setup.clock.advance(8 * 24 * 60 * 60 * 1000);
+    await w.setup.app.epochs.current();
+    assert.deepEqual(await w.setup.app.epochs.revealSettled(), [placed.order.rngEpochId]);
+    await rounds(3);
+    const verified = await check();
+    assert.equal(verified.verdict, PackVerdict.VALID, verified.problem);
+    assert.equal(verified.packs.length, 2);
+    assert.equal(verified.receipt.otherCards, 0, "a booster holds only its packs");
+
+    const wrongTable = new Map([...dropTables.keys()].map((hash) => [hash, { ...dropTables.get(hash), foil: { ...dropTables.get(hash).foil, numerator: 0 } }]));
+    const tampered = await verifyOrderOnChain({ orderId: placed.order.id, reader: w.publishing.reader, rootAccount: ROOT, dropTables: wrongTable, paymentBlock: paid.blockNum });
+    assert.equal(tampered.verdict, PackVerdict.INVALID, "a table that does not hash to the receipt's is refused");
+    let output = "";
+    const listingFetch = async () => ({ json: async () => JSON.parse(JSON.stringify(listing)) });
+    const code = await verifyOrderCommand([placed.order.id, "--server", "http://shop.invalid", "--root", ROOT, "--payment-block", String(paid.blockNum)], { fetch: /** @type {any} */ (listingFetch), reader: w.publishing.reader, write: (text) => (output += text) });
+    assert.equal(code, 0, output);
+    assert.match(output, /pack 1 \(epoch 1\): /);
+    assert.match(output, /VERDICT: VALID/);
+    const early = await verifyOrderOnChain({ orderId: placed.order.id, reader: w.publishing.reader, rootAccount: ROOT, dropTables, paymentBlock: 1 });
+    assert.match(early.problem, /committed on chain only after the payment/);
   });
 
   it("refuses to start with a broadcaster key that also controls the active authority", async () => {

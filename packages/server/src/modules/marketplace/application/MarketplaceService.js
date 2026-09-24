@@ -121,7 +121,7 @@ export class MarketplaceService {
     const now = this.#clock.now();
     const products = [...this.#catalog.products.values()].filter((product) => isOnSale(product, now)).map((product) => this.#productView(product));
     const dropTables = [...this.#catalog.dropTables.values()].map(({ table, hash, size, odds }) =>
-      Object.freeze({ id: table.id, hash, edition: table.edition, size, odds, foil: table.foil, pools: table.pools }),
+      Object.freeze({ id: table.id, hash, edition: table.edition, size, odds, foil: table.foil, pools: table.pools, table }),
     );
     return Object.freeze({ products: Object.freeze(products), dropTables: Object.freeze(dropTables), rarities: this.#catalog.rarities.order });
   }
