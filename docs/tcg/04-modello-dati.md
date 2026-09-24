@@ -62,9 +62,13 @@ Zero righe aggiornate = qualcun altro è arrivato prima (altro worker, altra ric
 
 `blockchain_events.kind` ∈ `GAME_RECORD`, `RECEIPT`, `EPOCH`; `status`: `BUILT → BROADCAST → INCLUDED → IRREVERSIBLE`, e di nuovo `BUILT` (con `reconciliation = 'MISSING_ON_CHAIN'`, `transaction_id` azzerato) quando la sua transazione scade senza essere inclusa. Il payload non cambia mai (trigger), quindi un nuovo invio pubblica gli stessi byte. `blockchain_transactions` registra ogni transazione firmata **prima** dell'invio (`BROADCAST`, con la scadenza e il JSON firmato), poi `INCLUDED` (con il blocco), `IRREVERSIBLE` o `EXPIRED`. `game_events.record_seq` viene impostato una volta sola, quando l'evento entra in un record. `chain_cursors` tiene la posizione del tracker nello storico di ogni broadcaster (`tracker:<rete>:<account>`); `chain_alerts.fingerprint` evita di registrare due volte la stessa anomalia.
 
+### 4.2 Operazioni (M6, migrazione `005_operations.sql`)
+
+`refunds`: `PENDING → SENT` quando il trasferimento con memo `m8tcg refund <id>`, destinatario, asset e importo esatti compare nello storico dello shop (`refund_tx_id`, `refund_op_index`, `refund_block_num`, `refund_time`), `→ CONFIRMED` quando due nodi lo vedono sotto il blocco irreversibile, di nuovo `PENDING` se sparisce. Un vincolo impedisce `SENT`/`CONFIRMED` senza il trasferimento. Indice su `blockchain_events.payload_hash` per sapere se l'impegno di un'epoca è sulla catena prima di vendere pacchetti.
+
 ## 5. Segreti a riposo
 
-`games.secret_encrypted` e `rng_epochs.secret_encrypted` sono cifrati con AES-256-GCM con una chiave fornita dall'ambiente (non nel DB, non nel repository), con id di chiave per la rotazione. Un dump del DB non permette di conoscere i seed delle partite in corso né i pacchetti futuri.
+`games.secret_encrypted` e `rng_epochs.secret_encrypted` sono cifrati con AES-256-GCM con una chiave fornita dall'ambiente (non nel DB, non nel repository), con id di chiave per la rotazione (procedura in 07 §4.1, script `maintenance/rotateDataKey.js`). Un dump del DB non permette di conoscere i seed delle partite in corso né i pacchetti futuri.
 
 ## 6. Crescita
 

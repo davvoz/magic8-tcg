@@ -223,6 +223,13 @@ I contenuti sono pubblicati anche come post STEEM (fino a 64 KB) o scaricabili p
 
 Collega pubblicamente pagamento, ordine e copie coniate (id, definizione, numero di serie, finitura). `t` è `H("drop-table", canonical(tabella risolta))`: la tabella con i pool di carte per rarità, pubblicata da `GET /api/products`. Rivelato il segreto dell'epoca (`GET /api/pack-epochs`), chiunque ricalcola ogni pacchetto con `drawPack(tabella, packSeed(…))` e lo confronta con le carte della ricevuta (`buildReceipts`, `drawPack` e `packSeed` in `@magic8/protocol`). Oltre 8 KB la ricevuta si divide in parti (`part: [n, totale]`). Nota di privacy: rende pubblici gli acquisti, che però sono già pubblici perché il pagamento è on-chain.
 
+**Verifica dalla catena (M6):** `verifyOrderOnChain` in `@magic8/protocol` e `node tools/verify-order.js <ordine> --server …`. Leggono la ricevuta (tutte le parti) e l'impegno e la rivelazione dell'epoca dagli storici dei broadcaster autorizzati. Poi controllano:
+- che l'impegno sia in un blocco precedente alla ricevuta e al pagamento;
+- che il segreto rivelato corrisponda all'impegno;
+- che la drop table abbia l'hash `t`.
+
+Infine ripescano ogni pacchetto: ogni carta estratta deve essere tra quelle coniate. Il server vende pacchetti solo dopo che l'impegno dell'epoca è sulla catena, quindi il segreto è fissato prima che esista il txId che genera i pacchetti.
+
 ## 13. Validazione server-side
 
 Prima che un evento venga creato:

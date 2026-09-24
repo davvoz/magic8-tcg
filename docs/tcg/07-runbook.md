@@ -1,0 +1,121 @@
+# 07 — Runbook operativo
+
+**Stato:** M6, 2026-09-24. Per chi installa e gestisce il server. Ogni procedura dice cosa fare, cosa controllare e cosa **non** fare.
+
+## 1. Installazione
+
+**Servono:**
+- Node 22;
+- un PostgreSQL gestito o proprio (≥ 15), con backup;
+- un reverse proxy con TLS davanti al server (nginx, Caddy, il bilanciatore del provider). Deve inoltrare i WebSocket su `/ws` e **aggiungere** l'indirizzo del client in fondo a `X-Forwarded-For`.
+
+Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio).
+
+| Variabile | Obbligatoria | Cosa |
+|---|---|---|
+| `M8_PUBLIC_ORIGIN` | sì | es. `https://play.example`. In https attiva cookie `__Host-`, HSTS e i controlli sotto |
+| `M8_DATABASE_URL` | sì (https) | `postgres://…?sslmode=require` |
+| `M8_DATA_KEY` | sì (https) | 64 caratteri esadecimali (`openssl rand -hex 32`): cifra i segreti di partita e delle epoche |
+| `M8_DATA_KEY_ID`, `M8_DATA_KEYS_OLD` | per la rotazione | vedi §4.1 |
+| `M8_TRUST_PROXY` | `true` dietro **un** proxy | usa l'ultimo indirizzo di `X-Forwarded-For` (quello scritto dal proxy); con `false` l'header è ignorato |
+| `M8_SHOP_ACCOUNT` | default `luciojolly` | riceve i pagamenti |
+| `M8_ROOT_ACCOUNT` | default `luciojolly` | pubblica i manifest (consigliato un account dedicato, vedi 06) |
+| `M8_BROADCASTER_KEYS` | per pubblicare | `account:WIF_posting,…`, **solo chiavi posting** |
+| `M8_ADMIN_ACCOUNTS` | default = shop | account che vedono `/admin.html` |
+| `M8_METRICS_TOKEN` | per il monitoraggio | 32–128 caratteri: `Authorization: Bearer …` su `/api/metrics` |
+| `M8_STEEM_NODES` | default nell'ordine di 06 | nodi RPC, separati da virgola |
+| `M8_HOST`, `M8_PORT`, `M8_LOG_LEVEL`, `M8_SERVE_CLIENT`, `M8_APP_NAME` | no | |
+
+Il server rifiuta di partire con:
+- una configurazione non valida (il messaggio dice quale variabile);
+- una chiave broadcaster che controlla anche l'autorità active o owner.
+
+**Sonde per la piattaforma:**
+- `GET /api/health`: il processo risponde (liveness);
+- `GET /api/ready`: risponde anche il database (readiness).
+
+**Metriche:** `GET /api/metrics` in formato Prometheus, da raccogliere ogni 30–60 s.
+
+**Log:** una riga JSON per evento su stdout. Da mandare a un sistema che possa avvisare sulle righe `"level":"error"`, in particolare `alarm raised: …` e `chain alert: …`.
+
+## 2. Lancio (una volta)
+
+1. Creare gli account: root (meglio dedicato), shop, 1–4 broadcaster (nomi validi: ogni parte tra i punti ha almeno 3 caratteri). Delegare Steem Power ai broadcaster da un account freddo.
+2. Aprire `/manifest.html` e pubblicare con Keychain, chiave **active del root**, la lista dei broadcaster. Attendere circa un minuto (irreversibilità).
+3. Avviare il server con `M8_BROADCASTER_KEYS`. Nel log: nessun `broadcaster not authorised`.
+4. Giocare una partita di prova e verificarla:
+   - `node tools/verify-game.js <id> --server https://…`;
+   - da `/verify.html?game=<id>`.
+5. Comprare un pacchetto di prova. Dopo la rivelazione dell'epoca (circa 7 giorni) verificarlo con `node tools/verify-order.js <ordine> --server https://…`.
+
+## 3. Backup e ripristino
+
+- **PostgreSQL:** backup giornaliero più log delle transazioni (point-in-time recovery, di solito incluso nei servizi gestiti). Provare un ripristino almeno una volta prima del lancio.
+- **Chiave dei dati (`M8_DATA_KEY` e le vecchie):** vanno salvate **separatamente** dal database, per esempio in un gestore di segreti. Senza la chiave:
+  - i segreti delle epoche non rivelate sono persi, e quei pacchetti non si potranno più dimostrare;
+  - i segreti delle partite in corso sono persi, e quelle partite non si possono riprendere.
+  Un backup del database insieme alla sua chiave equivale a un furto dei segreti.
+- **Cosa si ricostruisce dalla catena:** la storia delle partite pubblicate e le ricevute. **Non** si ricostruiscono inventari, ordini non evasi, sessioni: per quelli serve il backup.
+- **Dopo un ripristino a un punto passato**, il tracker vedrà sulla catena operazioni che il database non conosce più: allarmi `UNKNOWN_ON_CHAIN` attesi. Si risolvono dal pannello annotando "ripristino del …".
+
+## 4. Chiavi
+
+### 4.1 Rotazione della chiave dei dati
+
+1. Generare la nuova chiave.
+2. Impostarla come `M8_DATA_KEY` con un nuovo `M8_DATA_KEY_ID`, e mettere la vecchia in `M8_DATA_KEYS_OLD` nella forma `idVecchio:hexVecchio`.
+3. Riavviare il server.
+4. `node packages/server/src/maintenance/rotateDataKey.js`, con lo stesso ambiente del server. Si può eseguire a server acceso ed è ripetibile.
+5. Quando riporta `resealed: 0`, togliere la vecchia chiave da `M8_DATA_KEYS_OLD` e riavviare.
+
+### 4.2 Chiave di un broadcaster compromessa (o sospetta)
+
+1. **Subito:** da `/manifest.html` pubblicare un manifest **senza** quell'account (o con la lista vuota). Da quel blocco i verificatori ignorano ciò che firma.
+2. Cambiare la chiave posting dell'account (serve la chiave owner o active, fuori dal server), oppure usare un account nuovo.
+3. Pubblicare un manifest con gli account validi e attendere l'irreversibilità.
+4. Aggiornare `M8_BROADCASTER_KEYS` e riavviare. I record in attesa ripartono da soli, con gli stessi byte.
+5. Gli allarmi `UNKNOWN_ON_CHAIN` delle operazioni fatte dall'attaccante vanno risolti annotando l'incidente. Le partite restano verificabili: le operazioni firmate dopo la revoca non contano.
+
+### 4.3 Altri segreti
+
+- **Token delle metriche:** si cambia la variabile e si riavvia.
+- **Sessioni utente:** un utente che cambia la chiave posting perde le sessioni aperte entro 10 minuti (job di controllo delle chiavi).
+
+## 5. Allarmi (`alarm raised: …`)
+
+| Allarme | Significato | Cosa fare |
+|---|---|---|
+| `outbox_backlog` | un record attende da più di 10 minuti | Controllare nel pannello le Resource Credits dei broadcaster, i manifest (log `broadcaster not authorised`) e i nodi (`broadcast failed`). Le partite continuano; i record partono da soli quando la causa è risolta |
+| `chain_alerts_open` | anomalia sulla catena | Vedi §6 |
+| `payment_confirmation_slow` | un pagamento non viene confermato da 30 minuti | I due nodi di verifica non concordano o sono giù: controllare `M8_STEEM_NODES` e lo stato dei nodi. Non si conferma mai a mano |
+| `refund_waiting` | un rimborso attende da più di 24 ore | Pannello, sezione rimborsi |
+| `broadcaster_paused` | Resource Credits sotto il 5% | Delegare Steem Power all'account |
+
+## 6. Anomalie della catena (`/admin.html`, "Chain alerts")
+
+| Tipo | Significato | Cosa fare |
+|---|---|---|
+| `UNKNOWN_ON_CHAIN` | un'operazione `m8tcg_*` firmata dal nostro broadcaster che il database non conosce | **Trattarla come chiave rubata** (§4.2), a meno che non segua un ripristino da backup (§3) |
+| `CONFLICT` | un record sulla catena ha byte diversi dal nostro con lo stesso `(partita, sequenza)` | Stessa procedura di una chiave rubata. La partita è contestata: non assegnare ricompense legate a quella partita |
+| `REPEATED_REBROADCAST` | un record è stato inviato 5 volte senza entrare in un blocco | Nodi che rifiutano la transazione: guardare `last_error` nel log `broadcast failed`. Di solito sono RC esaurite o nodi fuori servizio |
+| `RC_CRITICAL` | broadcaster fermo per Resource Credits | Delegare Steem Power |
+
+Un allarme si risolve dal pannello con una nota su cosa si è controllato o fatto. La nota finisce nell'audit log insieme a chi l'ha scritta.
+
+## 7. Rimborsi
+
+1. Dal pannello, "Refunds to send" → **Pay with Keychain**. Keychain chiede di firmare con lo shop un trasferimento di importo esatto, con memo `m8tcg refund <id>`.
+2. Il server **non** si fida del pannello. Il rimborso diventa `SENT` quando il trasferimento compare nello storico dello shop, e `CONFIRMED` quando due nodi lo vedono sotto il blocco irreversibile.
+3. Importo sbagliato, memo di un rimborso già pagato o sconosciuto: il server lo registra nell'audit (`payments.refund_mismatch`, `refund_paid_twice`, `refund_unknown`) e nel log come errore. Il denaro inviato per sbaglio si recupera a mano chiedendolo al destinatario.
+
+## 8. Audit log
+
+Dal pannello, "Check hash chain" ricalcola la catena di hash dell'audit. `BROKEN at entry N` significa che qualcuno ha modificato o cancellato righe dal database (i trigger lo impediscono all'utente applicativo). È un **incidente di sicurezza**: isolare il database, confrontare con i backup, cambiare le credenziali del database.
+
+## 9. Server compromesso
+
+1. Revocare i broadcaster (§4.2).
+2. Cambiare la chiave dei dati (§4.1), le credenziali del database e il token delle metriche.
+3. Invalidare tutte le sessioni: `UPDATE sessions SET revoked_at = now() WHERE revoked_at IS NULL`.
+
+Lo shop e il root non hanno chiavi sul server: i fondi non sono esposti. Le partite pubblicate restano verificabili; quelle pubblicate dopo la revoca con chiavi rubate non contano.
