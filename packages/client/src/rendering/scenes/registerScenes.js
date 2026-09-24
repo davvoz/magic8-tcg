@@ -1,8 +1,10 @@
 /**
  * Registers every implemented scene. A scene that does not exist yet is
  * simply not registered, so menu buttons pointing at it stay disabled
- * instead of leading to a placeholder.
+ * instead of leading to a placeholder. The account scenes (starter deck,
+ * collection) need a game server and exist only when the app has one.
  */
+import { CollectionScene } from "./CollectionScene.js";
 import { DeckBuilderScene } from "./DeckBuilderScene.js";
 import { DeckSelectionScene } from "./DeckSelectionScene.js";
 import { ErrorScene } from "./ErrorScene.js";
@@ -10,6 +12,7 @@ import { LoginScene } from "./LoginScene.js";
 import { MainMenuScene } from "./MainMenuScene.js";
 import { MatchScene } from "./MatchScene.js";
 import { SceneId } from "./sceneIds.js";
+import { StarterScene } from "./StarterScene.js";
 
 /**
  * @param {import("./SceneManager.js").SceneManager} sceneManager
@@ -23,4 +26,9 @@ export function registerScenes(sceneManager, app) {
     .register(SceneId.MATCH, (services) => new MatchScene(services))
     .register(SceneId.LOGIN, (services) => new LoginScene(services, app))
     .register(SceneId.ERROR, (services) => new ErrorScene(services));
+  if (app.account !== undefined) {
+    sceneManager
+      .register(SceneId.STARTER, (services) => new StarterScene(services, app))
+      .register(SceneId.COLLECTION, (services) => new CollectionScene(services, app));
+  }
 }

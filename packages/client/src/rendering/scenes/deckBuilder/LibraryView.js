@@ -5,6 +5,7 @@
  */
 import { DeckSource } from "../../../application/decks/DeckSelectionService.js";
 import { factionTones } from "../../theme/Theme.js";
+import { deckStorageText } from "../deckStorage.js";
 import { Button } from "../../ui/Button.js";
 import { Label } from "../../ui/Label.js";
 import { OptionRow } from "../../ui/OptionRow.js";
@@ -66,7 +67,7 @@ export class LibraryView {
     list.add(new OptionRow({ id: `library.deck.${deck.id}`, x: 0, y, width: labelWidth, height: ROW.height, text: deck.name, subtitle: `${deck.faction} · ${deck.totalCards} cards · ${source}${status}`, stripeColor: factionTones(this.#host.theme, deck.faction).base, onActivate: () => this.#edit(deck) }));
     list.add(new Button({ id: `library.edit.${deck.id}`, x: labelWidth + ACTION.gap, y, width: ACTION.width, height: ROW.height, text: custom ? "Edit" : "Copy", onActivate: () => this.#edit(deck) }));
     if (custom) {
-      list.add(new Button({ id: `library.delete.${deck.id}`, x: labelWidth + 2 * ACTION.gap + ACTION.width, y, width: ACTION.width, height: ROW.height, text: "Delete", variant: "danger", onActivate: () => this.#confirmDelete(deck) }));
+      list.add(new Button({ id: `library.delete.${deck.id}`, x: labelWidth + 2 * ACTION.gap + ACTION.width, y, width: ACTION.width, height: ROW.height, text: "Delete", variant: "danger", textSize: "small", onActivate: () => this.#confirmDelete(deck) }));
     }
   }
 
@@ -82,7 +83,7 @@ export class LibraryView {
     const hints = [
       `${rules.minSize}–${rules.maxSize} cards, at most ${rules.maxCopies} copies of a card.`,
       rules.restrictsCards ? `One faction (${listWithOr(rules.deckFactions)}) plus shared ${rules.factionRule.neutral} cards.` : `Start from a faction (${listWithOr(rules.deckFactions)}); any card may be added.`,
-      app.environment.storage === "local" ? "Decks are saved in this browser." : "Storage is unavailable: decks live in memory only.",
+      app.account?.state.account ? `Decks are ${deckStorageText(app)}; only cards you own can go in.` : `Decks are ${deckStorageText(app)}.`,
     ];
     hints.forEach((text, index) => panel.add(new Label({ x: INSET, y: 60 + index * 28, width, height: 26, text, size: "small", align: "left", colorKey: "textMuted", fit: true })));
 

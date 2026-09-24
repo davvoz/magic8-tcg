@@ -17,6 +17,7 @@ import { validateDeckList } from "@magic8/engine/domain/decks/validateDeckList.j
 export const RemoteDeckError = Object.freeze({
   NOT_FOUND: "DECK_NOT_FOUND",
   BAD_DECK: "BAD_DECK",
+  ACCOUNT_CHANGED: "ACCOUNT_CHANGED",
 });
 
 const CLIENT_ID_PREFIX = "d_";
@@ -35,6 +36,8 @@ export class RemoteDeckRepository {
   #decks = Object.freeze([]);
   /** @type {Map<string, DeckRef>} client id → server identity */
   #refs = new Map();
+  /** Increases on every clear, so a slow refresh for a previous account is ignored. */
+  #generation = 0;
 
   /** @param {{ api: import("../../application/ports/CollectionApi.contract.js").CollectionApi }} deps */
   constructor({ api }) {
@@ -43,11 +46,17 @@ export class RemoteDeckRepository {
 
   /** Reloads the account's decks from the server. */
   async refresh() {
+    const generation = this.#generation;
     const listed = await this.#api.listDecks();
+    if (generation !== this.#generation) {
+      // Cleared while loading (sign-out, another account): the answer belongs to nobody now.
+      return ok(this.#decks);
+    }
     if (!listed.ok) {
       return listed;
     }
-    this.clear();
+    this.#decks = Object.freeze([]);
+    this.#refs.clear();
     for (const deck of listed.value) {
       const adopted = this.#adopt(deck);
       if (!adopted.ok) {
@@ -57,8 +66,9 @@ export class RemoteDeckRepository {
     return ok(this.#decks);
   }
 
-  /** Forgets everything (sign-out). */
+  /** Forgets everything (sign-out); a refresh still on its way is ignored. */
   clear() {
+    this.#generation += 1;
     this.#decks = Object.freeze([]);
     this.#refs.clear();
   }
@@ -80,7 +90,11 @@ export class RemoteDeckRepository {
   async save(deck) {
     const input = Object.freeze({ name: deck.name, faction: deck.faction, cards: deck.entries });
     const ref = this.#refs.get(deck.id);
+    const generation = this.#generation;
     const saved = ref === undefined ? await this.#api.createDeck(input) : await this.#api.updateDeck(ref.serverId, ref.version, input);
+    if (generation !== this.#generation) {
+      return accountChanged();
+    }
     return saved.ok ? this.#adopt(saved.value) : saved;
   }
 
@@ -90,7 +104,11 @@ export class RemoteDeckRepository {
     if (ref === undefined) {
       return fail(RemoteDeckError.NOT_FOUND, `no account deck "${deckId}"`);
     }
+    const generation = this.#generation;
     const removed = await this.#api.deleteDeck(ref.serverId);
+    if (generation !== this.#generation) {
+      return accountChanged();
+    }
     if (!removed.ok) {
       return removed;
     }
@@ -113,4 +131,9 @@ export class RemoteDeckRepository {
     this.#decks = Object.freeze([...this.#decks.filter((existing) => existing.id !== id), list.value]);
     return ok(list.value);
   }
+}
+
+/** A write that finished after the player signed out: the cache it would update is gone. */
+function accountChanged() {
+  return fail(RemoteDeckError.ACCOUNT_CHANGED, "you signed out before the server answered");
 }

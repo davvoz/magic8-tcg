@@ -69,7 +69,8 @@ describe("registerScenes", () => {
   it("registers every scene and the menu can reach them all", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     registerScenes(manager, appContext());
-    assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map(() => true));
+    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION];
+    assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map((id) => !accountScenes.includes(id)), "account scenes need a game server");
     assert.equal(manager.navigate(SceneId.MAIN_MENU), true);
     assert.equal(buttonNamed(manager.current, "Deck Builder").enabled, true);
     assert.equal(buttonNamed(manager.current, "Play").enabled, true);

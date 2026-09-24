@@ -11,6 +11,7 @@
  * @property {import("./ports/Logger.contract.js").Logger} logger
  * @property {Readonly<{ version: string, storage: "local" | "memory" }>} environment
  * @property {import("./identity/IdentityService.js").IdentityService} [identity] absent when the client runs without a game server (tools, previews)
+ * @property {import("./account/AccountService.js").AccountService} [account] the signed-in player's collection and decks; absent with `identity`
  */
 
 export const APP_CONTEXT_KEYS = Object.freeze(["content", "deckSelection", "deckBuilding", "matchSetup", "createSeed", "logger", "environment"]);

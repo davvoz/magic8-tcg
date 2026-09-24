@@ -7,13 +7,18 @@
  * validation the ErrorScene explains why instead of a broken screen.
  */
 import { ContentResource } from "./application/ports/ContentSource.contract.js";
+import { AccountService } from "./application/account/AccountService.js";
+import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
+import { AccountDeckRepository } from "./application/decks/AccountDeckRepository.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
 import { IdentityService } from "./application/identity/IdentityService.js";
 import { MatchSetupService } from "./application/match/MatchSetupService.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
+import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
+import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
 import { ConsoleLogger } from "./infrastructure/logging/ConsoleLogger.js";
 import { InMemoryStore } from "./infrastructure/persistence/InMemoryStore.js";
@@ -154,9 +159,10 @@ function showFatal(title, message) {
 }
 
 async function boot() {
-  const source = new FetchContentSource(CONTENT_MANIFEST, (url, init) => fetch(url, init));
+  const httpFetch = (url, init) => fetch(url, init);
+  const source = new FetchContentSource(CONTENT_MANIFEST, httpFetch);
   const identity = new IdentityService({
-    api: new HttpAuthApi({ fetch: (url, init) => fetch(url, init) }),
+    api: new HttpAuthApi({ fetch: httpFetch }),
     wallet: new KeychainWalletConnector({
       locate: () => globalThis.steem_keychain,
       timers: { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
@@ -178,18 +184,27 @@ async function boot() {
   if (!storageAvailable) {
     logger.warn("local storage unavailable; decks will not persist");
   }
-  const repository = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
+  const browserDecks = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
+  // Signed in, decks live in the account (only owned cards); otherwise in this browser.
+  const collectionApi = new HttpCollectionApi({ fetch: httpFetch });
+  const collection = new CollectionService({ api: collectionApi });
+  const accountDecks = new RemoteDeckRepository({ api: collectionApi });
+  const repository = new AccountDeckRepository({ identity, account: accountDecks, browser: browserDecks });
+  const deckBuilding = new DeckBuildingService({ content: content.value, repository, ownership: () => collection.ownedCounts() });
+  const account = new AccountService({ identity, collection, decks: accountDecks, deckBuilding, logger });
+  account.start();
 
   /** @type {import("./application/AppContext.js").AppContext} */
   const app = Object.freeze({
     content: content.value,
     deckSelection: new DeckSelectionService({ content: content.value, repository, logger }),
-    deckBuilding: new DeckBuildingService({ content: content.value, repository }),
+    deckBuilding,
     matchSetup: new MatchSetupService({ content: content.value, effects: createCoreEffectRegistry(), scheduler: browserScheduler, logger }),
     createSeed,
     logger,
     environment: Object.freeze({ version: ENGINE_VERSION, storage: storageAvailable ? "local" : "memory" }),
     identity,
+    account,
   });
 
   const { sceneManager } = buildPresentation(theme.value);

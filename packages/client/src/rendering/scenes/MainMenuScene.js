@@ -3,27 +3,31 @@
  * buttons and a content summary. Buttons whose destination scene is not
  * registered are disabled rather than pretending to work.
  */
+import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
 import { Ornament } from "../ui/Ornament.js";
+import { deckStorageText } from "./deckStorage.js";
 import { HeroNode } from "./mainMenu/HeroNode.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const BUTTON_WIDTH = 360;
-const BUTTON_HEIGHT = 64;
-const BUTTON_GAP = 20;
+const BUTTON_HEIGHT = 56;
+const BUTTON_GAP = 14;
 const HERO = Object.freeze({ y: 20, height: 280 });
 const TITLE = Object.freeze({ y: 150, height: 110 });
 const SUBTITLE_Y = 268;
 const ORNAMENT_Y = 314;
 const BUTTONS_Y = 370;
-const SUMMARY = Object.freeze({ y: 630, lineHeight: 30, width: 900 });
+const SUMMARY = Object.freeze({ y: 660, lineHeight: 30, width: 900 });
 
 export class MainMenuScene extends Scene {
   #app;
+  /** @type {(() => void) | null} */
+  #unsubscribe = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -35,7 +39,22 @@ export class MainMenuScene extends Scene {
   }
 
   enter() {
-    const { viewport, hasScene, navigate, theme } = this.services;
+    // The account loads after sign-in; redraw when it does (and when it fails).
+    this.#unsubscribe = this.#app.account?.subscribe(() => this.#rebuild()) ?? null;
+    this.#rebuild();
+    this.services.logger.info("main menu ready", { theme: this.services.theme.layout });
+  }
+
+  exit() {
+    this.#unsubscribe?.();
+    this.#unsubscribe = null;
+    super.exit();
+  }
+
+  #rebuild() {
+    const focusedId = this.focusedNode?.id ?? "";
+    this.root.clear();
+    const { viewport, hasScene, navigate } = this.services;
     const width = viewport.logicalWidth;
     const centerX = width / 2;
     this.root.add(new HeroNode({ x: centerX - 400, y: HERO.y, width: 800, height: HERO.height }));
@@ -46,8 +65,11 @@ export class MainMenuScene extends Scene {
     const entries = [
       { id: "play", text: "Play", scene: SceneId.DECK_SELECTION, variant: "primary" },
       { id: "deckBuilder", text: "Deck Builder", scene: SceneId.DECK_BUILDER, variant: "secondary" },
+      ...this.#collectionEntries(),
       ...this.#accountEntries(),
     ];
+    /** @type {Button | null} */
+    let first = null;
     entries.forEach((entry, index) => {
       const button = this.root.add(
         new Button({
@@ -62,9 +84,7 @@ export class MainMenuScene extends Scene {
         }),
       );
       button.enabled = entry.scene === null || hasScene(entry.scene);
-      if (index === 0) {
-        this.focus(button);
-      }
+      first ??= button;
     });
 
     const draft = this.#draftSummary();
@@ -78,7 +98,8 @@ export class MainMenuScene extends Scene {
     lines.forEach((line, index) => {
       this.root.add(new Label({ x: centerX - SUMMARY.width / 2, y: SUMMARY.y + index * SUMMARY.lineHeight, width: SUMMARY.width, height: SUMMARY.lineHeight, text: line.text, size: "small", colorKey: line.colorKey, fit: true }));
     });
-    this.services.logger.info("main menu ready", { theme: theme.layout });
+    this.focus(this.root.findById(focusedId) ?? first);
+    this.services.requestRender();
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -86,6 +107,18 @@ export class MainMenuScene extends Scene {
     const { theme, viewport } = this.services;
     drawSceneBackdrop(context, theme, viewport.bounds, { seed: "menu" });
     super.render(context);
+  }
+
+  /** The free starter deck until it is taken, the collection afterwards. */
+  #collectionEntries() {
+    const account = this.#app.account;
+    if (account === undefined || account.state.status === AccountStatus.SIGNED_OUT) {
+      return [];
+    }
+    if (account.needsStarter) {
+      return [{ id: "starter", text: "Free starter deck", scene: SceneId.STARTER, variant: "primary" }];
+    }
+    return [{ id: "collection", text: "Collection", scene: SceneId.COLLECTION, variant: "secondary" }];
   }
 
   /** Sign in / sign out, when a game server is reachable. */
@@ -111,9 +144,25 @@ export class MainMenuScene extends Scene {
       return "Offline: practice against the AI (no game server)";
     }
     if (state.status === IdentityStatus.SIGNED_IN && state.user !== null) {
-      return `Signed in as @${state.user.account} (${state.user.network})`;
+      return `Signed in as @${state.user.account} (${state.user.network})${this.#collectionSummary()}`;
     }
     return state.status === IdentityStatus.UNKNOWN ? "Connecting to the game server…" : "Not signed in";
+  }
+
+  #collectionSummary() {
+    const account = this.#app.account;
+    if (account === undefined) {
+      return "";
+    }
+    const { status, error } = account.state;
+    if (status === AccountStatus.LOADING) {
+      return " · loading your collection…";
+    }
+    if (status === AccountStatus.FAILED) {
+      return ` · collection unavailable: ${error?.message ?? "unknown error"}`;
+    }
+    const owned = account.collection.state.cards.reduce((total, entry) => total + entry.copies.length, 0);
+    return ` · ${owned} card${owned === 1 ? "" : "s"} owned`;
   }
 
   #contentSummary() {
@@ -134,7 +183,6 @@ export class MainMenuScene extends Scene {
 
   #storageSummary() {
     const saved = this.#app.deckSelection.listDecks().filter((option) => option.source === "custom").length;
-    const where = this.#app.environment.storage === "local" ? "saved in this browser" : "kept in memory only (storage unavailable)";
-    return `${saved} custom deck${saved === 1 ? "" : "s"} ${where}`;
+    return `${saved} custom deck${saved === 1 ? "" : "s"} ${deckStorageText(this.#app)}`;
   }
 }
