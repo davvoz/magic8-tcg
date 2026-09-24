@@ -108,7 +108,16 @@ function parseChainSettings(env) {
   return {
     rootAccounts: Object.freeze({ steem: parseAccount(env.M8_ROOT_ACCOUNT ?? "luciojolly", "M8_ROOT_ACCOUNT") }),
     broadcasterKeys: parseBroadcasterKeys(env.M8_BROADCASTER_KEYS ?? ""),
+    adminAccounts: Object.freeze({ steem: parseAccountList(env.M8_ADMIN_ACCOUNTS ?? env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_ADMIN_ACCOUNTS") }),
   };
+}
+
+/**
+ * @param {string} value comma-separated account names
+ * @param {string} name
+ */
+function parseAccountList(value, name) {
+  return Object.freeze(value.split(",").map((account) => account.trim()).filter((account) => account !== "").map((account) => parseAccount(account, name)));
 }
 
 /**

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Magic8 — operations</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0a0c14; --panel: #151a2a; --line: #2a3350; --text: #e6e9f2; --muted: #9aa3bd; --good: #4cc38a; --bad: #e5484d; --wait: #f5a524; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+    main { max-width: 1000px; margin: 0 auto; padding: 20px 16px 48px; }
+    h1 { font-size: 20px; margin: 0 0 12px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+    section { background: var(--panel); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+    th { color: var(--muted); font-weight: 500; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+    .stat { background: var(--bg); border-radius: 6px; padding: 8px 10px; } .stat b { display: block; font-size: 18px; }
+    .stat.bad b { color: var(--bad); } .stat.wait b { color: var(--wait); }
+    button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 0; background: #3e63dd; color: white; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    input { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); min-width: 0; }
+    code, .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+    #notice { margin: 8px 0; min-height: 1.5em; } #notice.bad { color: var(--bad); } #notice.good { color: var(--good); }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Operations</h1>
+    <p class="muted">Sign in to the game with an operator account first (M8_ADMIN_ACCOUNTS). Refunds are paid from the shop account with Keychain on this computer; the server closes them only when the chain shows the exact transfer.</p>
+    <div id="notice"></div>
+    <h2>Overview</h2>
+    <section><div class="stats" id="stats"></div></section>
+    <h2>Refunds to send</h2>
+    <section><table><thead><tr><th>To</th><th>Amount</th><th>Memo</th><th>Status</th><th></th></tr></thead><tbody id="refunds"></tbody></table></section>
+    <h2>Chain alerts</h2>
+    <section><table><thead><tr><th>Kind</th><th>Details</th><th>Raised</th><th>Resolve</th></tr></thead><tbody id="alerts"></tbody></table></section>
+    <h2>Audit log</h2>
+    <section>
+      <form id="auditForm" class="row"><input id="auditAction" placeholder="action prefix, e.g. payments."> <input id="auditTarget" placeholder="target id"> <button type="submit">Search</button> <button type="button" id="auditVerify">Check hash chain</button> <span id="auditIntegrity" class="muted"></span></form>
+      <table><thead><tr><th>#</th><th>When</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody id="audit"></tbody></table>
+    </section>
+  </main>
+  <script type="module" src="verify/adminPage.js"></script>
+</body>
+</html>

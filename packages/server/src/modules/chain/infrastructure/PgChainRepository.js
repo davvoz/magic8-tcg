@@ -186,6 +186,27 @@ export class PgChainRepository {
   }
 
   /**
+   * Open alerts first, then the most recently resolved ones.
+   * @param {number} limit
+   */
+  async listAlerts(limit) {
+    const rows = await this.#db.rows("SELECT * FROM chain_alerts ORDER BY resolved_at IS NOT NULL, id DESC LIMIT $1", [limit]);
+    return Object.freeze(
+      rows.map((row) => Object.freeze({ id: row.id, network: row.network, kind: row.kind, fingerprint: row.fingerprint, details: row.details, createdAt: fromTimestamp(row.created_at), resolvedAt: row.resolved_at === null ? null : fromTimestamp(row.resolved_at) })),
+    );
+  }
+
+  /**
+   * @param {number} id
+   * @param {number} at
+   * @returns {Promise<Readonly<{ kind: string, fingerprint: string }> | null>} null when unknown or already resolved
+   */
+  async resolveAlert(id, at) {
+    const row = await this.#db.maybeOne("UPDATE chain_alerts SET resolved_at = $2 WHERE id = $1 AND resolved_at IS NULL RETURNING kind, fingerprint", [id, toTimestamp(at)]);
+    return row === null ? null : Object.freeze({ kind: row.kind, fingerprint: row.fingerprint });
+  }
+
+  /**
    * @param {string} network
    * @returns {Promise<readonly Readonly<{ kind: string, fingerprint: string, details: Readonly<Record<string, unknown>> }>[]>}
    */

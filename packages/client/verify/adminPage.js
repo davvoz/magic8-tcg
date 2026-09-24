@@ -1,0 +1,180 @@
+/**
+ * The operations page (admin.html). It only reads the admin API and asks
+ * Keychain to sign refunds on the operator's computer; the server decides
+ * nothing from what this page says. Only textContent is written.
+ */
+const REQUEST_HEADER = { "x-m8-request": "1" };
+const REFRESH_MS = 15_000;
+
+/** @param {string} id */
+const element = (id) => /** @type {HTMLElement & HTMLInputElement} */ (document.getElementById(id));
+
+/** @param {string} text @param {"good" | "bad" | ""} tone */
+function notice(text, tone = "") {
+  element("notice").textContent = text;
+  element("notice").className = tone;
+}
+
+/** @param {number} ms */
+const when = (ms) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
+
+/**
+ * @param {string} path
+ * @param {unknown} [body]
+ */
+async function api(path, body) {
+  const init = body === undefined ? {} : { method: "POST", headers: { ...REQUEST_HEADER, "content-type": "application/json" }, body: JSON.stringify(body) };
+  const response = await fetch(path, { credentials: "same-origin", ...init });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error?.message ?? `HTTP ${response.status}`);
+  }
+  return json;
+}
+
+/**
+ * @param {string} tag
+ * @param {string | Node} content
+ */
+function cell(tag, content) {
+  const node = document.createElement(tag);
+  node.append(content);
+  return node;
+}
+
+/** @param {readonly (string | Node)[]} cells */
+function row(cells) {
+  const tr = document.createElement("tr");
+  tr.append(...cells.map((content) => cell("td", content)));
+  return tr;
+}
+
+/**
+ * @param {string} label
+ * @param {number | string} value
+ * @param {"" | "bad" | "wait"} tone
+ */
+function stat(label, value, tone = "") {
+  const box = document.createElement("div");
+  box.className = `stat ${tone}`;
+  box.append(cell("b", String(value)), label);
+  return box;
+}
+
+/** @param {Record<string, number>} counts */
+const total = (counts) => Object.values(counts).reduce((sum, count) => sum + count, 0);
+
+async function showOverview() {
+  const overview = await api("/api/admin/overview");
+  const waiting = overview.outbox.filter((entry) => entry.status === "BUILT");
+  const oldest = waiting.reduce((min, entry) => Math.min(min, entry.oldest), Number.POSITIVE_INFINITY);
+  const backlogMinutes = Number.isFinite(oldest) ? Math.round((overview.at - oldest) / 60000) : 0;
+  element("stats").replaceChildren(
+    stat("open chain alerts", overview.openAlerts, overview.openAlerts > 0 ? "bad" : ""),
+    stat("records waiting to publish", total(Object.fromEntries(waiting.map((entry) => [entry.kind, entry.count]))), backlogMinutes > 10 ? "wait" : ""),
+    stat("oldest waiting record (min)", backlogMinutes, backlogMinutes > 10 ? "wait" : ""),
+    stat("refunds to send", overview.refunds.PENDING ?? 0, (overview.refunds.PENDING ?? 0) > 0 ? "wait" : ""),
+    stat("payments awaiting confirmation", overview.paymentsAwaitingConfirmation.count),
+    stat("live games", total(overview.games)),
+    stat("open orders", total(overview.orders)),
+    stat("connected players", overview.runtime.connections),
+  );
+}
+
+/**
+ * @param {any} refund
+ * @param {(enabled: boolean) => void} setEnabled
+ */
+function payRefund(refund, setEnabled) {
+  const keychain = /** @type {any} */ (window).steem_keychain;
+  if (keychain === undefined || typeof keychain.requestTransfer !== "function") {
+    notice(`Keychain is not available. Send exactly ${refund.amountText} ${refund.asset} from @${refund.from} to @${refund.toAccount} with memo "${refund.memo}".`, "bad");
+    return;
+  }
+  setEnabled(false);
+  keychain.requestTransfer(refund.from, refund.toAccount, refund.amountText, refund.memo, refund.asset, (/** @type {any} */ response) => {
+    if (response?.success) {
+      notice(`Refund sent to @${refund.toAccount}; it closes once the chain confirms it.`, "good");
+    } else {
+      setEnabled(true);
+      notice(`Refund not sent: ${response?.message ?? "refused"}`, "bad");
+    }
+  }, true);
+}
+
+async function showRefunds() {
+  const { refunds } = await api("/api/admin/refunds");
+  element("refunds").replaceChildren(
+    ...refunds.map((refund) => {
+      const button = document.createElement("button");
+      button.textContent = "Pay with Keychain";
+      button.disabled = refund.status !== "PENDING";
+      button.addEventListener("click", () =>
+        payRefund(refund, (enabled) => {
+          button.disabled = !enabled;
+        }),
+      );
+      const status = refund.status === "SENT" ? `sent (${refund.transfer.txId.slice(0, 10)}…), waiting for irreversibility` : "pending";
+      return row([`@${refund.toAccount}`, `${refund.amountText} ${refund.asset}`, cell("code", refund.memo), status, button]);
+    }),
+  );
+}
+
+/** @param {any} alert */
+function resolveControl(alert) {
+  if (alert.resolvedAt !== null) {
+    return `resolved ${when(alert.resolvedAt)}`;
+  }
+  const form = document.createElement("form");
+  const note = document.createElement("input");
+  note.placeholder = "what you checked or did";
+  const button = document.createElement("button");
+  button.textContent = "Resolve";
+  form.append(note, " ", button);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api(`/api/admin/alerts/${alert.id}/resolve`, { note: note.value.trim() });
+      notice(`Alert ${alert.id} resolved.`, "good");
+      await refresh();
+    } catch (error) {
+      notice(`Not resolved: ${error instanceof Error ? error.message : String(error)}`, "bad");
+    }
+  });
+  return form;
+}
+
+async function showAlerts() {
+  const { alerts } = await api("/api/admin/alerts");
+  element("alerts").replaceChildren(...alerts.map((alert) => row([alert.kind, cell("code", JSON.stringify(alert.details)), when(alert.createdAt), resolveControl(alert)])));
+}
+
+async function showAudit() {
+  const query = new URLSearchParams();
+  for (const [name, id] of [["action", "auditAction"], ["target", "auditTarget"]]) {
+    if (element(id).value.trim() !== "") {
+      query.set(name, element(id).value.trim());
+    }
+  }
+  const { entries } = await api(`/api/admin/audit?${query}`);
+  element("audit").replaceChildren(...entries.map((entry) => row([String(entry.seq), when(entry.at), entry.action, `${entry.targetKind ?? ""} ${entry.targetId ?? ""}`, cell("code", JSON.stringify(entry.details))])));
+}
+
+async function refresh() {
+  try {
+    await Promise.all([showOverview(), showRefunds(), showAlerts()]);
+  } catch (error) {
+    notice(error instanceof Error ? error.message : String(error), "bad");
+  }
+}
+
+element("auditForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  showAudit().catch((error) => notice(error.message, "bad"));
+});
+element("auditVerify").addEventListener("click", async () => {
+  const result = await api("/api/admin/audit/verify");
+  element("auditIntegrity").textContent = result.intact ? "hash chain intact" : `BROKEN at entry ${result.firstBrokenSeq}`;
+});
+refresh().then(() => showAudit());
+window.setInterval(refresh, REFRESH_MS);

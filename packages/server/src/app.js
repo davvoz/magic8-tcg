@@ -18,10 +18,11 @@ import { Router } from "./platform/http/Router.js";
 import { CatalogService, PgContentRepository, registerCatalogRoutes } from "./modules/catalog/index.js";
 import { InventoryService, PgInventoryRepository, registerCollectionRoutes } from "./modules/collection/index.js";
 import { DeckService, PgDeckRepository, registerDeckRoutes } from "./modules/decks/index.js";
-import { EconomyService, validateAssets } from "./modules/economy/index.js";
+import { EconomyService, formatAmount, validateAssets } from "./modules/economy/index.js";
 import { ChainBroadcaster, ChainOutbox, ChainTracker, GameVerification, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS, registerChainRoutes } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
-import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository } from "./modules/payments/index.js";
+import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository, RefundWatcher } from "./modules/payments/index.js";
+import { AdminService, PgOperationsReadModel, registerAdminRoutes } from "./modules/admin/index.js";
 import { GameService, PgGameRepository, registerGameMessages } from "./modules/gameplay/index.js";
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
@@ -99,7 +100,9 @@ export async function createServerApp(deps) {
     }
     return account;
   };
-  const payments = new PaymentService({ repository: new PgPaymentRepository(database), random, clock, unitOfWork });
+  const paymentRepository = new PgPaymentRepository(database);
+  const payments = new PaymentService({ repository: paymentRepository, random, clock, unitOfWork });
+  const refunds = new RefundWatcher({ repository: paymentRepository, providers: paymentProviders, senderFor: receiverFor, audit, clock, logger });
   const outbox = new ChainOutbox({ repository: new PgOutboxRepository(database), clock });
   const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
   const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, audit, clock, unitOfWork, logger });
@@ -124,6 +127,18 @@ export async function createServerApp(deps) {
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
   registerChainRoutes({ router, verification });
+  const admin = new AdminService({
+    admins: config.adminAccounts,
+    readModel: new PgOperationsReadModel(database),
+    chainRepository: new PgChainRepository(database),
+    payments,
+    audit,
+    runtime: () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } }),
+    shopAccount: receiverFor,
+    formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)),
+    clock,
+  });
+  registerAdminRoutes({ router, admin });
   const rateLimiter = new RateLimiter({ now: () => clock.now() });
   const http = new HttpApp({
     router,
@@ -154,7 +169,23 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, hub, games, gameRepository, secrets, matchmaking, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, hub, games, gameRepository, secrets, matchmaking, realtime });
+}
+
+/**
+ * The precision of any asset a payment provider can verify (refunds may be
+ * in an asset the shop does not accept, e.g. SBD sent by mistake).
+ * @param {ReadonlyMap<string, { supportedAssets: () => readonly { asset: string, precision: number }[] }>} providers
+ * @param {string} asset
+ */
+function precisionOf(providers, asset) {
+  for (const provider of providers.values()) {
+    const found = provider.supportedAssets().find((candidate) => candidate.asset === asset);
+    if (found !== undefined) {
+      return found.precision;
+    }
+  }
+  throw new Error(`no payment provider knows the asset ${asset}`);
 }
 
 /**
