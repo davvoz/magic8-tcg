@@ -271,3 +271,16 @@ describe("clientAddress", () => {
     assert.equal(clientAddress(request("203.0.113.9"), false), "10.0.0.2", "without a proxy the header means nothing");
   });
 });
+
+describe("config: operations", () => {
+  it("reads the operator accounts and the metrics token", () => {
+    const local = loadConfig({});
+    assert.deepEqual(local.adminAccounts.steem, ["luciojolly"], "the shop account by default");
+    assert.equal(local.metricsToken, null, "no token: no metrics endpoint");
+    const configured = loadConfig({ M8_ADMIN_ACCOUNTS: "ops-one, ops-two", M8_METRICS_TOKEN: "a".repeat(32) });
+    assert.deepEqual(configured.adminAccounts.steem, ["ops-one", "ops-two"]);
+    assert.equal(configured.metricsToken, "a".repeat(32));
+    assert.throws(() => loadConfig({ M8_METRICS_TOKEN: "short" }), /M8_METRICS_TOKEN/);
+    assert.throws(() => loadConfig({ M8_ADMIN_ACCOUNTS: "Not Valid" }), /M8_ADMIN_ACCOUNTS/);
+  });
+});

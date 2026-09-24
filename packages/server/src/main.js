@@ -20,6 +20,7 @@ const KEY_AUDIT_INTERVAL_MS = 10 * 60 * 1000;
 const CHALLENGE_PURGE_INTERVAL_MS = 5 * 60 * 1000;
 const PAYMENT_POLL_INTERVAL_MS = 5000;
 const REFUND_POLL_INTERVAL_MS = 30_000;
+const ALARM_INTERVAL_MS = 60_000;
 const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
 const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
 const GAME_TICK_INTERVAL_MS = 1000;
@@ -91,6 +92,7 @@ async function main() {
       await app.fulfilment.fulfilVerified();
     }, logger),
     every(REFUND_POLL_INTERVAL_MS, "refunds", () => app.refunds.runOnce(), logger),
+    every(ALARM_INTERVAL_MS, "alarms", () => app.monitor.evaluate(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "order expiry", () => app.marketplace.expireDue(), logger),
     every(EPOCH_REVEAL_INTERVAL_MS, "pack epoch reveal", () => app.epochs.revealSettled(), logger),
     every(GAME_TICK_INTERVAL_MS, "game timers", () => app.games.tick(), logger),

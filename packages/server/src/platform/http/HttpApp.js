@@ -247,7 +247,7 @@ function sendRouteResponse(response, result) {
     response.setHeader("Set-Cookie", [...result.cookies]);
   }
   if (result.raw !== undefined) {
-    response.writeHead(result.status, { ...result.headers, "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(result.raw) });
+    response.writeHead(result.status, { "Content-Type": "application/json; charset=utf-8", ...result.headers, "Content-Length": Buffer.byteLength(result.raw) });
     response.end(result.raw);
     return;
   }

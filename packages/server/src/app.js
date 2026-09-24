@@ -22,7 +22,7 @@ import { EconomyService, formatAmount, validateAssets } from "./modules/economy/
 import { ChainBroadcaster, ChainOutbox, ChainTracker, GameVerification, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS, registerChainRoutes } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository, RefundWatcher } from "./modules/payments/index.js";
-import { AdminService, PgOperationsReadModel, registerAdminRoutes } from "./modules/admin/index.js";
+import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, registerMonitoringRoutes } from "./modules/admin/index.js";
 import { GameService, PgGameRepository, registerGameMessages } from "./modules/gameplay/index.js";
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
@@ -51,12 +51,14 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   sealingPolicy?: Partial<typeof import("./modules/gameplay/index.js").DEFAULT_SEALING_POLICY>,
  *   publishing?: { transactions: import("./modules/chain/application/ports.js").TransactionProvider, reader: import("./modules/chain/application/ports.js").PublicationReader } | null,
  *   chainReader?: import("./modules/chain/application/ports.js").PublicationReader | null,
+ *   alarmPolicy?: Partial<typeof import("./modules/admin/index.js").DEFAULT_ALARM_POLICY>,
  *   chainPolicies?: { broadcast?: object, tracker?: object, rc?: object },
  * }} deps
  */
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
-  const { staticFiles, identityPolicyOverrides, marketplacePolicy, timePolicy, sealingPolicy, publishing, chainPolicies, chainReader } = optionalDeps(deps);
+  const { staticFiles, publishing, chainReader } = optionalAdapters(deps);
+  const { identityPolicyOverrides, marketplacePolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
 
@@ -127,13 +129,18 @@ export async function createServerApp(deps) {
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
   registerChainRoutes({ router, verification });
+  const readModel = new PgOperationsReadModel(database);
+  const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
+  const monitor = new Monitor({ readModel, runtime, clock, logger, policy: alarmPolicy });
+  registerMonitoringRoutes({ router, monitor, metricsToken: config.metricsToken });
   const admin = new AdminService({
     admins: config.adminAccounts,
-    readModel: new PgOperationsReadModel(database),
+    readModel,
     chainRepository: new PgChainRepository(database),
     payments,
     audit,
-    runtime: () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } }),
+    runtime,
+    monitor,
     shopAccount: receiverFor,
     formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)),
     clock,
@@ -169,7 +176,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, hub, games, gameRepository, secrets, matchmaking, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, hub, games, gameRepository, secrets, matchmaking, realtime });
 }
 
 /**
@@ -189,11 +196,19 @@ function precisionOf(providers, asset) {
 }
 
 /**
- * The optional dependencies of createServerApp, with their defaults.
+ * The optional adapters of createServerApp, with their defaults.
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function optionalDeps({ staticFiles = null, identityPolicyOverrides = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {}, publishing = null, chainPolicies = {}, chainReader = null }) {
-  return { staticFiles, identityPolicyOverrides, marketplacePolicy, timePolicy, sealingPolicy, publishing, chainPolicies, chainReader: chainReader ?? publishing?.reader ?? null };
+function optionalAdapters({ staticFiles = null, publishing = null, chainReader = null }) {
+  return { staticFiles, publishing, chainReader: chainReader ?? publishing?.reader ?? null };
+}
+
+/**
+ * The tunable policies of createServerApp (tests shorten times, lower limits).
+ * @param {Parameters<typeof createServerApp>[0]} deps
+ */
+function policiesOf({ identityPolicyOverrides = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {}, chainPolicies = {}, alarmPolicy = {} }) {
+  return { identityPolicyOverrides, marketplacePolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy };
 }
 
 /**

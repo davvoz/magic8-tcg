@@ -20,6 +20,7 @@ export class AdminService {
   #payments;
   #audit;
   #runtime;
+  #monitor;
   #shopFor;
   #formatAmount;
   #clock;
@@ -32,18 +33,20 @@ export class AdminService {
    *   payments: import("../../payments/index.js").PaymentService,
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
    *   runtime: () => Readonly<Record<string, unknown>>,
+   *   monitor: import("./Monitor.js").Monitor,
    *   shopAccount: (network: string) => string,
    *   formatAmount: (units: number, asset: string) => string,
    *   clock: import("../../../kernel/time.js").Clock,
    * }} deps `runtime`: in-memory state (connections, broadcasters' resource credits)
    */
-  constructor({ admins, readModel, chainRepository, payments, audit, runtime, shopAccount, formatAmount, clock }) {
+  constructor({ admins, readModel, chainRepository, payments, audit, runtime, monitor, shopAccount, formatAmount, clock }) {
     this.#admins = admins;
     this.#readModel = readModel;
     this.#chainRepository = chainRepository;
     this.#payments = payments;
     this.#audit = audit;
     this.#runtime = runtime;
+    this.#monitor = monitor;
     this.#shopFor = shopAccount;
     this.#formatAmount = formatAmount;
     this.#clock = clock;
@@ -62,7 +65,11 @@ export class AdminService {
   }
 
   async overview() {
-    return Object.freeze({ at: this.#clock.now(), ...(await this.#readModel.overview()), runtime: this.#runtime() });
+    return Object.freeze({ at: this.#clock.now(), ...(await this.#readModel.overview()), runtime: this.#runtime(), alarms: this.#monitor.alarms() });
+  }
+
+  alarms() {
+    return this.#monitor.alarms();
   }
 
   alerts() {

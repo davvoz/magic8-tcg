@@ -108,8 +108,24 @@ function parseChainSettings(env) {
   return {
     rootAccounts: Object.freeze({ steem: parseAccount(env.M8_ROOT_ACCOUNT ?? "luciojolly", "M8_ROOT_ACCOUNT") }),
     broadcasterKeys: parseBroadcasterKeys(env.M8_BROADCASTER_KEYS ?? ""),
+    metricsToken: parseMetricsToken(env.M8_METRICS_TOKEN),
     adminAccounts: Object.freeze({ steem: parseAccountList(env.M8_ADMIN_ACCOUNTS ?? env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_ADMIN_ACCOUNTS") }),
   };
+}
+
+/**
+ * M8_METRICS_TOKEN: the bearer token the monitoring system presents to
+ * /api/metrics. Unset: the endpoint does not exist.
+ * @param {string | undefined} value
+ */
+function parseMetricsToken(value) {
+  if (value === undefined || value === "") {
+    return null;
+  }
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(value)) {
+    throw new ConfigError("M8_METRICS_TOKEN: 32 to 128 characters of [A-Za-z0-9_-] (e.g. openssl rand -hex 32)");
+  }
+  return value;
 }
 
 /**

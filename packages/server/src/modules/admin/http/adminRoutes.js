@@ -50,6 +50,7 @@ export function registerAdminRoutes({ router, admin }) {
     });
 
   get("/api/admin/overview", () => admin.overview());
+  get("/api/admin/alarms", async () => ({ alarms: admin.alarms() }));
   get("/api/admin/alerts", async () => ({ alerts: await admin.alerts() }));
   get("/api/admin/refunds", async () => ({ refunds: await admin.refunds() }));
   get("/api/admin/audit/verify", () => admin.verifyAudit());

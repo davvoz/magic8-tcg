@@ -17,6 +17,17 @@ export class PgOperationsReadModel {
     this.#db = db;
   }
 
+  /** @returns {Promise<boolean>} the database answers */
+  async ping() {
+    return (await this.#db.maybeOne("SELECT 1 AS ok"))?.ok === 1;
+  }
+
+  /** @returns {Promise<number | null>} when the oldest refund still to send was queued (Unix ms) */
+  async oldestPendingRefund() {
+    const row = await this.#db.maybeOne("SELECT min(created_at) AS oldest FROM refunds WHERE status = 'PENDING'");
+    return row?.oldest ? fromTimestamp(row.oldest) : null;
+  }
+
   async overview() {
     const outbox = await this.#db.rows("SELECT kind, status, count(*)::integer AS n, min(created_at) AS oldest FROM blockchain_events WHERE status <> 'IRREVERSIBLE' GROUP BY kind, status ORDER BY kind, status");
     const games = await this.#db.rows("SELECT status, count(*)::integer AS n FROM games WHERE status IN ('CREATED', 'ACTIVE') GROUP BY status");
