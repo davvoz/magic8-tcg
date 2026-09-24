@@ -19,7 +19,8 @@ import { CatalogService, PgContentRepository, registerCatalogRoutes } from "./mo
 import { InventoryService, PgInventoryRepository, registerCollectionRoutes } from "./modules/collection/index.js";
 import { DeckService, PgDeckRepository, registerDeckRoutes } from "./modules/decks/index.js";
 import { EconomyService, validateAssets } from "./modules/economy/index.js";
-import { DEFAULT_MARKETPLACE_POLICY, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
+import { ChainOutbox, PgOutboxRepository } from "./modules/chain/index.js";
+import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository } from "./modules/payments/index.js";
 import { assertImplements } from "./kernel/contracts.js";
 import { AuthService, PgChallengeRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, registerIdentityRoutes } from "./modules/identity/index.js";
@@ -85,9 +86,11 @@ export async function createServerApp({ config, clock, random, logger, wallets, 
     }
     return account;
   };
-  const marketplace = new MarketplaceService({ catalog: market.value, economy, repository: marketRepository, epochs, receiverFor, audit, clock, random, unitOfWork, policy });
-  await marketplace.syncProducts();
   const payments = new PaymentService({ repository: new PgPaymentRepository(database), random, clock, unitOfWork });
+  const outbox = new ChainOutbox({ repository: new PgOutboxRepository(database), clock });
+  const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, audit, clock, unitOfWork, logger });
+  const marketplace = new MarketplaceService({ catalog: market.value, economy, repository: marketRepository, epochs, receiverFor, audit, clock, random, unitOfWork, policy, describeFulfilment: (order) => fulfilment.describe(order) });
+  await marketplace.syncProducts();
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
 
   const router = new Router();
@@ -109,5 +112,5 @@ export async function createServerApp({ config, clock, random, logger, wallets, 
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox });
 }

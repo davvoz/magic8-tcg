@@ -48,7 +48,7 @@ Ogni oggetto che viene hashato o pubblicato è serializzato in forma canonica. R
 - **Separazione di dominio:** `H(tag, bytes) = SHA-256( utf8("m8tcg/v1/" + tag) ‖ 0x00 ‖ bytes )`. Un hash calcolato per un uso non può essere riutilizzato come hash di un altro uso.
 - `hex(x)` = esadecimale minuscolo; `raw(h)` = i 32 byte rappresentati da `h`; `‖` = concatenazione.
 
-Tag usati in v1: `genesis`, `event`, `seed-commit`, `seed`, `state-salt`, `state`, `deck-salt`, `deck`.
+Tag usati in v1: `genesis`, `event`, `seed-commit`, `seed`, `state-salt`, `state`, `content`, `deck-salt`, `deck`, `drop-table`, `pack-epoch`. Il seed di un pacchetto è un HMAC, non un hash con tag: `HMAC-SHA256(segreto_epoca, utf8("m8tcg/v1/pack") ‖ 0x00 ‖ utf8(canonical([orderId, txId, indice])))` (`packSeed` in `@magic8/protocol`).
 
 ## 5. Casualità, impegni e segreto di partita
 
@@ -205,10 +205,10 @@ I contenuti sono pubblicati anche come post STEEM (fino a 64 KB) o scaricabili p
 ## 12. Ricevute di fulfilment (`m8tcg_receipt`)
 
 ```json
-{"cards":[["<uuid>","ember_imp",1042,"s"],["<uuid>","pyre_drake",77,"f"]],"items":[{"p":"booster_core","q":1}],"o":"<orderId>","packs":[{"epoch":3,"idx":0}],"part":[1,1],"pay":{"net":"steem","tx":"<txId>"},"u":"alice","v":1}
+{"cards":[["<uuid>","ember_imp",1042,"s"],["<uuid>","pyre_drake",77,"f"]],"items":[{"p":"booster_core","q":1}],"o":"<orderId>","packs":[{"epoch":3,"idx":0,"t":"<hash della drop table>"}],"part":[1,1],"pay":{"net":"steem","tx":"<txId>"},"u":"alice","v":1}
 ```
 
-Collega pubblicamente pagamento, ordine e copie coniate (id, definizione, numero di serie, finitura). Oltre 8 KB la ricevuta si divide in parti (`part: [n, totale]`). Nota di privacy: rende pubblici gli acquisti, che però sono già pubblici perché il pagamento è on-chain.
+Collega pubblicamente pagamento, ordine e copie coniate (id, definizione, numero di serie, finitura). `t` è `H("drop-table", canonical(tabella risolta))`: la tabella con i pool di carte per rarità, pubblicata da `GET /api/products`. Rivelato il segreto dell'epoca (`GET /api/pack-epochs`), chiunque ricalcola ogni pacchetto con `drawPack(tabella, packSeed(…))` e lo confronta con le carte della ricevuta (`buildReceipts`, `drawPack` e `packSeed` in `@magic8/protocol`). Oltre 8 KB la ricevuta si divide in parti (`part: [n, totale]`). Nota di privacy: rende pubblici gli acquisti, che però sono già pubblici perché il pagamento è on-chain.
 
 ## 13. Validazione server-side
 

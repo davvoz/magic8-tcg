@@ -4,6 +4,7 @@
   "kind": "booster",
   "name": "Core Booster",
   "description": "5 cards: 3 common, 1 uncommon and 1 rare or better. 1 card in 20 is foil.",
+  "edition": "core-1",
   "prices": [
     {
       "asset": "STEEM",

@@ -68,7 +68,10 @@ async function main() {
   const jobs = [
     setInterval(() => app.keyAuditor.run().catch((error) => logger.error("session key audit failed", { error })), KEY_AUDIT_INTERVAL_MS),
     setInterval(() => app.challenges.purgeExpired(systemClock.now()).catch((error) => logger.error("challenge purge failed", { error })), CHALLENGE_PURGE_INTERVAL_MS),
-    every(PAYMENT_POLL_INTERVAL_MS, "payment settlement", () => app.settlement.runOnce(), logger),
+    every(PAYMENT_POLL_INTERVAL_MS, "payment settlement", async () => {
+      await app.settlement.runOnce();
+      await app.fulfilment.fulfilVerified();
+    }, logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "order expiry", () => app.marketplace.expireDue(), logger),
     every(EPOCH_REVEAL_INTERVAL_MS, "pack epoch reveal", () => app.epochs.revealSettled(), logger),
   ];

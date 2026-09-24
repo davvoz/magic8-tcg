@@ -4,6 +4,7 @@
   "kind": "starter",
   "name": "Ember Vanguard",
   "description": "A second starter: the preconstructed ember deck, saved to your account.",
+  "edition": "core-1",
   "prices": [
     {
       "asset": "STEEM",

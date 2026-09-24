@@ -4,6 +4,7 @@
   "kind": "deck",
   "name": "Arcane Conclave",
   "description": "The complete preconstructed arcane deck, saved to your account ready to play.",
+  "edition": "core-1",
   "prices": [
     {
       "asset": "STEEM",

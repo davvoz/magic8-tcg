@@ -55,6 +55,7 @@ export class MarketplaceService {
   #random;
   #unitOfWork;
   #policy;
+  #describe;
 
   /**
    * @param {{
@@ -68,9 +69,10 @@ export class MarketplaceService {
    *   random: import("../../../kernel/random.js").SecureRandom,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   policy?: Partial<MarketplacePolicy>,
+   *   describeFulfilment?: (order: import("../domain/Order.js").Order) => Promise<unknown>,
    * }} deps
    */
-  constructor({ catalog, economy, repository, epochs, receiverFor, audit, clock, random, unitOfWork, policy = {} }) {
+  constructor({ catalog, economy, repository, epochs, receiverFor, audit, clock, random, unitOfWork, policy = {}, describeFulfilment = async () => null }) {
     assertImplements(repository, MARKETPLACE_REPOSITORY_METHODS, "MarketplaceRepository");
     this.#catalog = catalog;
     this.#economy = economy;
@@ -82,6 +84,7 @@ export class MarketplaceService {
     this.#random = random;
     this.#unitOfWork = unitOfWork;
     this.#policy = Object.freeze({ ...DEFAULT_MARKETPLACE_POLICY, ...policy });
+    this.#describe = describeFulfilment;
   }
 
   get catalog() {
@@ -167,7 +170,8 @@ export class MarketplaceService {
    * @param {unknown} orderId
    */
   async getOrder(userId, orderId) {
-    return this.orderView(await this.#ownOrder(userId, orderId));
+    const order = await this.#ownOrder(userId, orderId);
+    return Object.freeze({ ...this.orderView(order), fulfilment: await this.#describe(order) });
   }
 
   /** @param {string} userId */

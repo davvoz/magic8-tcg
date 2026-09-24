@@ -4,6 +4,7 @@
   "kind": "single",
   "name": "Pyre Drake (foil)",
   "description": "One foil Pyre Drake.",
+  "edition": "core-1",
   "prices": [
     {
       "asset": "STEEM",

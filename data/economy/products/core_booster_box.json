@@ -4,6 +4,7 @@
   "kind": "bundle",
   "name": "Core Booster Box",
   "description": "12 Core Boosters for the price of 10.",
+  "edition": "core-1",
   "prices": [
     {
       "asset": "STEEM",

@@ -9,7 +9,7 @@
  * @typedef {Readonly<{ type: ContentType, ref: string, count: number, finish: string | null }>} ProductContent
  * @typedef {Readonly<{ perOrder: number, availableFrom: number | null, availableUntil: number | null }>} ProductLimits
  * @typedef {Readonly<{
- *   id: string, kind: string, name: string, description: string,
+ *   id: string, kind: string, name: string, description: string, edition: string,
  *   prices: ReadonlyMap<string, number>, contents: readonly ProductContent[],
  *   limits: ProductLimits, active: boolean, cardsPerUnit: number,
  * }>} Product
@@ -28,7 +28,9 @@ export const DEFAULT_FINISH = "standard";
 export const MAX_CARDS_PER_ORDER = 1000;
 export const MAX_QUANTITY = 100;
 
-const PRODUCT_KEYS = Object.freeze(["schemaVersion", "id", "kind", "name", "description", "prices", "contents", "limits", "active"]);
+const PRODUCT_KEYS = Object.freeze(["schemaVersion", "id", "kind", "name", "description", "edition", "prices", "contents", "limits", "active"]);
+/** The printing a product's cards and decks are minted in; packs mint in their drop table's edition. */
+const EDITION_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const PRICE_KEYS = Object.freeze(["asset", "amount"]);
 const CONTENT_KEYS = Object.freeze(["type", "ref", "count", "finish"]);
 const LIMIT_KEYS = Object.freeze(["perOrder", "availableFrom", "availableUntil"]);
@@ -94,6 +96,7 @@ function parseProduct(issues, raw, path, context) {
   const kind = checkString(issues, object.kind, `${path}.kind`, { pattern: KIND_PATTERN });
   const name = checkString(issues, object.name, `${path}.name`, { minLength: 1, maxLength: 64 });
   const description = checkString(issues, object.description, `${path}.description`, { maxLength: 400 });
+  const edition = checkString(issues, object.edition, `${path}.edition`, { pattern: EDITION_PATTERN });
   const active = checkBoolean(issues, object.active, `${path}.active`);
   const prices = parsePrices(issues, object.prices, `${path}.prices`, context);
   const contents = checkArrayOf(issues, object.contents, `${path}.contents`, { minLength: 1, maxLength: 20, item: (item, itemPath) => parseContent(issues, item, itemPath, context) });
@@ -106,6 +109,7 @@ function parseProduct(issues, raw, path, context) {
     kind: /** @type {string} */ (kind),
     name: /** @type {string} */ (name),
     description: /** @type {string} */ (description),
+    edition: /** @type {string} */ (edition),
     prices: /** @type {ReadonlyMap<string, number>} */ (prices),
     contents: Object.freeze(/** @type {ProductContent[]} */ (contents)),
     limits: /** @type {ProductLimits} */ (limits),

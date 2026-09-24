@@ -3,6 +3,7 @@
  * pack epochs, fulfilment. Other modules use only what is exported here.
  */
 export { DEFAULT_MARKETPLACE_POLICY, MarketplaceService } from "./application/MarketplaceService.js";
+export { FulfilmentService } from "./application/FulfilmentService.js";
 export { PackEpochService } from "./application/PackEpochService.js";
 export { PaymentSettlement } from "./application/PaymentSettlement.js";
 export { buildMarketCatalog } from "./domain/MarketCatalog.js";

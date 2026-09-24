@@ -3,6 +3,7 @@
  */
 export { CanonicalJsonError, CanonicalJsonErrorCode, canonicalize, parseCanonical, utf8Length } from "./canonical/CanonicalJson.js";
 export { HashTag, bytesToHex, hexToBytes, isHash, sha256Hex, taggedHash, taggedHashHex, utf8 } from "./crypto/hash.js";
+export { FINISH_CODES, RECEIPT_VERSION, buildReceipts } from "./receipts/receipts.js";
 export { DROP_TABLE_VERSION, Finish, PACK_SECRET_BYTES, drawPack, dropTableHash, dropTableOdds, packEpochCommitment, packSeed, validateDropTable } from "./packs/packs.js";
 export {
   EVENT_KINDS,

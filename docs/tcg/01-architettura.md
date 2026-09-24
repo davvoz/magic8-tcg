@@ -268,7 +268,7 @@ stateDiagram-v2
   PAYMENT_DETECTED --> PAYMENT_VERIFIED: blocco irreversibile + tutti i controlli
   PAYMENT_DETECTED --> FAILED: importo/asset/mittente errati
   PAYMENT_DETECTED --> PAYMENT_PENDING: transazione sparita (fork prima dell'irreversibilità)
-  PAYMENT_VERIFIED --> FULFILLED: carte coniate, ricevuta in outbox
+  PAYMENT_VERIFIED --> FULFILLED: carte coniate, ricevuta in outbox (passo separato)
   FULFILLED --> [*]
   FAILED --> [*]
   EXPIRED --> [*]
@@ -277,7 +277,11 @@ stateDiagram-v2
 
 Un pagamento arrivato per un ordine `EXPIRED`, `CANCELLED` o `FAILED`, oppure con importo diverso, non viene mai "assorbito": diventa un `payments` con stato `REFUND_REQUIRED` e compare nella coda rimborsi dell'admin.
 
-**Pacchetti provably fair.** Per ogni *epoca* il server genera un segreto di 32 byte e pubblica on-chain (`m8tcg_manifest`) il suo hash prima di vendere. Il seed di un pacchetto è `HMAC-SHA256(segreto_epoca, orderId ‖ txIdPagamento ‖ indicePacchetto)`: il server non conosce il txId prima del pagamento, l'utente non conosce il segreto. A fine epoca il segreto viene rivelato e chiunque può ricalcolare il contenuto di ogni pacchetto dalla ricevuta on-chain.
+**Due passi, entrambi atomici.** La verifica del pagamento (`PaymentSettlement`: pagamento `APPLIED`, ordine `PAYMENT_VERIFIED`) e l'evasione (`FulfilmentService`: `PAYMENT_VERIFIED → FULFILLED`, conio, mazzi salvati, ricevuta nell'outbox, audit) sono due unità di lavoro distinte. Un errore di evasione (un bug, una chiave non disponibile) lascia l'ordine verificato e viene ritentato; non può mai far perdere un pagamento già verificato né coniare due volte.
+
+**Quando un pagamento è in tempo.** Decide il timestamp del blocco del transfer, non l'ora in cui il watcher lo vede: un ordine scade solo 10 minuti dopo la scadenza mostrata al giocatore, e un transfer entrato in un blocco entro la scadenza lo paga anche se letto dopo.
+
+**Pacchetti provably fair.** Per ogni *epoca* il server genera un segreto di 32 byte e pubblica on-chain (`m8tcg_manifest`) il suo hash prima di vendere. Il seed di un pacchetto è `HMAC-SHA256(segreto_epoca, orderId ‖ txIdPagamento ‖ indicePacchetto)`: il server non conosce il txId prima del pagamento, l'utente non conosce il segreto. A fine epoca il segreto viene rivelato e chiunque può ricalcolare il contenuto di ogni pacchetto dalla ricevuta on-chain. Il segreto si rivela solo quando **nessun ordine dell'epoca è ancora pagabile**: con il segreto noto, chi deve ancora pagare potrebbe provare varianti della propria transazione (l'id cambia con la scadenza della transazione) finché il seed dà un pacchetto buono. I segreti sono cifrati nel DB con AES-256-GCM (`SecretBox`, chiave `M8_DATA_KEY` fuori dal DB).
 
 ### 7.3 Gameplay
 

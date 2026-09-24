@@ -4,6 +4,7 @@
   "kind": "single",
   "name": "Pyre Drake",
   "description": "One Pyre Drake (rare).",
+  "edition": "core-1",
   "prices": [
     {
       "asset": "STEEM",

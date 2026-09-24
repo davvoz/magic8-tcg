@@ -43,12 +43,15 @@
 
 | Metodo | Percorso | Corpo | Note |
 |---|---|---|---|
-| GET | `/api/products` | — | Prodotti attivi con prezzi per asset e contenuti dichiarati (probabilità dei pacchetti incluse) |
+| GET | `/api/products` | — | Pubblico. `{ products, dropTables, rarities }`: prodotti in vendita con prezzi (stringhe decimali esatte) e contenuti; drop table risolte con hash, probabilità per slot, probabilità foil e pool di carte |
+| GET | `/api/pack-epochs` | — | Pubblico. Epoche dei pacchetti: impegno (`commit`), apertura, chiusura e, solo quando tutti gli ordini dell'epoca sono chiusi, il segreto rivelato |
 | POST | `/api/orders` | `{ "productId", "quantity", "asset" }` + `Idempotency-Key` | Il prezzo **non** si invia: lo calcola il server dal listino. Risposta con istruzioni di pagamento `{ to, amount, asset, memo, expiresAt }` |
 | GET | `/api/orders/{id}` | — | Solo il proprietario |
-| POST | `/api/orders/{id}/payment-hint` | `{ "txId" }` | Suggerimento per accelerare la verifica; mai creduto senza lettura dalla catena |
+| POST | `/api/orders/{id}/payment-hint` | `{ "txId" }` | 202 `{ order }`. Fa solo leggere prima lo storico dell'account shop (al massimo una volta ogni 3 s); il txId non viene mai creduto |
 | POST | `/api/orders/{id}/cancel` | — | Solo da `CREATED`/`PAYMENT_PENDING` |
-| GET | `/api/orders` | — | Storico ordini dell'utente |
+| GET | `/api/orders` | — | Storico ordini dell'utente (ultimi 50) |
+
+**Ordine come lo vede il client:** `{ id, status, items: [{ productId, name, quantity, unitAmount }], total: { asset, amount }, payment: { network, from, to, asset, amount, memo, expiresAt } | null, rngEpochId, failureReason, createdAt, updatedAt }`; `payment` c'è solo finché l'ordine si può pagare. `GET /api/orders/{id}` aggiunge `fulfilment` per gli ordini evasi: `{ txId, cards: [{ id, definitionId, edition, serial, finish }], packs: [{ index, epoch, table, cards }] }`. Creare un ordine senza `Idempotency-Key` (16–64 caratteri) dà 428; la stessa chiave con un corpo diverso 409; più di 5 ordini non pagati 409 `LIMIT_REACHED`.
 
 ### Partite e verifica
 
