@@ -11,6 +11,8 @@ export const OperationId = Object.freeze({
   GAME: "m8tcg_game",
   RECEIPT: "m8tcg_receipt",
   MANIFEST: "m8tcg_manifest",
+  /** Pack epoch commitments and reveals, published by the broadcaster pool. */
+  EPOCH: "m8tcg_epoch",
 });
 
 export const EventKind = Object.freeze({

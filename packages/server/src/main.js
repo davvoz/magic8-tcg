@@ -6,7 +6,7 @@
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
-import { SteemBlockchainProvider, SteemRpcClient, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK } from "@magic8/steem";
+import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK } from "@magic8/steem";
 import { createServerApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { readServerContent } from "./contentFiles.js";
@@ -23,6 +23,10 @@ const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
 const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
 const GAME_TICK_INTERVAL_MS = 1000;
 const RECORD_SEAL_INTERVAL_MS = 5000;
+/** One broadcast round per block. */
+const BROADCAST_INTERVAL_MS = 3000;
+const TRACKER_INTERVAL_MS = 6000;
+const RC_INTERVAL_MS = 60 * 1000;
 const SHUTDOWN_GRACE_MS = 10_000;
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../..");
 
@@ -45,6 +49,7 @@ async function main() {
   // Payments are confirmed by asking each node directly, never through failover (T21).
   const verifiers = config.steemNodes.map((node) => new SteemBlockchainProvider({ rpc: new SteemRpcClient({ nodes: [node] }) }));
   const steemPayments = new SteemTransferPaymentProvider({ history: chain, verifiers });
+  const publishing = await openPublishing(config, rpc, chain);
   const staticFiles = config.serveClient
     ? new StaticFiles([
         { prefix: "/data/", directory: join(REPOSITORY_ROOT, "data") },
@@ -63,6 +68,7 @@ async function main() {
     database,
     content: await readServerContent(join(REPOSITORY_ROOT, "data")),
     staticFiles,
+    publishing,
   });
 
   const restored = await app.games.restoreAll();
@@ -86,6 +92,14 @@ async function main() {
       await app.matchmaking.pair();
     }, logger),
   ];
+  if (app.chain !== null) {
+    jobs.push(
+      every(RC_INTERVAL_MS, "resource credits", () => app.chain.rc.runOnce(), logger),
+      every(BROADCAST_INTERVAL_MS, "chain broadcast", () => app.chain.broadcaster.runOnce(), logger),
+      every(TRACKER_INTERVAL_MS, "chain tracking", () => app.chain.tracker.runOnce(), logger),
+    );
+    app.chain.rc.runOnce().catch((error) => logger.warn("resource credits could not be read", { error: error instanceof Error ? error.message : String(error) }));
+  }
   server.listen(config.port, config.host, () => logger.info("server listening", { host: config.host, port: config.port, origin: config.publicOrigin }));
 
   const shutdown = (signal) => {
@@ -105,6 +119,31 @@ async function main() {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+}
+
+/**
+ * The broadcaster pool, when keys are configured. Every key is checked
+ * against its account first: a key that is not a posting key, or that also
+ * controls active or owner, stops the start.
+ * @param {ReturnType<typeof loadConfig>} config
+ * @param {SteemRpcClient} rpc
+ * @param {SteemBlockchainProvider} chain
+ */
+async function openPublishing(config, rpc, chain) {
+  if (config.broadcasterKeys.size === 0) {
+    return null;
+  }
+  const transactions = new SteemTransactionProvider({ rpc, chain, keys: config.broadcasterKeys });
+  try {
+    await transactions.verifySigners();
+  } catch (error) {
+    if (error instanceof SignerError) {
+      process.stderr.write(`broadcaster error: ${error.message}\n`);
+      process.exit(1);
+    }
+    throw error;
+  }
+  return { transactions, reader: new SteemPublicationReader({ chain }) };
 }
 
 /**

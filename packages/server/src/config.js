@@ -42,6 +42,7 @@ export function loadConfig(env) {
     serveClient: parseBoolean(env.M8_SERVE_CLIENT ?? "true", "M8_SERVE_CLIENT"),
     databaseUrl: parseDatabaseUrl(env.M8_DATABASE_URL, secure),
     shopAccounts: Object.freeze({ steem: parseAccount(env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_SHOP_ACCOUNT") }),
+    ...parseChainSettings(env),
     ...parseDataKeys(env, secure),
   });
 }
@@ -97,6 +98,43 @@ function parseKeyHex(value, name) {
     throw new ConfigError(`${name}: expected 64 lowercase hex characters`);
   }
   return value;
+}
+
+/**
+ * The root account whose manifests authorise the broadcasters (docs/tcg/03 §11), and the broadcaster keys.
+ * @param {Readonly<Record<string, string | undefined>>} env
+ */
+function parseChainSettings(env) {
+  return {
+    rootAccounts: Object.freeze({ steem: parseAccount(env.M8_ROOT_ACCOUNT ?? "luciojolly", "M8_ROOT_ACCOUNT") }),
+    broadcasterKeys: parseBroadcasterKeys(env.M8_BROADCASTER_KEYS ?? ""),
+  };
+}
+
+/**
+ * M8_BROADCASTER_KEYS: "account:WIF,account:WIF", the posting keys of the
+ * broadcaster accounts (docs/tcg/03 §2). Never an active or owner key: the
+ * server checks the account's authorities at startup and refuses to run.
+ * Empty: nothing is published, records wait in the outbox.
+ * @param {string} value
+ * @returns {ReadonlyMap<string, string>}
+ */
+function parseBroadcasterKeys(value) {
+  /** @type {Map<string, string>} */
+  const keys = new Map();
+  for (const entry of value.split(",").map((text) => text.trim()).filter((text) => text !== "")) {
+    const separator = entry.indexOf(":");
+    const account = parseAccount(entry.slice(0, Math.max(separator, 0)), "M8_BROADCASTER_KEYS");
+    const wif = entry.slice(separator + 1);
+    if (!/^5[1-9A-HJ-NP-Za-km-z]{50}$/.test(wif)) {
+      throw new ConfigError(`M8_BROADCASTER_KEYS: the key of ${account} is not a WIF private key`);
+    }
+    if (keys.has(account)) {
+      throw new ConfigError(`M8_BROADCASTER_KEYS: ${account} is listed twice`);
+    }
+    keys.set(account, wif);
+  }
+  return keys;
 }
 
 /**

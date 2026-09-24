@@ -19,8 +19,10 @@ import {
   customJsonOperation,
   decodeWif,
   encodePublicKey,
+  fromBroadcastJson,
   isCanonicalSignature,
   publicKeyOf,
+  recoverSignerKeys,
   serializeTransaction,
   transactionDigest,
   transactionId,
@@ -86,6 +88,10 @@ describe("STEEM transaction serialization and signing", () => {
     assert.equal(recover(signature, transactionDigest(bytes)), PUBLIC);
     assert.equal(provider.signCustomJson({ reference, signer: "m8tcg-b1", id: "m8tcg_game", json: '{"r":[],"v":1}' }).transaction.signatures[0], signature, "deterministic");
     assert.throws(() => provider.signCustomJson({ reference, signer: "someone", id: "x", json: "{}" }), SignerError);
+
+    const parsed = fromBroadcastJson(tx);
+    assert.equal(hex(serializeTransaction(parsed.transaction)), hex(bytes), "the broadcast form reads back to the same bytes");
+    assert.deepEqual(recoverSignerKeys(transactionDigest(bytes), [...parsed.signatures, "00".repeat(65)]), [PUBLIC, null]);
   });
 
   it("refuses what it does not publish", () => {

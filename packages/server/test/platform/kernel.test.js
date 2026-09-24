@@ -108,6 +108,19 @@ describe("config", () => {
     assert.equal(loadConfig({ M8_SHOP_ACCOUNT: "shop.m8" }).shopAccounts.steem, "shop.m8");
   });
 
+  it("reads the broadcaster posting keys and the root account, and refuses malformed ones", () => {
+    const wif = "5JRaypasxMx1L97ZUX7YuC5Psb5EAbF821kkAGtBj7xCJFQcbLg";
+    const config = loadConfig({ M8_BROADCASTER_KEYS: ` m8tcg-b1:${wif}, m8tcg-b2:${wif} `, M8_ROOT_ACCOUNT: "m8tcg" });
+    assert.deepEqual([...config.broadcasterKeys.keys()], ["m8tcg-b1", "m8tcg-b2"]);
+    assert.equal(config.rootAccounts.steem, "m8tcg");
+    assert.equal(JSON.stringify(config).includes(wif), false, "keys never show up when the configuration is serialized");
+    assert.equal(loadConfig({}).broadcasterKeys.size, 0, "none by default: nothing is published");
+    assert.equal(loadConfig({}).rootAccounts.steem, "luciojolly");
+    assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: "m8tcg-b1:not-a-key" }), /not a WIF/);
+    assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: `${wif}` }), /M8_BROADCASTER_KEYS/);
+    assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: `m8tcg-b1:${wif},m8tcg-b1:${wif}` }), /twice/);
+  });
+
   it("defaults to the launch settings for local development", () => {
     const config = loadConfig({});
     assert.equal(config.steemNodes[0], "https://api.moecki.online", "moecki is the primary node");

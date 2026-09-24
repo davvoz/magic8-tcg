@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { resolve as resolvePath } from "node:path";
 
-import { SteemWalletProvider, publicKeyOf, signMessage } from "@magic8/steem";
+import { SteemWalletProvider, base58Encode, publicKeyOf, signMessage } from "@magic8/steem";
 import { createServerApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { readServerContent } from "../src/contentFiles.js";
@@ -51,6 +51,16 @@ export function keyPair(seedByte) {
 }
 
 /**
+ * The WIF form of a private key, as a wallet exports it.
+ * @param {Uint8Array} privateKey
+ */
+export function toWif(privateKey) {
+  const payload = Buffer.from([0x80, ...privateKey]);
+  const checksum = createHash("sha256").update(createHash("sha256").update(payload).digest()).digest().subarray(0, 4);
+  return base58Encode(Uint8Array.from([...payload, ...checksum]));
+}
+
+/**
  * A fake chain behind the real SteemWalletProvider.
  */
 export class FakeChain {
@@ -87,7 +97,9 @@ export const TEST_APP_NAME = "magic8-tcg";
  * A restarted app needs its own `random` label, or it would mint the same ids again.
  * @param {{ policy?: object, env?: Record<string, string>, database?: import("../src/platform/db/Database.js").Database, clock?: ManualClock, chain?: FakeChain, random?: ReturnType<typeof deterministicRandom> }} [options]
  */
-export async function buildTestApp({ policy = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {}, env = {}, database, clock = new ManualClock(Date.UTC(2026, 8, 24, 10, 0, 0)), chain = new FakeChain(), random = deterministicRandom(), ledger = new FakeSteemLedger() } = {}) {
+export async function buildTestApp(options = {}) {
+  const { policy = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {}, publishing = null, chainPolicies = {}, env = {}, database } = options;
+  const { clock, chain, random, ledger } = testDoubles(options);
   const paymentProviders = new Map([["steem", ledger.paymentProvider()]]);
   const db = database ?? (await freshDatabase());
   const wallet = new SteemWalletProvider({ chain, appName: TEST_APP_NAME });
@@ -107,8 +119,17 @@ export async function buildTestApp({ policy = {}, marketplacePolicy = {}, timePo
     marketplacePolicy,
     timePolicy,
     sealingPolicy,
+    publishing,
+    chainPolicies,
   });
   return { app, clock, chain, ledger, users: app.users, sessions: app.sessions, challenges: app.challenges, logger, config, database: db };
+}
+
+/**
+ * @param {{ clock?: ManualClock, chain?: FakeChain, random?: ReturnType<typeof deterministicRandom>, ledger?: FakeSteemLedger }} options
+ */
+function testDoubles({ clock = new ManualClock(Date.UTC(2026, 8, 24, 10, 0, 0)), chain = new FakeChain(), random = deterministicRandom(), ledger = new FakeSteemLedger() }) {
+  return { clock, chain, random, ledger };
 }
 
 /**

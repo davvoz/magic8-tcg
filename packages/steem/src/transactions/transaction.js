@@ -22,6 +22,7 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { isValidAccountName } from "../accountName.js";
+import { encodePublicKey } from "../crypto/keys.js";
 
 /** STEEM mainnet chain id: 32 zero bytes. */
 export const STEEM_CHAIN_ID = new Uint8Array(32);
@@ -260,4 +261,49 @@ export function blockReference(blockNum, blockId) {
   }
   const prefix = Number.parseInt(blockId.slice(8, 16).match(/../g)?.reverse().join("") ?? "", 16);
   return Object.freeze({ refBlockNum: blockNum & 0xffff, refBlockPrefix: prefix });
+}
+
+/**
+ * The inverse of toBroadcastJson for custom_json transactions (test chains, audits).
+ * @param {any} json
+ * @returns {{ transaction: UnsignedTransaction, signatures: readonly string[] }}
+ */
+export function fromBroadcastJson(json) {
+  if (json === null || typeof json !== "object" || !Array.isArray(json.operations) || !Array.isArray(json.signatures) || typeof json.expiration !== "string") {
+    throw new TypeError("not a broadcast transaction");
+  }
+  const expiration = Date.parse(`${json.expiration}Z`) / 1000;
+  const operations = json.operations.map((pair) => {
+    if (!Array.isArray(pair) || pair[0] !== "custom_json" || pair[1] === null || typeof pair[1] !== "object") {
+      throw new TypeError("only custom_json operations are supported");
+    }
+    const data = pair[1];
+    return { type: /** @type {const} */ ("custom_json"), requiredAuths: data.required_auths, requiredPostingAuths: data.required_posting_auths, id: data.id, json: data.json };
+  });
+  return { transaction: { refBlockNum: json.ref_block_num, refBlockPrefix: json.ref_block_prefix, expiration, operations }, signatures: json.signatures };
+}
+
+/**
+ * The public keys that produced a transaction's signatures (null for a malformed one).
+ * @param {Uint8Array} digest
+ * @param {readonly string[]} signatures 130 hex characters each
+ * @returns {(string | null)[]}
+ */
+export function recoverSignerKeys(digest, signatures) {
+  return signatures.map((signatureHex) => {
+    if (typeof signatureHex !== "string" || !/^[0-9a-f]{130}$/.test(signatureHex)) {
+      return null;
+    }
+    const bytes = Uint8Array.from(signatureHex.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
+    const recovery = bytes[0] - COMPACT_HEADER;
+    if (recovery < 0 || recovery > 3 || !isCanonicalSignature(bytes.subarray(1))) {
+      return null;
+    }
+    try {
+      const signature = secp256k1.Signature.fromBytes(bytes.slice(1), "compact").addRecoveryBit(recovery);
+      return encodePublicKey(signature.recoverPublicKey(digest).toBytes(true));
+    } catch {
+      return null;
+    }
+  });
 }
