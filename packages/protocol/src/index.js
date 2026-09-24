@@ -39,5 +39,6 @@ export { SchemaError, validateEnvelope, validateRecord } from "./game/schema.js"
 export { RejectionReason, decodeGameOperation } from "./game/OperationDecoder.js";
 export { HistoryStatus, assembleGameHistory } from "./game/GameHistory.js";
 export { ReplayStatus, replayGame } from "./game/ReplayVerifier.js";
-export { BroadcasterRegistry, ManifestKind } from "./game/manifest.js";
+export { BroadcasterRegistry, ManifestKind, broadcastersManifest } from "./game/manifest.js";
 export { Verdict, verifyGame } from "./game/verifyGame.js";
+export { replayContentOf, verifyGameOnChain } from "./verification/chainVerifier.js";

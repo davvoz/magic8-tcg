@@ -193,4 +193,19 @@ export class PgChainRepository {
     const rows = await this.#db.rows("SELECT kind, fingerprint, details FROM chain_alerts WHERE network = $1 AND resolved_at IS NULL ORDER BY id", [network]);
     return Object.freeze(rows.map((row) => Object.freeze({ kind: row.kind, fingerprint: row.fingerprint, details: row.details })));
   }
+
+  /**
+   * Where a game's records are: the index a verifier may use to find them on chain.
+   * @param {string} gameId
+   * @returns {Promise<readonly Readonly<{ seq: number, status: string, network: string, txId: string | null, blockNum: number | null }>[]>}
+   */
+  async gameIndex(gameId) {
+    const rows = await this.#db.rows(
+      `SELECT e.record_seq, e.status, e.network, t.tx_id, t.block_num
+         FROM blockchain_events e LEFT JOIN blockchain_transactions t ON t.id = e.transaction_id
+        WHERE e.game_id = $1 ORDER BY e.record_seq`,
+      [gameId],
+    );
+    return Object.freeze(rows.map((row) => Object.freeze({ seq: row.record_seq, status: row.status, network: row.network, txId: row.tx_id, blockNum: row.block_num })));
+  }
 }

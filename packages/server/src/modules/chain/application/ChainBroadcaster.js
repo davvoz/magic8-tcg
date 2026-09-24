@@ -1,7 +1,9 @@
 /**
  * ChainBroadcaster: publishes BUILT outbox records (docs/tcg/03 §9).
  *
- * One round per block (3 s). Each broadcaster account sends at most one
+ * One round per block (3 s). Only broadcasters the root account's manifest
+ * authorises at the irreversible block publish (a record signed before its
+ * signer's authorisation would be invalid forever). Each sends at most one
  * operation per round: the most urgent of its records — a receipt or a pack
  * epoch alone, or as many game records as fit one envelope. Records are
  * partitioned among the accounts by game (or order), so a game's records
@@ -83,6 +85,7 @@ export class ChainBroadcaster {
   #repository;
   #transactions;
   #resources;
+  #authorization;
   #clock;
   #random;
   #unitOfWork;
@@ -95,6 +98,7 @@ export class ChainBroadcaster {
    *   repository: import("../infrastructure/PgChainRepository.js").PgChainRepository,
    *   transactions: import("./ports.js").TransactionProvider,
    *   resources: { modeOf: (signer: string) => string },
+   *   authorization: { isAuthorized: (signer: string) => boolean },
    *   clock: import("../../../kernel/time.js").Clock,
    *   random: import("../../../kernel/random.js").SecureRandom,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
@@ -102,10 +106,11 @@ export class ChainBroadcaster {
    *   policy?: Partial<typeof DEFAULT_BROADCAST_POLICY>,
    * }} deps
    */
-  constructor({ repository, transactions, resources, clock, random, unitOfWork, logger, policy = {} }) {
+  constructor({ repository, transactions, resources, authorization, clock, random, unitOfWork, logger, policy = {} }) {
     this.#repository = repository;
     this.#transactions = transactions;
     this.#resources = resources;
+    this.#authorization = authorization;
     this.#clock = clock;
     this.#random = random;
     this.#unitOfWork = unitOfWork;
@@ -119,7 +124,7 @@ export class ChainBroadcaster {
    */
   async runOnce() {
     const all = this.#transactions.signers;
-    const active = all.filter((signer) => this.#resources.modeOf(signer) !== ResourceMode.PAUSED);
+    const active = all.filter((signer) => this.#resources.modeOf(signer) !== ResourceMode.PAUSED && this.#authorization.isAuthorized(signer));
     if (active.length === 0) {
       return 0;
     }

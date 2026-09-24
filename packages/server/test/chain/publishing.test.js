@@ -13,26 +13,34 @@ import { describe, it } from "node:test";
 
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
-import { OperationId, Verdict, canonicalize, verifyGame } from "@magic8/protocol";
+import { OperationId, Verdict, broadcastersManifest, canonicalize, verifyGame } from "@magic8/protocol";
 import { SignerError } from "@magic8/steem";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { ResourceMode, signerFor } from "../../src/modules/chain/index.js";
-import { buildTestApp, deterministicRandom, toWif } from "../helpers.js";
+import { buildTestApp, deterministicRandom, listen, toWif } from "../helpers.js";
+import { ApiClient } from "../support/apiClient.js";
 import { FakeSteemLedger } from "../support/fakeSteemLedger.js";
 
+const ROOT = "m8tcg";
 const B1 = "m8tcg-b1";
 const B2 = "m8tcg-b2";
 const KEYS = Object.freeze({ [B1]: new Uint8Array(32).fill(21), [B2]: new Uint8Array(32).fill(22) });
 const ENTROPY = Object.freeze({ s0: "0a".repeat(16), s1: "0b".repeat(16) });
 
-async function world({ signers = [B1, B2], rcPolicy = {} } = {}) {
+async function world({ signers = [B1, B2], rcPolicy = {}, authorize = true } = {}) {
   const ledger = new FakeSteemLedger();
   for (const name of signers) {
     ledger.addAccount(name, KEYS[name]);
   }
   const publishing = ledger.publishing(new Map(signers.map((name) => [name, toWif(KEYS[name])])));
-  const setup = await buildTestApp({ ledger, publishing, chainPolicies: { rc: rcPolicy } });
+  const setup = await buildTestApp({ ledger, publishing, chainPolicies: { rc: rcPolicy }, env: { M8_ROOT_ACCOUNT: ROOT } });
   const { chain } = setup.app;
+  if (authorize) {
+    ledger.publishManifest(ROOT, broadcastersManifest({ accounts: signers, fromBlock: 0 }));
+    ledger.produceBlock();
+    ledger.finalize();
+    await chain.manifests.runOnce();
+  }
   const content = setup.app.catalog.current().content;
   const deck = (id) => content.preconDecks.find((candidate) => candidate.id === id).entries;
   const user = async (account) => {
@@ -117,6 +125,27 @@ describe("ChainBroadcaster and ChainTracker", () => {
     assert.ok(rows.length >= 3, `${rows.length} records`);
     assert.ok(rows.every((candidate) => candidate.status === "IRREVERSIBLE"));
     assert.deepEqual(await alerts(w), []);
+
+    // The server verifies the game from the chain alone, as a player would.
+    const verified = await w.setup.app.verification.verify(gameId);
+    assert.equal(verified.verdict, Verdict.VALID, JSON.stringify(verified).slice(0, 600));
+    assert.deepEqual(verified.broadcasters, [B1, B2]);
+    assert.equal(verified.content.verified, true, "content fetched by hash and checked");
+    assert.equal(verified.replay.outcome.winner, "s1", "alice (s0) conceded");
+    const server = await listen(w.setup.app);
+    try {
+      const index = await new ApiClient(server.base).get(`/api/games/${gameId}/chain`);
+      assert.equal(index.status, 200);
+      assert.equal(index.json.rootAccount, ROOT);
+      assert.deepEqual(index.json.records.map((record) => record.status), rows.map(() => "IRREVERSIBLE"));
+      assert.ok(index.json.blocks.length > 0);
+      const remote = await new ApiClient(server.base).get(`/api/games/${gameId}/verification`);
+      assert.equal(remote.json.verdict, Verdict.VALID);
+      assert.equal((await new ApiClient(server.base).get(`/api/games/${"0".repeat(26)}/chain`)).status, 404);
+      assert.equal((await new ApiClient(server.base).get("/api/games/not-a-game/verification")).status, 404);
+    } finally {
+      await server.close();
+    }
 
     const current = w.setup.app.catalog.current();
     const verdict = verifyGame({
@@ -249,6 +278,37 @@ describe("ChainBroadcaster and ChainTracker", () => {
       counts.set(signer, (counts.get(signer) ?? 0) + 1);
     }
     assert.ok(counts.get(B1) > 60 && counts.get(B2) > 60, JSON.stringify([...counts]));
+  });
+
+  it("publishes nothing until the root account's manifest authorises the broadcaster at an irreversible block", async () => {
+    const w = await world({ signers: [B1], authorize: false });
+    const gameId = await w.newGame();
+    await w.chain.manifests.runOnce();
+    assert.equal(await w.chain.broadcaster.runOnce(), 0);
+    assert.ok(w.setup.logger.entries.some((entry) => entry.message.startsWith("broadcaster not authorised")));
+
+    w.ledger.publishManifest(ROOT, broadcastersManifest({ accounts: [B1], fromBlock: 0 }));
+    w.ledger.produceBlock();
+    await w.chain.manifests.runOnce();
+    assert.equal(await w.chain.broadcaster.runOnce(), 0, "the manifest is not irreversible yet");
+    w.ledger.finalize();
+    await w.chain.manifests.runOnce();
+    assert.equal(await w.chain.broadcaster.runOnce(), 1);
+    w.ledger.produceBlock();
+    w.ledger.finalize();
+    await w.chain.tracker.runOnce();
+    assert.equal((await rowsOf(w, gameId))[0].status, "IRREVERSIBLE");
+
+    // Revoking the pool stops publishing at once.
+    w.ledger.publishManifest(ROOT, broadcastersManifest({ accounts: [], fromBlock: 0 }));
+    w.ledger.produceBlock();
+    w.ledger.finalize();
+    await w.chain.manifests.runOnce();
+    await pass(w, gameId, "after-revocation");
+    await w.setup.app.games.sealStale();
+    w.setup.clock.advance(30_000);
+    await w.setup.app.games.sealStale();
+    assert.equal(await w.chain.broadcaster.runOnce(), 0);
   });
 
   it("refuses to start with a broadcaster key that also controls the active authority", async () => {

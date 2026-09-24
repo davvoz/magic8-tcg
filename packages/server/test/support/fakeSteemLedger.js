@@ -108,6 +108,16 @@ export class FakeSteemLedger {
     return this.headBlock;
   }
 
+  /**
+   * The root account publishes a manifest with its active key (Keychain does
+   * this on a person's computer; the fake skips the signature).
+   * @param {string} root
+   * @param {string} json
+   */
+  publishManifest(root, json) {
+    this.mempool.push({ txId: createHash("sha256").update(`manifest:${json}:${this.headBlock}`).digest("hex").slice(0, 40), operations: [{ type: "custom_json", data: { required_auths: [root], required_posting_auths: [], id: "m8tcg_manifest", json } }] });
+  }
+
   /** @param {number} count */
   produceBlocks(count) {
     for (let index = 0; index < count; index += 1) {

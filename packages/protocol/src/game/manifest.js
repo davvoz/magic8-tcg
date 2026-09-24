@@ -10,7 +10,8 @@
  * effective block, which is how a compromised key is revoked.
  */
 import { Issues, checkArrayOf, checkEnum, checkInteger, checkObject, checkString, checkUnique } from "@magic8/engine/shared/validation.js";
-import { CanonicalJsonError, parseCanonical } from "../canonical/CanonicalJson.js";
+import { CanonicalJsonError, canonicalize, parseCanonical } from "../canonical/CanonicalJson.js";
+import { ProtocolError } from "./ProtocolError.js";
 import { ACCOUNT_PATTERN, LIMITS, OperationId, PROTOCOL_VERSION } from "./constants.js";
 
 export const ManifestKind = Object.freeze({ BROADCASTERS: "broadcasters" });
@@ -99,10 +100,34 @@ export class BroadcasterRegistry {
     return current !== null && current.accounts.has(account);
   }
 
+  /** @returns {readonly string[]} every account ever authorised, sorted */
+  accounts() {
+    return Object.freeze([...new Set(this.#epochs.flatMap((epoch) => [...epoch.accounts]))].sort());
+  }
+
+  get isEmpty() {
+    return this.#epochs.length === 0;
+  }
+
   /** The policy function expected by decodeGameOperation. */
   asPolicy() {
     return (/** @type {string} */ account, /** @type {number} */ blockNum) => this.isAuthorized(account, blockNum);
   }
+}
+
+/**
+ * The `m8tcg_manifest` payload the root account publishes (with its active
+ * key, from Keychain) to authorise a broadcaster pool from a block on.
+ * An empty list revokes every broadcaster.
+ * @param {{ accounts: readonly string[], fromBlock: number }} manifest
+ * @returns {string} canonical JSON
+ */
+export function broadcastersManifest({ accounts, fromBlock }) {
+  const value = { accounts: [...accounts].sort(), from_block: fromBlock, kind: ManifestKind.BROADCASTERS, v: PROTOCOL_VERSION };
+  if (parseBroadcasters(value) === null) {
+    throw new ProtocolError("a manifest lists up to 32 distinct valid accounts and a non-negative block number");
+  }
+  return canonicalize(value);
 }
 
 /**

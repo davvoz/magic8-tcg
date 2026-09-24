@@ -69,6 +69,7 @@ async function main() {
     content: await readServerContent(join(REPOSITORY_ROOT, "data")),
     staticFiles,
     publishing,
+    chainReader: publishing?.reader ?? new SteemPublicationReader({ chain }),
   });
 
   const restored = await app.games.restoreAll();
@@ -95,10 +96,12 @@ async function main() {
   if (app.chain !== null) {
     jobs.push(
       every(RC_INTERVAL_MS, "resource credits", () => app.chain.rc.runOnce(), logger),
+      every(RC_INTERVAL_MS, "root manifests", () => app.chain.manifests.runOnce(), logger),
       every(BROADCAST_INTERVAL_MS, "chain broadcast", () => app.chain.broadcaster.runOnce(), logger),
       every(TRACKER_INTERVAL_MS, "chain tracking", () => app.chain.tracker.runOnce(), logger),
     );
     app.chain.rc.runOnce().catch((error) => logger.warn("resource credits could not be read", { error: error instanceof Error ? error.message : String(error) }));
+    app.chain.manifests.runOnce().catch((error) => logger.warn("root manifests could not be read", { error: error instanceof Error ? error.message : String(error) }));
   }
   server.listen(config.port, config.host, () => logger.info("server listening", { host: config.host, port: config.port, origin: config.publicOrigin }));
 
