@@ -324,6 +324,20 @@ describe("ChainBroadcaster and ChainTracker", () => {
     assert.equal(await w.chain.broadcaster.runOnce(), 0);
   });
 
+  it("sells packs only once the pack epoch's commitment is on chain", async () => {
+    const w = await world({ signers: [B1] });
+    const order = (key) => w.setup.app.marketplace.createOrder({ buyer: { id: w.alice.id, account: "alice", network: "steem" }, productId: "core_booster", quantity: 1, asset: "STEEM", idempotencyKey: `gate-key-${key}-0000000000`, ip: "127.0.0.1" });
+    await assert.rejects(() => order(1), (error) => error.code === "CHAIN_UNAVAILABLE", "the commitment was just queued");
+    assert.equal(await w.chain.broadcaster.runOnce(), 1, "the commitment goes out first");
+    await assert.rejects(() => order(2), (error) => error.code === "CHAIN_UNAVAILABLE", "sent is not enough: it must be in a block");
+    w.ledger.produceBlock();
+    await w.chain.tracker.runOnce();
+    const placed = await order(3);
+    assert.equal(placed.order.rngEpochId, 1);
+    const [epochOp] = (await chainOperations(w)).filter((operation) => operation.id === "m8tcg_epoch");
+    assert.match(epochOp.json, /"kind":"pack_epoch"/);
+  });
+
   it("refuses to start with a broadcaster key that also controls the active authority", async () => {
     const ledger = new FakeSteemLedger();
     ledger.addAccount(B1, KEYS[B1], { active: true });

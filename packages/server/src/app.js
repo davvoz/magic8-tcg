@@ -8,7 +8,7 @@
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { ENGINE_VERSION } from "@magic8/engine/version.js";
 import { AuditTrail } from "./kernel/audit/AuditTrail.js";
-import { hexToBytes } from "@magic8/protocol";
+import { hexToBytes, packEpochAnnouncement, sha256Hex, utf8 } from "@magic8/protocol";
 import { SecretBox } from "./kernel/crypto/SecretBox.js";
 import { unitOfWorkOf } from "./kernel/unitOfWork.js";
 import { PgAuditStore } from "./platform/audit/PgAuditStore.js";
@@ -108,7 +108,12 @@ export async function createServerApp(deps) {
   const outbox = new ChainOutbox({ repository: new PgOutboxRepository(database), clock });
   const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
   const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, audit, clock, unitOfWork, logger });
-  const marketplace = new MarketplaceService({ catalog: market.value, economy, repository: marketRepository, epochs, receiverFor, audit, clock, random, unitOfWork, policy, describeFulfilment: (order) => fulfilment.describe(order) });
+  const rootAccount = /** @type {Record<string, string>} */ (config.rootAccounts)[defaultNetwork];
+  const chain = publishing === null ? null : buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies: chainPolicies });
+  const chainRepository = new PgChainRepository(database);
+  // With publishing on, a pack is sold only once its epoch's commitment is on chain (T12).
+  const commitmentAnchored = chain === null ? null : async (epoch) => ANCHORED.has(await chainRepository.payloadStatus(sha256Hex(utf8(packEpochAnnouncement(epoch.id, epoch.commit))))) ;
+  const marketplace = new MarketplaceService({ catalog: market.value, economy, repository: marketRepository, epochs, receiverFor, audit, clock, random, unitOfWork, policy, describeFulfilment: (order) => fulfilment.describe(order), commitmentAnchored });
   await marketplace.syncProducts();
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
@@ -116,10 +121,8 @@ export async function createServerApp(deps) {
   const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger });
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
 
-  const rootAccount = /** @type {Record<string, string>} */ (config.rootAccounts)[defaultNetwork];
-  const chain = publishing === null ? null : buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies: chainPolicies });
 
-  const verification = new GameVerification({ repository: new PgChainRepository(database), reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash), clock });
+  const verification = new GameVerification({ repository: chainRepository, reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash), clock });
 
   const router = new Router();
   registerIdentityRoutes({ router, auth, cookie: { name: config.sessionCookieName, secure: config.secure }, clock });
@@ -136,7 +139,7 @@ export async function createServerApp(deps) {
   const admin = new AdminService({
     admins: config.adminAccounts,
     readModel,
-    chainRepository: new PgChainRepository(database),
+    chainRepository,
     payments,
     audit,
     runtime,
@@ -178,6 +181,9 @@ export async function createServerApp(deps) {
   }
   return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, hub, games, gameRepository, secrets, matchmaking, realtime });
 }
+
+/** Anchoring states that prove a payload is on chain. */
+const ANCHORED = new Set(["INCLUDED", "IRREVERSIBLE"]);
 
 /**
  * The precision of any asset a payment provider can verify (refunds may be

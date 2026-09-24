@@ -90,6 +90,15 @@ export class PgChainRepository {
   }
 
   /**
+   * The anchoring state of a published payload (receipts, epochs), or null when it was never queued.
+   * @param {string} payloadHash sha256 of the payload
+   */
+  async payloadStatus(payloadHash) {
+    const row = await this.#db.maybeOne("SELECT status FROM blockchain_events WHERE payload_hash = $1 ORDER BY id LIMIT 1", [payloadHash]);
+    return row === null ? null : row.status;
+  }
+
+  /**
    * @param {string} gameId
    * @param {number} recordSeq
    * @returns {Promise<string | null>} the record's canonical JSON

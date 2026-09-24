@@ -95,6 +95,8 @@ async function main() {
     every(ALARM_INTERVAL_MS, "alarms", () => app.monitor.evaluate(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "order expiry", () => app.marketplace.expireDue(), logger),
     every(EPOCH_REVEAL_INTERVAL_MS, "pack epoch reveal", () => app.epochs.revealSettled(), logger),
+    // Keeps a pack epoch open ahead of sales, so its commitment is already on chain when a buyer orders.
+    every(ORDER_EXPIRY_INTERVAL_MS, "pack epoch rollover", () => app.epochs.current(), logger),
     every(GAME_TICK_INTERVAL_MS, "game timers", () => app.games.tick(), logger),
     every(RECORD_SEAL_INTERVAL_MS, "record sealing", () => app.games.sealStale(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "matchmaking", async () => {

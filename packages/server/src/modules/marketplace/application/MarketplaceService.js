@@ -9,7 +9,11 @@
  *   UNIQUE (user_id, idempotency_key) holds even for concurrent requests (T4).
  * - The memo is an opaque random reference; the payment must come from the
  *   buyer's own account (T6), before the order expires.
- * - Orders with packs are bound to the open pack epoch at creation.
+ * - Orders with packs are bound to the open pack epoch at creation. When
+ *   the chain is in use, only once the epoch's commitment is on chain: the
+ *   buyer pays after that, so the secret was fixed before the transaction
+ *   id that seeds the pack existed (otherwise the server could have picked
+ *   a secret knowing it).
  * - Every state change is a compare-and-set (T7).
  */
 import { canonicalize, sha256Hex, utf8 } from "@magic8/protocol";
@@ -49,6 +53,7 @@ export class MarketplaceService {
   #economy;
   #repository;
   #epochs;
+  #commitmentAnchored;
   #receiverFor;
   #audit;
   #clock;
@@ -70,9 +75,10 @@ export class MarketplaceService {
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   policy?: Partial<MarketplacePolicy>,
    *   describeFulfilment?: (order: import("../domain/Order.js").Order) => Promise<unknown>,
-   * }} deps
+   *   commitmentAnchored?: ((epoch: Readonly<{ id: number, commit: string }>) => Promise<boolean>) | null,
+   * }} deps `commitmentAnchored`: null when nothing is published on chain (development)
    */
-  constructor({ catalog, economy, repository, epochs, receiverFor, audit, clock, random, unitOfWork, policy = {}, describeFulfilment = async () => null }) {
+  constructor({ catalog, economy, repository, epochs, receiverFor, audit, clock, random, unitOfWork, policy = {}, describeFulfilment = async () => null, commitmentAnchored = null }) {
     assertImplements(repository, MARKETPLACE_REPOSITORY_METHODS, "MarketplaceRepository");
     this.#catalog = catalog;
     this.#economy = economy;
@@ -85,6 +91,16 @@ export class MarketplaceService {
     this.#unitOfWork = unitOfWork;
     this.#policy = Object.freeze({ ...DEFAULT_MARKETPLACE_POLICY, ...policy });
     this.#describe = describeFulfilment;
+    this.#commitmentAnchored = commitmentAnchored;
+  }
+
+  /** The open pack epoch, provided its commitment is on chain (when the chain is in use). */
+  async #sellableEpoch() {
+    const epoch = await this.#epochs.current();
+    if (this.#commitmentAnchored !== null && !(await this.#commitmentAnchored(epoch))) {
+      throw new AppError("CHAIN_UNAVAILABLE", "packs are on sale again in a few seconds: the pack epoch's commitment is being published on chain");
+    }
+    return epoch;
   }
 
   get catalog() {
@@ -127,7 +143,7 @@ export class MarketplaceService {
       throw new AppError("LIMIT_REACHED", `at most ${this.#policy.maxOpenOrders} unpaid orders at a time: pay or cancel one first`);
     }
     const expansion = expandProduct(product, count, this.#catalog.products);
-    const epoch = expansion.packs.length > 0 ? await this.#epochs.current() : null;
+    const epoch = expansion.packs.length > 0 ? await this.#sellableEpoch() : null;
     const now = this.#clock.now();
     /** @type {import("../domain/Order.js").Order} */
     const order = Object.freeze({

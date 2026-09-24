@@ -70,4 +70,26 @@ export class SecretBox {
     decipher.setAuthTag(sealed.subarray(2 + IV_BYTES, HEADER_BYTES));
     return new Uint8Array(Buffer.concat([decipher.update(sealed.subarray(HEADER_BYTES)), decipher.final()]));
   }
+
+  get currentKeyId() {
+    return this.#currentKeyId;
+  }
+
+  /**
+   * The id of the key a secret was sealed with, or null when it is not a sealed secret.
+   * @param {Uint8Array} sealed
+   */
+  static keyIdOf(sealed) {
+    return sealed instanceof Uint8Array && sealed.length >= HEADER_BYTES && sealed[0] === FORMAT_VERSION ? sealed[1] : null;
+  }
+
+  /**
+   * The same secret sealed with the current key, or null when it already is.
+   * @param {Uint8Array} sealed
+   * @param {string} context
+   * @returns {Uint8Array | null}
+   */
+  reseal(sealed, context) {
+    return SecretBox.keyIdOf(sealed) === this.#currentKeyId ? null : this.seal(this.open(sealed, context), context);
+  }
 }
