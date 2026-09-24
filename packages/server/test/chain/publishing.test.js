@@ -18,6 +18,7 @@ import { SignerError } from "@magic8/steem";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { ResourceMode, signerFor } from "../../src/modules/chain/index.js";
 import { buildTestApp, deterministicRandom, listen, toWif } from "../helpers.js";
+import { verifyCommand } from "../../../../tools/verify-game.js";
 import { ApiClient } from "../support/apiClient.js";
 import { FakeSteemLedger } from "../support/fakeSteemLedger.js";
 
@@ -142,6 +143,18 @@ describe("ChainBroadcaster and ChainTracker", () => {
       const remote = await new ApiClient(server.base).get(`/api/games/${gameId}/verification`);
       assert.equal(remote.json.verdict, Verdict.VALID);
       assert.equal((await new ApiClient(server.base).get(`/api/games/${"0".repeat(26)}/chain`)).status, 404);
+
+      // The command-line verifier, with the server as an index, then scanning the chain without one.
+      for (const extra of [["--server", server.base], ["--scan", "--server", server.base]]) {
+        let output = "";
+        const code = await verifyCommand([gameId, "--root", ROOT, ...extra], { reader: w.publishing.reader, write: (text) => (output += text) });
+        assert.equal(code, 0, output);
+        assert.match(output, /VERDICT: VALID/);
+        assert.match(output, /content [0-9a-f]{64} \(engine [^)]+\): downloaded and checked/);
+      }
+      let wrongRoot = "";
+      assert.equal(await verifyCommand([gameId, "--root", "someone", "--server", server.base], { reader: w.publishing.reader, write: (text) => (wrongRoot += text) }), 1, "another root authorises nobody");
+      assert.match(wrongRoot, /the server names @m8tcg as root; verifying against @someone/);
       assert.equal((await new ApiClient(server.base).get("/api/games/not-a-game/verification")).status, 404);
     } finally {
       await server.close();

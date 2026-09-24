@@ -69,6 +69,12 @@ export default [
     rules: qualityRules,
   },
   {
+    // Standalone pages next to the client (the game verifier, the manifest tool).
+    files: ["packages/client/verify/**/*.js"],
+    languageOptions: { ecmaVersion: 2022, sourceType: "module", globals: { ...browserGlobals, URLSearchParams: "readonly" } },
+    rules: qualityRules,
+  },
+  {
     // The rules engine and the client's application layer must stay platform-agnostic.
     files: ["packages/engine/src/**/*.js"],
     languageOptions: { ecmaVersion: 2022, sourceType: "module", globals: {} },

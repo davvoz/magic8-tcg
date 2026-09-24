@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Magic8 — broadcaster manifest</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0a0c14; --panel: #151a2a; --text: #e6e9f2; --muted: #9aa3bd; --good: #4cc38a; --bad: #e5484d; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    p { color: var(--muted); }
+    form { display: grid; gap: 10px; background: var(--panel); padding: 16px; border-radius: 8px; }
+    label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+    input { font: 14px ui-monospace, monospace; padding: 8px; border-radius: 6px; border: 1px solid #2a3350; background: var(--bg); color: var(--text); min-width: 0; }
+    button { font: inherit; padding: 8px 18px; border-radius: 6px; border: 0; background: #3e63dd; color: white; cursor: pointer; justify-self: start; }
+    button:disabled { opacity: .5; cursor: default; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; background: var(--panel); padding: 12px; border-radius: 6px; }
+    #status.good { color: var(--good); } #status.bad { color: var(--bad); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Broadcaster manifest</h1>
+    <p>The root account authorises the accounts that publish game records. Verifiers accept only records signed by an account authorised <em>before</em> the record's block, so publish this before the server starts broadcasting. It is signed with the root account's <strong>active</strong> key in Steem Keychain, on this computer: that key never goes to the game server. To revoke every broadcaster (for example after a leaked key), publish an empty list.</p>
+    <form id="manifest">
+      <label>Root account <input type="text" id="root" autocomplete="off" spellcheck="false" required></label>
+      <label>Broadcaster accounts, comma-separated (posting keys only on the server) <input type="text" id="accounts" autocomplete="off" spellcheck="false"></label>
+      <label>Valid from block (0 = from the block that includes this manifest) <input type="text" id="from" value="0" inputmode="numeric"></label>
+      <button type="submit" id="publish">Publish with Keychain</button>
+    </form>
+    <p>Operation <code>m8tcg_manifest</code>, active authority of the root account:</p>
+    <pre id="preview"></pre>
+    <p id="status"></p>
+  </main>
+  <script type="importmap">{ "imports": { "@magic8/engine/": "/engine/", "@magic8/protocol": "/protocol/index.js", "@noble/hashes/": "/vendor/noble-hashes/" } }</script>
+  <script type="module" src="verify/manifestPage.js"></script>
+</body>
+</html>

@@ -54,8 +54,13 @@ async function main() {
     ? new StaticFiles([
         { prefix: "/data/", directory: join(REPOSITORY_ROOT, "data") },
         { prefix: "/engine/", directory: join(REPOSITORY_ROOT, "packages", "engine", "src") },
+        // The verifier page (verify.html) runs the protocol and reads STEEM nodes directly.
+        { prefix: "/protocol/", directory: join(REPOSITORY_ROOT, "packages", "protocol", "src") },
+        { prefix: "/steem/", directory: join(REPOSITORY_ROOT, "packages", "steem", "src") },
+        { prefix: "/vendor/noble-hashes/", directory: join(REPOSITORY_ROOT, "node_modules", "@noble", "hashes") },
+        { prefix: "/vendor/noble-curves/", directory: join(REPOSITORY_ROOT, "node_modules", "@noble", "curves") },
         { prefix: "/", directory: join(REPOSITORY_ROOT, "packages", "client") },
-      ], { connectSources: [config.publicOrigin.replace(/^http/, "ws")] })
+      ], { connectSources: [config.publicOrigin.replace(/^http/, "ws"), ...config.steemNodes.map((node) => new URL(node).origin)] })
     : null;
   const app = await createServerApp({
     config,

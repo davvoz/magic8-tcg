@@ -8,6 +8,7 @@
  * Mounts (first matching prefix wins):
  *   /data/    → data/                 shared game content
  *   /engine/  → packages/engine/src/  rules engine (the client's import map points here)
+ *   /protocol/, /steem/, /vendor/noble-hashes/, /vendor/noble-curves/  the verifier page (verify.html)
  *   /         → packages/client/      the browser client
  *
  * Usage: node tools/dev-server.js [port]
@@ -22,6 +23,10 @@ const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const MOUNTS = Object.freeze([
   Object.freeze({ prefix: "/data/", directory: join(ROOT, "data") }),
   Object.freeze({ prefix: "/engine/", directory: join(ROOT, "packages", "engine", "src") }),
+  Object.freeze({ prefix: "/protocol/", directory: join(ROOT, "packages", "protocol", "src") }),
+  Object.freeze({ prefix: "/steem/", directory: join(ROOT, "packages", "steem", "src") }),
+  Object.freeze({ prefix: "/vendor/noble-hashes/", directory: join(ROOT, "node_modules", "@noble", "hashes") }),
+  Object.freeze({ prefix: "/vendor/noble-curves/", directory: join(ROOT, "node_modules", "@noble", "curves") }),
   Object.freeze({ prefix: "/", directory: join(ROOT, "packages", "client") }),
 ]);
 const DEFAULT_PORT = 8080;
