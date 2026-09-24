@@ -11,14 +11,16 @@ export const STEEM_NETWORK = "steem";
 
 /**
  * @typedef {Readonly<{ threshold: number, keys: readonly Readonly<{ key: string, weight: number }>[], accounts: readonly Readonly<{ account: string, weight: number }>[] }>} ChainAuthority
- * @typedef {Readonly<{ network: string, name: string, posting: ChainAuthority, active: ChainAuthority }>} ChainAccount
+ * @typedef {Readonly<{ network: string, name: string, owner: ChainAuthority, posting: ChainAuthority, active: ChainAuthority }>} ChainAccount
  * @typedef {Readonly<{ headBlock: number, irreversibleBlock: number, time: number }>} ChainHead
+ * @typedef {Readonly<{ blockNum: number, blockId: string, time: number }>} BlockReference the head block, for TaPoS
  * @typedef {Readonly<{ type: string, data: Readonly<Record<string, unknown>> }>} ChainOperation
  * @typedef {Readonly<{ index: number, txId: string, blockNum: number, opIndex: number, virtual: boolean, time: number, operation: ChainOperation }>} HistoryEntry
  * @typedef {Readonly<{ blockNum: number, time: number, transactions: readonly Readonly<{ txId: string, operations: readonly ChainOperation[] }>[] }>} ChainBlock
  */
 
 const TX_ID_PATTERN = /^[0-9a-f]{40}$/;
+const BLOCK_ID_PATTERN = /^[0-9a-f]{40}$/;
 const MAX_HISTORY_PAGE = 1000;
 
 export class ChainDataError extends Error {
@@ -154,6 +156,16 @@ export class SteemBlockchainProvider {
     return Object.freeze({ headBlock, irreversibleBlock, time: parseChainTime(properties.time) });
   }
 
+  /** @returns {Promise<BlockReference>} */
+  async getReference() {
+    const properties = requireObject(await this.#rpc.call("condenser_api.get_dynamic_global_properties", []), "dynamic global properties");
+    const blockId = properties.head_block_id;
+    if (typeof blockId !== "string" || !BLOCK_ID_PATTERN.test(blockId)) {
+      throw new ChainDataError("head_block_id: expected a block id");
+    }
+    return Object.freeze({ blockNum: requireNonNegativeInteger(properties.head_block_number, "head_block_number"), blockId, time: parseChainTime(properties.time) });
+  }
+
   /**
    * Entries of an account's history with index in (after, after + limit],
    * oldest first. The history index of an account only grows, so a reader
@@ -256,6 +268,7 @@ export class SteemBlockchainProvider {
     return Object.freeze({
       network: STEEM_NETWORK,
       name,
+      owner: parseAuthority(account.owner, "owner"),
       posting: parseAuthority(account.posting, "posting"),
       active: parseAuthority(account.active, "active"),
     });

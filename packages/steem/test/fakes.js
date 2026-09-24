@@ -39,9 +39,10 @@ export function fakeFetch(handlers) {
 }
 
 /** A STEEM account as condenser_api.get_accounts returns it (only the fields we read). */
-export function rawAccount(name, postingKeys, { threshold = 1, activeKeys = postingKeys } = {}) {
+export function rawAccount(name, postingKeys, { threshold = 1, activeKeys = postingKeys, ownerKeys = activeKeys } = {}) {
   return {
     name,
+    owner: { weight_threshold: 1, account_auths: [], key_auths: ownerKeys.map((key) => [key, 1]) },
     posting: { weight_threshold: threshold, account_auths: [["some.app", 1]], key_auths: postingKeys.map((key) => [key, 1]) },
     active: { weight_threshold: 1, account_auths: [], key_auths: activeKeys.map((key) => [key, 1]) },
     memo_key: postingKeys[0],
