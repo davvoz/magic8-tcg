@@ -112,6 +112,39 @@ function printMatrix(decks, matchups) {
   }
 }
 
+/** Totals, per-deck records and head-to-head results of a run. */
+class Standings {
+  totals = { games: 0, firstSeatWins: 0, turns: 0, draws: 0 };
+  /** @type {Map<string, number>} */
+  matchups = new Map();
+
+  /** @param {readonly { id: string }[]} decks */
+  constructor(decks) {
+    /** @type {Map<string, { wins: number, games: number }>} */
+    this.record = new Map(decks.map((deck) => [deck.id, { wins: 0, games: 0 }]));
+  }
+
+  /**
+   * @param {any} first
+   * @param {any} second
+   * @param {{ winner: "a" | "b" | null, turns: number }} result
+   */
+  add(first, second, result) {
+    this.totals.games += 1;
+    this.totals.turns += result.turns;
+    this.record.get(first.id).games += 1;
+    this.record.get(second.id).games += 1;
+    if (result.winner === null) {
+      this.totals.draws += 1;
+      return;
+    }
+    const [winner, loser] = result.winner === "a" ? [first, second] : [second, first];
+    this.record.get(winner.id).wins += 1;
+    recordMatchup(this.matchups, winner, loser);
+    this.totals.firstSeatWins += result.winner === "a" ? 1 : 0;
+  }
+}
+
 async function main() {
   const games = Math.min(MAX_GAMES, Math.max(1, Number.parseInt(process.argv[2] ?? "25", 10) || 25));
   const effects = createCoreEffectRegistry();
@@ -119,26 +152,14 @@ async function main() {
   const logger = new MemoryLogger();
   const setup = new MatchSetupService({ content, effects, scheduler: immediateScheduler, logger });
   const decks = selectDecks(content.preconDecks, process.argv[3]);
-  const matchups = new Map();
-  const record = new Map(decks.map((deck) => [deck.id, { wins: 0, games: 0 }]));
-  const totals = { games: 0, firstSeatWins: 0, turns: 0, draws: 0 };
+  const standings = new Standings(decks);
+  const { totals, record, matchups } = standings;
   const started = performance.now();
 
   for (const [first, second] of pairings(decks)) {
     for (let seed = 1; seed <= games; seed += 1) {
       const result = await playGame(setup, first, second, seed * 1000 + totals.games);
-      totals.games += 1;
-      totals.turns += result.turns;
-      record.get(first.id).games += 1;
-      record.get(second.id).games += 1;
-      const winner = result.winner === "a" ? first : second;
-      if (result.winner === null) {
-        totals.draws += 1;
-      } else {
-        record.get(winner.id).wins += 1;
-        recordMatchup(matchups, winner, winner === first ? second : first);
-        totals.firstSeatWins += result.winner === "a" ? 1 : 0;
-      }
+      standings.add(first, second, result);
     }
   }
 

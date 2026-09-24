@@ -5,6 +5,7 @@
  */
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { parseJson } from "../../../kernel/json.js";
 
 /**
  * @param {string} directory
@@ -18,7 +19,7 @@ async function readAll(directory, suffix) {
 /** @param {string} path */
 async function readJson(path) {
   try {
-    return JSON.parse(await readFile(path, "utf8"));
+    return parseJson(await readFile(path, "utf8"), { maxDepth: 64 });
   } catch (error) {
     throw new Error(`content file ${path} could not be read: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }

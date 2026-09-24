@@ -87,13 +87,16 @@ function describeSources(result, { gameId, root, blocks }) {
  * @param {Awaited<ReturnType<typeof verifyGameOnChain>>} result
  */
 function describeChecks({ history, replay, content, verdict }) {
-  const lines = [`history: ${history.status}, ${history.records.length} record(s), ${history.events.length} event(s)${history.problem === null ? "" : ` — ${history.problem.message}`}`];
+  const problem = history.problem === null ? "" : ` — ${history.problem.message}`;
+  const lines = [`history: ${history.status}, ${history.records.length} record(s), ${history.events.length} event(s)${problem}`];
   if (content.declared !== null) {
-    lines.push(`content ${content.declared.hash} (engine ${content.declared.engineVersion}): ${content.verified ? "downloaded and checked" : `not available (this verifier runs engine ${content.localEngine})`}`);
+    const state = content.verified ? "downloaded and checked" : `not available (this verifier runs engine ${content.localEngine})`;
+    lines.push(`content ${content.declared.hash} (engine ${content.declared.engineVersion}): ${state}`);
   }
   if (replay !== null) {
     const outcome = replay.outcome === null ? "" : `; winner ${replay.outcome.winner ?? "none"} (${replay.outcome.reason})`;
-    lines.push(`replay: ${replay.status}${replay.message === null ? "" : ` — ${replay.message}`}${outcome}`);
+    const message = replay.message === null ? "" : ` — ${replay.message}`;
+    lines.push(`replay: ${replay.status}${message}${outcome}`);
   }
   lines.push(`VERDICT: ${verdict}`);
   return lines;

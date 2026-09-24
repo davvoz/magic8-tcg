@@ -229,7 +229,8 @@ export class CollectionScene extends Scene {
     const list = panel.add(new ScrollList({ id: COPIES_ID, x, y: top + 84, width, height: DETAIL.height - 84 }));
     const copies = [...owned.copies].sort((left, right) => left.edition.localeCompare(right.edition) || left.serial - right.serial);
     copies.forEach((copy, index) => {
-      list.add(new Label({ x: 0, y: index * COPY_ROW, width: list.rowWidth, height: COPY_ROW, text: `#${copy.serial} · ${copy.edition} · ${copy.finish}${copy.status === "active" ? "" : ` · ${copy.status}`}`, size: "small", align: "left", colorKey: copy.status === "active" ? "text" : "disabledText", fit: true }));
+      const status = copy.status === "active" ? "" : ` · ${copy.status}`;
+      list.add(new Label({ x: 0, y: index * COPY_ROW, width: list.rowWidth, height: COPY_ROW, text: `#${copy.serial} · ${copy.edition} · ${copy.finish}${status}`, size: "small", align: "left", colorKey: copy.status === "active" ? "text" : "disabledText", fit: true }));
     });
     list.contentHeight = copies.length * COPY_ROW;
   }

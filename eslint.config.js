@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import sonarjs from "eslint-plugin-sonarjs";
 
 const browserGlobals = {
   window: "readonly",
@@ -126,6 +127,24 @@ export default [
     files: ["packages/*/test/**/*.js", "packages/*/tools/**/*.js", "tools/**/*.js"],
     languageOptions: { ecmaVersion: 2022, sourceType: "module", globals: nodeGlobals },
     rules: { ...qualityRules, "no-console": "off" },
+  },
+  {
+    // SonarJS rules (the SonarQube JavaScript analyzer's checks) on every source file and tool.
+    files: ["packages/*/src/**/*.js", "packages/client/verify/**/*.js", "packages/client/tools/**/*.js", "tools/**/*.js"],
+    plugins: { sonarjs },
+    rules: sonarjs.configs.recommended.rules,
+  },
+  {
+    // Server: amounts are exact integers (never floats), and untrusted JSON goes through the safe parser (docs/tcg/05 §6).
+    files: ["packages/server/src/**/*.js"],
+    ignores: ["packages/server/src/kernel/json.js"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        { selector: "CallExpression[callee.name='parseFloat'], MemberExpression[property.name='parseFloat']", message: "Amounts are integers in minimal units: use economy Money parsing, never parseFloat." },
+        { selector: "CallExpression[callee.object.name='JSON'][callee.property.name='parse']", message: "Parse untrusted JSON with kernel/json.js parseJson (prototype keys, depth)." },
+      ],
+    },
   },
   {
     // The preview harness runs in the browser (it boots the real presentation stack for screenshots).

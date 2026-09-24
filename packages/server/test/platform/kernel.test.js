@@ -244,3 +244,17 @@ describe("ids and policies", () => {
     assert.throws(() => identityPolicy({ sessionIdleTtlMs: 10, sessionAbsoluteTtlMs: 5 }), TypeError);
   });
 });
+
+describe("parseJson (untrusted input)", () => {
+  it("parses ordinary JSON and refuses prototype keys and deep nesting", async () => {
+    const { JsonInputError, parseJson } = await import("../../src/kernel/json.js");
+    assert.deepEqual(parseJson('{"a":[1,{"b":null}]}'), { a: [1, { b: null }] });
+    for (const hostile of ['{"__proto__":{"admin":true}}', '{"a":{"constructor":{"prototype":{}}}}', '[{"prototype":1}]']) {
+      assert.throws(() => parseJson(hostile), JsonInputError, hostile);
+    }
+    assert.equal({}.admin, undefined, "nothing polluted");
+    assert.throws(() => parseJson("[".repeat(40) + "]".repeat(40)), /deeper than 32/);
+    assert.doesNotThrow(() => parseJson("[".repeat(32) + "]".repeat(32)));
+    assert.throws(() => parseJson("{nope}"), /not valid JSON/);
+  });
+});

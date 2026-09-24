@@ -48,7 +48,8 @@ function publish() {
   keychain.requestCustomJson(root, OperationId.MANIFEST, "Active", json, "Magic8: authorise game record broadcasters", (/** @type {any} */ response) => {
     element("publish").disabled = false;
     if (response?.success) {
-      status(`Published${response.result?.id ? ` in transaction ${response.result.id}` : ""}. It counts once its block is irreversible (about a minute).`, "good");
+      const where = response.result?.id ? ` in transaction ${response.result.id}` : "";
+      status(`Published${where}. It counts once its block is irreversible (about a minute).`, "good");
     } else {
       status(`Not published: ${response?.message ?? "refused"}`, "bad");
     }

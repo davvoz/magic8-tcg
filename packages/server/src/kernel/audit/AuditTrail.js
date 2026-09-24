@@ -53,7 +53,7 @@ export class AuditTrail {
       targetKind: input.targetKind ?? null,
       targetId: input.targetId ?? null,
       ip: input.ip ?? null,
-      details: /** @type {Record<string, unknown>} */ (JSON.parse(JSON.stringify(redact(input.details ?? {})))),
+      details: /** @type {Record<string, unknown>} */ (structuredClone(redact(input.details ?? {}))),
     };
     return this.#store.appendNext((previous) => {
       const body = {

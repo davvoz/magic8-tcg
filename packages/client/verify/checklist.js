@@ -11,6 +11,24 @@
 /** @param {readonly string[]} accounts */
 const accountList = (accounts) => (accounts.length === 0 ? "none" : accounts.map((account) => `@${account}`).join(", "));
 
+/** @param {readonly { reason: string }[]} rejected */
+function rejectedDetail(rejected) {
+  if (rejected.length === 0) {
+    return "none seen";
+  }
+  const reasons = [...new Set(rejected.map((rejection) => rejection.reason))].join(", ");
+  return `${rejected.length} ignored (${reasons})`;
+}
+
+/** @param {any} content */
+function contentCheck(content) {
+  if (content.declared === null) {
+    return { label: "Content", ok: null, detail: "not declared yet" };
+  }
+  const state = content.verified ? "downloaded and checked" : "not available";
+  return { label: "Content", ok: content.verified, detail: `${content.declared.hash.slice(0, 16)}… (engine ${content.declared.engineVersion}) ${state}` };
+}
+
 /**
  * @param {any} result
  * @param {{ root: string, indexed: boolean }} context
@@ -23,9 +41,9 @@ export function checklist(result, { root, indexed }) {
   const checks = [
     { label: "Trust anchor", ok: result.broadcasters.length > 0, detail: `@${root} authorises ${accountList(result.broadcasters)}` },
     { label: "Records found", ok: history.records.length > 0, detail: `${history.records.length} record(s) ${indexed ? "in the indexed blocks" : "in the broadcasters' histories"}${pending}` },
-    { label: "Forged operations ignored", ok: true, detail: result.rejected.length === 0 ? "none seen" : `${result.rejected.length} ignored (${[...new Set(result.rejected.map((rejection) => rejection.reason))].join(", ")})` },
+    { label: "Forged operations ignored", ok: true, detail: rejectedDetail(result.rejected) },
     { label: "Hash chain and lifecycle", ok: history.status === "COMPLETE", detail: history.problem === null ? `${history.events.length} events, ${history.status.toLowerCase()}` : history.problem.message },
-    { label: "Content", ok: content.declared === null ? null : content.verified, detail: content.declared === null ? "not declared yet" : `${content.declared.hash.slice(0, 16)}… (engine ${content.declared.engineVersion})${content.verified ? " downloaded and checked" : " not available"}` },
+    contentCheck(content),
   ];
   if (replay !== null) {
     const outcome = replay.outcome === null ? "" : ` — winner ${replay.outcome.winner ?? "none"} (${replay.outcome.reason})`;

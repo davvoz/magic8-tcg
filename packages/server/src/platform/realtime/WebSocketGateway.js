@@ -17,6 +17,7 @@ import { WebSocketServer } from "ws";
 
 import { AppError } from "../../kernel/AppError.js";
 import { parseCookies } from "../http/cookies.js";
+import { parseJson } from "../../kernel/json.js";
 
 export const CloseCode = Object.freeze({ REPLACED: 4000, UNAUTHENTICATED: 4001, BAD_MESSAGE: 4002, RATE_LIMITED: 4008 });
 
@@ -311,7 +312,7 @@ class LiveConnection {
 function parseEnvelope(text) {
   let value;
   try {
-    value = JSON.parse(text);
+    value = parseJson(text, { maxDepth: 8 });
   } catch {
     return null;
   }

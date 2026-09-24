@@ -105,7 +105,8 @@ function serializeContainer(value, depth, maxDepth, path) {
     throw new CanonicalJsonError(CanonicalJsonErrorCode.TOO_DEEP, `${path}: nesting deeper than ${maxDepth}`);
   }
   if (Array.isArray(value)) {
-    return `[${value.map((item, index) => serialize(item, depth + 1, maxDepth, `${path}[${index}]`)).join(",")}]`;
+    const items = value.map((item, index) => serialize(item, depth + 1, maxDepth, `${path}[${index}]`));
+    return `[${items.join(",")}]`;
   }
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
@@ -121,7 +122,8 @@ function serializeContainer(value, depth, maxDepth, path) {
     if (item === undefined) {
       throw new CanonicalJsonError(CanonicalJsonErrorCode.UNSUPPORTED_VALUE, `${path}.${key}: undefined is not allowed`);
     }
-    members.push(`${JSON.stringify(key)}:${serialize(item, depth + 1, maxDepth, `${path}.${key}`)}`);
+    const member = serialize(item, depth + 1, maxDepth, `${path}.${key}`);
+    members.push(`${JSON.stringify(key)}:${member}`);
   }
   return `{${members.join(",")}}`;
 }

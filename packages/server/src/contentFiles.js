@@ -7,12 +7,13 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { readContentDirectory } from "./modules/catalog/index.js";
+import { parseJson } from "./kernel/json.js";
 
 /**
  * @param {string} path
  * @returns {Promise<unknown>}
  */
-const readJson = (path) => readFile(path, "utf8").then(JSON.parse);
+const readJson = (path) => readFile(path, "utf8").then((text) => parseJson(text, { maxDepth: 64 }));
 
 /**
  * Every *.json file of a directory, in file name order (stable across machines).
