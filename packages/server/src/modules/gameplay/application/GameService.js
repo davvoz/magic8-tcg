@@ -39,6 +39,8 @@ export class GameService {
   #timePolicy;
   #network;
   #sealer;
+  /** @type {((summary: import("./ports.js").FinishedGame) => Promise<void>)[]} */
+  #finishedListeners = [];
   /** @type {Map<string, GameActor>} */
   #actors = new Map();
   /** @type {Map<string, Promise<GameActor | null>>} actors being rebuilt */
@@ -79,6 +81,30 @@ export class GameService {
     this.#network = network;
     this.#timePolicy = Object.freeze({ ...DEFAULT_TIME_POLICY, ...timePolicy });
     this.#sealer = new RecordSealer({ store: /** @type {any} */ (repository), outbox, clock, unitOfWork, logger, policy: sealingPolicy });
+  }
+
+  /**
+   * Called after a game ends and is committed (ranking, statistics). A listener that fails is logged; the game is over anyway.
+   * @param {(summary: import("./ports.js").FinishedGame) => Promise<void>} listener
+   */
+  onGameFinished(listener) {
+    this.#finishedListeners.push(listener);
+  }
+
+  /**
+   * Finished games of a mode since a time, oldest first (listeners catch up on games they missed).
+   * @param {{ mode: string, since: number, limit?: number }} query
+   */
+  finishedGames({ mode, since, limit = 500 }) {
+    return this.#repository.listFinished({ mode, since, limit });
+  }
+
+  /**
+   * @param {string} userId
+   * @param {string} mode
+   */
+  countFinished(userId, mode) {
+    return this.#repository.countFinished(userId, mode);
   }
 
   /** Seals the records of games whose pending events waited too long (periodic job). */
@@ -326,6 +352,11 @@ export class GameService {
         this.#actors.delete(gameId);
       },
       sealer: this.#sealer,
+      onFinished: (summary) => {
+        for (const listener of this.#finishedListeners) {
+          listener(summary).catch((error) => this.#logger.error("a finished-game listener failed", { game: summary.gameId, error: error instanceof Error ? error.message : String(error) }));
+        }
+      },
     });
   }
 

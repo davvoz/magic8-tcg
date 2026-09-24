@@ -12,6 +12,7 @@ function toTicket(row) {
     mode: row.mode,
     deckId: row.deck_id,
     deck: row.deck_snapshot,
+    rating: row.rating,
     status: row.status,
     createdAt: fromTimestamp(row.created_at),
   });
@@ -61,6 +62,16 @@ export class PgMatchmakingRepository {
    * The two oldest waiting tickets of a mode, locked; tickets another transaction holds are skipped.
    * @param {string} mode
    */
+  /**
+   * Up to `limit` waiting tickets of a mode, oldest first, locked (others' locked tickets are skipped).
+   * @param {string} mode
+   * @param {number} limit
+   */
+  async lockWaiting(mode, limit) {
+    const rows = await this.#db.rows("SELECT * FROM matchmaking WHERE status = 'WAITING' AND mode = $1 ORDER BY created_at, id LIMIT $2 FOR UPDATE SKIP LOCKED", [mode, limit]);
+    return Object.freeze(rows.map(toTicket));
+  }
+
   async lockOldestPair(mode) {
     const rows = await this.#db.rows("SELECT * FROM matchmaking WHERE status = 'WAITING' AND mode = $1 ORDER BY created_at, id LIMIT 2 FOR UPDATE SKIP LOCKED", [mode]);
     return Object.freeze(rows.map(toTicket));

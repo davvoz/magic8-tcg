@@ -161,6 +161,37 @@ export class PgGameRepository {
     return Object.freeze(rows.map((row) => row.id));
   }
 
+  async listFinished({ mode, since, limit }) {
+    const games = await this.#db.rows(
+      `SELECT g.id, g.mode, g.finished_at, g.winner_seat, g.end_reason,
+              (SELECT turn FROM game_events e WHERE e.game_id = g.id ORDER BY seq DESC LIMIT 1) AS turn
+         FROM games g WHERE g.status = 'FINISHED' AND g.mode = $1 AND g.finished_at >= $2
+        ORDER BY g.finished_at, g.id LIMIT $3`,
+      [mode, toTimestamp(since), limit],
+    );
+    const result = [];
+    for (const game of games) {
+      const players = await this.#db.rows("SELECT seat, user_id, account FROM game_players WHERE game_id = $1 ORDER BY seat", [game.id]);
+      result.push(
+        Object.freeze({
+          gameId: game.id,
+          mode: game.mode,
+          finishedAt: fromTimestamp(game.finished_at),
+          winnerSeat: game.winner_seat,
+          endReason: game.end_reason,
+          turn: game.turn,
+          players: Object.freeze(players.map((player) => Object.freeze({ seat: player.seat, userId: player.user_id, account: player.account }))),
+        }),
+      );
+    }
+    return Object.freeze(result);
+  }
+
+  async countFinished(userId, mode) {
+    const row = await this.#db.maybeOne("SELECT count(*)::integer AS n FROM games g JOIN game_players p ON p.game_id = g.id WHERE p.user_id = $1 AND g.mode = $2 AND g.status = 'FINISHED'", [userId, mode]);
+    return row?.n ?? 0;
+  }
+
   async activeGameOf(userId) {
     const row = await this.#db.maybeOne(
       "SELECT g.id FROM games g JOIN game_players p ON p.game_id = g.id WHERE p.user_id = $1 AND g.status = ANY($2::text[]) ORDER BY g.created_at DESC LIMIT 1",

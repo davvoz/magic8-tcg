@@ -23,6 +23,7 @@ export class AdminService {
   #monitor;
   #shopFor;
   #formatAmount;
+  #ranking;
   #clock;
 
   /**
@@ -36,10 +37,11 @@ export class AdminService {
    *   monitor: import("./Monitor.js").Monitor,
    *   shopAccount: (network: string) => string,
    *   formatAmount: (units: number, asset: string) => string,
+   *   ranking: { flags: (limit?: number) => Promise<readonly unknown[]> },
    *   clock: import("../../../kernel/time.js").Clock,
    * }} deps `runtime`: in-memory state (connections, broadcasters' resource credits)
    */
-  constructor({ admins, readModel, chainRepository, payments, audit, runtime, monitor, shopAccount, formatAmount, clock }) {
+  constructor({ admins, readModel, chainRepository, payments, audit, runtime, monitor, shopAccount, formatAmount, ranking, clock }) {
     this.#admins = admins;
     this.#readModel = readModel;
     this.#chainRepository = chainRepository;
@@ -49,6 +51,7 @@ export class AdminService {
     this.#monitor = monitor;
     this.#shopFor = shopAccount;
     this.#formatAmount = formatAmount;
+    this.#ranking = ranking;
     this.#clock = clock;
   }
 
@@ -70,6 +73,11 @@ export class AdminService {
 
   alarms() {
     return this.#monitor.alarms();
+  }
+
+  /** Fair-play signals of ranked play (repeated pairings, quick concessions). */
+  rankingFlags() {
+    return this.#ranking.flags();
   }
 
   alerts() {

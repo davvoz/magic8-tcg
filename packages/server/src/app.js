@@ -25,6 +25,7 @@ import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository, RefundWa
 import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, registerMonitoringRoutes } from "./modules/admin/index.js";
 import { GameService, PgGameRepository, registerGameMessages } from "./modules/gameplay/index.js";
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
+import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
 import { WebSocketGateway } from "./platform/realtime/WebSocketGateway.js";
 import { presenceHandler, registerSessionMessages } from "./realtimeSession.js";
@@ -118,7 +119,13 @@ export async function createServerApp(deps) {
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
   const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy });
-  const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger });
+  const rankedSettings = validateRankedSettings(content.ranked);
+  if (!rankedSettings.ok) {
+    throw new Error(`ranked settings are invalid: ${rankedSettings.error.message}`);
+  }
+  const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: rankedSettings.value, games, clock, unitOfWork, logger });
+  games.onGameFinished((summary) => ranking.record(summary).then(() => undefined));
+  const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger, ranking });
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
 
 
@@ -132,6 +139,7 @@ export async function createServerApp(deps) {
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
   registerChainRoutes({ router, verification });
+  registerRankingRoutes({ router, ranking });
   const readModel = new PgOperationsReadModel(database);
   const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
   const monitor = new Monitor({ readModel, runtime, clock, logger, policy: alarmPolicy });
@@ -146,6 +154,7 @@ export async function createServerApp(deps) {
     monitor,
     shopAccount: receiverFor,
     formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)),
+    ranking,
     clock,
   });
   registerAdminRoutes({ router, admin });
@@ -179,7 +188,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, hub, games, gameRepository, secrets, matchmaking, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, ranking, hub, games, gameRepository, secrets, matchmaking, realtime });
 }
 
 /** Anchoring states that prove a payload is on chain. */

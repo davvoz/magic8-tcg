@@ -54,6 +54,7 @@ export class GameActor {
   #unitOfWork;
   #logger;
   #onBroken;
+  #onFinished;
   #sealer;
   #turnClock;
   #status;
@@ -80,10 +81,11 @@ export class GameActor {
    *   logger: import("../../../kernel/logger.js").Logger,
    *   timePolicy: import("../domain/TurnClock.js").TimePolicy,
    *   onBroken: (gameId: string) => void,
+   *   onFinished: (summary: import("./ports.js").FinishedGame) => void,
    *   sealer: { afterAppend: (gameId: string, chained: readonly import("@magic8/protocol").ChainedEvent[]) => Promise<void> },
    * }} deps
    */
-  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, sealer }) {
+  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, sealer }) {
     this.#game = game;
     this.#recorder = recorder;
     this.#content = content;
@@ -94,6 +96,7 @@ export class GameActor {
     this.#unitOfWork = unitOfWork;
     this.#logger = logger;
     this.#onBroken = onBroken;
+    this.#onFinished = onFinished;
     this.#sealer = sealer;
     this.#status = game.status;
     this.#lastSeq = game.lastEventSeq;
@@ -371,6 +374,18 @@ export class GameActor {
     });
     if (applied.over) {
       this.#status = GameStatus.FINISHED;
+      const last = applied.chained[applied.chained.length - 1].event;
+      this.#onFinished(
+        Object.freeze({
+          gameId: this.id,
+          mode: this.#game.mode,
+          finishedAt: now,
+          winnerSeat: applied.winner,
+          endReason: applied.reason,
+          turn: last.t,
+          players: Object.freeze(this.#game.players.map((player) => Object.freeze({ seat: player.seat, userId: player.userId, account: player.account }))),
+        }),
+      );
     }
   }
 

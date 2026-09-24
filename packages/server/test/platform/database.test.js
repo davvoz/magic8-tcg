@@ -91,9 +91,9 @@ describe("migrations", () => {
   it("applies the repository's migrations once and is idempotent", async () => {
     const database = new Database(await PGliteDriver.open(undefined));
     try {
-      assert.deepEqual(await migrate(database), ["001_initial.sql", "002_marketplace.sql", "003_gameplay.sql", "004_chain.sql", "005_operations.sql"]);
+      assert.deepEqual(await migrate(database), ["001_initial.sql", "002_marketplace.sql", "003_gameplay.sql", "004_chain.sql", "005_operations.sql", "006_ranked.sql"]);
       assert.deepEqual(await migrate(database), [], "nothing left to apply");
-      assert.ok((await database.rows("SELECT id FROM schema_migrations")).length === 5);
+      assert.ok((await database.rows("SELECT id FROM schema_migrations")).length === 6);
     } finally {
       await database.close();
     }

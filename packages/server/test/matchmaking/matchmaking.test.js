@@ -55,7 +55,8 @@ describe("matchmaking", () => {
     const draft = await setup.app.decks.create(alice.user.id, { name: "Draft", faction: "iron", cards: [] });
     await assert.rejects(setup.app.matchmaking.join({ user: alice.user, mode: "casual", deckId: draft.id }), /cannot be played/);
     await assert.rejects(setup.app.matchmaking.join({ user: alice.user, mode: "casual", deckId: bob.deckId }), (error) => error.code === "NOT_FOUND", "someone else's deck does not exist");
-    await assert.rejects(setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId }), /only casual/);
+    await assert.rejects(setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId }), /finish 3 more casual game/, "ranked needs finished casual games");
+    await assert.rejects(setup.app.matchmaking.join({ user: alice.user, mode: "arena", deckId: alice.deckId }), /mode must be one of casual, ranked/);
     assert.deepEqual(await setup.app.matchmaking.status(alice.user.id), { state: "idle" });
   });
 
