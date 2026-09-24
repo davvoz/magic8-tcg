@@ -10,6 +10,7 @@ import { after, before, describe, it } from "node:test";
 import { createServerApp } from "../../src/app.js";
 import { StaticFiles, pageCsp } from "../../src/platform/http/StaticFiles.js";
 import { CLIENT_HEADERS, ORIGIN, buildTestApp, bundledContent, keyPair, keychainSign, listen } from "../helpers.js";
+import { FakeSteemLedger } from "../support/fakeSteemLedger.js";
 
 const alice = keyPair(1);
 
@@ -162,6 +163,7 @@ describe("static client files", () => {
       random: { bytes: (length) => new Uint8Array(length) },
       logger: setup.logger,
       wallets: new Map([["steem", { network: "steem", loginKeyRole: "Posting", isValidAccountName: () => true, buildLoginMessage: () => "", verifyLogin: async () => null, isPostingKey: async () => null }]]),
+      paymentProviders: new Map([["steem", new FakeSteemLedger().paymentProvider()]]),
       defaultNetwork: "steem",
       database: setup.database,
       content: await bundledContent(),
