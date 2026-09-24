@@ -169,7 +169,8 @@ describe("WebSocket gateway", () => {
     assert.equal(foundA.gameId, foundB.gameId);
     const { gameId } = foundA;
 
-    a.socket.send(JSON.stringify({ t: "game.entropy", d: { gameId, entropy: "1a".repeat(16) } }));
+    const joined = await a.request("game.entropy", { gameId, entropy: "1a".repeat(16) });
+    assert.deepEqual(joined, { t: "game.joined", re: joined.re, d: { gameId } }, "every request gets a reply");
     b.socket.send(JSON.stringify({ t: "game.entropy", d: { gameId, entropy: "2b".repeat(16) } }));
     const [startA, startB] = await Promise.all([a.waitFor("game.events", (d) => d.status === "ACTIVE"), b.waitFor("game.events", (d) => d.status === "ACTIVE")]);
     assert.equal(startA.snapshot.perspectivePlayerId, "s0");

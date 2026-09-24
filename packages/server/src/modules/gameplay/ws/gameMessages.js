@@ -21,7 +21,7 @@ export function registerGameMessages({ router, games }) {
     if (!result.ok) {
       throw new AppError("VALIDATION", result.error.message, { code: result.error.code });
     }
-    return null;
+    return { t: "game.joined", d: { gameId: body.gameId } };
   });
 
   router.on("game.command", async ({ principal }, data) => {
