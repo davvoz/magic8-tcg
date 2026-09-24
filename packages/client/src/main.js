@@ -12,6 +12,7 @@ import { CollectionService } from "./application/collection/CollectionService.js
 import { loadContent } from "./application/content/ContentService.js";
 import { AccountDeckRepository } from "./application/decks/AccountDeckRepository.js";
 import { OnlineService } from "./application/online/OnlineService.js";
+import { RankingService } from "./application/ranking/RankingService.js";
 import { ShopService } from "./application/shop/ShopService.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
@@ -21,6 +22,7 @@ import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/register
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
+import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
@@ -209,11 +211,13 @@ async function boot() {
       }),
     logger,
   });
-  // A purchase and a connection belong to the account that started them.
+  const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });
+  // A purchase, a connection and a standing belong to the account that started them.
   account.subscribe((state) => {
     if (state.account === null) {
       shop.dismiss();
       online.stop();
+      ranking.reset();
     }
   });
 
@@ -230,6 +234,7 @@ async function boot() {
     account,
     shop,
     online,
+    ranking,
   });
 
   const { sceneManager } = buildPresentation(theme.value);

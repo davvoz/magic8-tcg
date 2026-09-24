@@ -233,7 +233,7 @@ describe("registerScenes — with a game server", () => {
   it("registers the account scenes", () => {
     const world = harness();
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: world.logger, requestRender: () => undefined });
-    registerScenes(manager, { ...world.app, shop: { subscribe: () => () => undefined }, online: { subscribe: () => () => undefined } });
+    registerScenes(manager, { ...world.app, shop: { subscribe: () => () => undefined }, online: { subscribe: () => () => undefined }, ranking: { subscribe: () => () => undefined } });
     assert.ok(Object.values(SceneId).every((id) => manager.has(id)));
   });
 });

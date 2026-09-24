@@ -97,9 +97,12 @@ export class OnlineService {
     this.#set(INITIAL);
   }
 
-  /** @param {string} deckId the server's id of an account deck */
-  async queue(deckId) {
-    const reply = await this.#connection.request("queue.join", { mode: "casual", deckId });
+  /**
+   * @param {string} deckId the server's id of an account deck
+   * @param {"casual" | "ranked"} [mode]
+   */
+  async queue(deckId, mode = "casual") {
+    const reply = await this.#connection.request("queue.join", { mode, deckId });
     if (!reply.ok || reply.value.t === "error") {
       const error = reply.ok ? reply.value.d : reply.error;
       this.#set({ error: { code: error.code, message: error.message } });

@@ -1,7 +1,9 @@
 /**
- * The online lobby: pick one of your account decks, find an opponent,
- * and go to the match when the server starts it. A game already running
- * (after a reload or a dropped connection) is offered for resuming.
+ * The online lobby: pick one of your account decks and a mode (casual, or
+ * ranked once the server says you may), find an opponent, and go to the
+ * match when the server starts it. A game already running (after a reload
+ * or a dropped connection) is offered for resuming. Your ranked standing
+ * and the leaderboard come from the server.
  */
 import { OnlineStatus } from "../../application/online/OnlineService.js";
 import { factionTones } from "../theme/Theme.js";
@@ -18,6 +20,8 @@ import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "online.decks";
 const BUTTON = Object.freeze({ height: 60 });
+const MODE = Object.freeze({ y: 64, height: 48, gap: 12 });
+export const QueueMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
 
 /** What the lobby says in each state. */
 const STATUS_TEXT = Object.freeze({
@@ -36,6 +40,9 @@ export class OnlineScene extends Scene {
   #unsubscribe = null;
   /** @type {string | null} */
   #selectedId = null;
+  #mode = QueueMode.CASUAL;
+  /** @type {(() => void) | null} */
+  #unsubscribeRanking = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -50,12 +57,18 @@ export class OnlineScene extends Scene {
     const online = this.#online();
     this.#unsubscribe = online.subscribe((state) => this.#onChange(state));
     online.start();
+    if (this.#app.ranking !== undefined) {
+      this.#unsubscribeRanking = this.#app.ranking.subscribe(() => this.#rebuild());
+      this.#app.ranking.refresh();
+    }
     this.#rebuild();
   }
 
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#unsubscribeRanking?.();
+    this.#unsubscribeRanking = null;
     super.exit();
   }
 
@@ -85,6 +98,9 @@ export class OnlineScene extends Scene {
     const { viewport } = this.services;
     this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 400, height: HEADER.height, text: "Play online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const back = this.root.add(new Button({ id: "online.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back to menu", onActivate: () => this.#leave() }));
+    if (this.#app.ranking !== undefined && this.services.hasScene(SceneId.LEADERBOARD)) {
+      this.root.add(new Button({ id: "online.leaderboard", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Leaderboard", onActivate: () => this.services.navigate(SceneId.LEADERBOARD) }));
+    }
     const firstDeck = this.#buildDecks();
     const action = this.#buildActions();
     this.focus(this.root.findById(focusedId) ?? action ?? firstDeck ?? back);
@@ -139,13 +155,14 @@ export class OnlineScene extends Scene {
     const state = online.state;
     const panel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
     const width = COLUMNS.right.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "Casual game", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: this.#mode === QueueMode.RANKED ? "Ranked game" : "Casual game", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    const top = this.#buildModes(panel, width, state);
     const status = STATUS_TEXT[/** @type {keyof typeof STATUS_TEXT} */ (state.status)]?.(state) ?? "";
-    panel.add(new TextBlock({ id: "online.status", x: INSET, y: 64, width, height: 3 * 28, text: status, size: "body", colorKey: "text" }));
+    panel.add(new TextBlock({ id: "online.status", x: INSET, y: top, width, height: 3 * 28, text: status, size: "body", colorKey: "text" }));
     if (state.error !== null) {
-      panel.add(new TextBlock({ id: "online.error", x: INSET, y: 160, width, height: 2 * 28, text: state.error.message, size: "small", colorKey: "danger" }));
+      panel.add(new TextBlock({ id: "online.error", x: INSET, y: top + 96, width, height: 2 * 28, text: state.error.message, size: "small", colorKey: "danger" }));
     }
-    panel.add(new TextBlock({ x: INSET, y: 240, width, height: 4 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and the whole game is recorded so it can be verified later.", size: "small", colorKey: "textMuted" }));
+    panel.add(new TextBlock({ x: INSET, y: top + 176, width, height: 4 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and the whole game is recorded so it can be verified later.", size: "small", colorKey: "textMuted" }));
     const y = COLUMNS.height - INSET - BUTTON.height;
     if (state.status === OnlineStatus.SEARCHING) {
       return panel.add(new Button({ id: "online.cancel", x: INSET, y, width, height: BUTTON.height, text: "Stop searching", onActivate: () => online.leaveQueue() }));
@@ -166,10 +183,42 @@ export class OnlineScene extends Scene {
         enabled: canQueue && this.#selectedId !== null,
         onActivate: () => {
           online.dismissGame();
-          online.queue(/** @type {string} */ (this.#selectedId));
+          online.queue(/** @type {string} */ (this.#selectedId), this.#mode);
         },
       }),
     );
+  }
+
+  /**
+   * The casual/ranked choice and the player's ranked standing; returns where the status text starts.
+   * @param {Panel} panel
+   * @param {number} width
+   * @param {import("../../application/online/OnlineService.js").OnlineState} state
+   */
+  #buildModes(panel, width, state) {
+    const ranking = this.#app.ranking;
+    if (ranking === undefined) {
+      return MODE.y;
+    }
+    const standing = ranking.state.standing;
+    const eligible = standing?.eligible === true;
+    if (!eligible) {
+      this.#mode = QueueMode.CASUAL;
+    }
+    const idle = state.status !== OnlineStatus.SEARCHING;
+    const half = (width - MODE.gap) / 2;
+    const choice = (mode, x, text, enabled) =>
+      panel.add(new Button({ id: `online.mode.${mode}`, x, y: MODE.y, width: half, height: MODE.height, text, variant: this.#mode === mode ? "primary" : "secondary", enabled: enabled && idle, onActivate: () => this.#choose(mode) }));
+    choice(QueueMode.CASUAL, INSET, "Casual", true);
+    choice(QueueMode.RANKED, INSET + half + MODE.gap, "Ranked", eligible);
+    panel.add(new TextBlock({ id: "online.standing", x: INSET, y: MODE.y + MODE.height + 10, width, height: 2 * 26, text: standingText(ranking.state), size: "small", colorKey: "textMuted" }));
+    return MODE.y + MODE.height + 70;
+  }
+
+  /** @param {string} mode */
+  #choose(mode) {
+    this.#mode = mode;
+    this.#rebuild();
   }
 
   #leave() {
@@ -186,4 +235,25 @@ export class OnlineScene extends Scene {
     }
     return this.#app.online;
   }
+}
+
+/**
+ * One line about the player's ranked standing.
+ * @param {import("../../application/ranking/RankingService.js").RankingState} state
+ */
+export function standingText(state) {
+  const standing = state.standing;
+  if (standing === null) {
+    return state.error === null ? "Loading your ranked standing…" : `Ranked standing unavailable: ${state.error}`;
+  }
+  if (standing.season === null) {
+    return "No ranked season is running.";
+  }
+  if (!standing.eligible) {
+    return `Ranked opens after ${standing.casualGamesNeeded} more casual game(s).`;
+  }
+  const draws = standing.draws > 0 ? `–${standing.draws}` : "";
+  const record = `${standing.wins}–${standing.losses}${draws}`;
+  const place = standing.provisional ? "provisional" : `#${standing.rank}`;
+  return `${standing.season.name}: rating ${standing.rating} (${place}), ${record} in ${standing.games} game(s).`;
 }
