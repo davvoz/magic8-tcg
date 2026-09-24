@@ -20,6 +20,9 @@ export const DEFAULT_SEALING_POLICY = Object.freeze({
   maxRecordBytes: MAX_RECORD_BYTES,
 });
 
+/** The game is over: nothing more to count. */
+const TERMINAL_KINDS = Object.freeze(new Set([EventKind.GAME_FINISHED, EventKind.GAME_ABORTED]));
+
 /** Events after which the pending run is sealed immediately. */
 const CLOSING_KINDS = Object.freeze(new Set([EventKind.GAME_STARTED, EventKind.STATE_CHECKPOINT, EventKind.GAME_FINISHED, EventKind.GAME_ABORTED]));
 
@@ -30,6 +33,8 @@ export class RecordSealer {
   #unitOfWork;
   #logger;
   #policy;
+  /** @type {Map<string, number>} game → events appended since its last record (counted once from the database, then in memory) */
+  #pending = new Map();
 
   /**
    * @param {{
@@ -59,9 +64,15 @@ export class RecordSealer {
    */
   async afterAppend(gameId, chained) {
     try {
+      const known = this.#pending.get(gameId);
+      const pending = known === undefined ? await this.#store.countUnsealed(gameId) : known + chained.length;
+      this.#pending.set(gameId, pending);
       const closing = chained.some(({ event }) => CLOSING_KINDS.has(event.k));
-      if (closing || (await this.#store.countUnsealed(gameId)) >= this.#policy.maxPendingEvents) {
+      if (closing || pending >= this.#policy.maxPendingEvents) {
         await this.seal(gameId);
+      }
+      if (chained.some(({ event }) => TERMINAL_KINDS.has(event.k))) {
+        this.#pending.delete(gameId);
       }
     } catch (error) {
       this.#logger.error("sealing game records failed; the periodic job will retry", { game: gameId, error: error instanceof Error ? error.message : String(error) });
@@ -81,6 +92,7 @@ export class RecordSealer {
       }
       const pending = await this.#store.listUnsealed(gameId);
       if (pending.length === 0) {
+        this.#pending.delete(gameId);
         return 0;
       }
       const firstSeq = pending[0].event.i;
@@ -100,6 +112,7 @@ export class RecordSealer {
         await this.#store.markSealed(gameId, record.firstEventSeq, record.lastEventSeq, record.seq);
       }
       await this.#outbox.enqueueGameRecords({ network: game.network, records });
+      this.#pending.set(gameId, 0);
       return records.length;
     });
   }
