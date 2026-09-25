@@ -27,8 +27,8 @@ export const DEFAULT_BROADCAST_POLICY = Object.freeze({
   slowEveryRounds: 10,
 });
 
-const OPERATION_OF_KIND = Object.freeze({ [OutboxKind.GAME_RECORD]: OperationId.GAME, [OutboxKind.RECEIPT]: OperationId.RECEIPT, [OutboxKind.EPOCH]: OperationId.EPOCH });
-const PURPOSE_OF_KIND = Object.freeze({ [OutboxKind.GAME_RECORD]: "GAME_RECORDS", [OutboxKind.RECEIPT]: "RECEIPT", [OutboxKind.EPOCH]: "EPOCH" });
+const OPERATION_OF_KIND = Object.freeze({ [OutboxKind.GAME_RECORD]: OperationId.GAME, [OutboxKind.RECEIPT]: OperationId.RECEIPT, [OutboxKind.EPOCH]: OperationId.EPOCH, [OutboxKind.TRADE]: OperationId.TRADE });
+const PURPOSE_OF_KIND = Object.freeze({ [OutboxKind.GAME_RECORD]: "GAME_RECORDS", [OutboxKind.RECEIPT]: "RECEIPT", [OutboxKind.EPOCH]: "EPOCH", [OutboxKind.TRADE]: "TRADE" });
 
 /**
  * @typedef {import("../infrastructure/PgChainRepository.js").OutboxRow} OutboxRow

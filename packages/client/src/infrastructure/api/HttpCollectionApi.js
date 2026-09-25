@@ -69,7 +69,7 @@ function collectionEntry(value) {
   if (!isString(entry.definitionId) || copies === null) {
     return null;
   }
-  return Object.freeze({ definitionId: entry.definitionId, copies: Object.freeze(copies.map((copy) => Object.freeze({ id: copy.id, edition: copy.edition, serial: copy.serial, finish: copy.finish, status: copy.status }))) });
+  return Object.freeze({ definitionId: entry.definitionId, copies: Object.freeze(copies.map((copy) => Object.freeze({ id: copy.id, edition: copy.edition, serial: copy.serial, finish: copy.finish, status: copy.status, tradeable: copy.tradeable === true }))) });
 }
 
 /**

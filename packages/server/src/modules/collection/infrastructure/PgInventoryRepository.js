@@ -108,6 +108,34 @@ export class PgInventoryRepository {
     return Object.freeze(rows.map(toInstance));
   }
 
+  /** Locks the rows of these copies (in id order, so two trades never wait on each other in a cycle). */
+  async lockInstances(ids) {
+    const rows = await this.#db.rows("SELECT * FROM card_instances WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE", [ids]);
+    return Object.freeze(rows.map(toInstance));
+  }
+
+  async lockTradeable(ownerId, definitionId, count, origins) {
+    const rows = await this.#db.rows(
+      `SELECT * FROM card_instances
+        WHERE owner_id = $1 AND definition_id = $2 AND status = 'active' AND origin_kind = ANY($4::text[])
+        ORDER BY serial DESC LIMIT $3 FOR UPDATE`,
+      [ownerId, definitionId, count, origins],
+    );
+    return Object.freeze(rows.map(toInstance));
+  }
+
+  async updateCopies({ ids, status, ownerId }) {
+    await this.#db.query("UPDATE card_instances SET status = $2, owner_id = COALESCE($3::uuid, owner_id), version = version + 1 WHERE id = ANY($1::uuid[])", [ids, status, ownerId]);
+  }
+
+  async insertEvents(events) {
+    await this.#db.query(
+      `INSERT INTO card_instance_events (card_instance_id, kind, from_user_id, to_user_id, ref, at)
+       SELECT * FROM unnest($1::uuid[], $2::text[], $3::uuid[], $4::uuid[], $5::text[], $6::timestamptz[])`,
+      [events.map((event) => event.instanceId), events.map((event) => event.kind), events.map((event) => event.fromUserId), events.map((event) => event.toUserId), events.map((event) => event.ref), events.map((event) => toTimestamp(event.at))],
+    );
+  }
+
   async history(instanceId) {
     const rows = await this.#db.rows("SELECT kind, from_user_id, to_user_id, ref, at FROM card_instance_events WHERE card_instance_id = $1 ORDER BY id", [instanceId]);
     return Object.freeze(rows.map((row) => Object.freeze({ kind: row.kind, fromUserId: row.from_user_id, toUserId: row.to_user_id, ref: row.ref, at: fromTimestamp(row.at) })));

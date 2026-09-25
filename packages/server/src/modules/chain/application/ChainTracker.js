@@ -28,7 +28,7 @@ export const DEFAULT_TRACKER_POLICY = Object.freeze({
   maxAttempts: 5,
 });
 
-const OUR_OPERATIONS = Object.freeze(new Set([OperationId.GAME, OperationId.RECEIPT, OperationId.EPOCH]));
+const OUR_OPERATIONS = Object.freeze(new Set([OperationId.GAME, OperationId.RECEIPT, OperationId.EPOCH, OperationId.TRADE]));
 
 export const AlertKind = Object.freeze({
   UNKNOWN_ON_CHAIN: "UNKNOWN_ON_CHAIN",

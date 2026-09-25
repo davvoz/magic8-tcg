@@ -6,7 +6,7 @@
  * @typedef {Readonly<{ cardId: string, count: number }>} DeckEntry
  * @typedef {Readonly<{ id: string, name: string, faction: string, size: number, cards: readonly DeckEntry[] }>} StarterChoice
  * @typedef {Readonly<{ claimed: boolean, choices: readonly StarterChoice[] }>} StarterStatus
- * @typedef {Readonly<{ id: string, edition: string, serial: number, finish: string, status: string }>} OwnedCopy
+ * @typedef {Readonly<{ id: string, edition: string, serial: number, finish: string, status: string, tradeable?: boolean }>} OwnedCopy tradeable: bought (not a free grant), so it may be offered in a trade
  * @typedef {Readonly<{ definitionId: string, copies: readonly OwnedCopy[] }>} CollectionEntry
  * @typedef {Readonly<{ code: string, message: string, cardId: string | null }>} DeckProblem
  * @typedef {Readonly<{ id: string, name: string, faction: string, cards: readonly DeckEntry[], version: number, playable: boolean, problems: readonly DeckProblem[] }>} AccountDeck

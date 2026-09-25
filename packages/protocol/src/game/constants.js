@@ -28,6 +28,8 @@ export const OperationId = Object.freeze({
   MANIFEST: "m8tcg_manifest",
   /** Pack epoch commitments and reveals, published by the broadcaster pool. */
   EPOCH: "m8tcg_epoch",
+  /** Card-for-card trades between players (docs/tcg/13). */
+  TRADE: "m8tcg_trade",
 });
 
 export const EventKind = Object.freeze({

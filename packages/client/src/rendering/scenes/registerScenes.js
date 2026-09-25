@@ -17,6 +17,7 @@ import { OnlineScene } from "./OnlineScene.js";
 import { SceneId } from "./sceneIds.js";
 import { ShopScene } from "./ShopScene.js";
 import { StarterScene } from "./StarterScene.js";
+import { TradesScene } from "./TradesScene.js";
 
 /**
  * @param {import("./SceneManager.js").SceneManager} sceneManager
@@ -43,6 +44,9 @@ export function registerScenes(sceneManager, app) {
   }
   if (app.ranking !== undefined) {
     sceneManager.register(SceneId.LEADERBOARD, (services) => new LeaderboardScene(services, app));
+  }
+  if (app.trading !== undefined && app.account !== undefined) {
+    sceneManager.register(SceneId.TRADES, (services) => new TradesScene(services, app));
   }
   if (app.shop !== undefined) {
     sceneManager.register(SceneId.SHOP, (services) => new ShopScene(services, app));

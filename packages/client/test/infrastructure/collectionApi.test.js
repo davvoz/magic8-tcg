@@ -40,9 +40,9 @@ describe("HttpCollectionApi", () => {
   });
 
   it("reads the collection", async () => {
-    const copy = { id: COPY_ID, edition: "core-1", serial: 12, finish: "standard", status: "active" };
-    const { api } = apiWith(() => json(200, { cards: [{ definitionId: "iron_watcher", copies: [copy] }] }));
-    assert.deepEqual((await api.collection()).value, [{ definitionId: "iron_watcher", copies: [copy] }]);
+    const copy = { id: COPY_ID, edition: "core-1", serial: 12, finish: "standard", status: "active", tradeable: true };
+    const { api } = apiWith(() => json(200, { cards: [{ definitionId: "iron_watcher", copies: [copy, { ...copy, tradeable: undefined }] }] }));
+    assert.deepEqual((await api.collection()).value, [{ definitionId: "iron_watcher", copies: [copy, { ...copy, tradeable: false }] }], "a copy the server does not call tradeable is not");
   });
 
   it("creates, updates with If-Match, lists and deletes decks", async () => {

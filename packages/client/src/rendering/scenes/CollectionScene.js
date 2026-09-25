@@ -112,7 +112,10 @@ export class CollectionScene extends Scene {
     const statusX = HEADER.sideMargin + STATUS_OFFSET;
     this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: STATUS_OFFSET, height: HEADER.height, text: "Collection", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const status = this.#status();
-    this.root.add(new Label({ id: "collection.status", x: statusX, y: HEADER.y, width: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth - INSET - statusX, height: HEADER.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
+    this.root.add(new Label({ id: "collection.status", x: statusX, y: HEADER.y, width: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16 - INSET - statusX, height: HEADER.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
+    if (this.services.hasScene(SceneId.TRADES)) {
+      this.root.add(new Button({ id: "collection.trades", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Trades", onActivate: () => this.services.navigate(SceneId.TRADES) }));
+    }
     return this.root.add(new Button({ id: "collection.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back to menu", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
   }
 

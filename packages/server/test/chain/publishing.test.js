@@ -292,6 +292,25 @@ describe("ChainBroadcaster and ChainTracker", () => {
     }
   });
 
+  it("publishes a completed trade, and the tracker follows it like any record of ours", async () => {
+    const w = await world();
+    const printing = { edition: "core-1", finish: "standard" };
+    const [imp] = await w.setup.app.inventory.mint({ ownerId: w.alice.id, items: [{ definitionId: "ember_imp", count: 1 }], ...printing, origin: { kind: "purchase", ref: "test:trade:a" } });
+    await w.setup.app.inventory.mint({ ownerId: w.bob.id, items: [{ definitionId: "iron_watcher", count: 1 }], ...printing, origin: { kind: "purchase", ref: "test:trade:b" } });
+    const { trade } = await w.setup.app.trading.propose({ proposer: { id: w.alice.id, account: "alice" }, to: "bob", give: [imp.id], want: [{ definitionId: "iron_watcher", count: 1 }], idempotencyKey: "chain-trade-00000001", ip: "x" });
+    await w.setup.app.trading.accept({ userId: w.bob.id, tradeId: trade.id, ip: "x" });
+    assert.equal(await w.chain.broadcaster.runOnce(), 1);
+    const [pending] = w.ledger.mempool;
+    const operation = pending.operations[0].data;
+    assert.equal(operation.id, OperationId.TRADE);
+    assert.equal(JSON.parse(operation.json).t, trade.id);
+    w.ledger.produceBlock();
+    await w.chain.tracker.runOnce();
+    const [row] = await w.setup.database.rows("SELECT status, reconciliation FROM blockchain_events WHERE kind = 'TRADE'");
+    assert.deepEqual([row.status, row.reconciliation], ["INCLUDED", "MATCH"]);
+    assert.deepEqual(await alerts(w), [], "our own trade record is not an unknown operation");
+  });
+
   it("sends a record again, byte for byte, when its transaction expired unseen; an ambiguous broadcast error changes nothing", async () => {
     const w = await world({ signers: [B1] });
     const gameId = await w.newGame();
