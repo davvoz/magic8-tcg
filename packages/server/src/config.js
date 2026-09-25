@@ -45,6 +45,8 @@ export function loadConfig(env) {
     ...parseChainSettings(env),
     ...parseDataKeys(env, secure),
     ackKey: parseAckKey(env, secure),
+    // Game protocol v2 (signed moves, docs/tcg/12) unless explicitly turned off.
+    gameProtocol: gameProtocolOf(env.M8_SIGNED_MOVES),
   });
 }
 
@@ -161,6 +163,22 @@ function parseBroadcasterKeys(value) {
     keys.set(account, wif);
   }
   return keys;
+}
+
+/**
+ * M8_SIGNED_MOVES: "true" (default) creates games in protocol v2, where
+ * players sign every move; "false" keeps v1 (tools, old clients).
+ * @param {string | undefined} value
+ * @returns {1 | 2} the game protocol version of new games
+ */
+function gameProtocolOf(value) {
+  if (value === undefined || value === "" || value === "true") {
+    return 2;
+  }
+  if (value === "false") {
+    return 1;
+  }
+  throw new ConfigError('M8_SIGNED_MOVES: "true" or "false"');
 }
 
 /**

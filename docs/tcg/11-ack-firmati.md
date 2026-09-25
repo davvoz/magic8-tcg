@@ -68,5 +68,5 @@ Riga di comando: `node tools/verify-game.js <id> --acks acks.json`. Il codice d'
 - **Una chiave degli ack rubata permette di fabbricare "prove" contro il server** per le partite create mentre era autorizzata. Dopo un furto:
   - si revoca subito con un manifest `ack_keys` nuovo (07 §4.3);
   - le contestazioni su partite create tra il furto e la revoca vanno giudicate con cautela.
-- **Gli ack non dicono chi ha deciso la mossa.** Provano cosa il server ha accettato, non che l'abbia voluto il giocatore. Per questo serve la firma delle mosse con chiave di sessione (protocollo v2, 03 §18).
+- **Gli ack non dicono chi ha deciso la mossa.** Provano cosa il server ha accettato, non che l'abbia voluto il giocatore. Per questo c'è la firma delle mosse con chiave di sessione (protocollo v2, 12).
 - **Un server può rifiutarsi di rispondere.** Un comando senza ack non prova niente in nessuna direzione. Il client lo vede come un comando non confermato.

@@ -42,7 +42,11 @@ Macchina: 4 vCPU Intel Xeon 2,1 GHz, Node 22.
   - Il limite vero saranno i Resource Credits, da misurare su mainnet (M5, "Da fare a mano").
   - Nella prova da 100 partite, un solo account ha avuto bisogno di 9 minuti di blocchi per smaltire 47 secondi di gioco accelerato. Con tempi umani le stesse partite durano 15–20 minuti e l'account resta in pari.
 - **Abusi.** L'attaccante viene chiuso dopo il burst consentito (40 messaggi) più 10 violazioni. Le partite in corso non hanno visto né errori né comandi rifiutati.
-- **Ack firmati (M7.3, dopo la misura):** ogni comando accettato costa in più una firma secp256k1, circa 0,8 ms. A 170 comandi al secondo sono circa il 14% di un core: da rimisurare, non cambia l'ordine di grandezza.
+- **Mosse e ack firmati (M7.3–M7.4, 2026-09-25).** Ogni comando costa in più:
+  - la verifica della firma del giocatore (P-256 nativa di Node, 0,09 ms; quella di noble costava 3 ms e dimezzava il throughput);
+  - la firma dell'ack (secp256k1, 0,8 ms).
+
+  Rimisurato con 40 giocatori, bot che firmano ogni mossa: **132 comandi/s** invece di 170, latenza p50/p95/p99 119/184/196 ms, nessun comando rifiutato. Con la stessa lettura di sopra: circa 1300 partite umane contemporanee al limite, circa 650 con margine.
 - **Ottimizzazione fatta durante la misura:** il conteggio degli eventi in attesa di sigillatura è tenuto in memoria per partita (prima costava una query per comando): +8% di throughput.
 
 ## Limiti di questa misura

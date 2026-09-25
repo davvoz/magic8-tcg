@@ -13,6 +13,12 @@
  * authenticated user (T1), the engine validates every command, and a
  * command must name the version it was decided on (STALE_VERSION otherwise).
  *
+ * From game protocol v2 (docs/tcg/12-mosse-firmate.md) a player first
+ * authorises a session key with their account (SESSION), then signs every
+ * command with it; the server checks both and records the signature in the
+ * MOVE, so it can never publish a move in a player's name that the player
+ * did not sign. Forced moves stay the server's, and say so.
+ *
  * Spectators (docs/tcg/10-spettatori.md) get the table as the SPECTATOR
  * perspective: no hand, no drawn card. That is less than either player
  * sees, so a spectator relaying what they watch to a player tells them
@@ -20,7 +26,7 @@
  */
 import { SPECTATOR, redactEventsFor } from "@magic8/engine/domain/game/GameSnapshot.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
-import { EntropySource, ForcedMoveReason, LIMITS, SEATS, bytesToHex, canonicalize, createGameEngine, utf8Length } from "@magic8/protocol";
+import { EntropySource, EventKind, ForcedMoveReason, GameProtocol, LIMITS, MOVE_SIGNATURE_PATTERN, SEATS, SESSION_KEY_PATTERN, bytesToHex, canonicalize, commandOfMove, createGameEngine, moveMessage, sessionAuthorization, utf8Length } from "@magic8/protocol";
 import { CONCEDE_COMMAND, forcedCommandFor } from "../domain/forcedCommand.js";
 import { TurnClock } from "../domain/TurnClock.js";
 
@@ -33,6 +39,10 @@ export const GameError = Object.freeze({
   INVALID_COMMAND: "INVALID_COMMAND",
   INVALID_ENTROPY: "INVALID_ENTROPY",
   PLAYER_CANNOT_WATCH: "PLAYER_CANNOT_WATCH",
+  /** v2: the seat has not authorised a session key yet. */
+  SESSION_REQUIRED: "SESSION_REQUIRED",
+  /** v2: the session key's authorisation, or a move's signature, does not check out. */
+  INVALID_SIGNATURE: "INVALID_SIGNATURE",
   SPECTATORS_FULL: "SPECTATORS_FULL",
 });
 
@@ -41,6 +51,7 @@ export const MAX_SPECTATORS = 50;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ENTROPY_PATTERN = /^[0-9a-f]{32}$/;
+const AUTHORIZATION_PATTERN = /^[0-9a-f]{130}$/;
 /** Forced moves one tick may make (a seat's whole turn is a handful of phases). */
 const MAX_FORCED_PER_TICK = 20;
 /** Acks of rejected commands kept in memory for idempotent re-sends (accepted ones are in the database). */
@@ -67,7 +78,10 @@ export class GameActor {
   #onBroken;
   #onFinished;
   #signAck;
+  #signatures;
   #sealer;
+  /** @type {Map<string, string>} seat → the session key it signs with now (v2) */
+  #sessions = new Map();
   #turnClock;
   #status;
   #lastSeq;
@@ -98,9 +112,13 @@ export class GameActor {
    *   onFinished: (summary: import("./ports.js").FinishedGame) => void,
    *   sealer: { afterAppend: (gameId: string, chained: readonly import("@magic8/protocol").ChainedEvent[]) => Promise<void> },
    *   signAck?: AckSignature,
-   * }} deps
+   *   signatures?: import("./ports.js").MoveSignatures | null,
+   * }} deps `signatures` is required for v2 games
    */
-  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, sealer, signAck = () => ({}) }) {
+  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, sealer, signAck = () => ({}), signatures = null }) {
+    if (recorder.version >= GameProtocol.V2 && signatures === null) {
+      throw new Error(`game ${game.id}: a v2 game needs move signature checks`);
+    }
     this.#game = game;
     this.#recorder = recorder;
     this.#content = content;
@@ -113,6 +131,7 @@ export class GameActor {
     this.#onBroken = onBroken;
     this.#onFinished = onFinished;
     this.#signAck = signAck;
+    this.#signatures = signatures;
     this.#sealer = sealer;
     this.#status = game.status;
     this.#lastSeq = game.lastEventSeq;
@@ -159,18 +178,28 @@ export class GameActor {
     return this.#game.players.find((player) => player.userId === userId)?.seat ?? null;
   }
 
+  /** Whether players must sign their moves (game protocol v2). */
+  get signsMoves() {
+    return this.#recorder.version >= GameProtocol.V2;
+  }
+
   /**
    * Rebuilds a started game from its persisted moves (restart, or after a failed write).
    * @param {readonly import("@magic8/protocol").ProtocolEvent[]} events
    */
   replay(events) {
+    for (const event of events) {
+      if (event.k === EventKind.SESSION) {
+        this.#sessions.set(/** @type {string} */ (event.a), /** @type {any} */ (event.d).key);
+      }
+    }
     if (this.#status !== GameStatus.ACTIVE) {
       return;
     }
     this.#engine = this.#createEngine();
     this.#engine.start();
     for (const event of events) {
-      const command = commandOf(event);
+      const command = commandOf(event, this.#recorder.version);
       if (command !== null) {
         const result = this.#engine.execute({ ...command, playerId: event.a });
         if (!result.ok) {
@@ -207,8 +236,37 @@ export class GameActor {
   }
 
   /**
+   * v2: the key the player's browser will sign moves with, authorised by their account (a new one replaces the old).
    * @param {string} userId
-   * @param {{ commandId: unknown, expectedVersion: unknown, command: unknown }} request
+   * @param {{ key: unknown, authorization: unknown }} grant
+   */
+  session(userId, { key, authorization }) {
+    return this.#enqueue(async () => {
+      const seat = this.seatOf(userId);
+      if (seat === null) {
+        return fail(GameError.NOT_IN_GAME, "you are not playing this game");
+      }
+      if (!this.signsMoves || this.isOver) {
+        return fail(GameError.GAME_NOT_ACTIVE, this.isOver ? "the game is over" : "this game does not use session keys");
+      }
+      if (typeof key !== "string" || !SESSION_KEY_PATTERN.test(key) || typeof authorization !== "string" || !AUTHORIZATION_PATTERN.test(authorization)) {
+        return fail(GameError.INVALID_SIGNATURE, "a session key is an uncompressed P-256 point, its authorisation a Keychain signature");
+      }
+      const account = /** @type {string} */ (this.#game.players.find((player) => player.seat === seat)?.account);
+      const signatures = /** @type {import("./ports.js").MoveSignatures} */ (this.#signatures);
+      if (!(await signatures.authorizesSession({ account, message: sessionAuthorization(this.id, key), signature: authorization }))) {
+        return fail(GameError.INVALID_SIGNATURE, `the authorisation is not signed by a posting key of @${account}`);
+      }
+      const chained = this.#recorder.session({ seat, key, authorization, clock: { turn: this.#engine === null ? 0 : this.#engine.getSnapshot(null).turnNumber, ms: this.#elapsed() } });
+      await this.#persist([chained], {}, async () => undefined);
+      this.#sessions.set(seat, key);
+      return Object.freeze({ ok: true });
+    });
+  }
+
+  /**
+   * @param {string} userId
+   * @param {{ commandId: unknown, expectedVersion: unknown, command: unknown, signature?: unknown }} request `signature` from v2 on
    * @returns {Promise<Ack>}
    */
   command(userId, request) {
@@ -217,10 +275,10 @@ export class GameActor {
 
   /**
    * @param {string} userId
-   * @param {{ commandId: unknown, expectedVersion: unknown, command: unknown }} request
+   * @param {{ commandId: unknown, expectedVersion: unknown, command: unknown, signature?: unknown }} request
    * @returns {Promise<Ack>}
    */
-  async #handleCommand(userId, { commandId, expectedVersion, command }) {
+  async #handleCommand(userId, { commandId, expectedVersion, command, signature }) {
     if (typeof commandId !== "string" || !UUID_PATTERN.test(commandId)) {
       return rejectedAck(String(commandId).slice(0, 36), GameError.INVALID_COMMAND, "commandId must be a UUID");
     }
@@ -228,12 +286,13 @@ export class GameActor {
     if (earlier !== null && earlier !== undefined) {
       return /** @type {Ack} */ (earlier);
     }
-    const refused = this.#refuse(userId, expectedVersion, command);
+    const refused = this.#refuse(userId, expectedVersion, command) ?? this.#refuseSignature(userId, { commandId, expectedVersion, command, signature });
     if (refused !== null) {
       return this.#remember(rejectedAck(commandId, refused.code, refused.message));
     }
     const seat = /** @type {string} */ (this.seatOf(userId));
-    const applied = this.#apply(seat, /** @type {Record<string, unknown>} */ (command), null);
+    const signed = this.signsMoves ? { commandId, expectedVersion: /** @type {number} */ (expectedVersion), signature: /** @type {string} */ (signature) } : undefined;
+    const applied = this.#apply(seat, /** @type {Record<string, unknown>} */ (command), null, signed);
     if (!applied.ok) {
       return this.#remember(rejectedAck(commandId, applied.error.code, applied.error.message));
     }
@@ -249,13 +308,16 @@ export class GameActor {
   }
 
   /**
-   * Forfeit, at whatever version the game is: read inside the mailbox, so conceding never goes stale.
+   * Forfeit. In v1, at whatever version the game is (read inside the mailbox, so conceding never goes stale);
+   * from v2 on a concession is a signed move like any other, at the version the player signed.
    * @param {string} userId
-   * @param {unknown} commandId
+   * @param {{ commandId: unknown, expectedVersion?: unknown, signature?: unknown }} request
    * @returns {Promise<Ack>}
    */
-  concede(userId, commandId) {
-    return this.#enqueue(() => this.#handleCommand(userId, { commandId, expectedVersion: this.#engine?.version ?? 0, command: { type: "CONCEDE" } }));
+  concede(userId, { commandId, expectedVersion, signature }) {
+    return this.#enqueue(() =>
+      this.#handleCommand(userId, { commandId, expectedVersion: this.signsMoves ? expectedVersion : this.#engine?.version ?? 0, command: { type: "CONCEDE" }, signature }),
+    );
   }
 
   /**
@@ -378,12 +440,37 @@ export class GameActor {
   }
 
   /**
+   * v2: the move must be signed by the seat's current session key, over exactly this command, id and version.
+   * @param {string} userId
+   * @param {{ commandId: string, expectedVersion: unknown, command: unknown, signature: unknown }} move
+   * @returns {{ code: string, message: string } | null}
+   */
+  #refuseSignature(userId, { commandId, expectedVersion, command, signature }) {
+    if (!this.signsMoves) {
+      return null;
+    }
+    const key = this.#sessions.get(/** @type {string} */ (this.seatOf(userId)));
+    if (key === undefined) {
+      return { code: GameError.SESSION_REQUIRED, message: "authorise a session key before playing" };
+    }
+    const bare = { .../** @type {Record<string, unknown>} */ (command) };
+    delete bare.playerId;
+    const message = moveMessage({ gameId: this.id, commandId, expectedVersion: /** @type {number} */ (expectedVersion), command: bare });
+    const signatures = /** @type {import("./ports.js").MoveSignatures} */ (this.#signatures);
+    if (typeof signature !== "string" || !MOVE_SIGNATURE_PATTERN.test(signature) || !signatures.verifiesMove(message, signature, key)) {
+      return { code: GameError.INVALID_SIGNATURE, message: "the move is not signed by your session key" };
+    }
+    return null;
+  }
+
+  /**
    * Runs a command in the engine and builds its protocol events (not yet persisted).
    * @param {string} seat
    * @param {Readonly<Record<string, unknown>>} command
    * @param {string | null} forcedWhy
+   * @param {{ commandId: string, expectedVersion: number, signature: string }} [signed] v2: the player's signature
    */
-  #apply(seat, command, forcedWhy) {
+  #apply(seat, command, forcedWhy, signed) {
     const engine = /** @type {import("@magic8/engine/domain/game/GameEngine.js").GameEngine} */ (this.#engine);
     const before = engine.getSnapshot(null);
     const withoutPlayer = { ...command };
@@ -395,7 +482,7 @@ export class GameActor {
     const after = engine.getSnapshot(null);
     const clock = { turn: after.turnNumber, ms: this.#elapsed() };
     const accepted = { ...withoutPlayer, playerId: seat };
-    const chained = [forcedWhy === null ? this.#recorder.move({ seat, command: accepted, clock }) : this.#recorder.forcedMove({ seat, command: accepted, reason: forcedWhy, clock })];
+    const chained = [forcedWhy === null ? this.#recorder.move({ seat, command: accepted, clock, signed }) : this.#recorder.forcedMove({ seat, command: accepted, reason: forcedWhy, clock })];
     if (after.isOver) {
       chained.push(this.#recorder.finished({ winner: after.winnerId, reason: after.endReason, engineVersion: engine.version, digest: engine.getStateDigest(), clock }));
     } else if (after.turnNumber !== before.turnNumber) {
@@ -575,6 +662,7 @@ export class GameActor {
       status: this.#status,
       opponent: Object.freeze({ account: opponent?.account ?? null }),
       seedCommit: this.#game.seedCommit,
+      protocol: this.#recorder.version,
       entropyDeadline: this.#status === GameStatus.CREATED ? this.#entropyDeadline : null,
       version: this.#engine?.version ?? 0,
       lastSeq: this.#lastSeq,
@@ -644,12 +732,13 @@ function resultsFor(winner) {
 }
 
 /**
- * The engine command a persisted event carries (MOVE: the payload; FORCED_MOVE: its `cmd`), or null.
+ * The engine command a persisted event carries (MOVE: as the protocol version lays it out; FORCED_MOVE: its `cmd`), or null.
  * @param {import("@magic8/protocol").ProtocolEvent} event
+ * @param {number} version game protocol version
  */
-function commandOf(event) {
+function commandOf(event, version) {
   if (event.k === "MOVE") {
-    return event.d;
+    return commandOfMove(event.d, version);
   }
   return event.k === "FORCED_MOVE" ? /** @type {any} */ (event.d).cmd : null;
 }

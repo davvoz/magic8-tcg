@@ -91,9 +91,10 @@
 | `queue.join` | `{ "mode": "casual"\|"ranked", "deckId" }` | Il mazzo viene rivalidato (regole + possesso) e congelato |
 | `queue.leave` | `{}` | |
 | `game.entropy` | `{ "gameId", "entropy": "<hex32>" }` | Contributo al seed dopo aver ricevuto `seed_c` (03 §5) |
-| `game.command` | `{ "gameId", "commandId": "<uuid>", "expectedVersion": 41, "command": { "type": "PLAY_CARD", "cardId": "c17", "targets": ["c3"] } }` | Il `playerId` non si invia: il server usa il posto dell'utente |
+| `game.session` | `{ "gameId", "key", "authorization" }` | v2: la chiave di sessione e la sua autorizzazione Keychain (12); risposta `game.session` |
+| `game.command` | `{ "gameId", "commandId": "<uuid>", "expectedVersion": 41, "command": { "type": "PLAY_CARD", "cardId": "c17", "targets": ["c3"] }, "signature"? }` | Il `playerId` non si invia: il server usa il posto dell'utente. In v2 `signature` è obbligatoria (12) |
 | `game.sync` | `{ "gameId", "sinceSeq" }` | Recupero eventi persi o snapshot completo |
-| `game.concede` | `{ "gameId", "commandId" }` | Scorciatoia per `CONCEDE` |
+| `game.concede` | `{ "gameId", "commandId", "expectedVersion"?, "signature"? }` | Scorciatoia per `CONCEDE`; in v2 firmata come una mossa |
 | `watch.start` | `{ "gameId" }` | Guarda una partita (una alla volta); risposta `watch.state` (10) |
 | `watch.stop` | `{}` | Smette di guardare; risposta `watch.stopped` |
 
@@ -103,7 +104,7 @@
 |---|---|
 | `welcome` | `{ "user", "serverTime", "activeGame": <vista della partita> \| null, "queue": { "state" }, "ackKey": "STM…" \| null }` (risposta a `hello`: chi rientra riceve subito lo stato completo della sua partita) |
 | `queue.status` | `{ "state": "searching"\|"idle", "since", "estimatedWaitMs" }` |
-| `match.found` | `{ "gameId", "seat", "opponent": { "account" }, "seedCommit": "<hex64>", "entropyDeadline" }` |
+| `match.found` | `{ "gameId", "seat", "opponent": { "account" }, "seedCommit": "<hex64>", "protocol": 1\|2, "entropyDeadline" }` |
 | `game.joined` | `{ "gameId" }` (risposta a `game.entropy`) |
 | `game.state` | la **vista della partita** (risposta a `game.sync`): `{ "gameId", "seat", "status", "opponent": { "account" }, "seedCommit", "entropyDeadline", "version", "lastSeq", "head", "snapshot": <snapshot per prospettiva> \| null, "clock": { "activeSeat", "deadline", "reserveMs": { "s0", "s1" } } }` |
 | `game.events` | la vista della partita più `events`: gli eventi del motore redatti per prospettiva, per le animazioni. Il client **sostituisce** il proprio stato con lo snapshot ricevuto: non applica eventi e non ha mai un motore di una partita online |
@@ -114,7 +115,7 @@
 | `order.updated` | `{ "orderId", "status", "cards"?: [...] }` |
 | `error` | `{ "code", "message" }` |
 
-Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN_PHASE`, `INVALID_COMMAND`, …) più `STALE_VERSION`, `NOT_IN_GAME`, `GAME_NOT_ACTIVE`, `RATE_LIMITED`. Errori del canale: `BAD_MESSAGE` (envelope malformato; 10 volte → chiusura 4002), `UNKNOWN_MESSAGE`, `VALIDATION` (campi sconosciuti inclusi, come per HTTP). Ogni messaggio con `id` riceve una risposta.
+Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN_PHASE`, `INVALID_COMMAND`, …) più `STALE_VERSION`, `NOT_IN_GAME`, `GAME_NOT_ACTIVE`, `RATE_LIMITED` e, in v2, `SESSION_REQUIRED`, `INVALID_SIGNATURE`. Errori del canale: `BAD_MESSAGE` (envelope malformato; 10 volte → chiusura 4002), `UNKNOWN_MESSAGE`, `VALIDATION` (campi sconosciuti inclusi, come per HTTP). Ogni messaggio con `id` riceve una risposta.
 
 **Implementazione (M4).** Gateway su `ws` 8.21.3 (versione fissata, nessuna dipendenza propria: Node non ha un server WebSocket incluso e un'implementazione verificata è più sicura di un parser RFC 6455 scritto a mano). La sessione viene riverificata ogni minuto: una sessione revocata chiude anche il socket (4001). La CSP della pagina elenca esplicitamente l'origine `ws(s)://` in `connect-src`.
 

@@ -28,7 +28,7 @@
  * @property {(userId: string, mode: string) => Promise<number>} countFinished games of a mode the user finished (any result)
  *
  * @typedef {object} RecordStore sealing of game events into protocol records (docs/tcg/03 §9)
- * @property {(gameId: string) => Promise<Readonly<{ network: string }> | null>} lockForSealing locks the game row until the unit of work ends
+ * @property {(gameId: string) => Promise<Readonly<{ network: string, protocolVersion: number }> | null>} lockForSealing locks the game row until the unit of work ends
  * @property {(gameId: string) => Promise<readonly ChainedEvent[]>} listUnsealed in sequence order
  * @property {(gameId: string) => Promise<number>} countUnsealed
  * @property {(gameId: string, seq: number) => Promise<string | null>} headAt the chain head after event `seq`
@@ -44,6 +44,12 @@
  *
  * @typedef {object} GameNotifier delivers messages to a user's live connection, if any
  * @property {(userId: string, type: string, data: unknown) => void} send
+ */
+
+/**
+ * @typedef {object} MoveSignatures checks the signatures of game protocol v2 (docs/tcg/12)
+ * @property {(input: { account: string, message: string, signature: string }) => Promise<boolean>} authorizesSession whether `signature` over `message` is by a posting key of `account` (Keychain)
+ * @property {(message: string, signature: string, sessionKey: string) => boolean} verifiesMove whether the session key signed the move
  */
 
 /**

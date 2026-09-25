@@ -9,6 +9,11 @@
  *
  * States: offline → connecting → idle ⇄ searching → matched → playing → over.
  *
+ * In game protocol v2 (docs/tcg/12) the browser makes a session key for the
+ * game as soon as it is matched (or after a reload, for a game in progress)
+ * and asks the wallet to authorise it with the account's posting key; every
+ * move is then signed with it.
+ *
  * Every move the server accepts comes back with a signed ack; with a
  * `receipts` store they are checked and kept (docs/tcg/11-ack-firmati.md).
  *
@@ -43,7 +48,13 @@ export class OnlineService {
   #accountDecks;
   #liveGames;
   #receipts;
+  #sessionKeys;
+  #wallet;
   #logger;
+  /** The signed-in account, from the welcome. @type {string | null} */
+  #account = null;
+  /** @type {Set<string>} games whose session key is being authorised */
+  #authorizing = new Set();
   /** The key the server said it signs acks with. @type {string | null} */
   #ackKey = null;
   /** @type {OnlineState} */
@@ -62,16 +73,20 @@ export class OnlineService {
    *   accountDecks: () => readonly OnlineDeck[],
    *   liveGames?: import("../ports/LiveGamesApi.contract.js").LiveGamesApi,
    *   receipts?: import("./AckReceipts.js").AckReceipts,
+   *   sessionKeys?: import("../ports/SessionKeys.contract.js").SessionKeys,
+   *   wallet?: Pick<import("../ports/WalletConnector.contract.js").WalletConnector, "signMessage">,
    *   logger: import("../ports/Logger.contract.js").Logger,
-   * }} deps
+   * }} deps `sessionKeys` and `wallet` are needed to play games in protocol v2
    */
-  constructor({ connection, randomHex, newCommandId, accountDecks, liveGames, receipts, logger }) {
+  constructor({ connection, randomHex, newCommandId, accountDecks, liveGames, receipts, sessionKeys, wallet, logger }) {
     this.#connection = connection;
     this.#randomHex = randomHex;
     this.#newCommandId = newCommandId;
     this.#accountDecks = accountDecks;
     this.#liveGames = liveGames ?? null;
     this.#receipts = receipts ?? null;
+    this.#sessionKeys = sessionKeys ?? null;
+    this.#wallet = wallet ?? null;
     this.#logger = logger;
   }
 
@@ -201,6 +216,10 @@ export class OnlineService {
 
   /** Back to the lobby once a finished game has been looked at. */
   dismissGame() {
+    const session = this.#state.session;
+    if (session !== null) {
+      this.#sessionKeys?.forget(session.gameId);
+    }
     this.#state.session?.stop();
     this.#set({ status: OnlineStatus.IDLE, session: null, opponent: null });
   }
@@ -225,8 +244,16 @@ export class OnlineService {
       return;
     }
     this.#rewatch();
-    const { activeGame, queue, ackKey } = hello.value.d;
+    this.#welcomed(hello.value.d);
+  }
+
+  /**
+   * The server's welcome: who we are, the ack key, and a game or queue to resume.
+   * @param {any} welcome
+   */
+  #welcomed({ activeGame, queue, ackKey, user }) {
     this.#ackKey = typeof ackKey === "string" ? ackKey : null;
+    this.#account = typeof user?.account === "string" ? user.account : null;
     if (activeGame !== null) {
       this.#adopt(activeGame);
     } else if (this.#state.session === null) {
@@ -290,7 +317,41 @@ export class OnlineService {
    * @param {string} seat
    */
   #playerSession(gameId, seat) {
-    return new RemoteMatchSession({ gameId, seat, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId, onAck: (ack) => this.#keepAck(gameId, ack) });
+    return new RemoteMatchSession({
+      gameId,
+      seat,
+      request: (type, data) => this.#connection.request(type, data),
+      newCommandId: this.#newCommandId,
+      onAck: (ack) => this.#keepAck(gameId, ack),
+      signMove: (move) => this.#sessionKeys?.sign(move) ?? Promise.resolve(null),
+    });
+  }
+
+  /**
+   * v2: a session key for this game, authorised by the account through the wallet (Keychain asks the player once).
+   * @param {string} gameId
+   */
+  async #authorizeSession(gameId) {
+    if (this.#authorizing.has(gameId) || this.#sessionKeys?.has(gameId) === true) {
+      return;
+    }
+    if (this.#sessionKeys === null || this.#wallet === null || this.#account === null) {
+      this.#set({ error: { code: "SESSION_UNAVAILABLE", message: "this game needs signed moves, and no wallet can authorise them here" } });
+      return;
+    }
+    this.#authorizing.add(gameId);
+    try {
+      const { key, authorizationText } = await this.#sessionKeys.create(gameId);
+      const signed = await this.#wallet.signMessage({ account: this.#account, message: authorizationText, keyRole: "Posting" });
+      const reply = signed.ok ? await this.#connection.request("game.session", { gameId, key, authorization: signed.value }) : null;
+      if (reply === null || !reply.ok || reply.value.t !== "game.session") {
+        this.#sessionKeys.forget(gameId);
+        const refused = reply === null ? "the wallet did not authorise it" : "the server refused it";
+        this.#set({ error: { code: "SESSION_REFUSED", message: `this game's signing key is not authorised (${refused}): your moves cannot be sent` } });
+      }
+    } finally {
+      this.#authorizing.delete(gameId);
+    }
   }
 
   /**
@@ -303,12 +364,15 @@ export class OnlineService {
     }
   }
 
-  /** @param {{ gameId: string, seat: string, opponent: { account: string | null } }} found */
+  /** @param {{ gameId: string, seat: string, opponent: { account: string | null }, protocol?: number }} found */
   #matched(found) {
     const session = this.#playerSession(found.gameId, found.seat);
     this.#set({ status: OnlineStatus.MATCHED, opponent: found.opponent.account, session, error: null });
     // Our entropy, drawn only now that the server is committed to its secret.
     this.#sendEntropy(found.gameId);
+    if (found.protocol >= 2) {
+      this.#authorizeSession(found.gameId);
+    }
   }
 
   /**
@@ -322,6 +386,10 @@ export class OnlineService {
     }
     session.apply(view);
     this.#lastView = view;
+    if (view.protocol >= 2 && (view.status === "CREATED" || view.status === "ACTIVE")) {
+      // A reloaded page lost its key: authorise a new one for the game in progress.
+      this.#authorizeSession(view.gameId);
+    }
     if (view.status === "CREATED") {
       // Reconnected before the game started: our entropy may not have arrived (the server ignores a second one).
       this.#sendEntropy(view.gameId);

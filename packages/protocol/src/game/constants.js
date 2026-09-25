@@ -4,7 +4,22 @@
  * the protocol: bump PROTOCOL_VERSION and keep verifiers for old versions.
  */
 
+/**
+ * Version of the payload formats that did not change since v1: envelopes,
+ * manifests, receipts, pack epochs, acks.
+ */
 export const PROTOCOL_VERSION = 1;
+
+/**
+ * Versions of the game record format (records and their events). A game
+ * keeps the version it was created with; verifiers accept both.
+ * - 1: moves as the server recorded them.
+ * - 2: every player move is signed with a session key the player's account
+ *   authorised (SESSION events), docs/tcg/12-mosse-firmate.md.
+ */
+export const GameProtocol = Object.freeze({ V1: 1, V2: 2 });
+export const GAME_PROTOCOL_VERSIONS = Object.freeze([GameProtocol.V1, GameProtocol.V2]);
+export const LATEST_GAME_PROTOCOL = GameProtocol.V2;
 
 /** `custom_json` ids (at most 32 characters on STEEM). */
 export const OperationId = Object.freeze({
@@ -24,6 +39,8 @@ export const EventKind = Object.freeze({
   STATE_CHECKPOINT: "STATE_CHECKPOINT",
   GAME_FINISHED: "GAME_FINISHED",
   GAME_ABORTED: "GAME_ABORTED",
+  /** v2: a seat's session key, authorised by the seat account's posting key. */
+  SESSION: "SESSION",
 });
 
 export const EVENT_KINDS = Object.freeze(Object.values(EventKind));

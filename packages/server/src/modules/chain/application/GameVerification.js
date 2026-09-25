@@ -24,6 +24,8 @@ const FINAL_CACHE_SIZE = 1000;
 const RETRY_CACHE_MS = 60_000;
 
 export class GameVerification {
+  #verifyMoveSignature;
+  #recoverSigner;
   #repository;
   #reader;
   #rootAccount;
@@ -42,9 +44,13 @@ export class GameVerification {
    *   fetchContent: (hash: string) => Promise<string | null>,
    *   clock: import("../../../kernel/time.js").Clock,
    *   maxConcurrent?: number,
-   * }} deps
+   *   verifyMoveSignature?: (message: string, signature: string, key: string) => boolean,
+   *   recoverSigner?: (message: string, signature: string) => string | null,
+   * }} deps the two signature checks are needed for games in protocol v2 (signed moves)
    */
-  constructor({ repository, reader, rootAccount, fetchContent, clock, maxConcurrent = 2 }) {
+  constructor({ repository, reader, rootAccount, fetchContent, clock, maxConcurrent = 2, verifyMoveSignature, recoverSigner }) {
+    this.#verifyMoveSignature = verifyMoveSignature;
+    this.#recoverSigner = recoverSigner;
     this.#repository = repository;
     this.#reader = reader;
     this.#rootAccount = rootAccount;
@@ -94,7 +100,7 @@ export class GameVerification {
     }
     this.#running += 1;
     try {
-      const result = summarize(await verifyGameOnChain({ gameId: index.gameId, reader: this.#reader, rootAccount: this.#rootAccount, blocks: index.blocks, fetchContent: this.#fetchContent }));
+      const result = summarize(await verifyGameOnChain({ gameId: index.gameId, reader: this.#reader, rootAccount: this.#rootAccount, blocks: index.blocks, fetchContent: this.#fetchContent, verifyMoveSignature: this.#verifyMoveSignature, recoverSigner: this.#recoverSigner }));
       this.#remember(index.gameId, result);
       return result;
     } finally {
@@ -126,6 +132,8 @@ export function summarize(result) {
   return Object.freeze({
     verdict: result.verdict,
     history: Object.freeze({ status: history.status, problem: history.problem, records: history.records.length, events: history.events.length, duplicates: history.duplicates }),
+    signatures: result.signatures,
+    sessions: result.sessions,
     replay: replay === null ? null : Object.freeze({ status: replay.status, message: replay.message, eventSeq: replay.eventSeq, outcome: replay.outcome, engineEvents: replay.engineEvents }),
     rejected: result.rejected,
     broadcasters: result.broadcasters,

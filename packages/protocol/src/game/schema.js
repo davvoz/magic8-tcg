@@ -29,6 +29,8 @@ import {
   GAME_ID_PATTERN,
   GameMode,
   LIMITS,
+  GAME_PROTOCOL_VERSIONS,
+  GameProtocol,
   NETWORK_PATTERN,
   PROTOCOL_VERSION,
   REASON_PATTERN,
@@ -46,6 +48,13 @@ const EVENT_KEYS = Object.freeze(["a", "d", "i", "k", "ms", "t"]);
 const SEAT_ENTRY_KEYS = Object.freeze(["acct", "seat"]);
 const HEX_ENTROPY_PATTERN = new RegExp(`^[0-9a-f]{${LIMITS.ENTROPY_BYTES * 2}}$`);
 const COMMAND_TYPE_PATTERN = /^[A-Z_]{1,32}$/;
+/** An uncompressed P-256 point (the session key), as WebCrypto exports it. */
+export const SESSION_KEY_PATTERN = /^04[0-9a-f]{128}$/;
+/** A compact secp256k1 signature with recovery, as Keychain's signBuffer makes it. */
+const AUTHORIZATION_PATTERN = /^[0-9a-f]{130}$/;
+/** A P-256 ECDSA signature as r ‖ s (IEEE P1363), as WebCrypto makes it. */
+export const MOVE_SIGNATURE_PATTERN = /^[0-9a-f]{128}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * @param {Issues} issues
@@ -246,6 +255,43 @@ const PAYLOADS = Object.freeze({
 });
 
 /**
+ * Payload validators that version 2 adds or changes: a MOVE carries the
+ * player's signature over the command, and SESSION carries the key it is
+ * checked with.
+ */
+const PAYLOADS_V2 = Object.freeze({
+  [EventKind.MOVE]: {
+    actor: "seat",
+    keys: ["cid", "cmd", "ev", "sig"],
+    check(issues, d, path) {
+      checkString(issues, d.cid, `${path}.cid`, { pattern: UUID_PATTERN });
+      checkCommand(issues, d.cmd, `${path}.cmd`);
+      checkInteger(issues, d.ev, `${path}.ev`, { min: 0 });
+      checkString(issues, d.sig, `${path}.sig`, { pattern: MOVE_SIGNATURE_PATTERN });
+    },
+  },
+  [EventKind.SESSION]: {
+    actor: "seat",
+    keys: ["auth", "key"],
+    check(issues, d, path) {
+      checkString(issues, d.key, `${path}.key`, { pattern: SESSION_KEY_PATTERN });
+      checkString(issues, d.auth, `${path}.auth`, { pattern: AUTHORIZATION_PATTERN });
+    },
+  },
+});
+
+/**
+ * @param {string} kind
+ * @param {number} version
+ */
+function payloadSpec(kind, version) {
+  if (version === GameProtocol.V2 && Object.hasOwn(PAYLOADS_V2, kind)) {
+    return PAYLOADS_V2[kind];
+  }
+  return kind === EventKind.SESSION ? null : PAYLOADS[kind];
+}
+
+/**
  * A forced move may only pass, end the turn, concede, or declare nothing.
  * @param {Issues} issues
  * @param {Record<string, unknown>} command
@@ -272,9 +318,10 @@ function checkForcedCommand(issues, command, path) {
  * @param {Issues} issues
  * @param {unknown} value
  * @param {string} path
+ * @param {number} [version] the game protocol version of the record carrying the event
  * @returns {Readonly<Record<string, unknown>> | undefined}
  */
-export function checkEvent(issues, value, path) {
+export function checkEvent(issues, value, path, version = GameProtocol.V1) {
   const event = checkObject(issues, value, path, EVENT_KEYS);
   if (event === undefined) {
     return undefined;
@@ -286,7 +333,10 @@ export function checkEvent(issues, value, path) {
   if (kind === undefined) {
     return undefined;
   }
-  const spec = PAYLOADS[kind];
+  const spec = payloadSpec(kind, version);
+  if (spec === null) {
+    return issues.add(`${path}.k`, `${kind} does not exist in game protocol v${version}`);
+  }
   if (spec.actor === "null" && event.a !== null) {
     issues.add(`${path}.a`, "expected null for a system event");
   }
@@ -311,7 +361,10 @@ export function checkRecord(issues, value, path) {
   if (record === undefined) {
     return undefined;
   }
-  checkInteger(issues, record.v, `${path}.v`, { min: PROTOCOL_VERSION, max: PROTOCOL_VERSION });
+  let version = checkInteger(issues, record.v, `${path}.v`, { min: GameProtocol.V1, max: GameProtocol.V2 });
+  if (version !== undefined && !GAME_PROTOCOL_VERSIONS.includes(version)) {
+    version = issues.add(`${path}.v`, `expected one of ${GAME_PROTOCOL_VERSIONS.join(", ")}`);
+  }
   checkString(issues, record.g, `${path}.g`, { pattern: GAME_ID_PATTERN });
   checkInteger(issues, record.s, `${path}.s`, { min: 0 });
   checkHash(issues, record.p, `${path}.p`);
@@ -320,7 +373,7 @@ export function checkRecord(issues, value, path) {
   const events = checkArrayOf(issues, record.e, `${path}.e`, {
     minLength: 1,
     maxLength: LIMITS.MAX_EVENTS_PER_RECORD,
-    item: (item, itemPath) => checkEvent(issues, item, itemPath),
+    item: (item, itemPath) => checkEvent(issues, item, itemPath, version ?? GameProtocol.V1),
   });
   if (events !== undefined && !events.every((event, index) => index === 0 || event.i === /** @type {number} */ (events[index - 1].i) + 1)) {
     issues.add(`${path}.e`, "event sequence numbers must be contiguous");

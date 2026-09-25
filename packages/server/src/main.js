@@ -6,10 +6,11 @@
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
-import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, signMessage } from "@magic8/steem";
+import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, recoverSigner, signMessage } from "@magic8/steem";
 import { createServerApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { readServerContent } from "./contentFiles.js";
+import { verifySessionSignature } from "./kernel/crypto/sessionSignatures.js";
 import { createJsonLogger } from "./kernel/logger.js";
 import { nodeSecureRandom } from "./kernel/random.js";
 import { systemClock } from "./kernel/time.js";
@@ -79,6 +80,8 @@ async function main() {
     publishing,
     chainReader: publishing?.reader ?? new SteemPublicationReader({ chain }),
     ackSigner: ackSignerFrom(config, logger),
+    verifyMoveSignature: verifySessionSignature,
+    recoverSigner,
   });
 
   const restored = await app.games.restoreAll();

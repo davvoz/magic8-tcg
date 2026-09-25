@@ -107,6 +107,7 @@ export class RecordSealer {
         chained: pending,
         ts: this.#clock.now(),
         maxRecordBytes: this.#policy.maxRecordBytes,
+        version: game.protocolVersion,
       });
       for (const record of records) {
         await this.#store.markSealed(gameId, record.firstEventSeq, record.lastEventSeq, record.seq);

@@ -289,3 +289,26 @@ describe("config: operations", () => {
     assert.throws(() => loadConfig({ M8_ADMIN_ACCOUNTS: "Not Valid" }), /M8_ADMIN_ACCOUNTS/);
   });
 });
+
+describe("session signatures (native P-256)", () => {
+  it("agrees with the portable verifier browsers and verifiers use", async () => {
+    const { verifySessionSignature: portable } = await import("@magic8/steem");
+    const { verifySessionSignature: native } = await import("../../src/kernel/crypto/sessionSignatures.js");
+    const { sessionKey } = await import("../support/sessionKeys.js");
+    const session = sessionKey();
+    const other = sessionKey();
+    const message = '{"c":{"type":"END_TURN"},"kind":"m8tcg_move"}';
+    const signature = session.sign(message);
+    const cases = [
+      [message, signature, session.key],
+      [`${message} `, signature, session.key],
+      [message, signature, other.key],
+      [message, "00".repeat(64), session.key],
+      [message, signature, `04${"00".repeat(64)}`],
+      [message, "zz", session.key],
+      [null, signature, session.key],
+    ];
+    assert.deepEqual(cases.map((args) => native(...args)), [true, false, false, false, false, false, false]);
+    assert.deepEqual(cases.map((args) => native(...args)), cases.map((args) => portable(...args)));
+  });
+});

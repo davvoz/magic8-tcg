@@ -16,7 +16,7 @@
  * received, and whether the flooder was cut off.
  */
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { clearInterval, setInterval } from "node:timers";
 
@@ -27,11 +27,12 @@ import { MemoryLogger } from "../src/kernel/logger.js";
 import { openDatabase } from "../src/platform/db/openDatabase.js";
 import { nodeSecureRandom } from "../src/kernel/random.js";
 import { systemClock } from "../src/kernel/time.js";
-import { FakeChain, bundledContent, keyPair, keychainSign, toWif } from "../test/helpers.js";
+import { FakeChain, bundledContent, keyPair, keychainSign, testAckSigner, toWif } from "../test/helpers.js";
 import { freshDatabase } from "../test/support/database.js";
 import { FakeSteemLedger } from "../test/support/fakeSteemLedger.js";
-import { broadcastersManifest } from "@magic8/protocol";
+import { broadcastersManifest, moveMessage, sessionAuthorization } from "@magic8/protocol";
 import { SteemWalletProvider } from "@magic8/steem";
+import { verifySessionSignature } from "../src/kernel/crypto/sessionSignatures.js";
 
 const PLAYERS = Number(process.argv[2] ?? 40);
 const MAX_COMMANDS = Number(process.argv[3] ?? 400);
@@ -53,6 +54,8 @@ class Player {
   seat = "";
   gameId = "";
   commands = 0;
+  /** @type {{ key: string, sign: (message: string) => string } | undefined} this game's session key (v2) */
+  session = undefined;
   /** @type {Map<string, number>} request id → sent at */
   #pending = new Map();
   #next = 0;
@@ -138,6 +141,11 @@ class Player {
     if (message.t === "match.found") {
       this.gameId = message.d.gameId;
       this.seat = message.d.seat;
+      if (message.d.protocol >= 2) {
+        // Signed moves: a session key, authorised like Keychain would (docs/tcg/12).
+        this.session = sessionKey();
+        this.#send("game.session", { gameId: this.gameId, key: this.session.key, authorization: keychainSign(sessionAuthorization(this.gameId, this.session.key), this.keys.privateKey) });
+      }
       this.#send("game.entropy", { gameId: this.gameId, entropy: randomUUID().replaceAll("-", "") });
     } else if (message.t === "game.events" || message.t === "game.state") {
       this.#maybeMove(message.d);
@@ -155,16 +163,39 @@ class Player {
     }
     this.commands += 1;
     this.stats.commands += 1;
+    const commandId = randomUUID();
     if (this.commands > MAX_COMMANDS) {
-      this.#send("game.concede", { gameId: this.gameId, commandId: randomUUID() });
+      this.#send("game.concede", { gameId: this.gameId, commandId, ...this.#signed(commandId, view.version, { type: "CONCEDE" }) });
       return;
     }
-    this.#send("game.command", { gameId: this.gameId, commandId: randomUUID(), expectedVersion: view.version, command: chooseMove(snapshot) });
+    const command = chooseMove(snapshot);
+    this.#send("game.command", { gameId: this.gameId, commandId, expectedVersion: view.version, command, ...this.#signed(commandId, view.version, command) });
+  }
+
+  /**
+   * v2: the signature (and version) that go with a command.
+   * @param {string} commandId
+   * @param {number} expectedVersion
+   * @param {Record<string, unknown>} command
+   */
+  #signed(commandId, expectedVersion, command) {
+    if (this.session === undefined) {
+      return {};
+    }
+    return { expectedVersion, signature: this.session.sign(moveMessage({ gameId: this.gameId, commandId, expectedVersion, command })) };
   }
 
   close() {
     this.socket?.close();
   }
+}
+
+/** A browser's session key: P-256, signatures as r ‖ s (what WebCrypto makes). */
+function sessionKey() {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = publicKey.export({ format: "jwk" });
+  const key = `04${Buffer.from(/** @type {string} */ (jwk.x), "base64url").toString("hex")}${Buffer.from(/** @type {string} */ (jwk.y), "base64url").toString("hex")}`;
+  return { key, sign: (/** @type {string} */ message) => sign("sha256", Buffer.from(message), { key: privateKey, dsaEncoding: "ieee-p1363" }).toString("hex") };
 }
 
 /** @param {any} snapshot the player's own view */
@@ -224,6 +255,8 @@ async function main() {
     database,
     content: await bundledContent(),
     publishing,
+    ackSigner: testAckSigner,
+    verifyMoveSignature: verifySessionSignature,
   });
   server.on("request", app.http.listener);
   app.realtime.attach(server);

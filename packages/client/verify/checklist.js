@@ -30,6 +30,26 @@ function contentCheck(content) {
 }
 
 const CONTRADICTED = new Set(["DIVERGENT", "OMITTED"]);
+
+/**
+ * Game protocol v2 (docs/tcg/12): every player move signed by the seat's
+ * session key, and each key authorised by the seat account's posting key.
+ * @param {any} result
+ * @returns {Check[]}
+ */
+export function signatureChecks({ signatures, sessions }) {
+  if (signatures === undefined || signatures.status === "NOT_REQUIRED") {
+    return [];
+  }
+  const checks = [{ label: "Signed moves", ok: signatures.status === "VALID", detail: signatures.status === "VALID" ? "every player move is signed by the player's own session key" : signatures.message }];
+  if (sessions.length > 0) {
+    const forged = sessions.some((session) => session.status === "FORGED");
+    const allAuthorized = sessions.every((session) => session.status === "AUTHORIZED");
+    const detail = sessions.map((session) => `@${session.account} ${session.status.toLowerCase().replaceAll("_", " ")}`).join(", ");
+    checks.push({ label: "Session keys", ok: forged ? false : allAuthorized || null, detail });
+  }
+  return checks;
+}
 const WORTHLESS = new Set(["BAD_SIGNATURE", "UNTRUSTED_KEY", "INVALID"]);
 
 /**
@@ -71,6 +91,7 @@ export function checklist(result, { root, indexed }) {
     { label: "Records found", ok: history.records.length > 0, detail: `${history.records.length} record(s) ${indexed ? "in the indexed blocks" : "in the broadcasters' histories"}${pending}` },
     { label: "Forged operations ignored", ok: true, detail: rejectedDetail(result.rejected) },
     { label: "Hash chain and lifecycle", ok: history.status === "COMPLETE", detail: history.problem === null ? `${history.events.length} events, ${history.status.toLowerCase()}` : history.problem.message },
+    ...signatureChecks(result),
     contentCheck(content),
   ];
   if (replay !== null) {

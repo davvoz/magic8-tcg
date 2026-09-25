@@ -1,6 +1,6 @@
-# 03 — Game Blockchain Protocol (M8GBP) v1
+# 03 — Game Blockchain Protocol (M8GBP) v1 e v2
 
-**Stato:** specifica v1, implementata (M5, 2026-09-24). Implementazione di riferimento: `packages/protocol` (formato, verifica), `packages/steem` (transazioni), `packages/server` moduli gameplay e chain (sigillatura, pubblicazione, riconciliazione).
+**Stato:** specifica v1, implementata (M5, 2026-09-24). La v2 (mosse firmate dai giocatori, M7.4) aggiunge l'evento `SESSION` e cambia il payload di `MOVE`: vedi 12. Implementazione di riferimento: `packages/protocol` (formato, verifica), `packages/steem` (transazioni), `packages/server` moduli gameplay e chain (sigillatura, pubblicazione, riconciliazione).
 
 Le parole DEVE / NON DEVE / DOVREBBE hanno il significato di RFC 2119.
 
@@ -136,7 +136,8 @@ record.h  = head_{e[last].i}
 | `GAME_CREATED` | `null` | `{ "mode": "casual"\|"ranked", "net": "steem", "eng": "<versione motore>", "content": "<hex64>", "seats": [{"seat":"s0","acct":"alice"},{"seat":"s1","acct":"bob"}], "seed_c": "<hex64>", "deck_c": ["<hex64>","<hex64>"] }` | Deve essere l'evento `i = 0`. `content` è l'hash dei contenuti (regole + catalogo) usati. |
 | `PLAYER_JOINED` | posto | `{ "ent": "<hex32>", "src": "client"\|"server" }` | Uno per posto, prima di `GAME_STARTED`. |
 | `GAME_STARTED` | `null` | `{ "first": "s0"\|"s1" }` | Dopo entrambi i `PLAYER_JOINED`; `first` deve coincidere con il valore derivato da `K`. |
-| `MOVE` | posto | comando del motore senza `playerId` (es. `{"type":"END_TURN"}`) | Il `playerId` del motore è `a`. |
+| `MOVE` | posto | comando del motore senza `playerId` (es. `{"type":"END_TURN"}`) | Il `playerId` del motore è `a`. In v2: `{ "cid", "cmd", "ev", "sig" }`, firmato dal giocatore (12). |
+| `SESSION` (solo v2) | posto | `{ "key": "<P-256 non compresso>", "auth": "<firma Keychain>" }` | La chiave con cui il posto firma le mosse da qui in poi, autorizzata dall'account (12). |
 | `FORCED_MOVE` | posto | `{ "cmd": <comando senza playerId>, "why": "timeout"\|"disconnect"\|"abandon" }` | Mossa eseguita dal server per conto del posto. `cmd.type` ammesso solo tra `END_PHASE`, `END_TURN`, `CONCEDE`, `DECLARE_ATTACKERS` con lista vuota, `DECLARE_BLOCKERS` con lista vuota. |
 | `STATE_CHECKPOINT` | `null` | `{ "ver": <versione motore>, "sc": "<hex64>" }` | `sc = H("state", raw(salt) ‖ utf8(canonical(digest(stato))))`. Emesso a fine di ogni turno. |
 | `GAME_FINISHED` | `null` | `{ "win": "s0"\|"s1"\|null, "why": "<motivo>", "ver": <int>, "sc": "<hex64>", "secret": "<hex64>", "decks": [[["card_id", n], …], [ … ]] }` | Ultimo evento. `decks` in forma compatta ordinata per id carta. |
@@ -306,9 +307,10 @@ Regola fondamentale: **gli eventi nel DB sono append-only** (nessun `UPDATE`/`DE
 ## 17. Versionamento
 
 - `v` (protocollo) cambia solo con modifiche incompatibili di formato o hashing; i verificatori supportano tutte le versioni pubblicate.
+- Versioni dei record di partita: 1 (M5) e 2 (M7.4, mosse firmate). Una partita tiene la versione con cui è stata creata. Manifest, ricevute, epoche e ack restano `v: 1`.
 - `eng` e `content` fissano il comportamento del replay: il server mantiene disponibili tutte le versioni del motore e dei contenuti mai usate in partite pubblicate.
 
 ## 18. Evoluzioni previste (v2)
 
-- **Firma delle mosse dei giocatori** con chiave di sessione effimera: al join il client genera una coppia di chiavi secp256k1 non esportabile, la autorizza con un `requestSignBuffer` Keychain (`"m8tcg session <gameId> <pubkey>"`), e firma ogni comando; il campo `sig` del `MOVE` porta la firma. Il server non può più attribuire a un giocatore una mossa che non ha fatto.
+- **Firma delle mosse dei giocatori**: fatto in M7.4 come protocollo di gioco v2, vedi 12. Rispetto al progetto qui sopra: chiave P-256 WebCrypto non esportabile (secp256k1 non esiste in WebCrypto) ed evento `SESSION` separato, che si può ripetere quando la pagina perde la chiave.
 - **Ack firmati dal server**: fatto in M7.3, vedi 11. Ogni ack di un comando accettato porta `seq` e `head` dell'ultimo evento, firmati con una chiave dedicata che il root nomina in un manifest `ack_keys`; il giocatore conserva gli ack e può dimostrare una divergenza con la catena (`DIVERGENT`, `OMITTED`).

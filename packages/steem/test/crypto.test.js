@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { base58Decode, base58Encode } from "../src/crypto/base58.js";
 import { decodePublicKey, decodeWif, encodePublicKey, publicKeyOf, recoverSigner, signMessage } from "../src/crypto/keys.js";
 import { isValidAccountName } from "../src/accountName.js";
+import { verifySessionSignature } from "../src/crypto/sessionKeys.js";
 
 const KEYS = Object.freeze([
   {
@@ -142,6 +143,24 @@ describe("account names", () => {
   it("rejects everything else", () => {
     for (const name of ["ab", "abcdefghijklmnopq", "Alice", "1abc", "abc-", "ab.cde", "abc..def", ".abc", "abc.", "a_bc", "abc def", "", null, 42, "abc.de"]) {
       assert.equal(isValidAccountName(name), false, String(name));
+    }
+  });
+});
+
+describe("session keys (P-256, WebCrypto)", () => {
+  it("verifies a WebCrypto signature by a non-extractable key, and nothing else", async () => {
+    const { webcrypto } = await import("node:crypto");
+    const pair = await webcrypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+    const toHex = (buffer) => Buffer.from(buffer).toString("hex");
+    const key = toHex(await webcrypto.subtle.exportKey("raw", pair.publicKey));
+    const message = '{"c":{"type":"END_TURN"},"kind":"m8tcg_move"}';
+    const signature = toHex(await webcrypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, new TextEncoder().encode(message)));
+    assert.equal(verifySessionSignature(message, signature, key), true);
+    assert.equal(verifySessionSignature(`${message} `, signature, key), false, "another message");
+    const other = await webcrypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+    assert.equal(verifySessionSignature(message, signature, toHex(await webcrypto.subtle.exportKey("raw", other.publicKey))), false, "another key");
+    for (const [badMessage, badSignature, badKey] of [[message, "zz", key], [message, signature, "04"], [null, signature, key], [message, "00".repeat(64), key], [message, signature, `04${"00".repeat(64)}`]]) {
+      assert.equal(verifySessionSignature(badMessage, badSignature, badKey), false);
     }
   });
 });

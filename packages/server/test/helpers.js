@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { resolve as resolvePath } from "node:path";
 
-import { SteemWalletProvider, base58Encode, publicKeyOf, signMessage } from "@magic8/steem";
+import { SteemWalletProvider, base58Encode, publicKeyOf, recoverSigner, signMessage } from "@magic8/steem";
+import { verifySessionSignature } from "../src/kernel/crypto/sessionSignatures.js";
 import { createServerApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { readServerContent } from "../src/contentFiles.js";
@@ -96,6 +97,12 @@ export const TEST_APP_NAME = "magic8-tcg";
 
 
 /**
+ * Most tests play v1 games (no signatures); the signed-move tests ask for v2.
+ * @param {{ signedMoves?: boolean }} options
+ */
+const signedMovesSetting = (options) => String(options.signedMoves === true);
+
+/**
  * The application on an emptied test database. Everything the server keeps
  * lives in `database`: building a second app on it is a server restart.
  * A restarted app needs its own `random` label, or it would mint the same ids again.
@@ -108,7 +115,7 @@ export async function buildTestApp(options = {}) {
   const db = database ?? (await freshDatabase());
   const wallet = new SteemWalletProvider({ chain, appName: TEST_APP_NAME });
   const logger = new MemoryLogger();
-  const config = loadConfig({ M8_PUBLIC_ORIGIN: ORIGIN, ...env });
+  const config = loadConfig({ M8_PUBLIC_ORIGIN: ORIGIN, M8_SIGNED_MOVES: signedMovesSetting(options), ...env });
   const app = await createServerApp({
     config,
     clock,
@@ -126,6 +133,8 @@ export async function buildTestApp(options = {}) {
     publishing,
     chainPolicies,
     ackSigner: options.ackSigner === undefined ? testAckSigner : options.ackSigner,
+    verifyMoveSignature: verifySessionSignature,
+    recoverSigner,
   });
   return { app, clock, chain, ledger, users: app.users, sessions: app.sessions, challenges: app.challenges, logger, config, database: db };
 }

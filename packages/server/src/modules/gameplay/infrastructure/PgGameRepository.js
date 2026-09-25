@@ -201,8 +201,8 @@ export class PgGameRepository {
   }
 
   async lockForSealing(gameId) {
-    const row = await this.#db.maybeOne("SELECT network FROM games WHERE id = $1 FOR UPDATE", [gameId]);
-    return row === null ? null : Object.freeze({ network: row.network });
+    const row = await this.#db.maybeOne("SELECT network, protocol_version FROM games WHERE id = $1 FOR UPDATE", [gameId]);
+    return row === null ? null : Object.freeze({ network: row.network, protocolVersion: row.protocol_version });
   }
 
   async listUnsealed(gameId) {

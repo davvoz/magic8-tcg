@@ -27,7 +27,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import { AckStatus, GAME_ID_PATTERN, Verdict, verifyGameOnChain } from "@magic8/protocol";
-import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, recoverSigner } from "@magic8/steem";
+import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, recoverSigner, verifySessionSignature } from "@magic8/steem";
 
 export const DEFAULT_ROOT = "luciojolly";
 export const DEFAULT_NODES = Object.freeze(["https://api.moecki.online", "https://api.justyy.com", "https://api.steemit.com"]);
@@ -117,6 +117,24 @@ function describeChecks({ history, replay, content, verdict }) {
   return lines;
 }
 
+const SIGNATURE_LINES = Object.freeze({
+  NOT_REQUIRED: "moves: protocol v1, moves are not signed",
+  VALID: "moves: every player move is signed by the player's session key",
+});
+
+/**
+ * Signed moves (protocol v2): the moves, then who authorised each session key.
+ * @param {Awaited<ReturnType<typeof verifyGameOnChain>>} result
+ */
+function describeSignatures({ signatures, sessions }) {
+  const lines = [SIGNATURE_LINES[signatures.status] ?? `moves: ${signatures.status} — ${signatures.message}`];
+  for (const session of sessions) {
+    const signer = session.signer === null ? "" : ` (signed by ${session.signer})`;
+    lines.push(`session ${session.seat} @${session.account}: ${session.status}${signer}`);
+  }
+  return lines;
+}
+
 /**
  * One line per kept ack.
  * @param {Awaited<ReturnType<typeof verifyGameOnChain>>} result
@@ -130,7 +148,7 @@ function describeAcks({ acks }) {
  * @param {{ gameId: string, root: string, blocks: readonly number[] | null }} context
  */
 export function describeResult(result, context) {
-  return [...describeSources(result, context), ...describeChecks(result), ...describeAcks(result)].join("\n");
+  return [...describeSources(result, context), ...describeSignatures(result), ...describeChecks(result), ...describeAcks(result)].join("\n");
 }
 
 /**
@@ -216,7 +234,7 @@ export async function verifyCommand(argv, { fetch: fetchImpl = globalThis.fetch,
   try {
     const blocks = await indexedBlocks(options, root, { fetch: fetchImpl, write });
     const acks = await keptAcks(options);
-    const result = await verifyGameOnChain({ gameId: options.gameId, reader: reader ?? nodeReader(options), rootAccount: root, blocks, fetchContent: contentSource(options, fetchImpl), acks, recoverSigner });
+    const result = await verifyGameOnChain({ gameId: options.gameId, reader: reader ?? nodeReader(options), rootAccount: root, blocks, fetchContent: contentSource(options, fetchImpl), acks, recoverSigner, verifyMoveSignature: verifySessionSignature });
     write(options.json ? `${JSON.stringify(result, null, 2)}\n` : `${describeResult(result, { gameId: options.gameId, root, blocks })}\n`);
     return exitCodeOf(result);
   } catch (error) {

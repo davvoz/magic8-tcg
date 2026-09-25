@@ -20,7 +20,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { ResourceMode, signerFor } from "../../src/modules/chain/index.js";
-import { ACK_KEYS, buildTestApp, deterministicRandom, listen, testAckSigner, toWif } from "../helpers.js";
+import { ACK_KEYS, buildTestApp, deterministicRandom, keyPair, listen, testAckSigner, toWif } from "../helpers.js";
+import { grantFor, sessionKey, signedCommand } from "../support/sessionKeys.js";
 import { verifyCommand } from "../../../../tools/verify-game.js";
 import { verifyOrderCommand } from "../../../../tools/verify-order.js";
 import { ApiClient } from "../support/apiClient.js";
@@ -32,13 +33,13 @@ const B2 = "m8tcg-b2";
 const KEYS = Object.freeze({ [B1]: new Uint8Array(32).fill(21), [B2]: new Uint8Array(32).fill(22) });
 const ENTROPY = Object.freeze({ s0: "0a".repeat(16), s1: "0b".repeat(16) });
 
-async function world({ signers = [B1, B2], rcPolicy = {}, authorize = true } = {}) {
+async function world({ signers = [B1, B2], rcPolicy = {}, authorize = true, signedMoves = false } = {}) {
   const ledger = new FakeSteemLedger();
   for (const name of signers) {
     ledger.addAccount(name, KEYS[name]);
   }
   const publishing = ledger.publishing(new Map(signers.map((name) => [name, toWif(KEYS[name])])));
-  const setup = await buildTestApp({ ledger, publishing, chainPolicies: { rc: rcPolicy }, env: { M8_ROOT_ACCOUNT: ROOT } });
+  const setup = await buildTestApp({ ledger, publishing, chainPolicies: { rc: rcPolicy }, env: { M8_ROOT_ACCOUNT: ROOT }, signedMoves });
   const { chain } = setup.app;
   if (authorize) {
     ledger.publishManifest(ROOT, broadcastersManifest({ accounts: signers, fromBlock: 0 }));
@@ -238,6 +239,54 @@ describe("ChainBroadcaster and ChainTracker", () => {
       assert.match(caught.output, /VERDICT: VALID/);
       assert.match(caught.output, /DIVERGENT — PROOF: the published game differs/);
       assert.match(caught.output, /OMITTED — PROOF: the published game ended without/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("publishes a game with signed moves that verifies VALID, with each session key authorised by its player's account", async () => {
+    const w = await world({ signedMoves: true });
+    const players = [[w.alice, "alice", keyPair(31)], [w.bob, "bob", keyPair(32)]];
+    const sessions = new Map();
+    const gameId = await w.newGame();
+    for (const [user, account, keys] of players) {
+      w.setup.chain.setAccount(account, [keys.publicKey]); // what the server's wallet reads
+      w.ledger.addAccount(account, keys.privateKey); // what a verifier reads
+      sessions.set(user.id, sessionKey());
+      assert.equal((await w.setup.app.games.session(user.id, grantFor(gameId, sessions.get(user.id), keys.privateKey))).ok, true);
+    }
+    for (let step = 0; step < 8; step += 1) {
+      const view = await w.setup.app.games.view(w.alice.id, gameId);
+      const player = view.snapshot.awaitingPlayerId === "s0" ? w.alice : w.bob;
+      const own = await w.setup.app.games.view(player.id, gameId);
+      let command = { type: own.snapshot.legalMoves.canEndTurn ? "END_TURN" : "END_PHASE" };
+      if (own.snapshot.phase === "COMBAT_ATTACKERS") {
+        command = { type: "DECLARE_ATTACKERS", attackerIds: [] };
+      }
+      const move = { gameId, commandId: uuidV4(deterministicRandom(`signed-${step}`)), expectedVersion: own.version, command };
+      assert.equal((await w.setup.app.games.command(player.id, signedCommand(move, sessions.get(player.id)))).ok, true);
+    }
+    const last = await w.setup.app.games.view(w.bob.id, gameId);
+    const concession = signedCommand({ gameId, commandId: uuidV4(deterministicRandom("signed-concede")), expectedVersion: last.version, command: { type: "CONCEDE" } }, sessions.get(w.bob.id));
+    assert.equal((await w.setup.app.games.concede(w.bob.id, concession)).ok, true);
+    for (let round = 0; round < 4; round += 1) {
+      await w.chain.broadcaster.runOnce();
+      w.ledger.produceBlock();
+    }
+    w.ledger.finalize();
+    await w.chain.tracker.runOnce();
+
+    const verified = await w.setup.app.verification.verify(gameId);
+    assert.equal(verified.verdict, Verdict.VALID, JSON.stringify(verified).slice(0, 800));
+    assert.equal(verified.signatures.status, "VALID");
+    assert.deepEqual(verified.sessions.map((session) => [session.account, session.status]), [["alice", "AUTHORIZED"], ["bob", "AUTHORIZED"]]);
+    const server = await listen(w.setup.app);
+    try {
+      let output = "";
+      const code = await verifyCommand([gameId, "--root", ROOT, "--server", server.base], { reader: w.publishing.reader, write: (text) => (output += text) });
+      assert.equal(code, 0, output);
+      assert.match(output, /moves: every player move is signed/);
+      assert.match(output, /session s0 @alice: AUTHORIZED/);
     } finally {
       await server.close();
     }

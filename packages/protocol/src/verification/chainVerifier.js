@@ -21,9 +21,10 @@ import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/register
 import { OperationId } from "../game/constants.js";
 import { openContent } from "../game/content.js";
 import { checkAck } from "../game/acks.js";
+import { sessionAuthorization, sessionGrants } from "../game/sessions.js";
 import { AckKeyRegistry, BroadcasterRegistry } from "../game/manifest.js";
 import { decodeGameOperation } from "../game/OperationDecoder.js";
-import { verifyGame } from "../game/verifyGame.js";
+import { Verdict, verifyGame } from "../game/verifyGame.js";
 
 const PAGE_SIZE = 1000;
 
@@ -33,6 +34,7 @@ const PAGE_SIZE = 1000;
  * @property {() => Promise<Readonly<{ headBlock: number, irreversibleBlock: number, time: number }>>} head
  * @property {(account: string, after: number, limit: number) => Promise<readonly Readonly<{ index: number, operation: ChainOperation | null }>[]>} publications
  * @property {(blockNum: number) => Promise<readonly ChainOperation[] | null>} blockOperations
+ * @property {(account: string) => Promise<readonly string[] | null>} [postingKeys] the keys of the account's posting authority today (null: no such account)
  */
 
 /**
@@ -129,10 +131,12 @@ function declaredContent(gameId, operations, registry) {
  *   maxHistoryPages?: number,
  *   acks?: readonly unknown[],
  *   recoverSigner?: import("../game/acks.js").RecoverSigner,
+ *   verifyMoveSignature?: import("../game/sessions.js").MoveSignatureVerifier,
  * }} input `blocks`: an index of the blocks holding the game's records; null to scan the broadcasters' histories.
  *   `acks`: signed acks a player kept, checked against the published game (needs `recoverSigner`).
+ *   `verifyMoveSignature` and `recoverSigner`: needed for v2 games (signed moves and their session keys).
  */
-export async function verifyGameOnChain({ gameId, reader, rootAccount, blocks = null, fetchContent, maxHistoryPages = 200, acks = [], recoverSigner }) {
+export async function verifyGameOnChain({ gameId, reader, rootAccount, blocks = null, fetchContent, maxHistoryPages = 200, acks = [], recoverSigner, verifyMoveSignature }) {
   const head = await reader.head();
   const limits = { irreversibleBlock: head.irreversibleBlock, maxPages: maxHistoryPages };
   const manifests = await operationsOf(reader, rootAccount, OperationId.MANIFEST, limits);
@@ -161,9 +165,13 @@ export async function verifyGameOnChain({ gameId, reader, rootAccount, blocks = 
     operations: collected.operations,
     isAuthorizedBroadcaster: registry.asPolicy(),
     resolveContent: (hash, engineVersion) => (declared !== null && hash === declared.hash && engineVersion === declared.engineVersion ? content : null),
+    verifyMoveSignature,
   });
+  const sessions = await checkSessions({ history: verification.history, reader, recoverSigner });
   return Object.freeze({
     ...verification,
+    verdict: sessions.some((session) => session.status === SessionStatus.FORGED) ? Verdict.INVALID : verification.verdict,
+    sessions,
     acks: checkAcks({ acks, recoverSigner, history: verification.history, manifests: manifests.operations, rootAccount, fallbackBlock: head.irreversibleBlock }),
     head,
     broadcasters: registry.accounts(),
@@ -198,4 +206,48 @@ function checkAcks({ acks, recoverSigner, history, manifests, rootAccount, fallb
   const created = history.records.find(({ record }) => record.s === 0)?.source?.blockNum;
   const anchor = typeof created === "number" ? created : fallbackBlock;
   return Object.freeze(acks.map((ack) => checkAck(ack, { history, recoverSigner, isTrustedKey: (key) => registry.isAuthorized(key, anchor) })));
+}
+
+export const SessionStatus = Object.freeze({
+  /** Signed by a key that satisfies the account's posting authority today. */
+  AUTHORIZED: "AUTHORIZED",
+  /** A valid signature by a key the account does not use today: rotated since, or never its key. */
+  KEY_NOT_CURRENT: "KEY_NOT_CURRENT",
+  /** The authorisation is not a signature at all: nobody authorised this key. */
+  FORGED: "FORGED",
+  /** The chain reader cannot tell which keys the account uses. */
+  UNCHECKED: "UNCHECKED",
+});
+
+/**
+ * Who authorised each session key of a v2 game: the authorisation must be a
+ * signature by one of the seat account's posting keys.
+ * @param {{ history: import("../game/GameHistory.js").GameHistory, reader: ChainReader, recoverSigner: import("../game/acks.js").RecoverSigner | undefined }} input
+ */
+async function checkSessions({ history, reader, recoverSigner }) {
+  const grants = sessionGrants(history);
+  if (grants.length === 0) {
+    return Object.freeze([]);
+  }
+  if (recoverSigner === undefined) {
+    throw new TypeError("checking session keys needs recoverSigner");
+  }
+  /** @type {Map<string, readonly string[] | null>} */
+  const postingKeys = new Map();
+  const checked = [];
+  for (const grant of grants) {
+    const signer = recoverSigner(sessionAuthorization(history.gameId, grant.key), grant.authorization);
+    if (!postingKeys.has(grant.account)) {
+      postingKeys.set(grant.account, typeof reader.postingKeys === "function" ? await reader.postingKeys(grant.account) : null);
+    }
+    const known = postingKeys.get(grant.account) ?? null;
+    let status = SessionStatus.UNCHECKED;
+    if (signer === null) {
+      status = SessionStatus.FORGED;
+    } else if (known !== null) {
+      status = known.includes(signer) ? SessionStatus.AUTHORIZED : SessionStatus.KEY_NOT_CURRENT;
+    }
+    checked.push(Object.freeze({ seat: grant.seat, account: grant.account, eventSeq: grant.eventSeq, signer, status }));
+  }
+  return Object.freeze(checked);
 }

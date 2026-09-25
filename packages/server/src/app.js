@@ -55,11 +55,13 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   alarmPolicy?: Partial<typeof import("./modules/admin/index.js").DEFAULT_ALARM_POLICY>,
  *   chainPolicies?: { broadcast?: object, tracker?: object, rc?: object },
  *   ackSigner?: import("./modules/gameplay/application/ports.js").AckSigner | null,
- * }} deps
+ *   verifyMoveSignature?: (message: string, signature: string, sessionKey: string) => boolean,
+ *   recoverSigner?: (message: string, signature: string) => string | null,
+ * }} deps `verifyMoveSignature` (P-256) is needed for games in protocol v2
  */
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
-  const { staticFiles, publishing, chainReader, ackSigner } = optionalAdapters(deps);
+  const { staticFiles, publishing, chainReader, ackSigner, verifyMoveSignature, recoverSigner } = optionalAdapters(deps);
   const { identityPolicyOverrides, marketplacePolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
@@ -119,7 +121,7 @@ export async function createServerApp(deps) {
   await marketplace.syncProducts();
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
-  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy, ackSigner });
+  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy, ackSigner, gameProtocol: config.gameProtocol, signatures: moveSignatures(wallets.get(defaultNetwork), verifyMoveSignature) });
   const rankedSettings = validateRankedSettings(content.ranked);
   if (!rankedSettings.ok) {
     throw new Error(`ranked settings are invalid: ${rankedSettings.error.message}`);
@@ -130,7 +132,7 @@ export async function createServerApp(deps) {
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
 
 
-  const verification = new GameVerification({ repository: chainRepository, reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash), clock });
+  const verification = new GameVerification({ repository: chainRepository, reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash), clock, verifyMoveSignature, recoverSigner });
 
   const router = new Router();
   registerIdentityRoutes({ router, auth, cookie: { name: config.sessionCookieName, secure: config.secure }, clock });
@@ -213,11 +215,29 @@ function precisionOf(providers, asset) {
 }
 
 /**
+ * The checks of signed moves (docs/tcg/12): session keys are authorised by a
+ * posting key of the account (the wallet checks it like a login), moves are
+ * signed by the session key (P-256).
+ * @param {import("./modules/identity/application/ports.js").WalletProvider | undefined} wallet
+ * @param {((message: string, signature: string, key: string) => boolean) | undefined} verifyMoveSignature
+ * @returns {import("./modules/gameplay/application/ports.js").MoveSignatures | null}
+ */
+function moveSignatures(wallet, verifyMoveSignature) {
+  if (wallet === undefined || verifyMoveSignature === undefined) {
+    return null;
+  }
+  return Object.freeze({
+    authorizesSession: async ({ account, message, signature }) => (await wallet.verifyLogin({ account, message, signature })).ok,
+    verifiesMove: verifyMoveSignature,
+  });
+}
+
+/**
  * The optional adapters of createServerApp, with their defaults.
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function optionalAdapters({ staticFiles = null, publishing = null, chainReader = null, ackSigner = null }) {
-  return { staticFiles, publishing, chainReader: chainReader ?? publishing?.reader ?? null, ackSigner };
+function optionalAdapters({ staticFiles = null, publishing = null, chainReader = null, ackSigner = null, verifyMoveSignature = undefined, recoverSigner = undefined }) {
+  return { staticFiles, publishing, chainReader: chainReader ?? publishing?.reader ?? null, ackSigner, verifyMoveSignature, recoverSigner };
 }
 
 /**

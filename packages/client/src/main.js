@@ -25,6 +25,7 @@ import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
 import { HttpLiveGamesApi } from "./infrastructure/api/HttpLiveGamesApi.js";
 import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
+import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js";
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
@@ -213,6 +214,9 @@ async function boot() {
         return ref === undefined ? [] : [{ id: ref.serverId, name: deck.name, faction: deck.faction, totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
       }),
     liveGames: new HttpLiveGamesApi({ fetch: httpFetch }),
+    // Signed moves (docs/tcg/12): a key per game that cannot leave the browser, authorised with Keychain.
+    sessionKeys: new WebCryptoSessionKeys({ subtle: crypto.subtle }),
+    wallet,
     // Signed acks, checked on arrival and kept for the verifier page (docs/tcg/11).
     receipts: new AckReceipts({
       store: storageAvailable ? localStore : new InMemoryStore(),

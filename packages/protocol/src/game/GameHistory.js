@@ -38,7 +38,8 @@ export const HistoryStatus = Object.freeze({
  *   duplicates: number,
  *   terminal: string | null,
  *   started: boolean,
- * }>} GameHistory
+ *   version: number | null,
+ * }>} GameHistory version: the game protocol version its records share
  */
 
 /**
@@ -112,7 +113,12 @@ function walk(base, gameId, records) {
   /** @type {import("./EventChain.js").ChainedEvent[]} */
   const events = [];
   let head = genesisHead(gameId);
+  const version = records[0].record.v;
   for (const { record } of records) {
+    if (record.v !== version) {
+      const mixed = problem(HistoryStatus.MALFORMED, `record ${record.s} is protocol v${record.v}, the game is v${version}`, { recordSeq: record.s });
+      return finish(base, { status: mixed.code, problem: mixed, records, events, lifecycle });
+    }
     const outcome = walkRecord({ record, head, events, lifecycle, gameId });
     if (outcome.problem !== null) {
       return finish(base, { status: outcome.problem.code, problem: outcome.problem, records, events, lifecycle });
@@ -174,5 +180,6 @@ function finish(base, { status, problem: found, records = [], events = [], lifec
     events: Object.freeze([...events]),
     terminal,
     started: lifecycle?.hasStarted ?? false,
+    version: records.length > 0 ? records[0].record.v : null,
   });
 }

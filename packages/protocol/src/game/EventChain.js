@@ -12,7 +12,7 @@ import { deepFreeze } from "@magic8/engine/shared/deepFreeze.js";
 import { Issues } from "@magic8/engine/shared/validation.js";
 import { canonicalize } from "../canonical/CanonicalJson.js";
 import { HashTag, hexToBytes, isHash, taggedHashHex, utf8 } from "../crypto/hash.js";
-import { GAME_ID_PATTERN, PROTOCOL_VERSION } from "./constants.js";
+import { GAME_ID_PATTERN, GAME_PROTOCOL_VERSIONS, GameProtocol } from "./constants.js";
 import { ProtocolError } from "./ProtocolError.js";
 import { checkEvent } from "./schema.js";
 
@@ -44,7 +44,7 @@ export function genesisHead(gameId) {
  * @param {ProtocolEvent} event
  * @param {number} [version]
  */
-export function eventBody(gameId, event, version = PROTOCOL_VERSION) {
+export function eventBody(gameId, event, version = GameProtocol.V1) {
   return { a: event.a, d: event.d, g: gameId, i: event.i, k: event.k, ms: event.ms, t: event.t, v: version };
 }
 
@@ -55,7 +55,7 @@ export function eventBody(gameId, event, version = PROTOCOL_VERSION) {
  * @param {number} [version]
  * @returns {string}
  */
-export function nextHead(previousHead, gameId, event, version = PROTOCOL_VERSION) {
+export function nextHead(previousHead, gameId, event, version = GameProtocol.V1) {
   if (!isHash(previousHead)) {
     throw new ProtocolError("previous head must be a 32-byte hash as lowercase hex");
   }
@@ -71,12 +71,18 @@ export class EventChain {
   #gameId;
   #head;
   #nextSeq;
+  #version;
 
   /**
-   * @param {{ gameId: string, head?: string, nextSeq?: number }} options omit head/nextSeq for a new game
+   * @param {{ gameId: string, head?: string, nextSeq?: number, version?: number }} options omit head/nextSeq for a new game;
+   *   `version`: the game protocol version (it is hashed into every event)
    */
-  constructor({ gameId, head, nextSeq = 0 }) {
+  constructor({ gameId, head, nextSeq = 0, version = GameProtocol.V1 }) {
     assertGameId(gameId);
+    if (!GAME_PROTOCOL_VERSIONS.includes(version)) {
+      throw new ProtocolError(`unknown game protocol version ${String(version)}`);
+    }
+    this.#version = version;
     if (!Number.isSafeInteger(nextSeq) || nextSeq < 0) {
       throw new ProtocolError("nextSeq must be a non-negative integer");
     }
@@ -103,6 +109,10 @@ export class EventChain {
     return this.#nextSeq;
   }
 
+  get version() {
+    return this.#version;
+  }
+
   /**
    * Validates, numbers and chains an event. Invalid events are programmer
    * errors on the server and throw; nothing is appended.
@@ -112,12 +122,12 @@ export class EventChain {
   append({ k, a, t, ms, d }) {
     const candidate = { a, d, i: this.#nextSeq, k, ms, t };
     const issues = new Issues();
-    checkEvent(issues, candidate, "event");
+    checkEvent(issues, candidate, "event", this.#version);
     if (!issues.isEmpty) {
       throw new ProtocolError(`invalid event: ${issues.list()[0]}`, { problems: issues.list() });
     }
     const event = deepFreeze(structuredClone(candidate));
-    const head = nextHead(this.#head, this.#gameId, event);
+    const head = nextHead(this.#head, this.#gameId, event, this.#version);
     this.#head = head;
     this.#nextSeq += 1;
     return Object.freeze({ event, head });

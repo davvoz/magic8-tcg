@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { ackCheck, checklist, verdictBanner } from "../../verify/checklist.js";
+import { ackCheck, checklist, signatureChecks, verdictBanner } from "../../verify/checklist.js";
 
 function result(overrides = {}) {
   return {
@@ -67,5 +67,17 @@ describe("verifier checklist", () => {
     assert.match(ackCheck(contradicted).detail, /PROOF: .* event\(s\) 11 \(divergent\)/);
     assert.equal(verdictBanner("VALID", contradicted).tone, "bad");
     assert.equal(verdictBanner("VALID", agreed).tone, "good");
+  });
+
+  it("shows signed moves and who authorised the session keys, for v2 games", () => {
+    assert.deepEqual(signatureChecks({ signatures: { status: "NOT_REQUIRED" }, sessions: [] }), [], "v1: nothing to show");
+    const good = signatureChecks({ signatures: { status: "VALID", message: null }, sessions: [{ account: "alice", status: "AUTHORIZED" }, { account: "bob", status: "AUTHORIZED" }] });
+    assert.deepEqual(good.map((check) => [check.label, check.ok]), [["Signed moves", true], ["Session keys", true]]);
+    assert.equal(good[1].detail, "@alice authorized, @bob authorized");
+    const rotated = signatureChecks({ signatures: { status: "VALID", message: null }, sessions: [{ account: "alice", status: "KEY_NOT_CURRENT" }] });
+    assert.equal(rotated[1].ok, null, "a key rotated since proves nothing either way");
+    const bad = signatureChecks({ signatures: { status: "BAD_MOVE_SIGNATURE", message: "move 9 is not signed by s1's session key" }, sessions: [{ account: "bob", status: "FORGED" }] });
+    assert.deepEqual(bad.map((check) => check.ok), [false, false]);
+    assert.equal(checklist(result({ signatures: { status: "VALID", message: null }, sessions: [] }), { root: "luciojolly", indexed: true })[4].label, "Signed moves");
   });
 });

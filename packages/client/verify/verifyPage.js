@@ -4,7 +4,7 @@
  * (verifyGameOnChain). Only textContent is ever written to the page.
  */
 import { GAME_ID_PATTERN, verifyGameOnChain } from "@magic8/protocol";
-import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, recoverSigner } from "@magic8/steem";
+import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, recoverSigner, verifySessionSignature } from "@magic8/steem";
 import { receiptsKey } from "../src/application/online/AckReceipts.js";
 import { checklist, verdictBanner } from "./checklist.js";
 
@@ -99,7 +99,7 @@ async function run() {
   element("raw").hidden = true;
   try {
     const blocks = element("scan").checked ? null : await indexedBlocks(gameId);
-    const result = await verifyGameOnChain({ gameId, reader: readerFor(nodes.length > 0 ? nodes : DEFAULT_NODES), rootAccount: root, blocks, fetchContent, acks: keptAcks(gameId), recoverSigner });
+    const result = await verifyGameOnChain({ gameId, reader: readerFor(nodes.length > 0 ? nodes : DEFAULT_NODES), rootAccount: root, blocks, fetchContent, acks: keptAcks(gameId), recoverSigner, verifyMoveSignature: verifySessionSignature });
     const banner = verdictBanner(result.verdict, result.acks);
     showBanner(banner.text, banner.tone);
     showChecks(checklist(result, { root, indexed: blocks !== null }));

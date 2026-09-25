@@ -7,7 +7,7 @@
  * The recorder holds the game secret: it lives on the server only, next to
  * the authoritative engine, and is revealed by `finished` / `aborted`.
  */
-import { EntropySource, EventKind, GameMode, SEATS } from "./constants.js";
+import { EntropySource, EventKind, GameMode, GameProtocol, SEATS } from "./constants.js";
 import { canonicalDeck, deckCommitment, deriveEngineSeed, firstSeatFor, seedCommitment, stateCommitment, stateSalt } from "./commitments.js";
 import { EventChain } from "./EventChain.js";
 import { ProtocolError } from "./ProtocolError.js";
@@ -28,14 +28,14 @@ export class GameRecorder {
   #entropies = new Map();
 
   /**
-   * @param {{ gameId: string, secret: string, decks: readonly DeckEntries[], head?: string, nextSeq?: number, entropies?: Readonly<Record<string, string>> }} options
-   *   `head`/`nextSeq`/`entropies` restore a recorder after a restart
+   * @param {{ gameId: string, secret: string, decks: readonly DeckEntries[], head?: string, nextSeq?: number, entropies?: Readonly<Record<string, string>>, version?: number }} options
+   *   `head`/`nextSeq`/`entropies` restore a recorder after a restart; `version`: the game protocol version
    */
-  constructor({ gameId, secret, decks, head, nextSeq, entropies = {} }) {
+  constructor({ gameId, secret, decks, head, nextSeq, entropies = {}, version = GameProtocol.V1 }) {
     if (!Array.isArray(decks) || decks.length !== SEATS.length) {
       throw new ProtocolError(`a game needs ${SEATS.length} decks`);
     }
-    this.#chain = new EventChain({ gameId, head, nextSeq });
+    this.#chain = new EventChain({ gameId, head, nextSeq, version });
     this.#secret = secret;
     this.#salt = stateSalt(secret);
     this.#decks = Object.freeze(decks.map((deck) => canonicalDeck(deck)));
@@ -54,6 +54,11 @@ export class GameRecorder {
 
   get nextSeq() {
     return this.#chain.nextSeq;
+  }
+
+  /** The game protocol version: from 2 on, player moves are signed. */
+  get version() {
+    return this.#chain.version;
   }
 
   /**
@@ -114,11 +119,31 @@ export class GameRecorder {
   }
 
   /**
-   * @param {{ seat: string, command: Readonly<Record<string, unknown>>, clock: EventClock }} input `command` as the engine accepted it
+   * v2: a seat's session key, with the authorisation its account signed (docs/tcg/12).
+   * @param {{ seat: string, key: string, authorization: string, clock: EventClock }} input
    * @returns {ChainedEvent}
    */
-  move({ seat, command, clock }) {
-    return this.#chain.append({ k: EventKind.MOVE, a: seat, t: clock.turn, ms: clock.ms, d: withoutPlayerId(command) });
+  session({ seat, key, authorization, clock }) {
+    if (this.version < GameProtocol.V2) {
+      throw new ProtocolError("session keys exist from game protocol v2");
+    }
+    return this.#chain.append({ k: EventKind.SESSION, a: seat, t: clock.turn, ms: clock.ms, d: { auth: authorization, key } });
+  }
+
+  /**
+   * @param {{ seat: string, command: Readonly<Record<string, unknown>>, clock: EventClock, signed?: { commandId: string, expectedVersion: number, signature: string } }} input
+   *   `command` as the engine accepted it; `signed` (v2): what the player signed it with
+   * @returns {ChainedEvent}
+   */
+  move({ seat, command, clock, signed }) {
+    if (this.version < GameProtocol.V2) {
+      return this.#chain.append({ k: EventKind.MOVE, a: seat, t: clock.turn, ms: clock.ms, d: withoutPlayerId(command) });
+    }
+    if (signed === undefined) {
+      throw new ProtocolError("a v2 move carries the player's signature");
+    }
+    const d = { cid: signed.commandId, cmd: withoutPlayerId(command), ev: signed.expectedVersion, sig: signed.signature };
+    return this.#chain.append({ k: EventKind.MOVE, a: seat, t: clock.turn, ms: clock.ms, d });
   }
 
   /**

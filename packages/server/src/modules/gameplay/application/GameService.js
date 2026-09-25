@@ -16,7 +16,7 @@
  * watch ends when they stop, disconnect, or the game ends.
  */
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
-import { GameMode, GameRecorder, PROTOCOL_VERSION, ackMessage, bytesToHex, canonicalDeck, deckCommitment, hexToBytes, seedCommitment } from "@magic8/protocol";
+import { GameMode, GameRecorder, LATEST_GAME_PROTOCOL, ackMessage, bytesToHex, canonicalDeck, deckCommitment, hexToBytes, seedCommitment } from "@magic8/protocol";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { ulid } from "../../../kernel/ulid.js";
 import { DEFAULT_TIME_POLICY } from "../domain/TurnClock.js";
@@ -46,6 +46,8 @@ export class GameService {
   #network;
   #sealer;
   #ackSigner;
+  #signatures;
+  #gameProtocol;
   /** @type {((summary: import("./ports.js").FinishedGame) => Promise<void>)[]} */
   #finishedListeners = [];
   /** @type {Map<string, GameActor>} */
@@ -73,9 +75,11 @@ export class GameService {
    *   timePolicy?: Partial<import("../domain/TurnClock.js").TimePolicy>,
    *   sealingPolicy?: Partial<typeof import("./RecordSealer.js").DEFAULT_SEALING_POLICY>,
    *   ackSigner?: import("./ports.js").AckSigner | null,
-   * }} deps
+   *   signatures?: import("./ports.js").MoveSignatures | null,
+   *   gameProtocol?: number,
+   * }} deps `gameProtocol`: the version new games are created with (2: signed moves, which needs `signatures`)
    */
-  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, outbox, timePolicy = {}, sealingPolicy = {}, ackSigner = null }) {
+  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, outbox, timePolicy = {}, sealingPolicy = {}, ackSigner = null, signatures = null, gameProtocol = LATEST_GAME_PROTOCOL }) {
     assertImplements(repository, GAME_REPOSITORY_METHODS, "GameRepository");
     this.#repository = repository;
     this.#currentContent = currentContent;
@@ -90,6 +94,8 @@ export class GameService {
     this.#logger = logger;
     this.#network = network;
     this.#ackSigner = ackSigner;
+    this.#signatures = signatures;
+    this.#gameProtocol = gameProtocol;
     this.#timePolicy = Object.freeze({ ...DEFAULT_TIME_POLICY, ...timePolicy });
     this.#sealer = new RecordSealer({ store: /** @type {any} */ (repository), outbox, clock, unitOfWork, logger, policy: sealingPolicy });
   }
@@ -155,7 +161,7 @@ export class GameService {
     const id = ulid(this.#clock, this.#random);
     const secret = bytesToHex(this.#random.bytes(SECRET_BYTES));
     const decks = entrants.map((entrant) => canonicalDeck(entrant.deck.map((entry) => [entry.cardId, entry.count])));
-    const recorder = new GameRecorder({ gameId: id, secret, decks });
+    const recorder = new GameRecorder({ gameId: id, secret, decks, version: this.#gameProtocol });
     const now = this.#clock.now();
     const created = recorder.created({ mode, network: this.#network, engineVersion, contentHash: hash, accounts: entrants.map((entrant) => entrant.account), ms: 0 });
     /** @type {import("./ports.js").StoredGame} */
@@ -164,7 +170,7 @@ export class GameService {
       mode,
       status: GameStatus.CREATED,
       network: this.#network,
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: this.#gameProtocol,
       engineVersion,
       contentHash: hash,
       sealedSecret: this.#secrets.seal(hexToBytes(secret), secretContext(id)),
@@ -206,7 +212,7 @@ export class GameService {
     this.#actors.set(game.id, this.#newActor(game, recorder, this.#currentContent().content));
     for (const player of game.players) {
       const opponent = game.players.find((other) => other.seat !== player.seat);
-      this.#notifier.send(player.userId, "match.found", { gameId: game.id, seat: player.seat, opponent: { account: opponent?.account ?? null }, seedCommit: game.seedCommit, entropyDeadline: game.createdAt + this.#timePolicy.entropyMs });
+      this.#notifier.send(player.userId, "match.found", { gameId: game.id, seat: player.seat, opponent: { account: opponent?.account ?? null }, seedCommit: game.seedCommit, protocol: game.protocolVersion, entropyDeadline: game.createdAt + this.#timePolicy.entropyMs });
     }
   }
 
@@ -234,27 +240,37 @@ export class GameService {
   }
 
   /**
+   * v2: authorises the key the player's browser signs moves with.
    * @param {string} userId
-   * @param {{ gameId: unknown, commandId: unknown, expectedVersion: unknown, command: unknown }} request
+   * @param {{ gameId: unknown, key: unknown, authorization: unknown }} request
    */
-  async command(userId, { gameId, commandId, expectedVersion, command }) {
+  async session(userId, { gameId, key, authorization }) {
     const actor = await this.#actorFor(gameId);
-    if (actor === null) {
-      return Object.freeze({ commandId: String(commandId).slice(0, 36), ok: false, error: Object.freeze({ code: GameError.NOT_IN_GAME, message: "no such game" }) });
-    }
-    return actor.command(userId, { commandId, expectedVersion, command });
+    return actor === null ? notInGame() : actor.session(userId, { key, authorization });
   }
 
   /**
    * @param {string} userId
-   * @param {{ gameId: unknown, commandId: unknown }} request
+   * @param {{ gameId: unknown, commandId: unknown, expectedVersion: unknown, command: unknown, signature?: unknown }} request
    */
-  async concede(userId, { gameId, commandId }) {
+  async command(userId, { gameId, commandId, expectedVersion, command, signature }) {
     const actor = await this.#actorFor(gameId);
     if (actor === null) {
       return Object.freeze({ commandId: String(commandId).slice(0, 36), ok: false, error: Object.freeze({ code: GameError.NOT_IN_GAME, message: "no such game" }) });
     }
-    return actor.concede(userId, commandId);
+    return actor.command(userId, { commandId, expectedVersion, command, signature });
+  }
+
+  /**
+   * @param {string} userId
+   * @param {{ gameId: unknown, commandId: unknown, expectedVersion?: unknown, signature?: unknown }} request
+   */
+  async concede(userId, { gameId, commandId, expectedVersion, signature }) {
+    const actor = await this.#actorFor(gameId);
+    if (actor === null) {
+      return Object.freeze({ commandId: String(commandId).slice(0, 36), ok: false, error: Object.freeze({ code: GameError.NOT_IN_GAME, message: "no such game" }) });
+    }
+    return actor.concede(userId, { commandId, expectedVersion, signature });
   }
 
   /**
@@ -391,7 +407,7 @@ export class GameService {
     }
     const secret = bytesToHex(this.#secrets.open(game.sealedSecret, secretContext(gameId)));
     const entropies = Object.fromEntries(game.players.filter((player) => player.entropy !== null).map((player) => [player.seat, player.entropy]));
-    const recorder = new GameRecorder({ gameId, secret, decks: game.players.map((player) => player.deck), head: game.chainHead, nextSeq: game.lastEventSeq + 1, entropies });
+    const recorder = new GameRecorder({ gameId, secret, decks: game.players.map((player) => player.deck), head: game.chainHead, nextSeq: game.lastEventSeq + 1, entropies, version: game.protocolVersion });
     const actor = this.#newActor(game, recorder, version.content);
     actor.replay(await this.#repository.listEvents(gameId));
     this.#actors.set(gameId, actor);
@@ -427,6 +443,7 @@ export class GameService {
       },
       sealer: this.#sealer,
       signAck: (fields) => this.#signAck(fields),
+      signatures: this.#signatures,
       onFinished: (summary) => {
         for (const listener of this.#finishedListeners) {
           listener(summary).catch((error) => this.#logger.error("a finished-game listener failed", { game: summary.gameId, error: error instanceof Error ? error.message : String(error) }));
