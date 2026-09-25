@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 
-import { packEpochCommitment } from "@magic8/protocol";
+import { packEpochAnnouncement, packEpochCommitment, packEpochReveal } from "@magic8/protocol";
 import { SecretBox } from "../../src/kernel/crypto/SecretBox.js";
 import { buildTestApp, deterministicRandom, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
@@ -185,6 +185,14 @@ describe("marketplace orders over HTTP", () => {
     const revealed = (await new ApiClient(server.base).get("/api/pack-epochs")).json.epochs.find((epoch) => epoch.id === 1);
     assert.match(revealed.secret, /^[0-9a-f]{64}$/);
     assert.equal(packEpochCommitment(revealed.secret), revealed.commit, "the revealed secret matches the commitment published before the sale");
+    const published = await setup.database.rows("SELECT payload, priority, status FROM blockchain_events WHERE kind = 'EPOCH' ORDER BY id");
+    assert.deepEqual(
+      published.map((row) => row.payload),
+      [packEpochAnnouncement(1, epochs[1].commit), packEpochAnnouncement(2, epochs[0].commit), packEpochReveal(1, revealed.secret)],
+      "each commitment is published when its epoch opens, the secret when it is revealed",
+    );
+    assert.ok(published.every((row) => row.priority === 0 && row.status === "BUILT"), "ahead of game records");
+    assert.deepEqual(await setup.app.epochs.revealSettled(), [], "revealed once");
     const sealed = await setup.database.rows("SELECT secret_encrypted FROM rng_epochs WHERE id = 1");
     assert.ok(!Buffer.from(sealed[0].secret_encrypted).toString("hex").includes(revealed.secret), "stored encrypted");
     await bobClient.post(`/api/orders/${next.json.order.id}/cancel`, {});

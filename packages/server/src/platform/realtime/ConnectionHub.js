@@ -10,6 +10,11 @@
 export class ConnectionHub {
   /** @type {Map<string, Connection>} */
   #connections = new Map();
+
+  /** Users with a live connection. */
+  get size() {
+    return this.#connections.size;
+  }
   #logger;
 
   /** @param {{ logger: import("../../kernel/logger.js").Logger }} deps */

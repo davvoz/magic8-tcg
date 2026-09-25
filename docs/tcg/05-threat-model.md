@@ -1,6 +1,6 @@
 # 05 — Threat model
 
-**Stato:** proposta, 2026-09-24. Da rivedere a ogni milestone e prima dell'apertura pubblica.
+**Stato:** rivisto in M6 (2026-09-24, §7). Da rivedere a ogni milestone e prima dell'apertura pubblica.
 
 ## 1. Asset da proteggere
 
@@ -48,7 +48,7 @@ Account shop: nessuna chiave sul server.  Account root: chiave active solo offli
 | T8 | **Pagamento revertito** | la tx finisce in un blocco poi scartato da un micro-fork | Fulfilment solo dopo il blocco irreversibile | test con provider finto che "perde" la tx |
 | T9 | **Duplicazione di carte** | ripetere il fulfilment, race sul serial | Conio solo dentro la transazione `PAYMENT_VERIFIED → FULFILLED`; serial da contatore con lock; chiave di origine univoca; nessun endpoint di conio | test `InventoryService` concorrente |
 | T10 | **Manipolazione dello stato di partita** | modificare lo snapshot nel client | Il client riceve solo proiezioni; lo stato del client viene sostituito a ogni `game.state` | — |
-| T11 | **Informazioni nascoste** | leggere la mano avversaria dai messaggi | Snapshot per prospettiva e redazione degli eventi (già nel motore); checkpoint salati; seed segreto fino alla fine; mazzo avversario solo come impegno | test di redazione |
+| T11 | **Informazioni nascoste** | leggere la mano avversaria dai messaggi | Snapshot per prospettiva e redazione degli eventi (già nel motore; gli spettatori ricevono la prospettiva `SPECTATOR`, senza nessuna mano, 10); checkpoint salati; seed segreto fino alla fine; mazzo avversario solo come impegno | test di redazione |
 | T12 | **Predizione del RNG** | brute-force del seed a 32 bit (vedi 00, E1) | ChaCha20 con chiave 256 bit; seed da commit-reveal con entropia dei giocatori | test del generatore (vettori RFC 8439), test commit-reveal |
 | T13 | **Abuso del WebSocket** | flood di messaggi, messaggi enormi, mille connessioni | Autenticazione all'upgrade, controllo `Origin`, limite dimensione, token bucket, una connessione per utente, timeout di heartbeat, backpressure sui buffer in uscita | test del gateway WS |
 | T14 | **Cross-site WebSocket hijacking / CSRF** | pagina malevola apre `wss://…/ws` con i cookie dell'utente | allowlist `Origin` sull'upgrade; `SameSite=Strict`; header custom sulle richieste mutanti | test HTTP/WS |
@@ -64,6 +64,13 @@ Account shop: nessuna chiave sul server.  Account root: chiave active solo offli
 | T24 | **Collusione in classificata** | due account propri che si passano vittorie | Ricompense senza valore di mercato nella v1; rilevamento statistico (stesse coppie, concessioni rapide) nella milestone 7 | — |
 | T25 | **Injection** | SQL, JSON prototype pollution, XSS nel canvas | Solo query parametrizzate; parser JSON con controllo di chiavi (`__proto__`, `constructor`) e limiti di profondità; il client disegna su canvas senza `innerHTML` (test di architettura esistente) | test di validazione |
 | T26 | **Denial of service applicativo** | challenge di login a raffica, ordini a raffica | Rate limit per IP/utente, limiti di ordini aperti per utente, scadenza e pulizia dei challenge | test rate limiter |
+| T27 | **Indirizzo falsificato dietro il proxy** | il client scrive `X-Forwarded-For: 1.2.3.4` diverso a ogni richiesta per sfuggire ai limiti per indirizzo | Si usa solo l'ultimo elemento dell'header, quello aggiunto dal proxy; senza `M8_TRUST_PROXY` l'header è ignorato | test `clientAddress` |
+| T28 | **Verifica usata per sovraccaricare** | chiamate a raffica a `/api/games/:id/verification` (ognuna legge la catena) | Rate limit per indirizzo, al massimo 2 verifiche contemporanee, risultato VALID in cache | test `GameVerification` |
+| T29 | **Pacchetti decisi dopo il pagamento** | il server sceglie il segreto dell'epoca dopo aver visto il txId del pagamento | L'impegno dell'epoca deve essere in un blocco prima dell'ordine (vendite bloccate finché non lo è); il verificatore dei pacchetti controlla impegno < pagamento | test pubblicazione, `verifyOrderPacks` |
+| T30 | **Rimborso dichiarato ma non pagato** | un operatore (o un attaccante nel pannello) segna un rimborso come pagato | Il pannello non può chiudere rimborsi: li chiude solo il trasferimento esatto visto sulla catena e confermato da 2 nodi | test admin |
+| T31 | **Spettatori usati per sovraccaricare** | molti utenti guardano la stessa partita, o uno guarda molte partite, per moltiplicare i messaggi del server | Al massimo 50 spettatori per partita e una partita per utente; limiti di messaggi della connessione; lista delle partite con limite per indirizzo e cache (10) | test `spectators` |
+| T32 | **Il server pubblica una partita diversa da quella giocata** | accetta una mossa e poi pubblica un'altra storia, o la omette | Ack firmati con una chiave che il root nomina sulla catena; il client li controlla e li conserva; il verificatore li confronta con la catena (`DIVERGENT`, `OMITTED`) (11) | test `acks`, test di pubblicazione |
+| T33 | **Il server gioca al posto di un giocatore** | pubblica, a nome di un giocatore, mosse che il giocatore non ha fatto (per favorire l'avversario o per chiudere una partita) | Protocollo v2: ogni mossa è firmata da una chiave di sessione non esportabile che l'account del giocatore autorizza con Keychain; il verificatore rifiuta una mossa non firmata o firmata da altri. Le sole mosse del server sono le `FORCED_MOVE`, limitate a passare, finire il turno o arrendersi (12) | test `signedMoves` (protocollo, server, client) |
 
 ## 5. Rischi residui accettati (v1)
 
@@ -75,3 +82,23 @@ Account shop: nessuna chiave sul server.  Account root: chiave active solo offli
 ## 6. Obiettivi di qualità statica
 
 SonarQube: 0 bug, 0 vulnerabilità, 0 security hotspot non rivisti, duplicazione < 3 %, copertura ≥ 85 % su `engine`, `protocol`, `steem` e moduli di dominio del server. ESLint allineato alle regole Sonar (già configurato nel fork) più `no-restricted-syntax` per vietare `parseFloat` sugli importi e `JSON.parse` fuori dal parser sicuro nel server.
+
+## 7. Revisione M6 (2026-09-24)
+
+Ogni minaccia di §4 è stata ripercorsa sul codice. Problemi trovati e corretti:
+
+| Gravità | Problema | Correzione |
+|---|---|---|
+| Alta | Dietro il proxy l'indirizzo del client era il **primo** elemento di `X-Forwarded-For`, scritto dal client: tutti i limiti per indirizzo (login, WebSocket, API) si aggiravano cambiandolo a ogni richiesta (T27) | Si usa l'elemento aggiunto dal proxy (l'ultimo), in HTTP e WebSocket |
+| Media | Nessun limite ai messaggi in uscita non letti: un client che smette di leggere faceva accumulare memoria al server (T13) | Il client viene chiuso oltre 512 KB non letti; si riconnette e si risincronizza |
+| Media | Upgrade WebSocket senza limite: ogni tentativo con un cookie inventato costava una lettura del database (T13, T26) | Limite per indirizzo prima di cercare la sessione |
+| Media | La verifica lato server leggeva tutta la storia del root a ogni chiamata (T28) | Concorrenza limitata e cache |
+| Bassa | Il corpo JSON e i messaggi WebSocket usavano `JSON.parse` senza i controlli promessi da T25 | Un solo parser (`kernel/json.js`): niente chiavi `__proto__`/`constructor`/`prototype`, profondità limitata; ESLint vieta `JSON.parse` altrove nel server |
+
+Verificati senza problemi:
+- **Autorizzazione e dati:** query tutte parametrizzate; possesso dei mazzi all'ingresso in coda (T2); un solo biglietto in coda per utente (indice unico); una partita per utente.
+- **Sessioni e login:** token di sessione conservati solo come hash; audit log a catena di hash con verifica dal pannello.
+- **Chiavi:** chiavi del broadcaster solo posting, controllate all'avvio.
+- **Qualità statica:** regole SonarJS (quelle dell'analizzatore SonarQube) su tutto il codice sorgente, 0 segnalazioni. Copertura delle righe: engine 97%, protocol 94%, steem 96%, server 96% (unica eccezione il driver `pg` di produzione, provato solo su un PostgreSQL vero).
+
+Resta da fare a mano: un'analisi SonarQube vera sul repository (le regole ESLint ne coprono i controlli JavaScript, non la duplicazione e gli hotspot), e un penetration test esterno prima dell'apertura pubblica.

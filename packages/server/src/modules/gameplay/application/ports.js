@@ -24,9 +24,40 @@
  * @property {(gameId: string, engineVersion: number, commitment: string) => Promise<void>} insertSnapshot
  * @property {() => Promise<readonly string[]>} listActive ids of games not finished or aborted
  * @property {(userId: string) => Promise<string | null>} activeGameOf
+ * @property {(query: { mode: string, since: number, limit: number }) => Promise<readonly FinishedGame[]>} listFinished finished games of a mode since a time, oldest first
+ * @property {(userId: string, mode: string) => Promise<number>} countFinished games of a mode the user finished (any result)
+ *
+ * @typedef {object} RecordStore sealing of game events into protocol records (docs/tcg/03 §9)
+ * @property {(gameId: string) => Promise<Readonly<{ network: string, protocolVersion: number }> | null>} lockForSealing locks the game row until the unit of work ends
+ * @property {(gameId: string) => Promise<readonly ChainedEvent[]>} listUnsealed in sequence order
+ * @property {(gameId: string) => Promise<number>} countUnsealed
+ * @property {(gameId: string, seq: number) => Promise<string | null>} headAt the chain head after event `seq`
+ * @property {(gameId: string) => Promise<number>} nextRecordSeq
+ * @property {(gameId: string, fromSeq: number, toSeq: number, recordSeq: number) => Promise<void>} markSealed
+ * @property {(before: number) => Promise<readonly string[]>} gamesWithUnsealedBefore games whose oldest unsealed event happened at or before `before`
+ *
+ * @typedef {object} RecordOutbox where sealed records wait to be published (the chain module)
+ * @property {(entry: { network: string, records: readonly import("@magic8/protocol").SealedRecord[] }) => Promise<void>} enqueueGameRecords
+ *
+ * @typedef {Readonly<{ gameId: string, mode: string, finishedAt: number, winnerSeat: string | null, endReason: string, turn: number,
+ *   players: readonly Readonly<{ seat: string, userId: string, account: string }>[] }>} FinishedGame what listeners learn when a game ends
  *
  * @typedef {object} GameNotifier delivers messages to a user's live connection, if any
  * @property {(userId: string, type: string, data: unknown) => void} send
  */
 
-export const GAME_REPOSITORY_METHODS = Object.freeze(["insertGame", "findGame", "listEvents", "appendEvents", "setEntropy", "setResults", "findAck", "insertCommand", "insertSnapshot", "listActive", "activeGameOf"]);
+/**
+ * @typedef {object} MoveSignatures checks the signatures of game protocol v2 (docs/tcg/12)
+ * @property {(input: { account: string, message: string, signature: string }) => Promise<boolean>} authorizesSession whether `signature` over `message` is by a posting key of `account` (Keychain)
+ * @property {(message: string, signature: string, sessionKey: string) => boolean} verifiesMove whether the session key signed the move
+ */
+
+/**
+ * @typedef {object} AckSigner signs acks with the server's ack key (never a key that holds funds or publishes)
+ * @property {string} publicKey "STM…"
+ * @property {(message: string) => string} sign the message's compact signature, as Keychain's signBuffer makes it
+ */
+
+export const GAME_REPOSITORY_METHODS = Object.freeze(["insertGame", "findGame", "listEvents", "appendEvents", "setEntropy", "setResults", "findAck", "insertCommand", "insertSnapshot", "listActive", "activeGameOf", "listFinished", "countFinished"]);
+
+export const RECORD_STORE_METHODS = Object.freeze(["lockForSealing", "listUnsealed", "countUnsealed", "headAt", "nextRecordSeq", "markSealed", "gamesWithUnsealedBefore"]);

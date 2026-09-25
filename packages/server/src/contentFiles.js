@@ -1,18 +1,20 @@
 /**
  * Reads everything data-driven the server needs from the repository's
- * data/ directory: the game content bundle and the economy files. Values
+ * data/ directory: the game content bundle, the economy files and the
+ * ranked settings. Values
  * are raw JSON here; the modules validate them when the app is composed.
  */
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { readContentDirectory } from "./modules/catalog/index.js";
+import { parseJson } from "./kernel/json.js";
 
 /**
  * @param {string} path
  * @returns {Promise<unknown>}
  */
-const readJson = (path) => readFile(path, "utf8").then(JSON.parse);
+const readJson = (path) => readFile(path, "utf8").then((text) => parseJson(text, { maxDepth: 64 }));
 
 /**
  * Every *.json file of a directory, in file name order (stable across machines).
@@ -25,17 +27,18 @@ async function readJsonDirectory(directory) {
 
 /**
  * @param {string} dataDirectory
- * @returns {Promise<Readonly<{ raw: import("@magic8/engine/domain/content/GameContent.js").RawContent, starterOffer: unknown, assets: unknown, market: import("./modules/marketplace/index.js").RawMarketData }>>}
+ * @returns {Promise<Readonly<{ raw: import("@magic8/engine/domain/content/GameContent.js").RawContent, starterOffer: unknown, assets: unknown, market: import("./modules/marketplace/index.js").RawMarketData, ranked: unknown }>>}
  */
 export async function readServerContent(dataDirectory) {
   const economy = join(dataDirectory, "economy");
-  const [raw, starterOffer, assets, rarities, dropTables, products] = await Promise.all([
+  const [raw, starterOffer, assets, rarities, dropTables, products, ranked] = await Promise.all([
     readContentDirectory(dataDirectory),
     readJson(join(economy, "starter-offer.json")),
     readJson(join(economy, "assets.json")),
     readJson(join(economy, "rarities.json")),
     readJsonDirectory(join(economy, "drop-tables")),
     readJsonDirectory(join(economy, "products")),
+    readJson(join(dataDirectory, "ranked", "ranked.json")),
   ]);
-  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, products }) });
+  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, products }), ranked });
 }

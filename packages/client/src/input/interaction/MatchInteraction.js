@@ -94,7 +94,11 @@ export class MatchInteraction {
       return this.#attackers.length === 0 ? "Skip combat" : `Attack with ${this.#attackers.length}`;
     }
     if (this.#mode === InteractionMode.BLOCKERS) {
-      return this.#blocks.length === 0 ? "No blocks" : `Confirm ${this.#blocks.length} block${this.#blocks.length === 1 ? "" : "s"}`;
+      const count = this.#blocks.length;
+      if (count === 0) {
+        return "No blocks";
+      }
+      return count === 1 ? "Confirm 1 block" : `Confirm ${count} blocks`;
     }
     return null;
   }

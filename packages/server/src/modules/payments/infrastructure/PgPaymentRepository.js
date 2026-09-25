@@ -29,6 +29,28 @@ function toPayment(row) {
   });
 }
 
+/** A refund with the network of the payment it returns. */
+const REFUND_SELECT = "SELECT r.*, p.network FROM refunds r JOIN payments p ON p.id = r.payment_id";
+
+/**
+ * @param {import("../../../platform/db/Database.js").Row} row
+ * @returns {import("../application/ports.js").Refund}
+ */
+function toRefund(row) {
+  return Object.freeze({
+    id: row.id,
+    network: row.network,
+    paymentId: row.payment_id,
+    toAccount: row.to_account,
+    asset: row.asset,
+    amount: row.amount,
+    status: row.status,
+    createdAt: fromTimestamp(row.created_at),
+    transfer: row.refund_tx_id === null ? null : Object.freeze({ txId: row.refund_tx_id, opIndex: row.refund_op_index, blockNum: row.refund_block_num, time: fromTimestamp(row.refund_time) }),
+    confirmedAt: row.confirmed_at === null ? null : fromTimestamp(row.confirmed_at),
+  });
+}
+
 /** @implements {import("../application/ports.js").PaymentRepository} */
 export class PgPaymentRepository {
   #db;
@@ -100,8 +122,39 @@ export class PgPaymentRepository {
   }
 
   async listPendingRefunds(limit) {
-    const { rows } = await this.#db.query("SELECT * FROM refunds WHERE status = 'PENDING' ORDER BY created_at, id LIMIT $1", [limit]);
-    return Object.freeze(rows.map((row) => Object.freeze({ id: row.id, paymentId: row.payment_id, toAccount: row.to_account, asset: row.asset, amount: row.amount, status: row.status, createdAt: fromTimestamp(row.created_at) })));
+    return this.listRefunds(["PENDING"], limit);
+  }
+
+  async listRefunds(statuses, limit) {
+    const { rows } = await this.#db.query(`${REFUND_SELECT} WHERE r.status = ANY($1::text[]) ORDER BY r.created_at, r.id LIMIT $2`, [statuses, limit]);
+    return Object.freeze(rows.map(toRefund));
+  }
+
+  async findRefund(id) {
+    const row = await this.#db.maybeOne(`${REFUND_SELECT} WHERE r.id = $1`, [id]);
+    return row === null ? null : toRefund(row);
+  }
+
+  async markRefundSent(id, transfer, at) {
+    const row = await this.#db.maybeOne(
+      `UPDATE refunds SET status = 'SENT', refund_tx_id = $2, refund_op_index = $3, refund_block_num = $4, refund_time = $5, updated_at = $6
+        WHERE id = $1 AND status = 'PENDING' RETURNING id`,
+      [id, transfer.txId, transfer.opIndex, transfer.blockNum, toTimestamp(transfer.time), toTimestamp(at)],
+    );
+    return row === null ? null : this.findRefund(id);
+  }
+
+  async confirmRefund(id, at) {
+    const row = await this.#db.maybeOne("UPDATE refunds SET status = 'CONFIRMED', confirmed_at = $2, updated_at = $2 WHERE id = $1 AND status = 'SENT' RETURNING id", [id, toTimestamp(at)]);
+    return row === null ? null : this.findRefund(id);
+  }
+
+  async reopenRefund(id, at) {
+    const row = await this.#db.maybeOne(
+      "UPDATE refunds SET status = 'PENDING', refund_tx_id = NULL, refund_op_index = NULL, refund_block_num = NULL, refund_time = NULL, updated_at = $2 WHERE id = $1 AND status = 'SENT' RETURNING id",
+      [id, toTimestamp(at)],
+    );
+    return row === null ? null : this.findRefund(id);
   }
 
   async getCursor(name) {

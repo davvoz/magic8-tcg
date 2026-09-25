@@ -42,7 +42,11 @@ export function loadConfig(env) {
     serveClient: parseBoolean(env.M8_SERVE_CLIENT ?? "true", "M8_SERVE_CLIENT"),
     databaseUrl: parseDatabaseUrl(env.M8_DATABASE_URL, secure),
     shopAccounts: Object.freeze({ steem: parseAccount(env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_SHOP_ACCOUNT") }),
+    ...parseChainSettings(env),
     ...parseDataKeys(env, secure),
+    ackKey: parseAckKey(env, secure),
+    // Game protocol v2 (signed moves, docs/tcg/12) unless explicitly turned off.
+    gameProtocol: gameProtocolOf(env.M8_SIGNED_MOVES),
   });
 }
 
@@ -95,6 +99,110 @@ function parseKeyId(value, name) {
 function parseKeyHex(value, name) {
   if (!/^[0-9a-f]{64}$/.test(value)) {
     throw new ConfigError(`${name}: expected 64 lowercase hex characters`);
+  }
+  return value;
+}
+
+/**
+ * The root account whose manifests authorise the broadcasters (docs/tcg/03 §11), and the broadcaster keys.
+ * @param {Readonly<Record<string, string | undefined>>} env
+ */
+function parseChainSettings(env) {
+  return {
+    rootAccounts: Object.freeze({ steem: parseAccount(env.M8_ROOT_ACCOUNT ?? "luciojolly", "M8_ROOT_ACCOUNT") }),
+    broadcasterKeys: parseBroadcasterKeys(env.M8_BROADCASTER_KEYS ?? ""),
+    metricsToken: parseMetricsToken(env.M8_METRICS_TOKEN),
+    adminAccounts: Object.freeze({ steem: parseAccountList(env.M8_ADMIN_ACCOUNTS ?? env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_ADMIN_ACCOUNTS") }),
+  };
+}
+
+/**
+ * M8_METRICS_TOKEN: the bearer token the monitoring system presents to
+ * /api/metrics. Unset: the endpoint does not exist.
+ * @param {string | undefined} value
+ */
+function parseMetricsToken(value) {
+  if (value === undefined || value === "") {
+    return null;
+  }
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(value)) {
+    throw new ConfigError("M8_METRICS_TOKEN: 32 to 128 characters of [A-Za-z0-9_-] (e.g. openssl rand -hex 32)");
+  }
+  return value;
+}
+
+/**
+ * @param {string} value comma-separated account names
+ * @param {string} name
+ */
+function parseAccountList(value, name) {
+  return Object.freeze(value.split(",").map((account) => account.trim()).filter((account) => account !== "").map((account) => parseAccount(account, name)));
+}
+
+/**
+ * M8_BROADCASTER_KEYS: "account:WIF,account:WIF", the posting keys of the
+ * broadcaster accounts (docs/tcg/03 §2). Never an active or owner key: the
+ * server checks the account's authorities at startup and refuses to run.
+ * Empty: nothing is published, records wait in the outbox.
+ * @param {string} value
+ * @returns {ReadonlyMap<string, string>}
+ */
+function parseBroadcasterKeys(value) {
+  /** @type {Map<string, string>} */
+  const keys = new Map();
+  for (const entry of value.split(",").map((text) => text.trim()).filter((text) => text !== "")) {
+    const separator = entry.indexOf(":");
+    const account = parseAccount(entry.slice(0, Math.max(separator, 0)), "M8_BROADCASTER_KEYS");
+    const wif = entry.slice(separator + 1);
+    if (!/^5[1-9A-HJ-NP-Za-km-z]{50}$/.test(wif)) {
+      throw new ConfigError(`M8_BROADCASTER_KEYS: the key of ${account} is not a WIF private key`);
+    }
+    if (keys.has(account)) {
+      throw new ConfigError(`M8_BROADCASTER_KEYS: ${account} is listed twice`);
+    }
+    keys.set(account, wif);
+  }
+  return keys;
+}
+
+/**
+ * M8_SIGNED_MOVES: "true" (default) creates games in protocol v2, where
+ * players sign every move; "false" keeps v1 (tools, old clients).
+ * @param {string | undefined} value
+ * @returns {1 | 2} the game protocol version of new games
+ */
+function gameProtocolOf(value) {
+  if (value === undefined || value === "" || value === "true") {
+    return 2;
+  }
+  if (value === "false") {
+    return 1;
+  }
+  throw new ConfigError('M8_SIGNED_MOVES: "true" or "false"');
+}
+
+/**
+ * M8_ACK_KEY: the WIF private key that signs acks to players (docs/tcg/11).
+ * A key of its own, never a broadcaster's or any account's: it controls
+ * nothing, and the root names its public key in an `ack_keys` manifest.
+ * Required for https; in development an unset key means a new key per start.
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @param {boolean} secure
+ * @returns {string | null}
+ */
+function parseAckKey(env, secure) {
+  const value = env.M8_ACK_KEY ?? "";
+  if (value === "") {
+    if (secure) {
+      throw new ConfigError("M8_ACK_KEY: required for an https deployment (a WIF private key used for nothing else)");
+    }
+    return null;
+  }
+  if (!/^5[1-9A-HJ-NP-Za-km-z]{50}$/.test(value)) {
+    throw new ConfigError("M8_ACK_KEY: not a WIF private key");
+  }
+  if ((env.M8_BROADCASTER_KEYS ?? "").includes(value)) {
+    throw new ConfigError("M8_ACK_KEY: must not be a broadcaster key");
   }
   return value;
 }

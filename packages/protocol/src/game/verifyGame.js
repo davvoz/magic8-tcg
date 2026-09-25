@@ -3,11 +3,13 @@
  *
  *   decode (signer, canonical JSON, schema)
  *   → assemble (duplicates, gaps, forks, chain, lifecycle)
+ *   → signatures (v2: every player move signed by the seat's session key)
  *   → replay (reveals, engine, checkpoints, outcome)
  */
 import { assembleGameHistory, HistoryStatus } from "./GameHistory.js";
 import { decodeGameOperation } from "./OperationDecoder.js";
 import { ReplayStatus, replayGame } from "./ReplayVerifier.js";
+import { SignatureStatus, checkMoveSignatures } from "./sessions.js";
 
 export const Verdict = Object.freeze({
   VALID: "VALID",
@@ -21,9 +23,10 @@ export const Verdict = Object.freeze({
  *   operations: readonly import("./OperationDecoder.js").ChainOperation[],
  *   isAuthorizedBroadcaster: import("./OperationDecoder.js").BroadcasterPolicy,
  *   resolveContent: import("./ReplayVerifier.js").ContentResolver,
- * }} input
+ *   verifyMoveSignature?: import("./sessions.js").MoveSignatureVerifier,
+ * }} input `verifyMoveSignature` is required for v2 games
  */
-export function verifyGame({ gameId, operations, isAuthorizedBroadcaster, resolveContent }) {
+export function verifyGame({ gameId, operations, isAuthorizedBroadcaster, resolveContent, verifyMoveSignature }) {
   const records = [];
   const rejected = [];
   for (const operation of operations) {
@@ -35,15 +38,22 @@ export function verifyGame({ gameId, operations, isAuthorizedBroadcaster, resolv
     }
   }
   const history = assembleGameHistory(gameId, records);
+  const signatures = checkMoveSignatures(history, verifyMoveSignature);
   const replay = history.status === HistoryStatus.COMPLETE ? replayGame(history, resolveContent) : null;
-  return Object.freeze({ verdict: verdictOf(history, replay), history, replay, rejected: Object.freeze(rejected) });
+  return Object.freeze({ verdict: verdictOf(history, replay, signatures), history, signatures, replay, rejected: Object.freeze(rejected) });
 }
+
+const SIGNED = new Set([SignatureStatus.NOT_REQUIRED, SignatureStatus.VALID]);
 
 /**
  * @param {import("./GameHistory.js").GameHistory} history
  * @param {import("./ReplayVerifier.js").ReplayResult | null} replay
+ * @param {{ status: string }} signatures
  */
-function verdictOf(history, replay) {
+function verdictOf(history, replay, signatures) {
+  if (!SIGNED.has(signatures.status)) {
+    return Verdict.INVALID;
+  }
   if (history.status === HistoryStatus.IN_PROGRESS) {
     return Verdict.IN_PROGRESS;
   }

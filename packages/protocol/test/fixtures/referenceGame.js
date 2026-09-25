@@ -12,7 +12,7 @@ import { validateCommandShape } from "@magic8/engine/domain/commands/validateCom
 import { ChaChaRandom } from "@magic8/engine/domain/random/ChaChaRandom.js";
 import { catalog, effects, emberDeck, ironDeck, rulesWith } from "@magic8/engine/testing/fixtures.js";
 
-import { GameRecorder, OperationId, SEATS, createGameEngine, genesisHead, packEnvelopes, sealRecords } from "../../src/index.js";
+import { GameRecorder, OperationId, SEATS, createGameEngine, genesisHead, moveMessage, packEnvelopes, sealRecords } from "../../src/index.js";
 
 export const GAME_ID = "01j8x3r6h2qkq4w0v7m5a9c1dz";
 export const CONTENT_HASH = "c0".repeat(32);
@@ -89,11 +89,48 @@ function createEngineFor(recorder) {
 }
 
 /**
+ * v2: how each seat signs its moves, and what may happen on the way.
+ * @typedef {{
+ *   keys: Readonly<Record<string, { key: string, sign: (message: string) => string }>>,
+ *   authorize: (seat: string, key: string) => string,
+ *   sign?: (seat: string, message: string, index: number, honest: string) => string,
+ *   rotate?: { atCommand: number, seat: string, session: { key: string, sign: (message: string) => string } },
+ * }} Signing
+ */
+
+/**
+ * The fields a v2 MOVE carries: the player's signature over the command.
+ * @param {{ recorder: GameRecorder, signing: Signing, keys: Map<string, { key: string, sign: (message: string) => string }>, seat: string, command: Record<string, unknown>, expectedVersion: number, index: number }} input
+ */
+function signedFields({ recorder, signing, keys, seat, command, expectedVersion, index }) {
+  const commandId = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+  const bare = Object.fromEntries(Object.entries(command).filter(([field]) => field !== "playerId"));
+  const message = moveMessage({ gameId: recorder.gameId, commandId, expectedVersion, command: bare });
+  // A seat without a session key cannot sign: its move carries a signature of nobody's.
+  const honest = keys.get(seat)?.sign(message) ?? "00".repeat(64);
+  return { commandId, expectedVersion, signature: signing.sign === undefined ? honest : signing.sign(seat, message, index, honest) };
+}
+
+/**
+ * The SESSION event of a planned key rotation, when its time has come.
+ * @param {{ recorder: GameRecorder, signing: Signing | null, keys: Map<string, { key: string, sign: (message: string) => string }>, commands: number, clock: { turn: number, ms: number } }} input
+ */
+function rotation({ recorder, signing, keys, commands, clock }) {
+  const rotate = signing?.rotate;
+  if (rotate === undefined || rotate.atCommand !== commands) {
+    return [];
+  }
+  keys.set(rotate.seat, rotate.session);
+  return [recorder.session({ seat: rotate.seat, key: rotate.session.key, authorization: signing.authorize(rotate.seat, rotate.session.key), clock })];
+}
+
+/**
  * Plays commands until the game ends, recording a MOVE per command and a checkpoint per turn.
- * @param {{ game: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, recorder: GameRecorder, rng: ChaChaRandom, tick: () => number, maxCommands: number, concedeAt: number | null }} input
+ * @param {{ game: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, recorder: GameRecorder, rng: ChaChaRandom, tick: () => number, maxCommands: number, concedeAt: number | null, signing: Signing | null }} input
  * @returns {{ groups: import("../../src/game/EventChain.js").ChainedEvent[][], commands: number }}
  */
-function playUntilOver({ game, recorder, rng, tick, maxCommands, concedeAt }) {
+function playUntilOver({ game, recorder, rng, tick, maxCommands, concedeAt, signing }) {
+  const keys = new Map(Object.entries(signing?.keys ?? {}));
   const groups = [];
   let turn = [];
   let commands = 0;
@@ -103,13 +140,16 @@ function playUntilOver({ game, recorder, rng, tick, maxCommands, concedeAt }) {
     const shouldConcede = commands === concedeAt || commands >= maxCommands;
     const raw = shouldConcede ? { type: CommandType.CONCEDE, playerId: seat } : chooseMove(rng, snapshot, game.getLegalMoves(seat));
     const command = validateCommandShape(raw);
+    const expectedVersion = game.version;
     const result = game.execute(command.value);
     if (!result.ok) {
       throw new Error(`reference game produced an illegal move: ${JSON.stringify(raw)} ${result.error.message}`);
     }
     commands += 1;
     const clock = { turn: game.getSnapshot(null).turnNumber, ms: tick() };
-    turn.push(recorder.move({ seat, command: command.value, clock }));
+    turn.push(...rotation({ recorder, signing, keys, commands, clock }));
+    const signed = signing === null ? undefined : signedFields({ recorder, signing, keys, seat, command: command.value, expectedVersion, index: commands });
+    turn.push(recorder.move({ seat, command: command.value, clock, signed }));
     if (!game.isOver && game.getSnapshot(null).turnNumber !== snapshot.turnNumber) {
       turn.push(recorder.checkpoint({ engineVersion: game.version, digest: game.getStateDigest(), clock }));
       groups.push(turn);
@@ -121,14 +161,18 @@ function playUntilOver({ game, recorder, rng, tick, maxCommands, concedeAt }) {
 }
 
 /**
- * @param {{ label?: string, gameId?: string, maxCommands?: number, concedeAt?: number | null }} [options]
+ * @param {{ label?: string, gameId?: string, maxCommands?: number, concedeAt?: number | null, signing?: Signing | null }} [options]
+ *   `signing`: a v2 game, whose seats authorise session keys and sign their moves
  */
-export function playReferenceGame({ label = "reference", gameId = GAME_ID, maxCommands = 600, concedeAt = null } = {}) {
+export function playReferenceGame({ label = "reference", gameId = GAME_ID, maxCommands = 600, concedeAt = null, signing = null } = {}) {
   const secret = testHex(`${label}:secret`);
   const decks = [emberDeck, ironDeck];
-  const recorder = new GameRecorder({ gameId, secret, decks: decks.map((deck) => deck.entries) });
+  const recorder = new GameRecorder({ gameId, secret, decks: decks.map((deck) => deck.entries), version: signing === null ? 1 : 2 });
   const tick = createClock();
   const opening = [recorder.created({ mode: "casual", network: NETWORK, engineVersion: ENGINE_VERSION, contentHash: CONTENT_HASH, accounts: ACCOUNTS, ms: 0 })];
+  for (const [seat, session] of Object.entries(signing?.keys ?? {})) {
+    opening.push(recorder.session({ seat, key: session.key, authorization: signing.authorize(seat, session.key), clock: { turn: 0, ms: tick() } }));
+  }
   opening.push(recorder.joined({ seat: SEATS[0], entropy: testHex(`${label}:e0`, 16), ms: tick() }));
   opening.push(recorder.joined({ seat: SEATS[1], entropy: testHex(`${label}:e1`, 16), ms: tick() }));
   opening.push(recorder.started({ ms: tick() }));
@@ -136,13 +180,13 @@ export function playReferenceGame({ label = "reference", gameId = GAME_ID, maxCo
   const game = createEngineFor(recorder);
   game.start();
   const rng = ChaChaRandom.fromSeed(testHex(`${label}:moves`));
-  const { groups, commands } = playUntilOver({ game, recorder, rng, tick, maxCommands, concedeAt });
+  const { groups, commands } = playUntilOver({ game, recorder, rng, tick, maxCommands, concedeAt, signing });
   const final = game.getSnapshot(null);
   groups[groups.length - 1].push(
     recorder.finished({ winner: final.winnerId, reason: final.endReason, engineVersion: game.version, digest: game.getStateDigest(), clock: { turn: final.turnNumber, ms: tick() } }),
   );
   const allGroups = [opening, ...groups];
-  const records = sealGroups(allGroups, gameId);
+  const records = sealGroups(allGroups, gameId, recorder.version);
   const envelopes = packEnvelopes(records);
   const operations = envelopes.map((envelope, index) => operation(envelope.json, { blockNum: 1000 + index, txId: testHex(`${label}:tx${index}`, 20) }));
   return {
@@ -161,11 +205,11 @@ export function playReferenceGame({ label = "reference", gameId = GAME_ID, maxCo
  * @param {readonly (readonly import("../../src/game/EventChain.js").ChainedEvent[])[]} groups
  * @param {string} [gameId]
  */
-export function sealGroups(groups, gameId = GAME_ID) {
+export function sealGroups(groups, gameId = GAME_ID, version = 1) {
   const records = [];
   let previousHead = genesisHead(gameId);
   for (const group of groups.filter((candidate) => candidate.length > 0)) {
-    const sealed = sealRecords({ gameId, firstRecordSeq: records.length, previousHead, chained: group, ts: 1_790_000_000_000 + records.length });
+    const sealed = sealRecords({ gameId, firstRecordSeq: records.length, previousHead, chained: group, ts: 1_790_000_000_000 + records.length, version });
     records.push(...sealed);
     previousHead = sealed[sealed.length - 1].head;
   }

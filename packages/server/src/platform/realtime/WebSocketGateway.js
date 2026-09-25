@@ -16,14 +16,29 @@
 import { WebSocketServer } from "ws";
 
 import { AppError } from "../../kernel/AppError.js";
+import { clientAddress } from "../http/clientAddress.js";
 import { parseCookies } from "../http/cookies.js";
+import { parseJson } from "../../kernel/json.js";
 
 export const CloseCode = Object.freeze({ REPLACED: 4000, UNAUTHENTICATED: 4001, BAD_MESSAGE: 4002, RATE_LIMITED: 4008 });
 
 const PATH = "/ws";
 const TYPE_PATTERN = /^[a-z]+(\.[a-z]+)?$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
-const DEFAULTS = Object.freeze({ maxMessageBytes: 4096, pingIntervalMs: 20_000, pongTimeoutMs: 45_000, sessionCheckMs: 60_000, ratePerSecond: 20, rateBurst: 40, maxRateViolations: 10, maxBadMessages: 10 });
+const DEFAULTS = Object.freeze({
+  maxMessageBytes: 4096,
+  pingIntervalMs: 20_000,
+  pongTimeoutMs: 45_000,
+  sessionCheckMs: 60_000,
+  ratePerSecond: 20,
+  rateBurst: 40,
+  maxRateViolations: 10,
+  maxBadMessages: 10,
+  /** Outgoing bytes a client may leave unread before it is dropped (it resynchronises on reconnect). */
+  maxBufferedBytes: 512 * 1024,
+});
+/** Upgrade attempts per address: each one costs a session lookup. */
+const UPGRADE_RATE = Object.freeze({ name: "ws-upgrade", capacity: 10, refillPerSecond: 0.5, by: /** @type {const} */ ("ip") });
 
 /**
  * @typedef {typeof DEFAULTS} GatewayPolicy
@@ -40,6 +55,7 @@ export class WebSocketGateway {
   #cookieName;
   #trustProxy;
   #policy;
+  #rateLimiter;
   /** @type {WebSocketServer} */
   #server;
   /** @type {Set<import("ws").WebSocket>} */
@@ -54,10 +70,11 @@ export class WebSocketGateway {
    *   clock: import("../../kernel/time.js").Clock,
    *   logger: import("../../kernel/logger.js").Logger,
    *   config: { allowedOrigins: readonly string[], sessionCookieName: string, trustProxy: boolean },
+   *   rateLimiter: import("../http/RateLimiter.js").RateLimiter,
    *   policy?: Partial<GatewayPolicy>,
    * }} deps
    */
-  constructor({ hub, router, authenticate, onPresence, clock, logger, config, policy = {} }) {
+  constructor({ hub, router, authenticate, onPresence, clock, logger, config, rateLimiter, policy = {} }) {
     this.#hub = hub;
     this.#router = router;
     this.#authenticate = authenticate;
@@ -68,6 +85,7 @@ export class WebSocketGateway {
     this.#cookieName = config.sessionCookieName;
     this.#trustProxy = config.trustProxy;
     this.#policy = Object.freeze({ ...DEFAULTS, ...policy });
+    this.#rateLimiter = rateLimiter;
     this.#server = new WebSocketServer({ noServer: true, maxPayload: this.#policy.maxMessageBytes, perMessageDeflate: false, clientTracking: false });
   }
 
@@ -108,13 +126,17 @@ export class WebSocketGateway {
       reject(socket, 403, "Forbidden");
       return;
     }
+    const ip = this.#clientIp(request);
+    if (!this.#rateLimiter.take(UPGRADE_RATE, ip).allowed) {
+      reject(socket, 429, "Too Many Requests");
+      return;
+    }
     const token = parseCookies(request.headers.cookie ?? "").get(this.#cookieName) ?? null;
     const principal = await this.#authenticate(token);
     if (principal === null) {
       reject(socket, 401, "Unauthorized");
       return;
     }
-    const ip = this.#clientIp(request);
     this.#server.handleUpgrade(request, socket, head, (socketConnection) => this.#connected(socketConnection, principal, token, ip));
   }
 
@@ -181,11 +203,7 @@ export class WebSocketGateway {
 
   /** @param {import("node:http").IncomingMessage} request */
   #clientIp(request) {
-    const forwarded = request.headers["x-forwarded-for"];
-    if (this.#trustProxy && typeof forwarded === "string") {
-      return forwarded.split(",")[0].trim().slice(0, 64);
-    }
-    return request.socket.remoteAddress ?? "unknown";
+    return clientAddress(request, this.#trustProxy);
   }
 }
 
@@ -223,9 +241,15 @@ class LiveConnection {
     /** @type {import("./ConnectionHub.js").Connection} */
     this.connection = Object.freeze({
       send: (message) => {
-        if (socket.readyState === socket.OPEN) {
-          socket.send(message);
+        if (socket.readyState !== socket.OPEN) {
+          return;
         }
+        if (socket.bufferedAmount > policy.maxBufferedBytes) {
+          // A peer that stops reading must not make the server hold its messages without bound.
+          socket.terminate();
+          return;
+        }
+        socket.send(message);
       },
       close: (code, reason) => socket.close(code, reason),
     });
@@ -311,7 +335,7 @@ class LiveConnection {
 function parseEnvelope(text) {
   let value;
   try {
-    value = JSON.parse(text);
+    value = parseJson(text, { maxDepth: 8 });
   } catch {
     return null;
   }

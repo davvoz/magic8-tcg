@@ -8,7 +8,9 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@magic8/engine": "0.1.0"
+    "@magic8/engine": "0.1.0",
+    "@magic8/protocol": "0.1.0",
+    "@magic8/steem": "0.1.0"
   },
   "scripts": {
     "test": "node --test",

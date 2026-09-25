@@ -5,6 +5,8 @@
  *   (the history index), through the failover RPC client. Every `transfer`
  *   *to* the shop becomes a neutral Transfer DTO, whatever its asset or memo:
  *   a transfer that pays nothing still has to be seen, to be refunded.
+ *   Transfers *from* the shop (refunds an operator sent with Keychain) are
+ *   read the same way, from their own cursor.
  * - Confirmation: a transfer is final only when at least `quorum` distinct
  *   nodes, each asked directly, place it in a block at or below their last
  *   irreversible block, with exactly the same sender, receiver, amount and
@@ -68,10 +70,31 @@ export class SteemTransferPaymentProvider {
    * @param {number} limit
    * @returns {Promise<Readonly<{ transfers: readonly Transfer[], cursor: number }>>}
    */
-  async incomingTransfers(receiver, cursor, limit) {
-    const entries = await this.#history.getAccountHistory(receiver, cursor, limit);
+  incomingTransfers(receiver, cursor, limit) {
+    return this.#transfers(receiver, cursor, limit, (data) => data.to === receiver);
+  }
+
+  /**
+   * Transfers sent by `sender` after `cursor`, oldest first, and the new cursor.
+   * @param {string} sender
+   * @param {number} cursor
+   * @param {number} limit
+   * @returns {Promise<Readonly<{ transfers: readonly Transfer[], cursor: number }>>}
+   */
+  outgoingTransfers(sender, cursor, limit) {
+    return this.#transfers(sender, cursor, limit, (data) => data.from === sender);
+  }
+
+  /**
+   * @param {string} account
+   * @param {number} cursor
+   * @param {number} limit
+   * @param {(data: Readonly<Record<string, unknown>>) => boolean} direction
+   */
+  async #transfers(account, cursor, limit, direction) {
+    const entries = await this.#history.getAccountHistory(account, cursor, limit);
     const transfers = entries
-      .filter((entry) => !entry.virtual && entry.operation.type === "transfer" && entry.operation.data.to === receiver)
+      .filter((entry) => !entry.virtual && entry.operation.type === "transfer" && direction(entry.operation.data))
       .map((entry) => toTransfer(entry.operation.data, { txId: entry.txId, opIndex: entry.opIndex, blockNum: entry.blockNum, time: entry.time }))
       .filter((transfer) => transfer !== null);
     return Object.freeze({ transfers: Object.freeze(/** @type {Transfer[]} */ (transfers)), cursor: entries.length === 0 ? cursor : entries[entries.length - 1].index });

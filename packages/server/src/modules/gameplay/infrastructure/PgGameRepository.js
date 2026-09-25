@@ -161,12 +161,84 @@ export class PgGameRepository {
     return Object.freeze(rows.map((row) => row.id));
   }
 
+  async listFinished({ mode, since, limit }) {
+    const games = await this.#db.rows(
+      `SELECT g.id, g.mode, g.finished_at, g.winner_seat, g.end_reason,
+              (SELECT turn FROM game_events e WHERE e.game_id = g.id ORDER BY seq DESC LIMIT 1) AS turn
+         FROM games g WHERE g.status = 'FINISHED' AND g.mode = $1 AND g.finished_at >= $2
+        ORDER BY g.finished_at, g.id LIMIT $3`,
+      [mode, toTimestamp(since), limit],
+    );
+    const result = [];
+    for (const game of games) {
+      const players = await this.#db.rows("SELECT seat, user_id, account FROM game_players WHERE game_id = $1 ORDER BY seat", [game.id]);
+      result.push(
+        Object.freeze({
+          gameId: game.id,
+          mode: game.mode,
+          finishedAt: fromTimestamp(game.finished_at),
+          winnerSeat: game.winner_seat,
+          endReason: game.end_reason,
+          turn: game.turn,
+          players: Object.freeze(players.map((player) => Object.freeze({ seat: player.seat, userId: player.user_id, account: player.account }))),
+        }),
+      );
+    }
+    return Object.freeze(result);
+  }
+
+  async countFinished(userId, mode) {
+    const row = await this.#db.maybeOne("SELECT count(*)::integer AS n FROM games g JOIN game_players p ON p.game_id = g.id WHERE p.user_id = $1 AND g.mode = $2 AND g.status = 'FINISHED'", [userId, mode]);
+    return row?.n ?? 0;
+  }
+
   async activeGameOf(userId) {
     const row = await this.#db.maybeOne(
       "SELECT g.id FROM games g JOIN game_players p ON p.game_id = g.id WHERE p.user_id = $1 AND g.status = ANY($2::text[]) ORDER BY g.created_at DESC LIMIT 1",
       [userId, ACTIVE],
     );
     return row === null ? null : row.id;
+  }
+
+  async lockForSealing(gameId) {
+    const row = await this.#db.maybeOne("SELECT network, protocol_version FROM games WHERE id = $1 FOR UPDATE", [gameId]);
+    return row === null ? null : Object.freeze({ network: row.network, protocolVersion: row.protocol_version });
+  }
+
+  async listUnsealed(gameId) {
+    const rows = await this.#db.rows("SELECT seq, kind, actor, turn, ms, payload, head FROM game_events WHERE game_id = $1 AND record_seq IS NULL ORDER BY seq", [gameId]);
+    return Object.freeze(rows.map((row) => Object.freeze({ event: Object.freeze({ i: row.seq, k: row.kind, a: row.actor, t: row.turn, ms: row.ms, d: row.payload }), head: row.head })));
+  }
+
+  async countUnsealed(gameId) {
+    const row = /** @type {import("../../../platform/db/Database.js").Row} */ (await this.#db.maybeOne("SELECT count(*)::integer AS pending FROM game_events WHERE game_id = $1 AND record_seq IS NULL", [gameId]));
+    return row.pending;
+  }
+
+  async headAt(gameId, seq) {
+    const row = await this.#db.maybeOne("SELECT head FROM game_events WHERE game_id = $1 AND seq = $2", [gameId, seq]);
+    return row === null ? null : row.head;
+  }
+
+  async nextRecordSeq(gameId) {
+    const row = /** @type {import("../../../platform/db/Database.js").Row} */ (await this.#db.maybeOne("SELECT coalesce(max(record_seq) + 1, 0)::integer AS next FROM game_events WHERE game_id = $1", [gameId]));
+    return row.next;
+  }
+
+  async markSealed(gameId, fromSeq, toSeq, recordSeq) {
+    await this.#db.query("UPDATE game_events SET record_seq = $4 WHERE game_id = $1 AND seq BETWEEN $2 AND $3 AND record_seq IS NULL", [gameId, fromSeq, toSeq, recordSeq]);
+  }
+
+  async gamesWithUnsealedBefore(before) {
+    const rows = await this.#db.rows(
+      `SELECT e.game_id FROM game_events e JOIN games g ON g.id = e.game_id
+        WHERE e.record_seq IS NULL
+        GROUP BY e.game_id, g.created_at
+       HAVING g.created_at + min(e.ms) * interval '1 millisecond' <= $1
+        ORDER BY e.game_id`,
+      [toTimestamp(before)],
+    );
+    return Object.freeze(rows.map((row) => row.game_id));
   }
 
   /**

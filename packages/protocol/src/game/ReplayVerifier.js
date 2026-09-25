@@ -7,7 +7,7 @@
  * COMPLETE). Content (rules and cards) is resolved by hash through an injected
  * resolver: the protocol does not know where content lives.
  */
-import { EventKind, SEATS } from "./constants.js";
+import { EventKind, GameProtocol, SEATS } from "./constants.js";
 import { deckCommitment, deriveEngineSeed, firstSeatFor, seedCommitment, stateCommitment, stateSalt } from "./commitments.js";
 import { createGameEngine } from "./engineSetup.js";
 import { HistoryStatus } from "./GameHistory.js";
@@ -88,14 +88,14 @@ export function replayGame(history, resolveContent) {
   if (content === null) {
     return result(ReplayStatus.UNKNOWN_CONTENT, `content ${created.content} for engine ${created.eng} is not available`);
   }
-  return runReplay({ events, created, terminal, content, gameId: history.gameId });
+  return runReplay({ events, created, terminal, content, gameId: history.gameId, version: /** @type {number} */ (history.version) });
 }
 
 /**
  * @param {{ events: readonly import("./EventChain.js").ChainedEvent[], created: any, terminal: any, content: ReplayContent, gameId: string }} input
  * @returns {ReplayResult}
  */
-function runReplay({ events, created, terminal, content, gameId }) {
+function runReplay({ events, created, terminal, content, gameId, version }) {
   const entropies = SEATS.map((seat) => /** @type {any} */ (eventsOfKind(events, EventKind.PLAYER_JOINED).find((event) => event.a === seat)).d.ent);
   const secret = terminal.d.secret;
   const engineSeed = deriveEngineSeed({ secret, entropies, gameId });
@@ -109,7 +109,7 @@ function runReplay({ events, created, terminal, content, gameId }) {
     return result(ReplayStatus.REPLAY_MISMATCH, `the engine refused the revealed setup: ${setup.error.message}`, { eventSeq: started.i });
   }
   const engine = setup.value;
-  const replayer = new Replayer(engine, stateSalt(secret));
+  const replayer = new Replayer(engine, stateSalt(secret), version);
   replayer.start();
   for (const { event } of events.slice(started.i + 1)) {
     const problem = replayer.apply(event);
@@ -125,15 +125,18 @@ function runReplay({ events, created, terminal, content, gameId }) {
 class Replayer {
   #engine;
   #salt;
+  #version;
   #engineEvents = 0;
 
   /**
    * @param {import("@magic8/engine/domain/game/GameEngine.js").GameEngine} engine
    * @param {string} salt
+   * @param {number} version game protocol version
    */
-  constructor(engine, salt) {
+  constructor(engine, salt, version) {
     this.#engine = engine;
     this.#salt = salt;
+    this.#version = version;
   }
 
   get engineEvents() {
@@ -153,7 +156,9 @@ class Replayer {
     const data = /** @type {any} */ (event.d);
     switch (event.k) {
       case EventKind.MOVE:
-        return this.#execute({ ...data, playerId: event.a });
+        return this.#execute({ ...commandOfMove(data, this.#version), playerId: event.a });
+      case EventKind.SESSION:
+        return null;
       case EventKind.FORCED_MOVE:
         return this.#execute({ ...data.cmd, playerId: event.a });
       case EventKind.STATE_CHECKPOINT:
@@ -199,4 +204,14 @@ class Replayer {
     }
     return this.#checkState(data.ver, data.sc);
   }
+}
+
+/**
+ * The engine command of a MOVE payload: the payload itself in v1, its `cmd` from v2 on.
+ * @param {Readonly<Record<string, unknown>>} data
+ * @param {number} version game protocol version
+ * @returns {Readonly<Record<string, unknown>>}
+ */
+export function commandOfMove(data, version) {
+  return version >= GameProtocol.V2 ? /** @type {Readonly<Record<string, unknown>>} */ (data.cmd) : data;
 }

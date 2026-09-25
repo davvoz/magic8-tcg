@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import { WebSocket } from "ws";
-import { ORIGIN, buildTestApp, keyPair, listen } from "../helpers.js";
+import { ACK_KEYS, ORIGIN, buildTestApp, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
 
 const alice = keyPair(1);
@@ -107,6 +107,7 @@ describe("WebSocket gateway", () => {
   after(() => server.close());
 
   const connect = async (name) => {
+    setup.clock.advance(2000); // one upgrade token per 2 s per address
     const peer = new Peer(server.base, { cookie: clients[name].cookie });
     await peer.opened;
     return peer;
@@ -126,6 +127,7 @@ describe("WebSocket gateway", () => {
     assert.equal(welcome.d.user.account, "alice");
     assert.equal(welcome.d.activeGame, null);
     assert.deepEqual(welcome.d.queue, { state: "idle" });
+    assert.equal(welcome.d.ackKey, ACK_KEYS.publicKey, "the key every ack is signed with");
     await peer.close();
   });
 
@@ -149,6 +151,28 @@ describe("WebSocket gateway", () => {
     }
     assert.equal(await peer.closed, 4008);
     assert.ok(peer.messages.some((message) => message.d?.code === "RATE_LIMITED"));
+  });
+
+  it("limits upgrade attempts per address before looking up any session", async () => {
+    setup.clock.advance(60_000);
+    const refused = [];
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      refused.push(await new Peer(server.base, { cookie: "m8_session=guess" }).opened.catch((error) => error.message));
+    }
+    assert.deepEqual(refused.slice(0, 10), new Array(10).fill("401"));
+    assert.deepEqual(refused.slice(10), ["429", "429"], "a burst of guesses is cut off");
+  });
+
+  it("drops a client that stops reading instead of buffering for it without bound", async () => {
+    const peer = await connect("carol");
+    peer.socket.pause();
+    const big = "x".repeat(64 * 1024);
+    const userId = (await setup.users.findOrCreate({ network: "steem", account: "carol" }, setup.clock.now(), randomUUID())).id;
+    for (let index = 0; index < 200; index += 1) {
+      setup.app.hub.send(userId, "noise", { big });
+    }
+    peer.socket.resume();
+    assert.equal(await peer.closed, 1006, "terminated");
   });
 
   it("replaces an older connection of the same user", async () => {
@@ -179,6 +203,17 @@ describe("WebSocket gateway", () => {
     const [mover, idle] = first === "s0" ? [a, b] : [b, a];
     const moverView = first === "s0" ? startA : startB;
 
+    // Carol finds the game in the public list and watches it; a player cannot.
+    const live = (await new ApiClient(server.base).get("/api/games/live")).json.games;
+    assert.deepEqual(live.map((game) => [game.gameId, game.players.map((player) => player.account)]), [[gameId, ["alice", "bob"]]]);
+    const watcher = await connect("carol");
+    const watching = await watcher.request("watch.start", { gameId });
+    assert.equal(watching.t, "watch.state");
+    assert.ok(watching.d.snapshot.players.every((player) => player.hand === null), "a spectator sees no hand");
+    assert.equal(watching.d.snapshot.legalMoves, null);
+    const own = await a.request("watch.start", { gameId });
+    assert.deepEqual([own.t, own.d.code, own.d.details.code], ["error", "CONFLICT", "PLAYER_CANNOT_WATCH"]);
+
     const wrong = await idle.request("game.command", { gameId, commandId: randomUUID(), expectedVersion: moverView.version, command: { type: "END_PHASE" } });
     assert.deepEqual([wrong.t, wrong.d.ok, wrong.d.error.code], ["game.ack", false, "NOT_YOUR_TURN"]);
     const spoofed = await idle.request("game.command", { gameId, commandId: randomUUID(), expectedVersion: moverView.version, command: { type: "END_PHASE", playerId: first } });
@@ -189,6 +224,8 @@ describe("WebSocket gateway", () => {
     assert.equal(ack.d.ok, true, JSON.stringify(ack));
     const seen = await idle.waitFor("game.events", (d) => d.version === ack.d.version);
     assert.equal(seen.head, ack.d.head, "both see the same chain head");
+    const streamed = await watcher.waitFor("watch.events", (d) => d.version === ack.d.version);
+    assert.equal(streamed.head, ack.d.head, "and so does the spectator");
     const again = await mover.request("game.command", { gameId, commandId, expectedVersion: moverView.version, command: { type: "END_PHASE" } });
     assert.deepEqual(again.d, ack.d, "a re-sent command gets the same ack");
 
@@ -207,6 +244,8 @@ describe("WebSocket gateway", () => {
     const [overMover, overBack] = await Promise.all([mover.waitFor("game.over"), back.waitFor("game.over")]);
     assert.equal(overMover.winner, first, "the player who conceded lost");
     assert.equal(overBack.winner, first);
+    assert.equal((await watcher.waitFor("watch.over")).winner, first, "the spectator sees the end");
+    await watcher.close();
     const noGame = await back.request("game.sync", { gameId: "0".repeat(26) });
     assert.deepEqual([noGame.t, noGame.d.code], ["error", "NOT_FOUND"]);
     await Promise.all([mover.close(), back.close()]);

@@ -85,7 +85,8 @@ describe("RateLimiter", () => {
 
 describe("config", () => {
   const DATA_KEY = "ab".repeat(32);
-  const PRODUCTION = Object.freeze({ M8_PUBLIC_ORIGIN: "https://play.example", M8_DATABASE_URL: "postgres://app@db.internal:5432/tcg?sslmode=require", M8_DATA_KEY: DATA_KEY });
+  const ACK_KEY = "5JdeC9P7Pbd1uGdFVEsJ41EkEnADbbHGq6p1BwFxm6txNBsQnsw";
+  const PRODUCTION = Object.freeze({ M8_PUBLIC_ORIGIN: "https://play.example", M8_DATABASE_URL: "postgres://app@db.internal:5432/tcg?sslmode=require", M8_DATA_KEY: DATA_KEY, M8_ACK_KEY: ACK_KEY });
 
   it("derives secure settings from an https origin", () => {
     const config = loadConfig({ ...PRODUCTION, M8_PORT: "9000" });
@@ -96,6 +97,7 @@ describe("config", () => {
     assert.equal(config.databaseUrl, PRODUCTION.M8_DATABASE_URL);
     assert.equal(config.dataKeyIsDevelopment, false);
     assert.deepEqual([...config.dataKeys], [[1, DATA_KEY]]);
+    assert.equal(config.ackKey, ACK_KEY);
   });
 
   it("keeps retired data keys for rotation, and uses the public development key only locally", () => {
@@ -106,6 +108,19 @@ describe("config", () => {
     assert.equal(local.dataKeyIsDevelopment, true);
     assert.equal(local.shopAccounts.steem, "luciojolly");
     assert.equal(loadConfig({ M8_SHOP_ACCOUNT: "shop.m8" }).shopAccounts.steem, "shop.m8");
+  });
+
+  it("reads the broadcaster posting keys and the root account, and refuses malformed ones", () => {
+    const wif = "5JRaypasxMx1L97ZUX7YuC5Psb5EAbF821kkAGtBj7xCJFQcbLg";
+    const config = loadConfig({ M8_BROADCASTER_KEYS: ` m8tcg-b1:${wif}, m8tcg-b2:${wif} `, M8_ROOT_ACCOUNT: "m8tcg" });
+    assert.deepEqual([...config.broadcasterKeys.keys()], ["m8tcg-b1", "m8tcg-b2"]);
+    assert.equal(config.rootAccounts.steem, "m8tcg");
+    assert.equal(JSON.stringify(config).includes(wif), false, "keys never show up when the configuration is serialized");
+    assert.equal(loadConfig({}).broadcasterKeys.size, 0, "none by default: nothing is published");
+    assert.equal(loadConfig({}).rootAccounts.steem, "luciojolly");
+    assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: "m8tcg-b1:not-a-key" }), /not a WIF/);
+    assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: `${wif}` }), /M8_BROADCASTER_KEYS/);
+    assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: `m8tcg-b1:${wif},m8tcg-b1:${wif}` }), /twice/);
   });
 
   it("defaults to the launch settings for local development", () => {
@@ -136,6 +151,9 @@ describe("config", () => {
       { ...PRODUCTION, M8_DATA_KEYS_OLD: `1:${"cd".repeat(32)}` },
       { ...PRODUCTION, M8_DATA_KEYS_OLD: "2:short" },
       { M8_SHOP_ACCOUNT: "Not An Account" },
+      { ...PRODUCTION, M8_ACK_KEY: "" },
+      { ...PRODUCTION, M8_ACK_KEY: "not-a-wif" },
+      { ...PRODUCTION, M8_BROADCASTER_KEYS: `m8tcg.b1:${ACK_KEY}` },
     ]) {
       assert.throws(() => loadConfig(env), ConfigError, JSON.stringify(env));
     }
@@ -229,5 +247,68 @@ describe("ids and policies", () => {
     assert.throws(() => identityPolicy({ challengeTtlMs: 0 }), TypeError);
     assert.throws(() => identityPolicy({ challengeTtlMs: 3_600_000 }), TypeError);
     assert.throws(() => identityPolicy({ sessionIdleTtlMs: 10, sessionAbsoluteTtlMs: 5 }), TypeError);
+  });
+});
+
+describe("parseJson (untrusted input)", () => {
+  it("parses ordinary JSON and refuses prototype keys and deep nesting", async () => {
+    const { JsonInputError, parseJson } = await import("../../src/kernel/json.js");
+    assert.deepEqual(parseJson('{"a":[1,{"b":null}]}'), { a: [1, { b: null }] });
+    for (const hostile of ['{"__proto__":{"admin":true}}', '{"a":{"constructor":{"prototype":{}}}}', '[{"prototype":1}]']) {
+      assert.throws(() => parseJson(hostile), JsonInputError, hostile);
+    }
+    assert.equal({}.admin, undefined, "nothing polluted");
+    assert.throws(() => parseJson("[".repeat(40) + "]".repeat(40)), /deeper than 32/);
+    assert.doesNotThrow(() => parseJson("[".repeat(32) + "]".repeat(32)));
+    assert.throws(() => parseJson("{nope}"), /not valid JSON/);
+  });
+});
+
+describe("clientAddress", () => {
+  const request = (forwarded, remoteAddress = "10.0.0.2") => ({ headers: forwarded === undefined ? {} : { "x-forwarded-for": forwarded }, socket: { remoteAddress } });
+
+  it("trusts only the entry the reverse proxy appended, never what the client wrote", async () => {
+    const { clientAddress } = await import("../../src/platform/http/clientAddress.js");
+    assert.equal(clientAddress(request("203.0.113.9"), true), "203.0.113.9");
+    assert.equal(clientAddress(request("1.2.3.4, 203.0.113.9"), true), "203.0.113.9", "a forged first entry is ignored");
+    assert.equal(clientAddress(request("203.0.113.9, not-an-address"), true), "10.0.0.2");
+    assert.equal(clientAddress(request(undefined), true), "10.0.0.2");
+    assert.equal(clientAddress(request("203.0.113.9"), false), "10.0.0.2", "without a proxy the header means nothing");
+  });
+});
+
+describe("config: operations", () => {
+  it("reads the operator accounts and the metrics token", () => {
+    const local = loadConfig({});
+    assert.deepEqual(local.adminAccounts.steem, ["luciojolly"], "the shop account by default");
+    assert.equal(local.metricsToken, null, "no token: no metrics endpoint");
+    const configured = loadConfig({ M8_ADMIN_ACCOUNTS: "ops-one, ops-two", M8_METRICS_TOKEN: "a".repeat(32) });
+    assert.deepEqual(configured.adminAccounts.steem, ["ops-one", "ops-two"]);
+    assert.equal(configured.metricsToken, "a".repeat(32));
+    assert.throws(() => loadConfig({ M8_METRICS_TOKEN: "short" }), /M8_METRICS_TOKEN/);
+    assert.throws(() => loadConfig({ M8_ADMIN_ACCOUNTS: "Not Valid" }), /M8_ADMIN_ACCOUNTS/);
+  });
+});
+
+describe("session signatures (native P-256)", () => {
+  it("agrees with the portable verifier browsers and verifiers use", async () => {
+    const { verifySessionSignature: portable } = await import("@magic8/steem");
+    const { verifySessionSignature: native } = await import("../../src/kernel/crypto/sessionSignatures.js");
+    const { sessionKey } = await import("../support/sessionKeys.js");
+    const session = sessionKey();
+    const other = sessionKey();
+    const message = '{"c":{"type":"END_TURN"},"kind":"m8tcg_move"}';
+    const signature = session.sign(message);
+    const cases = [
+      [message, signature, session.key],
+      [`${message} `, signature, session.key],
+      [message, signature, other.key],
+      [message, "00".repeat(64), session.key],
+      [message, signature, `04${"00".repeat(64)}`],
+      [message, "zz", session.key],
+      [null, signature, session.key],
+    ];
+    assert.deepEqual(cases.map((args) => native(...args)), [true, false, false, false, false, false, false]);
+    assert.deepEqual(cases.map((args) => native(...args)), cases.map((args) => portable(...args)));
   });
 });

@@ -61,6 +61,8 @@ const FORBIDDEN_EVERYWHERE = Object.freeze([
 
 const ENGINE_PREFIX = "@magic8/engine/";
 const ENGINE_LAYERS = Object.freeze(["domain", "shared"]);
+/** Workspace packages only infrastructure adapters may use (protocol formats, STEEM signatures). */
+const ADAPTER_PACKAGES = Object.freeze(["@magic8/protocol", "@magic8/steem"]);
 
 const IMPORT_PATTERN = /^\s*(?:import|export)\b[^'";]*?\bfrom\s*['"]([^'"]+)['"]/gm;
 const SIDE_EFFECT_IMPORT_PATTERN = /^\s*import\s*['"]([^'"]+)['"]/gm;
@@ -137,12 +139,13 @@ describe("architecture: module dependencies", () => {
     assert.ok(modules.length > 0, "no modules under src/");
   });
 
-  it("uses only relative imports or the engine package (no other runtime dependencies)", () => {
+  it("uses only relative imports or the engine package, and the protocol and STEEM packages only in adapters", () => {
     for (const module of modules) {
       for (const specifier of module.imports) {
         const relativeImport = specifier.startsWith("./") || specifier.startsWith("../");
         const engineImport = specifier.startsWith(ENGINE_PREFIX) && ENGINE_LAYERS.includes(specifier.slice(ENGINE_PREFIX.length).split("/")[0]);
-        assert.ok(relativeImport || engineImport, `${relative(SRC, module.path)} imports "${specifier}"`);
+        const adapterImport = module.layer === "infrastructure" && ADAPTER_PACKAGES.includes(specifier);
+        assert.ok(relativeImport || engineImport || adapterImport, `${relative(SRC, module.path)} imports "${specifier}"`);
       }
     }
   });

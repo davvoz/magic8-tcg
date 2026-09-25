@@ -7,6 +7,12 @@
  * `submit` resolves when the server acknowledges; the command names the
  * version it was decided on, so a stale click is refused (STALE_VERSION)
  * instead of being applied to a different state.
+ *
+ * In game protocol v2 every command is signed with the game's session key
+ * (docs/tcg/12) before it leaves; a command that cannot be signed is not sent.
+ *
+ * With no seat it is a spectator's session: it shows what the server
+ * streams to spectators (no hand on either side) and submits nothing.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
@@ -15,6 +21,11 @@ export class RemoteMatchSession {
   #seat;
   #request;
   #newCommandId;
+  #onStop;
+  #onAck;
+  #signMove;
+  /** Game protocol version, from the server's views. */
+  #protocol = 1;
   /** @type {any} */
   #snapshot = null;
   #version = 0;
@@ -25,13 +36,20 @@ export class RemoteMatchSession {
   #listeners = new Set();
 
   /**
-   * @param {{ gameId: string, seat: string, request: import("../ports/Realtime.contract.js").RealtimeConnection["request"], newCommandId: () => string }} deps
+   * @param {{
+   *   gameId: string, seat: string | null, request: import("../ports/Realtime.contract.js").RealtimeConnection["request"], newCommandId: () => string,
+   *   onStop?: () => void, onAck?: (ack: Readonly<Record<string, unknown>>) => void,
+   *   signMove?: (move: import("../ports/SessionKeys.contract.js").MoveToSign) => Promise<string | null>,
+   * }} deps seat null: watching; onAck: every accepted command's ack (signed by the server, docs/tcg/11); signMove: v2 signatures
    */
-  constructor({ gameId, seat, request, newCommandId }) {
+  constructor({ gameId, seat, request, newCommandId, onStop = () => undefined, onAck = () => undefined, signMove = async () => null }) {
     this.#gameId = gameId;
     this.#seat = seat;
     this.#request = request;
     this.#newCommandId = newCommandId;
+    this.#onStop = onStop;
+    this.#onAck = onAck;
+    this.#signMove = signMove;
   }
 
   get gameId() {
@@ -43,7 +61,11 @@ export class RemoteMatchSession {
   }
 
   get humanPlayerIds() {
-    return Object.freeze([this.#seat]);
+    return Object.freeze(this.#seat === null ? [] : [this.#seat]);
+  }
+
+  get isSpectating() {
+    return this.#seat === null;
   }
 
   get version() {
@@ -76,7 +98,7 @@ export class RemoteMatchSession {
 
   /**
    * A state (and the events that led to it) from the server.
-   * @param {{ version: number, snapshot: any, events?: readonly any[] }} update
+   * @param {{ version: number, snapshot: any, events?: readonly any[], protocol?: number }} update
    */
   apply(update) {
     if (update.snapshot === null || update.snapshot === undefined || update.version < this.#version) {
@@ -84,6 +106,7 @@ export class RemoteMatchSession {
     }
     this.#snapshot = update.snapshot;
     this.#version = update.version;
+    this.#protocol = typeof update.protocol === "number" ? update.protocol : this.#protocol;
     const published = Object.freeze({ events: update.events ?? [], version: update.version, playerId: null });
     for (const listener of this.#listeners) {
       listener(published);
@@ -103,31 +126,57 @@ export class RemoteMatchSession {
     if (this.#stopped) {
       return fail("GAME_OVER", "the match was left");
     }
+    if (this.#seat === null) {
+      return fail("SPECTATOR", "spectators cannot play");
+    }
     const withoutPlayer = { ...command };
     delete withoutPlayer.playerId;
-    const reply = await this.#request("game.command", { gameId: this.#gameId, commandId: this.#newCommandId(), expectedVersion: this.#version, command: withoutPlayer });
+    const move = { gameId: this.#gameId, commandId: this.#newCommandId(), expectedVersion: this.#version, command: withoutPlayer };
+    const signed = await this.#signatureFor(move);
+    if (signed === null) {
+      return fail("SESSION_REQUIRED", "this browser has no authorised key to sign the move");
+    }
+    const reply = await this.#request("game.command", { ...move, ...signed });
     if (!reply.ok) {
       return reply;
     }
     const { t, d } = reply.value;
     if (t === "game.ack" && d.ok === true) {
+      this.#onAck(d);
       return ok(d);
     }
     const error = t === "game.ack" ? d.error : d;
     return fail(error?.code ?? "REJECTED", error?.message ?? "the server refused the move");
   }
 
+  /**
+   * What a command carries besides itself: nothing in v1, its signature from v2 on (null: cannot be signed).
+   * @param {import("../ports/SessionKeys.contract.js").MoveToSign} move
+   * @returns {Promise<{ signature?: string } | null>}
+   */
+  async #signatureFor(move) {
+    if (this.#protocol < 2) {
+      return {};
+    }
+    const signature = await this.#signMove(move);
+    return signature === null ? null : { signature };
+  }
+
   /** Stops showing the match; the game goes on (or ends) on the server. */
   stop() {
+    if (this.#stopped) {
+      return;
+    }
     this.#stopped = true;
     this.#listeners.clear();
+    this.#onStop();
   }
 
   whenIdle() {
     return Promise.resolve();
   }
 
-  /** @param {string | null} _perspectivePlayerId the server only ever sends our own perspective */
+  /** @param {string | null} _perspectivePlayerId the server only ever sends our own perspective (or the spectators') */
   snapshotFor(_perspectivePlayerId) {
     return this.#snapshot;
   }

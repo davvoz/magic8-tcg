@@ -95,7 +95,8 @@ export class TextField extends UiNode {
     });
     insetShadow(context, this.bounds, { color: theme.colors.letterbox, radius, depth: 4 });
     const empty = this.value.length === 0;
-    const shown = empty && !this.focused ? this.placeholder : this.value + (this.focused ? CARET : "");
+    const typed = this.focused ? this.value + CARET : this.value;
+    const shown = empty && !this.focused ? this.placeholder : typed;
     const color = empty && !this.focused ? theme.colors.textMuted : theme.colors.text;
     drawTextInRect(context, shown, this.bounds, { font: fontFor(theme, "body"), color: enabled ? color : theme.colors.disabledText, align: "left", padding: PADDING });
   }

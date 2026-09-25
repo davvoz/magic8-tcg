@@ -1,9 +1,10 @@
 /**
  * Reads a JSON request body: content type checked, size capped while
- * streaming (not after), parsed once, and returned as untrusted data for a
- * schema validator.
+ * streaming (not after), parsed once by the safe parser (no prototype keys,
+ * bounded depth), and returned as untrusted data for a schema validator.
  */
 import { AppError } from "../../kernel/AppError.js";
+import { parseJson } from "../../kernel/json.js";
 
 const JSON_TYPE = /^application\/json\s*(;\s*charset=utf-8\s*)?$/i;
 
@@ -33,7 +34,7 @@ export async function readJsonBody(request, maxBytes) {
   let text;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
-    return JSON.parse(text);
+    return parseJson(text);
   } catch {
     throw new AppError("VALIDATION", "the body is not valid UTF-8 JSON");
   }

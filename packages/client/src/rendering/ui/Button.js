@@ -123,6 +123,9 @@ export class Button extends UiNode {
     if (this.focused) {
       return theme.colors.focus;
     }
-    return this.hovered ? withAlpha(this.variant === "secondary" ? theme.colors.accent : fill, 0.7) : null;
+    if (!this.hovered) {
+      return null;
+    }
+    return withAlpha(this.variant === "secondary" ? theme.colors.accent : fill, 0.7);
   }
 }

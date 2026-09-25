@@ -23,10 +23,13 @@
  * @property {(epoch: { id: number, commit: string, sealedSecret: Uint8Array, openedAt: number }) => Promise<void>} insertEpoch
  * @property {(id: number) => Promise<StoredEpoch | null>} findEpoch
  * @property {(id: number, at: number) => Promise<void>} closeEpoch
- * @property {(id: number, at: number) => Promise<void>} markEpochRevealed
+ * @property {(id: number, at: number) => Promise<boolean>} markEpochRevealed false when it was already revealed
  * @property {() => Promise<readonly StoredEpoch[]>} listEpochs newest first
  * @property {(limit: number) => Promise<readonly StoredEpoch[]>} listUnrevealedClosed
  * @property {(epochId: number) => Promise<number>} countOpenForEpoch
+ *
+ * @typedef {object} EpochPublisher sends pack epoch payloads (canonical JSON) to the chain outbox, inside the caller's unit of work
+ * @property {(payload: string) => Promise<void>} publishEpoch
  */
 
 export const MARKETPLACE_REPOSITORY_METHODS = Object.freeze([

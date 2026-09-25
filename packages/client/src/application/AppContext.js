@@ -14,6 +14,7 @@
  * @property {import("./account/AccountService.js").AccountService} [account] the signed-in player's collection and decks; absent with `identity`
  * @property {import("./shop/ShopService.js").ShopService} [shop] the marketplace; absent with `identity`
  * @property {import("./online/OnlineService.js").OnlineService} [online] online games; absent with `identity`
+ * @property {import("./ranking/RankingService.js").RankingService} [ranking] ranked standing and leaderboard; absent with `identity`
  */
 
 export const APP_CONTEXT_KEYS = Object.freeze(["content", "deckSelection", "deckBuilding", "matchSetup", "createSeed", "logger", "environment"]);

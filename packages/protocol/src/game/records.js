@@ -7,7 +7,7 @@
  */
 import { canonicalize, utf8Length } from "../canonical/CanonicalJson.js";
 import { isHash } from "../crypto/hash.js";
-import { LIMITS, PROTOCOL_VERSION } from "./constants.js";
+import { GAME_PROTOCOL_VERSIONS, GameProtocol, LIMITS, PROTOCOL_VERSION } from "./constants.js";
 import { nextHead } from "./EventChain.js";
 import { ProtocolError } from "./ProtocolError.js";
 
@@ -28,14 +28,15 @@ export const MAX_RECORD_BYTES = LIMITS.MAX_OPERATION_BYTES - ENVELOPE_OVERHEAD_B
  * @param {string} gameId
  * @param {string} previousHead
  * @param {readonly ChainedEvent[]} chained
+ * @param {number} version game protocol version
  */
-function assertChained(gameId, previousHead, chained) {
+function assertChained(gameId, previousHead, chained, version) {
   let head = previousHead;
   chained.forEach(({ event, head: claimed }, index) => {
     if (index > 0 && event.i !== chained[index - 1].event.i + 1) {
       throw new ProtocolError("events of a record must have contiguous sequence numbers");
     }
-    head = nextHead(head, gameId, event);
+    head = nextHead(head, gameId, event, version);
     if (head !== claimed) {
       throw new ProtocolError(`event ${event.i} does not chain from the previous head`);
     }
@@ -43,10 +44,13 @@ function assertChained(gameId, previousHead, chained) {
 }
 
 /**
- * @param {{ gameId: string, seq: number, previousHead: string, chained: readonly ChainedEvent[], ts: number }} input
+ * @param {{ gameId: string, seq: number, previousHead: string, chained: readonly ChainedEvent[], ts: number, version?: number }} input `version`: the game's protocol version
  * @returns {SealedRecord}
  */
-export function sealRecord({ gameId, seq, previousHead, chained, ts }) {
+export function sealRecord({ gameId, seq, previousHead, chained, ts, version = GameProtocol.V1 }) {
+  if (!GAME_PROTOCOL_VERSIONS.includes(version)) {
+    throw new ProtocolError(`unknown game protocol version ${String(version)}`);
+  }
   if (!Number.isSafeInteger(seq) || seq < 0) {
     throw new ProtocolError("record sequence must be a non-negative integer");
   }
@@ -59,9 +63,9 @@ export function sealRecord({ gameId, seq, previousHead, chained, ts }) {
   if (chained.length === 0 || chained.length > LIMITS.MAX_EVENTS_PER_RECORD) {
     throw new ProtocolError(`a record holds 1..${LIMITS.MAX_EVENTS_PER_RECORD} events`);
   }
-  assertChained(gameId, previousHead, chained);
+  assertChained(gameId, previousHead, chained, version);
   const head = chained[chained.length - 1].head;
-  const record = Object.freeze({ e: Object.freeze(chained.map(({ event }) => event)), g: gameId, h: head, p: previousHead, s: seq, ts, v: PROTOCOL_VERSION });
+  const record = Object.freeze({ e: Object.freeze(chained.map(({ event }) => event)), g: gameId, h: head, p: previousHead, s: seq, ts, v: version });
   const json = canonicalize(record);
   const bytes = utf8Length(json);
   if (bytes > MAX_RECORD_BYTES) {
@@ -84,10 +88,10 @@ export function sealRecord({ gameId, seq, previousHead, chained, ts }) {
  * Seals a run of chained events into as few records as fit the byte budget,
  * in order. The last record may be small; callers decide *when* to seal
  * (batching policy), this only decides *how*.
- * @param {{ gameId: string, firstRecordSeq: number, previousHead: string, chained: readonly ChainedEvent[], ts: number, maxRecordBytes?: number }} input
+ * @param {{ gameId: string, firstRecordSeq: number, previousHead: string, chained: readonly ChainedEvent[], ts: number, maxRecordBytes?: number, version?: number }} input
  * @returns {readonly SealedRecord[]}
  */
-export function sealRecords({ gameId, firstRecordSeq, previousHead, chained, ts, maxRecordBytes = MAX_RECORD_BYTES }) {
+export function sealRecords({ gameId, firstRecordSeq, previousHead, chained, ts, maxRecordBytes = MAX_RECORD_BYTES, version = GameProtocol.V1 }) {
   if (maxRecordBytes > MAX_RECORD_BYTES) {
     throw new ProtocolError(`maxRecordBytes cannot exceed ${MAX_RECORD_BYTES}`);
   }
@@ -95,8 +99,8 @@ export function sealRecords({ gameId, firstRecordSeq, previousHead, chained, ts,
   let start = 0;
   let head = previousHead;
   while (start < chained.length) {
-    const end = largestFittingRun({ gameId, seq: firstRecordSeq + records.length, previousHead: head, chained, start, ts, maxRecordBytes });
-    const sealed = sealRecord({ gameId, seq: firstRecordSeq + records.length, previousHead: head, chained: chained.slice(start, end), ts });
+    const end = largestFittingRun({ gameId, seq: firstRecordSeq + records.length, previousHead: head, chained, start, ts, maxRecordBytes, version });
+    const sealed = sealRecord({ gameId, seq: firstRecordSeq + records.length, previousHead: head, chained: chained.slice(start, end), ts, version });
     records.push(sealed);
     head = sealed.head;
     start = end;
@@ -105,11 +109,11 @@ export function sealRecords({ gameId, firstRecordSeq, previousHead, chained, ts,
 }
 
 /**
- * @param {{ gameId: string, seq: number, previousHead: string, chained: readonly ChainedEvent[], start: number, ts: number, maxRecordBytes: number }} input
+ * @param {{ gameId: string, seq: number, previousHead: string, chained: readonly ChainedEvent[], start: number, ts: number, maxRecordBytes: number, version: number }} input
  * @returns {number} exclusive end index of the longest run starting at `start` that fits
  */
-function largestFittingRun({ gameId, seq, previousHead, chained, start, ts, maxRecordBytes }) {
-  const shell = canonicalize({ e: [], g: gameId, h: chained[start].head, p: previousHead, s: seq, ts, v: PROTOCOL_VERSION });
+function largestFittingRun({ gameId, seq, previousHead, chained, start, ts, maxRecordBytes, version }) {
+  const shell = canonicalize({ e: [], g: gameId, h: chained[start].head, p: previousHead, s: seq, ts, v: version });
   let size = utf8Length(shell);
   let end = start;
   while (end < chained.length && end - start < LIMITS.MAX_EVENTS_PER_RECORD) {

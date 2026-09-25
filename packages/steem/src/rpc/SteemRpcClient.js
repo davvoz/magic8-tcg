@@ -53,7 +53,7 @@ export class SteemRpcClient {
   #nextId = 1;
 
   /** @param {RpcClientOptions} options */
-  constructor({ nodes, fetch: fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000, maxResponseBytes = 4 * 1024 * 1024, cooldownMs = 30_000, allowInsecureHosts = [] }) {
+  constructor({ nodes, fetch: fetchImpl = (input, init) => globalThis.fetch(input, init), now = Date.now, timeoutMs = 8000, maxResponseBytes = 4 * 1024 * 1024, cooldownMs = 30_000, allowInsecureHosts = [] }) {
     if (!Array.isArray(nodes) || nodes.length === 0) {
       throw new TypeError("SteemRpcClient: at least one node is required");
     }

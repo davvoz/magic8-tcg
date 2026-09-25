@@ -58,12 +58,14 @@ export function computeBoardLayout(snapshot, perspectiveId, { logicalWidth: widt
   assignSlots(cards, me.battlefield.map((card) => card.instanceId), myField, CARD_SIZE.battlefield);
   assignSlots(cards, (me.hand ?? []).map((card) => card.instanceId), myHand, CARD_SIZE.hand);
   const backs = slotsFor(opponent.handSize, opponentHand, CARD_SIZE.back);
+  // A spectator sees no hand at all: the bottom seat's cards are backs too.
+  const myBacks = me.hand === null ? slotsFor(me.handSize, myHand, CARD_SIZE.back) : [];
 
   return Object.freeze({
     width,
     height,
     opponent: Object.freeze({ id: opponent.id, hud: rect(MARGIN, MARGIN, SIDE_WIDTH, hudHeight), hand: opponentHand, battlefield: opponentField, handSlots: Object.freeze(backs) }),
-    me: Object.freeze({ id: me.id, hud: rect(MARGIN, height - MARGIN - hudHeight, SIDE_WIDTH, hudHeight), hand: myHand, battlefield: myField, handSlots: Object.freeze([]) }),
+    me: Object.freeze({ id: me.id, hud: rect(MARGIN, height - MARGIN - hudHeight, SIDE_WIDTH, hudHeight), hand: myHand, battlefield: myField, handSlots: Object.freeze(myBacks) }),
     banner,
     sidebar: rect(width - MARGIN - SIDE_WIDTH, MARGIN, SIDE_WIDTH, 470),
     log: rect(width - MARGIN - SIDE_WIDTH, MARGIN + 470 + GAP, SIDE_WIDTH, height - 2 * MARGIN - 470 - GAP),

@@ -106,6 +106,14 @@ export class PaymentService {
     return this.#repository.listPendingRefunds(limit);
   }
 
+  /**
+   * @param {readonly string[]} statuses
+   * @param {number} limit
+   */
+  refunds(statuses, limit) {
+    return this.#repository.listRefunds(statuses, limit);
+  }
+
   /** @param {string} name */
   cursor(name) {
     return this.#repository.getCursor(name);

@@ -8,6 +8,18 @@
  * and send them, so neither side can steer the seed (docs/tcg/03 §5).
  *
  * States: offline → connecting → idle ⇄ searching → matched → playing → over.
+ *
+ * In game protocol v2 (docs/tcg/12) the browser makes a session key for the
+ * game as soon as it is matched (or after a reload, for a game in progress)
+ * and asks the wallet to authorise it with the account's posting key; every
+ * move is then signed with it.
+ *
+ * Every move the server accepts comes back with a signed ack; with a
+ * `receipts` store they are checked and kept (docs/tcg/11-ack-firmati.md).
+ *
+ * Watching (docs/tcg/10-spettatori.md) runs beside those states: one game
+ * at a time, shown through a seatless RemoteMatchSession, resumed after a
+ * reconnection until it ends or the player stops watching.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { RemoteMatchSession } from "./RemoteMatchSession.js";
@@ -24,17 +36,27 @@ export const OnlineStatus = Object.freeze({
 
 /**
  * @typedef {Readonly<{ id: string, name: string, faction: string, totalCards: number, playable: boolean, problem: string | null }>} OnlineDeck id is the server's deck id
- * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, opponent: string | null, session: RemoteMatchSession | null }>} OnlineState
+ * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null }>} OnlineState
  */
 
-const INITIAL = Object.freeze({ status: OnlineStatus.OFFLINE, error: null, opponent: null, session: null });
+const INITIAL = Object.freeze({ status: OnlineStatus.OFFLINE, error: null, opponent: null, session: null, watching: null });
 
 export class OnlineService {
   #connection;
   #randomHex;
   #newCommandId;
   #accountDecks;
+  #liveGames;
+  #receipts;
+  #sessionKeys;
+  #wallet;
   #logger;
+  /** The signed-in account, from the welcome. @type {string | null} */
+  #account = null;
+  /** @type {Set<string>} games whose session key is being authorised */
+  #authorizing = new Set();
+  /** The key the server said it signs acks with. @type {string | null} */
+  #ackKey = null;
   /** @type {OnlineState} */
   #state = INITIAL;
   /** @type {Set<(state: OnlineState) => void>} */
@@ -49,15 +71,28 @@ export class OnlineService {
    *   randomHex: (bytes: number) => string,
    *   newCommandId: () => string,
    *   accountDecks: () => readonly OnlineDeck[],
+   *   liveGames?: import("../ports/LiveGamesApi.contract.js").LiveGamesApi,
+   *   receipts?: import("./AckReceipts.js").AckReceipts,
+   *   sessionKeys?: import("../ports/SessionKeys.contract.js").SessionKeys,
+   *   wallet?: Pick<import("../ports/WalletConnector.contract.js").WalletConnector, "signMessage">,
    *   logger: import("../ports/Logger.contract.js").Logger,
-   * }} deps
+   * }} deps `sessionKeys` and `wallet` are needed to play games in protocol v2
    */
-  constructor({ connection, randomHex, newCommandId, accountDecks, logger }) {
+  constructor({ connection, randomHex, newCommandId, accountDecks, liveGames, receipts, sessionKeys, wallet, logger }) {
     this.#connection = connection;
     this.#randomHex = randomHex;
     this.#newCommandId = newCommandId;
     this.#accountDecks = accountDecks;
+    this.#liveGames = liveGames ?? null;
+    this.#receipts = receipts ?? null;
+    this.#sessionKeys = sessionKeys ?? null;
+    this.#wallet = wallet ?? null;
     this.#logger = logger;
+  }
+
+  /** Whether this client can list games to watch. */
+  get canWatch() {
+    return this.#liveGames !== null;
   }
 
   get state() {
@@ -93,13 +128,18 @@ export class OnlineService {
   stop() {
     this.#started = false;
     this.#connection.close();
-    this.#state.session?.stop();
+    const { session, watching } = this.#state;
     this.#set(INITIAL);
+    session?.stop();
+    watching?.stop();
   }
 
-  /** @param {string} deckId the server's id of an account deck */
-  async queue(deckId) {
-    const reply = await this.#connection.request("queue.join", { mode: "casual", deckId });
+  /**
+   * @param {string} deckId the server's id of an account deck
+   * @param {"casual" | "ranked"} [mode]
+   */
+  async queue(deckId, mode = "casual") {
+    const reply = await this.#connection.request("queue.join", { mode, deckId });
     if (!reply.ok || reply.value.t === "error") {
       const error = reply.ok ? reply.value.d : reply.error;
       this.#set({ error: { code: error.code, message: error.message } });
@@ -123,7 +163,7 @@ export class OnlineService {
     if (session === null || !session.isStopped) {
       return session;
     }
-    const fresh = new RemoteMatchSession({ gameId: session.gameId, seat: session.seat, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId });
+    const fresh = this.#playerSession(session.gameId, /** @type {string} */ (session.seat));
     if (this.#lastView !== null) {
       fresh.apply(this.#lastView);
     }
@@ -134,8 +174,52 @@ export class OnlineService {
     return fresh;
   }
 
+  /** The games being played now, the most watched first. */
+  async liveGames() {
+    if (this.#liveGames === null) {
+      return fail("UNAVAILABLE", "this client cannot list games");
+    }
+    return this.#liveGames.live();
+  }
+
+  /**
+   * Starts watching a game (and stops watching any other).
+   * @param {string} gameId
+   * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<RemoteMatchSession> | import("@magic8/engine/shared/Result.js").Fail>}
+   */
+  async watch(gameId) {
+    const reply = await this.#connection.request("watch.start", { gameId });
+    if (!reply.ok || reply.value.t !== "watch.state") {
+      const error = reply.ok ? reply.value.d : reply.error;
+      return fail(error.details?.code ?? error.code, error.message);
+    }
+    const previous = this.#state.watching;
+    const session = new RemoteMatchSession({ gameId, seat: null, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId, onStop: () => this.#watchStopped(session) });
+    session.apply(reply.value.d);
+    this.#set({ watching: session });
+    if (previous !== null && previous.gameId !== gameId) {
+      previous.stop();
+    }
+    return ok(session);
+  }
+
+  /** @param {RemoteMatchSession} session */
+  #watchStopped(session) {
+    if (this.#state.watching !== session) {
+      return;
+    }
+    this.#set({ watching: null });
+    if (!session.isOver) {
+      this.#connection.request("watch.stop", {});
+    }
+  }
+
   /** Back to the lobby once a finished game has been looked at. */
   dismissGame() {
+    const session = this.#state.session;
+    if (session !== null) {
+      this.#sessionKeys?.forget(session.gameId);
+    }
     this.#state.session?.stop();
     this.#set({ status: OnlineStatus.IDLE, session: null, opponent: null });
   }
@@ -159,7 +243,17 @@ export class OnlineService {
       this.#set({ status: OnlineStatus.OFFLINE, error: { code: "HELLO_FAILED", message: "the game server did not welcome us" } });
       return;
     }
-    const { activeGame, queue } = hello.value.d;
+    this.#rewatch();
+    this.#welcomed(hello.value.d);
+  }
+
+  /**
+   * The server's welcome: who we are, the ack key, and a game or queue to resume.
+   * @param {any} welcome
+   */
+  #welcomed({ activeGame, queue, ackKey, user }) {
+    this.#ackKey = typeof ackKey === "string" ? ackKey : null;
+    this.#account = typeof user?.account === "string" ? user.account : null;
     if (activeGame !== null) {
       this.#adopt(activeGame);
     } else if (this.#state.session === null) {
@@ -180,17 +274,105 @@ export class OnlineService {
     } else if (t === "game.over") {
       this.#state.session?.finish(d);
       this.#set({ status: OnlineStatus.OVER });
+    } else if (t.startsWith("watch.")) {
+      this.#onWatchMessage(t, d);
     } else if (t === "session.replaced") {
       this.#set({ error: { code: "REPLACED", message: "the game was opened in another tab" } });
     }
   }
 
-  /** @param {{ gameId: string, seat: string, opponent: { account: string | null } }} found */
+  /**
+   * An update of the game being watched (anything about another game is stale).
+   * @param {string} t
+   * @param {any} d
+   */
+  #onWatchMessage(t, d) {
+    const watching = this.#state.watching;
+    if (watching === null || d.gameId !== watching.gameId) {
+      return;
+    }
+    if (t === "watch.events") {
+      watching.apply(d);
+    } else if (t === "watch.over") {
+      watching.finish(d);
+    }
+  }
+
+  /** A new connection: the server forgot what we watched, ask again (unless the game ended meanwhile). */
+  #rewatch() {
+    const watching = this.#state.watching;
+    if (watching === null || watching.isOver) {
+      return;
+    }
+    this.#connection.request("watch.start", { gameId: watching.gameId }).then((reply) => {
+      if (reply.ok && reply.value.t === "watch.state") {
+        watching.apply(reply.value.d);
+      }
+    });
+  }
+
+  /**
+   * A session for our seat, whose acks are checked and kept.
+   * @param {string} gameId
+   * @param {string} seat
+   */
+  #playerSession(gameId, seat) {
+    return new RemoteMatchSession({
+      gameId,
+      seat,
+      request: (type, data) => this.#connection.request(type, data),
+      newCommandId: this.#newCommandId,
+      onAck: (ack) => this.#keepAck(gameId, ack),
+      signMove: (move) => this.#sessionKeys?.sign(move) ?? Promise.resolve(null),
+    });
+  }
+
+  /**
+   * v2: a session key for this game, authorised by the account through the wallet (Keychain asks the player once).
+   * @param {string} gameId
+   */
+  async #authorizeSession(gameId) {
+    if (this.#authorizing.has(gameId) || this.#sessionKeys?.has(gameId) === true) {
+      return;
+    }
+    if (this.#sessionKeys === null || this.#wallet === null || this.#account === null) {
+      this.#set({ error: { code: "SESSION_UNAVAILABLE", message: "this game needs signed moves, and no wallet can authorise them here" } });
+      return;
+    }
+    this.#authorizing.add(gameId);
+    try {
+      const { key, authorizationText } = await this.#sessionKeys.create(gameId);
+      const signed = await this.#wallet.signMessage({ account: this.#account, message: authorizationText, keyRole: "Posting" });
+      const reply = signed.ok ? await this.#connection.request("game.session", { gameId, key, authorization: signed.value }) : null;
+      if (reply === null || !reply.ok || reply.value.t !== "game.session") {
+        this.#sessionKeys.forget(gameId);
+        const refused = reply === null ? "the wallet did not authorise it" : "the server refused it";
+        this.#set({ error: { code: "SESSION_REFUSED", message: `this game's signing key is not authorised (${refused}): your moves cannot be sent` } });
+      }
+    } finally {
+      this.#authorizing.delete(gameId);
+    }
+  }
+
+  /**
+   * @param {string} gameId
+   * @param {Readonly<Record<string, unknown>>} ack
+   */
+  #keepAck(gameId, ack) {
+    if (this.#receipts !== null && !this.#receipts.keep(gameId, ack, this.#ackKey)) {
+      this.#set({ error: { code: "BAD_ACK", message: "the server's signed receipt for a move does not verify" } });
+    }
+  }
+
+  /** @param {{ gameId: string, seat: string, opponent: { account: string | null }, protocol?: number }} found */
   #matched(found) {
-    const session = new RemoteMatchSession({ gameId: found.gameId, seat: found.seat, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId });
+    const session = this.#playerSession(found.gameId, found.seat);
     this.#set({ status: OnlineStatus.MATCHED, opponent: found.opponent.account, session, error: null });
     // Our entropy, drawn only now that the server is committed to its secret.
     this.#sendEntropy(found.gameId);
+    if (found.protocol >= 2) {
+      this.#authorizeSession(found.gameId);
+    }
   }
 
   /**
@@ -200,10 +382,14 @@ export class OnlineService {
   #adopt(view) {
     let session = this.#state.session;
     if (session === null || session.gameId !== view.gameId) {
-      session = new RemoteMatchSession({ gameId: view.gameId, seat: view.seat, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId });
+      session = this.#playerSession(view.gameId, view.seat);
     }
     session.apply(view);
     this.#lastView = view;
+    if (view.protocol >= 2 && (view.status === "CREATED" || view.status === "ACTIVE")) {
+      // A reloaded page lost its key: authorise a new one for the game in progress.
+      this.#authorizeSession(view.gameId);
+    }
     if (view.status === "CREATED") {
       // Reconnected before the game started: our entropy may not have arrived (the server ignores a second one).
       this.#sendEntropy(view.gameId);

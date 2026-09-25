@@ -25,8 +25,8 @@ import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ChaChaRandom } from "@magic8/engine/domain/random/ChaChaRandom.js";
 import { canonicalize } from "../canonical/CanonicalJson.js";
-import { HashTag, bytesToHex, concatBytes, hexToBytes, isHexOfLength, taggedHashHex, utf8 } from "../crypto/hash.js";
-import { CARD_ID_PATTERN } from "../game/constants.js";
+import { HashTag, bytesToHex, concatBytes, hexToBytes, isHash, isHexOfLength, taggedHashHex, utf8 } from "../crypto/hash.js";
+import { CARD_ID_PATTERN, PROTOCOL_VERSION } from "../game/constants.js";
 import { ProtocolError } from "../game/ProtocolError.js";
 
 export const DROP_TABLE_VERSION = 1;
@@ -136,6 +136,36 @@ export function dropTableHash(table) {
  */
 export function packEpochCommitment(secret) {
   return taggedHashHex(HashTag.PACK_EPOCH, secretBytes(secret));
+}
+
+export const PackEpochKind = Object.freeze({ COMMIT: "pack_epoch", REVEAL: "pack_epoch_reveal" });
+
+/**
+ * The `m8tcg_epoch` payload announcing an epoch's commitment, published
+ * before any order of the epoch can be paid.
+ * @param {number} epoch
+ * @param {string} commit
+ * @returns {string} canonical JSON
+ */
+export function packEpochAnnouncement(epoch, commit) {
+  if (!Number.isSafeInteger(epoch) || epoch < 1 || !isHash(commit)) {
+    throw new ProtocolError("an epoch announcement needs a positive epoch id and a commitment");
+  }
+  return canonicalize({ commit, epoch, kind: PackEpochKind.COMMIT, v: PROTOCOL_VERSION });
+}
+
+/**
+ * The `m8tcg_epoch` payload revealing an epoch's secret, once none of its orders can still be paid.
+ * @param {number} epoch
+ * @param {string} secret
+ * @returns {string} canonical JSON
+ */
+export function packEpochReveal(epoch, secret) {
+  if (!Number.isSafeInteger(epoch) || epoch < 1) {
+    throw new ProtocolError("an epoch reveal needs a positive epoch id");
+  }
+  secretBytes(secret);
+  return canonicalize({ epoch, kind: PackEpochKind.REVEAL, secret, v: PROTOCOL_VERSION });
 }
 
 /**

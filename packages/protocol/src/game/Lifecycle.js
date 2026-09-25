@@ -8,6 +8,8 @@
  *   → MOVE | FORCED_MOVE | STATE_CHECKPOINT …
  *   → GAME_FINISHED
  * GAME_ABORTED may end the game at any point after GAME_CREATED.
+ * SESSION (v2) may come from a seat at any point before the end: a player
+ * authorises a session key when joining, and a new one after losing theirs.
  * Nothing may follow a terminal event.
  */
 import { EventKind, SEATS } from "./constants.js";
@@ -24,9 +26,10 @@ export const LifecyclePhase = Object.freeze({
 /** Kinds allowed in each phase and the phase they lead to. */
 const TRANSITIONS = Object.freeze({
   [LifecyclePhase.EMPTY]: { [EventKind.GAME_CREATED]: LifecyclePhase.JOINING },
-  [LifecyclePhase.JOINING]: { [EventKind.PLAYER_JOINED]: LifecyclePhase.JOINING, [EventKind.GAME_ABORTED]: LifecyclePhase.ABORTED },
-  [LifecyclePhase.READY]: { [EventKind.GAME_STARTED]: LifecyclePhase.PLAYING, [EventKind.GAME_ABORTED]: LifecyclePhase.ABORTED },
+  [LifecyclePhase.JOINING]: { [EventKind.PLAYER_JOINED]: LifecyclePhase.JOINING, [EventKind.SESSION]: LifecyclePhase.JOINING, [EventKind.GAME_ABORTED]: LifecyclePhase.ABORTED },
+  [LifecyclePhase.READY]: { [EventKind.GAME_STARTED]: LifecyclePhase.PLAYING, [EventKind.SESSION]: LifecyclePhase.READY, [EventKind.GAME_ABORTED]: LifecyclePhase.ABORTED },
   [LifecyclePhase.PLAYING]: {
+    [EventKind.SESSION]: LifecyclePhase.PLAYING,
     [EventKind.MOVE]: LifecyclePhase.PLAYING,
     [EventKind.FORCED_MOVE]: LifecyclePhase.PLAYING,
     [EventKind.STATE_CHECKPOINT]: LifecyclePhase.PLAYING,
