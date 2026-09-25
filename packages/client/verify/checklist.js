@@ -29,6 +29,34 @@ function contentCheck(content) {
   return { label: "Content", ok: content.verified, detail: `${content.declared.hash.slice(0, 16)}… (engine ${content.declared.engineVersion}) ${state}` };
 }
 
+const CONTRADICTED = new Set(["DIVERGENT", "OMITTED"]);
+const WORTHLESS = new Set(["BAD_SIGNATURE", "UNTRUSTED_KEY", "INVALID"]);
+
+/**
+ * The acks this browser kept for the game (docs/tcg/11), held against the chain.
+ * @param {readonly { status: string, seq: number | null }[]} acks
+ * @returns {Check}
+ */
+export function ackCheck(acks) {
+  const count = (statuses) => acks.filter((ack) => statuses.has(ack.status));
+  const contradicted = count(CONTRADICTED);
+  if (contradicted.length > 0) {
+    const events = contradicted.map((ack) => `${ack.seq} (${ack.status.toLowerCase()})`).join(", ");
+    return { label: "Your signed acks", ok: false, detail: `PROOF: the server acknowledged moves the published game contradicts, at event(s) ${events}` };
+  }
+  const worthless = count(WORTHLESS).length;
+  const agreed = count(new Set(["CONSISTENT"])).length;
+  const waiting = count(new Set(["NOT_PUBLISHED"])).length;
+  const parts = [`${agreed} of ${acks.length} agree with the chain`];
+  if (waiting > 0) {
+    parts.push(`${waiting} not published yet`);
+  }
+  if (worthless > 0) {
+    parts.push(`${worthless} prove nothing (bad signature or a key the root never named)`);
+  }
+  return { label: "Your signed acks", ok: worthless === 0 ? true : null, detail: parts.join("; ") };
+}
+
 /**
  * @param {any} result
  * @param {{ root: string, indexed: boolean }} context
@@ -49,14 +77,21 @@ export function checklist(result, { root, indexed }) {
     const outcome = replay.outcome === null ? "" : ` — winner ${replay.outcome.winner ?? "none"} (${replay.outcome.reason})`;
     checks.push({ label: "Reveals and replay", ok: replay.status === "VALID", detail: `${replay.message ?? replay.status.toLowerCase()}${outcome}` });
   }
+  if ((result.acks ?? []).length > 0) {
+    checks.push(ackCheck(result.acks));
+  }
   return Object.freeze(checks.map((check) => Object.freeze(check)));
 }
 
 /**
  * @param {string} verdict
+ * @param {readonly { status: string }[]} [acks] the kept acks, checked
  * @returns {Readonly<{ text: string, tone: "good" | "bad" | "wait" }>}
  */
-export function verdictBanner(verdict) {
+export function verdictBanner(verdict, acks = []) {
+  if (acks.some((ack) => CONTRADICTED.has(ack.status))) {
+    return Object.freeze({ text: "CONTRADICTED — the chain differs from moves the server acknowledged to you (see below)", tone: "bad" });
+  }
   if (verdict === "VALID") {
     return Object.freeze({ text: "VALID — every move and the result follow from the chain", tone: "good" });
   }

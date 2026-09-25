@@ -46,6 +46,12 @@
  * @property {(userId: string, type: string, data: unknown) => void} send
  */
 
+/**
+ * @typedef {object} AckSigner signs acks with the server's ack key (never a key that holds funds or publishes)
+ * @property {string} publicKey "STM…"
+ * @property {(message: string) => string} sign the message's compact signature, as Keychain's signBuffer makes it
+ */
+
 export const GAME_REPOSITORY_METHODS = Object.freeze(["insertGame", "findGame", "listEvents", "appendEvents", "setEntropy", "setResults", "findAck", "insertCommand", "insertSnapshot", "listActive", "activeGameOf", "listFinished", "countFinished"]);
 
 export const RECORD_STORE_METHODS = Object.freeze(["lockForSealing", "listUnsealed", "countUnsealed", "headAt", "nextRecordSeq", "markSealed", "gamesWithUnsealedBefore"]);

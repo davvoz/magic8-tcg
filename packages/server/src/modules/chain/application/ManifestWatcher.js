@@ -8,8 +8,12 @@
  * irreversible block — anything it publishes afterwards lands in a later
  * block and verifies. Until then its records wait in the outbox, and the
  * log says why.
+ *
+ * It also watches the server's ack key (docs/tcg/11-ack-firmati.md): acks
+ * signed by a key no `ack_keys` manifest names prove nothing to a verifier,
+ * so the log says so until the root publishes one.
  */
-import { BroadcasterRegistry, OperationId } from "@magic8/protocol";
+import { AckKeyRegistry, BroadcasterRegistry, OperationId } from "@magic8/protocol";
 
 const PAGE_SIZE = 1000;
 
@@ -25,6 +29,9 @@ export class ManifestWatcher {
   #irreversibleBlock = 0;
   /** @type {Set<string>} signers already reported as unauthorised */
   #reported = new Set();
+  #ackKey;
+  /** @type {boolean | null} null until the first read */
+  #ackKeyAuthorized = null;
 
   /**
    * @param {{
@@ -32,9 +39,11 @@ export class ManifestWatcher {
    *   rootAccount: string,
    *   logger: import("../../../kernel/logger.js").Logger,
    *   maxPagesPerRound?: number,
+   *   ackKey?: string | null,
    * }} deps
    */
-  constructor({ reader, rootAccount, logger, maxPagesPerRound = 20 }) {
+  constructor({ reader, rootAccount, logger, maxPagesPerRound = 20, ackKey = null }) {
+    this.#ackKey = ackKey;
     this.#reader = reader;
     this.#rootAccount = rootAccount;
     this.#logger = logger;
@@ -76,5 +85,23 @@ export class ManifestWatcher {
     const irreversible = this.#manifests.filter((operation) => operation.blockNum <= head.irreversibleBlock);
     this.#registry = BroadcasterRegistry.fromOperations(irreversible, this.#rootAccount).registry;
     this.#irreversibleBlock = head.irreversibleBlock;
+    this.#checkAckKey(irreversible);
+  }
+
+  /** Whether the root's manifests name the server's ack key now (null: not known yet, or acks unsigned). */
+  get ackKeyAuthorized() {
+    return this.#ackKey === null ? null : this.#ackKeyAuthorized;
+  }
+
+  /** @param {readonly import("@magic8/protocol").ChainOperation[]} irreversible */
+  #checkAckKey(irreversible) {
+    if (this.#ackKey === null) {
+      return;
+    }
+    const authorized = AckKeyRegistry.fromOperations(irreversible, this.#rootAccount).registry.isAuthorized(this.#ackKey, this.#irreversibleBlock);
+    if (!authorized && this.#ackKeyAuthorized !== false) {
+      this.#logger.warn("the ack key is not named by the root account's ack_keys manifest: players' acks prove nothing until it is", { key: this.#ackKey, root: this.#rootAccount });
+    }
+    this.#ackKeyAuthorized = authorized;
   }
 }

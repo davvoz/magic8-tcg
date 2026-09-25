@@ -19,6 +19,7 @@ export class RemoteMatchSession {
   #request;
   #newCommandId;
   #onStop;
+  #onAck;
   /** @type {any} */
   #snapshot = null;
   #version = 0;
@@ -29,14 +30,16 @@ export class RemoteMatchSession {
   #listeners = new Set();
 
   /**
-   * @param {{ gameId: string, seat: string | null, request: import("../ports/Realtime.contract.js").RealtimeConnection["request"], newCommandId: () => string, onStop?: () => void }} deps seat null: watching
+   * @param {{ gameId: string, seat: string | null, request: import("../ports/Realtime.contract.js").RealtimeConnection["request"], newCommandId: () => string, onStop?: () => void, onAck?: (ack: Readonly<Record<string, unknown>>) => void }} deps
+   *   seat null: watching; onAck: every accepted command's ack (signed by the server, docs/tcg/11)
    */
-  constructor({ gameId, seat, request, newCommandId, onStop = () => undefined }) {
+  constructor({ gameId, seat, request, newCommandId, onStop = () => undefined, onAck = () => undefined }) {
     this.#gameId = gameId;
     this.#seat = seat;
     this.#request = request;
     this.#newCommandId = newCommandId;
     this.#onStop = onStop;
+    this.#onAck = onAck;
   }
 
   get gameId() {
@@ -123,6 +126,7 @@ export class RemoteMatchSession {
     }
     const { t, d } = reply.value;
     if (t === "game.ack" && d.ok === true) {
+      this.#onAck(d);
       return ok(d);
     }
     const error = t === "game.ack" ? d.error : d;

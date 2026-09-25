@@ -9,6 +9,9 @@
  *
  * States: offline → connecting → idle ⇄ searching → matched → playing → over.
  *
+ * Every move the server accepts comes back with a signed ack; with a
+ * `receipts` store they are checked and kept (docs/tcg/11-ack-firmati.md).
+ *
  * Watching (docs/tcg/10-spettatori.md) runs beside those states: one game
  * at a time, shown through a seatless RemoteMatchSession, resumed after a
  * reconnection until it ends or the player stops watching.
@@ -39,7 +42,10 @@ export class OnlineService {
   #newCommandId;
   #accountDecks;
   #liveGames;
+  #receipts;
   #logger;
+  /** The key the server said it signs acks with. @type {string | null} */
+  #ackKey = null;
   /** @type {OnlineState} */
   #state = INITIAL;
   /** @type {Set<(state: OnlineState) => void>} */
@@ -55,15 +61,17 @@ export class OnlineService {
    *   newCommandId: () => string,
    *   accountDecks: () => readonly OnlineDeck[],
    *   liveGames?: import("../ports/LiveGamesApi.contract.js").LiveGamesApi,
+   *   receipts?: import("./AckReceipts.js").AckReceipts,
    *   logger: import("../ports/Logger.contract.js").Logger,
    * }} deps
    */
-  constructor({ connection, randomHex, newCommandId, accountDecks, liveGames, logger }) {
+  constructor({ connection, randomHex, newCommandId, accountDecks, liveGames, receipts, logger }) {
     this.#connection = connection;
     this.#randomHex = randomHex;
     this.#newCommandId = newCommandId;
     this.#accountDecks = accountDecks;
     this.#liveGames = liveGames ?? null;
+    this.#receipts = receipts ?? null;
     this.#logger = logger;
   }
 
@@ -140,7 +148,7 @@ export class OnlineService {
     if (session === null || !session.isStopped) {
       return session;
     }
-    const fresh = new RemoteMatchSession({ gameId: session.gameId, seat: session.seat, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId });
+    const fresh = this.#playerSession(session.gameId, /** @type {string} */ (session.seat));
     if (this.#lastView !== null) {
       fresh.apply(this.#lastView);
     }
@@ -217,7 +225,8 @@ export class OnlineService {
       return;
     }
     this.#rewatch();
-    const { activeGame, queue } = hello.value.d;
+    const { activeGame, queue, ackKey } = hello.value.d;
+    this.#ackKey = typeof ackKey === "string" ? ackKey : null;
     if (activeGame !== null) {
       this.#adopt(activeGame);
     } else if (this.#state.session === null) {
@@ -275,9 +284,28 @@ export class OnlineService {
     });
   }
 
+  /**
+   * A session for our seat, whose acks are checked and kept.
+   * @param {string} gameId
+   * @param {string} seat
+   */
+  #playerSession(gameId, seat) {
+    return new RemoteMatchSession({ gameId, seat, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId, onAck: (ack) => this.#keepAck(gameId, ack) });
+  }
+
+  /**
+   * @param {string} gameId
+   * @param {Readonly<Record<string, unknown>>} ack
+   */
+  #keepAck(gameId, ack) {
+    if (this.#receipts !== null && !this.#receipts.keep(gameId, ack, this.#ackKey)) {
+      this.#set({ error: { code: "BAD_ACK", message: "the server's signed receipt for a move does not verify" } });
+    }
+  }
+
   /** @param {{ gameId: string, seat: string, opponent: { account: string | null } }} found */
   #matched(found) {
-    const session = new RemoteMatchSession({ gameId: found.gameId, seat: found.seat, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId });
+    const session = this.#playerSession(found.gameId, found.seat);
     this.#set({ status: OnlineStatus.MATCHED, opponent: found.opponent.account, session, error: null });
     // Our entropy, drawn only now that the server is committed to its secret.
     this.#sendEntropy(found.gameId);
@@ -290,7 +318,7 @@ export class OnlineService {
   #adopt(view) {
     let session = this.#state.session;
     if (session === null || session.gameId !== view.gameId) {
-      session = new RemoteMatchSession({ gameId: view.gameId, seat: view.seat, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId });
+      session = this.#playerSession(view.gameId, view.seat);
     }
     session.apply(view);
     this.#lastView = view;

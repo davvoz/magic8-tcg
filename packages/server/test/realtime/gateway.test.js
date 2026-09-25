@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
 import { WebSocket } from "ws";
-import { ORIGIN, buildTestApp, keyPair, listen } from "../helpers.js";
+import { ACK_KEYS, ORIGIN, buildTestApp, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
 
 const alice = keyPair(1);
@@ -127,6 +127,7 @@ describe("WebSocket gateway", () => {
     assert.equal(welcome.d.user.account, "alice");
     assert.equal(welcome.d.activeGame, null);
     assert.deepEqual(welcome.d.queue, { state: "idle" });
+    assert.equal(welcome.d.ackKey, ACK_KEYS.publicKey, "the key every ack is signed with");
     await peer.close();
   });
 

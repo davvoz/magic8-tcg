@@ -85,7 +85,8 @@ describe("RateLimiter", () => {
 
 describe("config", () => {
   const DATA_KEY = "ab".repeat(32);
-  const PRODUCTION = Object.freeze({ M8_PUBLIC_ORIGIN: "https://play.example", M8_DATABASE_URL: "postgres://app@db.internal:5432/tcg?sslmode=require", M8_DATA_KEY: DATA_KEY });
+  const ACK_KEY = "5JdeC9P7Pbd1uGdFVEsJ41EkEnADbbHGq6p1BwFxm6txNBsQnsw";
+  const PRODUCTION = Object.freeze({ M8_PUBLIC_ORIGIN: "https://play.example", M8_DATABASE_URL: "postgres://app@db.internal:5432/tcg?sslmode=require", M8_DATA_KEY: DATA_KEY, M8_ACK_KEY: ACK_KEY });
 
   it("derives secure settings from an https origin", () => {
     const config = loadConfig({ ...PRODUCTION, M8_PORT: "9000" });
@@ -96,6 +97,7 @@ describe("config", () => {
     assert.equal(config.databaseUrl, PRODUCTION.M8_DATABASE_URL);
     assert.equal(config.dataKeyIsDevelopment, false);
     assert.deepEqual([...config.dataKeys], [[1, DATA_KEY]]);
+    assert.equal(config.ackKey, ACK_KEY);
   });
 
   it("keeps retired data keys for rotation, and uses the public development key only locally", () => {
@@ -149,6 +151,9 @@ describe("config", () => {
       { ...PRODUCTION, M8_DATA_KEYS_OLD: `1:${"cd".repeat(32)}` },
       { ...PRODUCTION, M8_DATA_KEYS_OLD: "2:short" },
       { M8_SHOP_ACCOUNT: "Not An Account" },
+      { ...PRODUCTION, M8_ACK_KEY: "" },
+      { ...PRODUCTION, M8_ACK_KEY: "not-a-wif" },
+      { ...PRODUCTION, M8_BROADCASTER_KEYS: `m8tcg.b1:${ACK_KEY}` },
     ]) {
       assert.throws(() => loadConfig(env), ConfigError, JSON.stringify(env));
     }

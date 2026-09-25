@@ -12,7 +12,7 @@
     p { color: var(--muted); }
     form { display: grid; gap: 10px; background: var(--panel); padding: 16px; border-radius: 8px; }
     label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
-    input { font: 14px ui-monospace, monospace; padding: 8px; border-radius: 6px; border: 1px solid #2a3350; background: var(--bg); color: var(--text); min-width: 0; }
+    input, select { font: 14px ui-monospace, monospace; padding: 8px; border-radius: 6px; border: 1px solid #2a3350; background: var(--bg); color: var(--text); min-width: 0; }
     button { font: inherit; padding: 8px 18px; border-radius: 6px; border: 0; background: #3e63dd; color: white; cursor: pointer; justify-self: start; }
     button:disabled { opacity: .5; cursor: default; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; background: var(--panel); padding: 12px; border-radius: 6px; }
@@ -25,7 +25,8 @@
     <p>The root account authorises the accounts that publish game records. Verifiers accept only records signed by an account authorised <em>before</em> the record's block, so publish this before the server starts broadcasting. It is signed with the root account's <strong>active</strong> key in Steem Keychain, on this computer: that key never goes to the game server. To revoke every broadcaster (for example after a leaked key), publish an empty list.</p>
     <form id="manifest">
       <label>Root account <input type="text" id="root" autocomplete="off" spellcheck="false" required></label>
-      <label>Broadcaster accounts, comma-separated (posting keys only on the server) <input type="text" id="accounts" autocomplete="off" spellcheck="false"></label>
+      <label>What it authorises <select id="kind"><option value="broadcasters">Broadcaster accounts (sign game records)</option><option value="ack_keys">Ack keys (sign the server's acks to players)</option></select></label>
+      <label><span id="members-label">Broadcaster accounts, comma-separated (posting keys only on the server)</span> <input type="text" id="accounts" autocomplete="off" spellcheck="false"></label>
       <label>Valid from block (0 = from the block that includes this manifest) <input type="text" id="from" value="0" inputmode="numeric"></label>
       <button type="submit" id="publish">Publish with Keychain</button>
     </form>

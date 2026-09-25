@@ -42,6 +42,7 @@ Macchina: 4 vCPU Intel Xeon 2,1 GHz, Node 22.
   - Il limite vero saranno i Resource Credits, da misurare su mainnet (M5, "Da fare a mano").
   - Nella prova da 100 partite, un solo account ha avuto bisogno di 9 minuti di blocchi per smaltire 47 secondi di gioco accelerato. Con tempi umani le stesse partite durano 15–20 minuti e l'account resta in pari.
 - **Abusi.** L'attaccante viene chiuso dopo il burst consentito (40 messaggi) più 10 violazioni. Le partite in corso non hanno visto né errori né comandi rifiutati.
+- **Ack firmati (M7.3, dopo la misura):** ogni comando accettato costa in più una firma secp256k1, circa 0,8 ms. A 170 comandi al secondo sono circa il 14% di un core: da rimisurare, non cambia l'ordine di grandezza.
 - **Ottimizzazione fatta durante la misura:** il conteggio degli eventi in attesa di sigillatura è tenuto in memoria per partita (prima costava una query per comando): +8% di throughput.
 
 ## Limiti di questa misura

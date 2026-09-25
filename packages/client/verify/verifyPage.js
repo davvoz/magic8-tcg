@@ -4,7 +4,8 @@
  * (verifyGameOnChain). Only textContent is ever written to the page.
  */
 import { GAME_ID_PATTERN, verifyGameOnChain } from "@magic8/protocol";
-import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient } from "@magic8/steem";
+import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, recoverSigner } from "@magic8/steem";
+import { receiptsKey } from "../src/application/online/AckReceipts.js";
 import { checklist, verdictBanner } from "./checklist.js";
 
 const DEFAULT_ROOT = "luciojolly";
@@ -70,6 +71,20 @@ async function fetchContent(hash) {
   return response.ok ? response.text() : null;
 }
 
+/**
+ * The signed acks this browser kept while playing the game (docs/tcg/11).
+ * @param {string} gameId
+ * @returns {unknown[]}
+ */
+function keptAcks(gameId) {
+  try {
+    const stored = JSON.parse(globalThis.localStorage.getItem(receiptsKey(gameId)) ?? "[]");
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
 async function run() {
   const gameId = element("game").value.trim();
   const root = element("root").value.trim() || DEFAULT_ROOT;
@@ -84,8 +99,8 @@ async function run() {
   element("raw").hidden = true;
   try {
     const blocks = element("scan").checked ? null : await indexedBlocks(gameId);
-    const result = await verifyGameOnChain({ gameId, reader: readerFor(nodes.length > 0 ? nodes : DEFAULT_NODES), rootAccount: root, blocks, fetchContent });
-    const banner = verdictBanner(result.verdict);
+    const result = await verifyGameOnChain({ gameId, reader: readerFor(nodes.length > 0 ? nodes : DEFAULT_NODES), rootAccount: root, blocks, fetchContent, acks: keptAcks(gameId), recoverSigner });
+    const banner = verdictBanner(result.verdict, result.acks);
     showBanner(banner.text, banner.tone);
     showChecks(checklist(result, { root, indexed: blocks !== null }));
     element("json").textContent = JSON.stringify(result, null, 2);

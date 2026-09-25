@@ -313,7 +313,7 @@ export class MatchScene extends Scene {
     const confirmLabel = interaction.confirmLabel;
     const playing = !snapshot.isOver && !this.#spectating;
     if (this.#spectating) {
-      return [{ id: "leave", text: "Stop watching", visible: true, enabled: true, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
+      return [{ id: "leave", text: "Leave", visible: true, enabled: true, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
     }
     return [
       { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: true, variant: "primary", onActivate: () => this.#confirm() },

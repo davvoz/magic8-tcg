@@ -1,6 +1,6 @@
 # 07 — Runbook operativo
 
-**Stato:** M6, 2026-09-24. Per chi installa e gestisce il server. Ogni procedura dice cosa fare, cosa controllare e cosa **non** fare.
+**Stato:** M6, aggiornato in M7.3 (2026-09-24). Per chi installa e gestisce il server. Ogni procedura dice cosa fare, cosa controllare e cosa **non** fare.
 
 ## 1. Installazione
 
@@ -21,6 +21,7 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 | `M8_SHOP_ACCOUNT` | default `luciojolly` | riceve i pagamenti |
 | `M8_ROOT_ACCOUNT` | default `luciojolly` | pubblica i manifest (consigliato un account dedicato, vedi 06) |
 | `M8_BROADCASTER_KEYS` | per pubblicare | `account:WIF_posting,…`, **solo chiavi posting** |
+| `M8_ACK_KEY` | sì (https) | chiave WIF dedicata che firma gli ack ai giocatori (11); mai la chiave di un account o di un broadcaster |
 | `M8_ADMIN_ACCOUNTS` | default = shop | account che vedono `/admin.html` |
 | `M8_METRICS_TOKEN` | per il monitoraggio | 32–128 caratteri: `Authorization: Bearer …` su `/api/metrics` |
 | `M8_STEEM_NODES` | default nell'ordine di 06 | nodi RPC, separati da virgola |
@@ -28,7 +29,8 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 
 Il server rifiuta di partire con:
 - una configurazione non valida (il messaggio dice quale variabile);
-- una chiave broadcaster che controlla anche l'autorità active o owner.
+- una chiave broadcaster che controlla anche l'autorità active o owner;
+- una `M8_ACK_KEY` uguale a una chiave broadcaster.
 
 **Sonde per la piattaforma:**
 - `GET /api/health`: il processo risponde (liveness);
@@ -41,7 +43,7 @@ Il server rifiuta di partire con:
 ## 2. Lancio (una volta)
 
 1. Creare gli account: root (meglio dedicato), shop, 1–4 broadcaster (nomi validi: ogni parte tra i punti ha almeno 3 caratteri). Delegare Steem Power ai broadcaster da un account freddo.
-2. Aprire `/manifest.html` e pubblicare con Keychain, chiave **active del root**, la lista dei broadcaster. Attendere circa un minuto (irreversibilità).
+2. Aprire `/manifest.html` e pubblicare con Keychain, chiave **active del root**, la lista dei broadcaster. Poi, scegliendo "Ack keys", la chiave pubblica di `M8_ACK_KEY` (all'avvio il log la mostra se non è ancora nominata: `the ack key is not named…`). Attendere circa un minuto (irreversibilità).
 3. Avviare il server con `M8_BROADCASTER_KEYS`. Nel log: nessun `broadcaster not authorised`.
 4. Giocare una partita di prova e verificarla:
    - `node tools/verify-game.js <id> --server https://…`;
@@ -76,7 +78,13 @@ Il server rifiuta di partire con:
 4. Aggiornare `M8_BROADCASTER_KEYS` e riavviare. I record in attesa ripartono da soli, con gli stessi byte.
 5. Gli allarmi `UNKNOWN_ON_CHAIN` delle operazioni fatte dall'attaccante vanno risolti annotando l'incidente. Le partite restano verificabili: le operazioni firmate dopo la revoca non contano.
 
-### 4.3 Altri segreti
+### 4.3 Chiave degli ack compromessa (o sospetta)
+
+1. **Subito:** da `/manifest.html`, "Ack keys", pubblicare un manifest con la lista vuota (o con la sola chiave nuova).
+2. Generare una chiave nuova, impostarla in `M8_ACK_KEY`, riavviare, e nominarla con un manifest (se non fatto al punto 1).
+3. Annotare da quando la chiave può essere stata esposta: con quella chiave si possono fabbricare "prove" contro il server per le partite create mentre era valida (11, Limiti). Le contestazioni su quelle partite vanno giudicate con cautela.
+
+### 4.4 Altri segreti
 
 - **Token delle metriche:** si cambia la variabile e si riavvia.
 - **Sessioni utente:** un utente che cambia la chiave posting perde le sessioni aperte entro 10 minuti (job di controllo delle chiavi).
@@ -114,7 +122,7 @@ Dal pannello, "Check hash chain" ricalcola la catena di hash dell'audit. `BROKEN
 
 ## 9. Server compromesso
 
-1. Revocare i broadcaster (§4.2).
+1. Revocare i broadcaster (§4.2) e la chiave degli ack (§4.3).
 2. Cambiare la chiave dei dati (§4.1), le credenziali del database e il token delle metriche.
 3. Invalidare tutte le sessioni: `UPDATE sessions SET revoked_at = now() WHERE revoked_at IS NULL`.
 

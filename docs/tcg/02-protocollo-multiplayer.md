@@ -101,13 +101,13 @@
 
 | `t` | `d` |
 |---|---|
-| `welcome` | `{ "user", "serverTime", "activeGame": <vista della partita> \| null, "queue": { "state" } }` (risposta a `hello`: chi rientra riceve subito lo stato completo della sua partita) |
+| `welcome` | `{ "user", "serverTime", "activeGame": <vista della partita> \| null, "queue": { "state" }, "ackKey": "STM…" \| null }` (risposta a `hello`: chi rientra riceve subito lo stato completo della sua partita) |
 | `queue.status` | `{ "state": "searching"\|"idle", "since", "estimatedWaitMs" }` |
 | `match.found` | `{ "gameId", "seat", "opponent": { "account" }, "seedCommit": "<hex64>", "entropyDeadline" }` |
 | `game.joined` | `{ "gameId" }` (risposta a `game.entropy`) |
 | `game.state` | la **vista della partita** (risposta a `game.sync`): `{ "gameId", "seat", "status", "opponent": { "account" }, "seedCommit", "entropyDeadline", "version", "lastSeq", "head", "snapshot": <snapshot per prospettiva> \| null, "clock": { "activeSeat", "deadline", "reserveMs": { "s0", "s1" } } }` |
 | `game.events` | la vista della partita più `events`: gli eventi del motore redatti per prospettiva, per le animazioni. Il client **sostituisce** il proprio stato con lo snapshot ricevuto: non applica eventi e non ha mai un motore di una partita online |
-| `game.ack` | `{ "commandId", "ok": true, "version", "head" }` oppure `{ "commandId", "ok": false, "error": { "code" } }` |
+| `game.ack` | `{ "commandId", "ok": true, "version", "head", "seq", "at", "key", "sig" }` (firmato, 11) oppure `{ "commandId", "ok": false, "error": { "code" } }` |
 | `game.over` | `{ "gameId", "winner", "reason", "you" }` (l'URL di verifica arriva con M5) |
 | `watch.state`, `watch.events`, `watch.over` | la vista dello spettatore, gli aggiornamenti dopo ogni mossa, la fine (10) |
 | `session.replaced` | `{}`: la connessione sta per essere chiusa (4000) perché l'utente si è connesso da un'altra scheda |

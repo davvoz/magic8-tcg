@@ -26,6 +26,8 @@ export function registerSessionMessages({ router, games, matchmaking, clock }) {
         serverTime: clock.now(),
         activeGame: gameId === null ? null : await games.view(user.id, gameId),
         queue: await matchmaking.status(user.id),
+        // The key that signs acks (docs/tcg/11); the client checks every ack against it.
+        ackKey: games.ackKey,
       },
     };
   });

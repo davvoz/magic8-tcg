@@ -311,4 +311,4 @@ Regola fondamentale: **gli eventi nel DB sono append-only** (nessun `UPDATE`/`DE
 ## 18. Evoluzioni previste (v2)
 
 - **Firma delle mosse dei giocatori** con chiave di sessione effimera: al join il client genera una coppia di chiavi secp256k1 non esportabile, la autorizza con un `requestSignBuffer` Keychain (`"m8tcg session <gameId> <pubkey>"`), e firma ogni comando; il campo `sig` del `MOVE` porta la firma. Il server non può più attribuire a un giocatore una mossa che non ha fatto.
-- **Ack firmati dal server**: ogni ack include `head_i` firmato; il giocatore conserva una prova crittografica di ciò che il server ha accettato e può dimostrare una divergenza con la catena.
+- **Ack firmati dal server**: fatto in M7.3, vedi 11. Ogni ack di un comando accettato porta `seq` e `head` dell'ultimo evento, firmati con una chiave dedicata che il root nomina in un manifest `ack_keys`; il giocatore conserva gli ack e può dimostrare una divergenza con la catena (`DIVERGENT`, `OMITTED`).

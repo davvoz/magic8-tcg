@@ -14,22 +14,37 @@
  *   --scan              ignore any index: find the records by reading every
  *                       authorised broadcaster's history (slower)
  *   --content <file>    the content payload, instead of downloading it
+ *   --acks <file>       signed acks a player kept (a JSON array): each is
+ *                       checked against the published game (docs/tcg/11)
  *   --nodes <urls>      STEEM API nodes, comma-separated
  *   --json              print the full result as JSON
  *
- * Exit code: 0 VALID, 1 not valid (or not finished), 2 could not verify.
+ * Exit code: 0 VALID, 1 not valid (or not finished, or an ack the chain
+ * contradicts), 2 could not verify.
  */
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
-import { GAME_ID_PATTERN, Verdict, verifyGameOnChain } from "@magic8/protocol";
-import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient } from "@magic8/steem";
+import { AckStatus, GAME_ID_PATTERN, Verdict, verifyGameOnChain } from "@magic8/protocol";
+import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, recoverSigner } from "@magic8/steem";
 
 export const DEFAULT_ROOT = "luciojolly";
 export const DEFAULT_NODES = Object.freeze(["https://api.moecki.online", "https://api.justyy.com", "https://api.steemit.com"]);
 
-const USAGE = "usage: node tools/verify-game.js <gameId> [--root account] [--server origin] [--scan] [--content file] [--nodes urls] [--json]";
+const USAGE = "usage: node tools/verify-game.js <gameId> [--root account] [--server origin] [--scan] [--content file] [--acks file] [--nodes urls] [--json]";
+
+/** What an ack status means for the player who kept it. */
+const ACK_MEANING = Object.freeze({
+  [AckStatus.CONSISTENT]: "the chain agrees",
+  [AckStatus.DIVERGENT]: "PROOF: the published game differs from what the server acknowledged",
+  [AckStatus.OMITTED]: "PROOF: the published game ended without this acknowledged move",
+  [AckStatus.NOT_PUBLISHED]: "not on the chain yet",
+  [AckStatus.BAD_SIGNATURE]: "the signature does not match: this ack proves nothing",
+  [AckStatus.UNTRUSTED_KEY]: "signed by a key the root had not named: this ack proves nothing",
+  [AckStatus.INVALID]: "malformed, or for another game",
+});
+const CONTRADICTED = new Set([AckStatus.DIVERGENT, AckStatus.OMITTED]);
 
 class UsageError extends Error {}
 
@@ -40,7 +55,7 @@ function parse(argv) {
   const { values, positionals } = parseArgs({
     args: [...argv],
     allowPositionals: true,
-    options: { root: { type: "string" }, server: { type: "string" }, scan: { type: "boolean" }, content: { type: "string" }, nodes: { type: "string" }, json: { type: "boolean" } },
+    options: { root: { type: "string" }, server: { type: "string" }, scan: { type: "boolean" }, content: { type: "string" }, acks: { type: "string" }, nodes: { type: "string" }, json: { type: "boolean" } },
   });
   const gameId = positionals[0];
   if (positionals.length !== 1 || !GAME_ID_PATTERN.test(gameId)) {
@@ -103,11 +118,19 @@ function describeChecks({ history, replay, content, verdict }) {
 }
 
 /**
+ * One line per kept ack.
+ * @param {Awaited<ReturnType<typeof verifyGameOnChain>>} result
+ */
+function describeAcks({ acks }) {
+  return acks.map((ack) => `ack ${ack.commandId ?? "?"} (event ${ack.seq ?? "?"}): ${ack.status} — ${ACK_MEANING[ack.status]}`);
+}
+
+/**
  * @param {Awaited<ReturnType<typeof verifyGameOnChain>>} result
  * @param {{ gameId: string, root: string, blocks: readonly number[] | null }} context
  */
 export function describeResult(result, context) {
-  return [...describeSources(result, context), ...describeChecks(result)].join("\n");
+  return [...describeSources(result, context), ...describeChecks(result), ...describeAcks(result)].join("\n");
 }
 
 /**
@@ -146,10 +169,34 @@ function contentSource(options, fetchImpl) {
   };
 }
 
+/**
+ * @param {ReturnType<typeof parse>} options
+ * @returns {Promise<readonly unknown[]>}
+ */
+async function keptAcks(options) {
+  if (options.acks === undefined) {
+    return [];
+  }
+  const parsed = JSON.parse(await readFile(options.acks, "utf8"));
+  if (!Array.isArray(parsed)) {
+    throw new UsageError("--acks: expected a JSON array of acks");
+  }
+  return parsed;
+}
+
 /** @param {ReturnType<typeof parse>} options */
 function nodeReader(options) {
   const nodes = options.nodes === undefined ? DEFAULT_NODES : options.nodes.split(",");
   return new SteemPublicationReader({ chain: new SteemBlockchainProvider({ rpc: new SteemRpcClient({ nodes }) }) });
+}
+
+/**
+ * 0 only for a VALID game that no kept ack contradicts.
+ * @param {Awaited<ReturnType<typeof verifyGameOnChain>>} result
+ */
+function exitCodeOf(result) {
+  const contradicted = result.acks.some((ack) => CONTRADICTED.has(ack.status));
+  return result.verdict === Verdict.VALID && !contradicted ? 0 : 1;
 }
 
 /**
@@ -168,9 +215,10 @@ export async function verifyCommand(argv, { fetch: fetchImpl = globalThis.fetch,
   const root = options.root ?? DEFAULT_ROOT;
   try {
     const blocks = await indexedBlocks(options, root, { fetch: fetchImpl, write });
-    const result = await verifyGameOnChain({ gameId: options.gameId, reader: reader ?? nodeReader(options), rootAccount: root, blocks, fetchContent: contentSource(options, fetchImpl) });
+    const acks = await keptAcks(options);
+    const result = await verifyGameOnChain({ gameId: options.gameId, reader: reader ?? nodeReader(options), rootAccount: root, blocks, fetchContent: contentSource(options, fetchImpl), acks, recoverSigner });
     write(options.json ? `${JSON.stringify(result, null, 2)}\n` : `${describeResult(result, { gameId: options.gameId, root, blocks })}\n`);
-    return result.verdict === Verdict.VALID ? 0 : 1;
+    return exitCodeOf(result);
   } catch (error) {
     write(`could not verify: ${error instanceof Error ? error.message : String(error)}\n`);
     return 2;

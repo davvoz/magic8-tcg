@@ -11,6 +11,7 @@ import { AccountService } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
 import { AccountDeckRepository } from "./application/decks/AccountDeckRepository.js";
+import { AckReceipts } from "./application/online/AckReceipts.js";
 import { OnlineService } from "./application/online/OnlineService.js";
 import { RankingService } from "./application/ranking/RankingService.js";
 import { ShopService } from "./application/shop/ShopService.js";
@@ -23,6 +24,7 @@ import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
 import { HttpLiveGamesApi } from "./infrastructure/api/HttpLiveGamesApi.js";
+import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
@@ -211,6 +213,12 @@ async function boot() {
         return ref === undefined ? [] : [{ id: ref.serverId, name: deck.name, faction: deck.faction, totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
       }),
     liveGames: new HttpLiveGamesApi({ fetch: httpFetch }),
+    // Signed acks, checked on arrival and kept for the verifier page (docs/tcg/11).
+    receipts: new AckReceipts({
+      store: storageAvailable ? localStore : new InMemoryStore(),
+      verify: verifySignedAck,
+      logger,
+    }),
     logger,
   });
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });

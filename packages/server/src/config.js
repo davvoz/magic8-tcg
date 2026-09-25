@@ -44,6 +44,7 @@ export function loadConfig(env) {
     shopAccounts: Object.freeze({ steem: parseAccount(env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_SHOP_ACCOUNT") }),
     ...parseChainSettings(env),
     ...parseDataKeys(env, secure),
+    ackKey: parseAckKey(env, secure),
   });
 }
 
@@ -160,6 +161,32 @@ function parseBroadcasterKeys(value) {
     keys.set(account, wif);
   }
   return keys;
+}
+
+/**
+ * M8_ACK_KEY: the WIF private key that signs acks to players (docs/tcg/11).
+ * A key of its own, never a broadcaster's or any account's: it controls
+ * nothing, and the root names its public key in an `ack_keys` manifest.
+ * Required for https; in development an unset key means a new key per start.
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @param {boolean} secure
+ * @returns {string | null}
+ */
+function parseAckKey(env, secure) {
+  const value = env.M8_ACK_KEY ?? "";
+  if (value === "") {
+    if (secure) {
+      throw new ConfigError("M8_ACK_KEY: required for an https deployment (a WIF private key used for nothing else)");
+    }
+    return null;
+  }
+  if (!/^5[1-9A-HJ-NP-Za-km-z]{50}$/.test(value)) {
+    throw new ConfigError("M8_ACK_KEY: not a WIF private key");
+  }
+  if ((env.M8_BROADCASTER_KEYS ?? "").includes(value)) {
+    throw new ConfigError("M8_ACK_KEY: must not be a broadcaster key");
+  }
+  return value;
 }
 
 /**

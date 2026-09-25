@@ -48,7 +48,8 @@ const REJECTED_ACK_CACHE = 64;
 
 /**
  * @typedef {import("./ports.js").StoredGame} StoredGame
- * @typedef {Readonly<{ commandId: string, ok: boolean, version?: number, head?: string, error?: Readonly<{ code: string, message: string }> }>} Ack
+ * @typedef {Readonly<{ commandId: string, ok: boolean, version?: number, head?: string, seq?: number, at?: number, key?: string, sig?: string, error?: Readonly<{ code: string, message: string }> }>} Ack
+ * @typedef {(fields: { gameId: string, commandId: string, seq: number, head: string, version: number }) => Readonly<{ at?: number, key?: string, sig?: string }>} AckSignature
  */
 
 export class GameActor {
@@ -65,6 +66,7 @@ export class GameActor {
   #logger;
   #onBroken;
   #onFinished;
+  #signAck;
   #sealer;
   #turnClock;
   #status;
@@ -95,9 +97,10 @@ export class GameActor {
    *   onBroken: (gameId: string) => void,
    *   onFinished: (summary: import("./ports.js").FinishedGame) => void,
    *   sealer: { afterAppend: (gameId: string, chained: readonly import("@magic8/protocol").ChainedEvent[]) => Promise<void> },
+   *   signAck?: AckSignature,
    * }} deps
    */
-  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, sealer }) {
+  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, sealer, signAck = () => ({}) }) {
     this.#game = game;
     this.#recorder = recorder;
     this.#content = content;
@@ -109,6 +112,7 @@ export class GameActor {
     this.#logger = logger;
     this.#onBroken = onBroken;
     this.#onFinished = onFinished;
+    this.#signAck = signAck;
     this.#sealer = sealer;
     this.#status = game.status;
     this.#lastSeq = game.lastEventSeq;
@@ -233,8 +237,11 @@ export class GameActor {
     if (!applied.ok) {
       return this.#remember(rejectedAck(commandId, applied.error.code, applied.error.message));
     }
+    // The ack names the last event the command produced; signed, it is the player's proof of what was accepted (docs/tcg/11).
+    const last = applied.chained[applied.chained.length - 1];
+    const acknowledged = { commandId, version: applied.version, head: last.head, seq: last.event.i };
     /** @type {Ack} */
-    const ack = Object.freeze({ commandId, ok: true, version: applied.version, head: applied.chained[applied.chained.length - 1].head });
+    const ack = Object.freeze({ ok: true, ...acknowledged, ...this.#signAck({ gameId: this.id, ...acknowledged }) });
     await this.#commit(applied, { commandId, seat, expectedVersion: /** @type {number} */ (expectedVersion), payload: command, ack });
     this.#turnClock.acted(seat, this.#clock.now());
     this.#afterMove(applied);

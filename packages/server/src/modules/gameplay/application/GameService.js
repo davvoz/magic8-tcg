@@ -9,11 +9,14 @@
  * player contributes entropy, and the first player is decided by lot from
  * the resulting seed.
  *
+ * Every accepted command gets an ack signed with the server's ack key, when
+ * one is configured (docs/tcg/11-ack-firmati.md).
+ *
  * Anyone signed in may watch one live game at a time (docs/tcg/10); the
  * watch ends when they stop, disconnect, or the game ends.
  */
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
-import { GameMode, GameRecorder, PROTOCOL_VERSION, bytesToHex, canonicalDeck, deckCommitment, hexToBytes, seedCommitment } from "@magic8/protocol";
+import { GameMode, GameRecorder, PROTOCOL_VERSION, ackMessage, bytesToHex, canonicalDeck, deckCommitment, hexToBytes, seedCommitment } from "@magic8/protocol";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { ulid } from "../../../kernel/ulid.js";
 import { DEFAULT_TIME_POLICY } from "../domain/TurnClock.js";
@@ -42,6 +45,7 @@ export class GameService {
   #timePolicy;
   #network;
   #sealer;
+  #ackSigner;
   /** @type {((summary: import("./ports.js").FinishedGame) => Promise<void>)[]} */
   #finishedListeners = [];
   /** @type {Map<string, GameActor>} */
@@ -68,9 +72,10 @@ export class GameService {
    *   outbox: import("./ports.js").RecordOutbox,
    *   timePolicy?: Partial<import("../domain/TurnClock.js").TimePolicy>,
    *   sealingPolicy?: Partial<typeof import("./RecordSealer.js").DEFAULT_SEALING_POLICY>,
+   *   ackSigner?: import("./ports.js").AckSigner | null,
    * }} deps
    */
-  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, outbox, timePolicy = {}, sealingPolicy = {} }) {
+  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, outbox, timePolicy = {}, sealingPolicy = {}, ackSigner = null }) {
     assertImplements(repository, GAME_REPOSITORY_METHODS, "GameRepository");
     this.#repository = repository;
     this.#currentContent = currentContent;
@@ -84,6 +89,7 @@ export class GameService {
     this.#audit = audit;
     this.#logger = logger;
     this.#network = network;
+    this.#ackSigner = ackSigner;
     this.#timePolicy = Object.freeze({ ...DEFAULT_TIME_POLICY, ...timePolicy });
     this.#sealer = new RecordSealer({ store: /** @type {any} */ (repository), outbox, clock, unitOfWork, logger, policy: sealingPolicy });
   }
@@ -119,6 +125,11 @@ export class GameService {
 
   get timePolicy() {
     return this.#timePolicy;
+  }
+
+  /** The public key that signs acks, or null when acks are not signed. */
+  get ackKey() {
+    return this.#ackSigner?.publicKey ?? null;
   }
 
   /**
@@ -415,12 +426,23 @@ export class GameService {
         this.#actors.delete(gameId);
       },
       sealer: this.#sealer,
+      signAck: (fields) => this.#signAck(fields),
       onFinished: (summary) => {
         for (const listener of this.#finishedListeners) {
           listener(summary).catch((error) => this.#logger.error("a finished-game listener failed", { game: summary.gameId, error: error instanceof Error ? error.message : String(error) }));
         }
       },
     });
+  }
+
+  /** @type {import("./GameActor.js").AckSignature} */
+  #signAck(fields) {
+    if (this.#ackSigner === null) {
+      return {};
+    }
+    const at = this.#clock.now();
+    const key = this.#ackSigner.publicKey;
+    return Object.freeze({ at, key, sig: this.#ackSigner.sign(ackMessage({ ...fields, at, key })) });
   }
 
   /** @param {string} gameId */

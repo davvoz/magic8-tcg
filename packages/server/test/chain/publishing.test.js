@@ -13,11 +13,14 @@ import { describe, it } from "node:test";
 
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
-import { OperationId, PackVerdict, Verdict, broadcastersManifest, canonicalize, verifyGame, verifyOrderOnChain } from "@magic8/protocol";
-import { SignerError } from "@magic8/steem";
+import { AckStatus, OperationId, PackVerdict, Verdict, ackKeysManifest, ackMessage, broadcastersManifest, canonicalize, verifyGame, verifyOrderOnChain } from "@magic8/protocol";
+import { SignerError, recoverSigner } from "@magic8/steem";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { ResourceMode, signerFor } from "../../src/modules/chain/index.js";
-import { buildTestApp, deterministicRandom, listen, toWif } from "../helpers.js";
+import { ACK_KEYS, buildTestApp, deterministicRandom, listen, testAckSigner, toWif } from "../helpers.js";
 import { verifyCommand } from "../../../../tools/verify-game.js";
 import { verifyOrderCommand } from "../../../../tools/verify-order.js";
 import { ApiClient } from "../support/apiClient.js";
@@ -72,7 +75,15 @@ async function pass(w, gameId, label) {
   }
   const ack = await w.setup.app.games.command(player.id, { gameId, commandId: uuidV4(deterministicRandom(label)), expectedVersion: own.version, command });
   assert.equal(ack.ok, true);
+  return ack;
 }
+
+/** An ack as a player keeps it: the wire ack, named by its game. */
+const kept = (gameId, ack) => {
+  const copy = { gameId, ...ack };
+  delete copy.ok;
+  return copy;
+};
 
 const rowsOf = (w, gameId) => w.setup.database.rows("SELECT record_seq, status, reconciliation, attempts, payload, transaction_id FROM blockchain_events WHERE game_id = $1 ORDER BY record_seq", [gameId]);
 const transactions = (w) => w.setup.database.rows("SELECT tx_id, signer, status, block_num, last_error FROM blockchain_transactions ORDER BY created_at, id");
@@ -169,6 +180,67 @@ describe("ChainBroadcaster and ChainTracker", () => {
       resolveContent: (hash, version) => (hash === current.hash && version === current.engineVersion ? { rules: current.content.gameRules, catalog: current.content.catalog, effects: createCoreEffectRegistry(), createCommands: createCoreCommandRegistry } : null),
     });
     assert.equal(verdict.verdict, Verdict.VALID, JSON.stringify(verdict.history.status));
+  });
+
+  it("signs every accepted command's ack; the chain later agrees with the acks, or they prove it wrong", async () => {
+    const w = await world();
+    assert.equal(w.chain.manifests.ackKeyAuthorized, false, "no ack_keys manifest yet");
+    assert.ok(w.setup.logger.entries.some((entry) => entry.message.startsWith("the ack key is not named")));
+    w.ledger.publishManifest(ROOT, ackKeysManifest({ keys: [ACK_KEYS.publicKey], fromBlock: 0 }));
+    w.ledger.produceBlock();
+    w.ledger.finalize();
+    await w.chain.manifests.runOnce();
+    assert.equal(w.chain.manifests.ackKeyAuthorized, true);
+
+    const gameId = await w.newGame();
+    const acks = [];
+    for (let step = 0; step < 6; step += 1) {
+      acks.push(kept(gameId, await pass(w, gameId, `acked-${step}`)));
+    }
+    const first = acks[0];
+    assert.equal(first.key, ACK_KEYS.publicKey);
+    assert.equal(recoverSigner(ackMessage(first), first.sig), ACK_KEYS.publicKey, "a Keychain-style signature by the ack key");
+    const [event] = await w.setup.database.rows("SELECT head FROM game_events WHERE game_id = $1 AND seq = $2", [gameId, first.seq]);
+    assert.equal(event.head, first.head, "the ack names the event the command produced");
+    const again = await w.setup.app.games.command(w.alice.id, { gameId, commandId: first.commandId, expectedVersion: 0, command: { type: "END_TURN" } });
+    assert.deepEqual(kept(gameId, again), first, "a re-sent command gets the same signed ack");
+    const refused = await w.setup.app.games.command(w.alice.id, { gameId, commandId: uuidV4(deterministicRandom("stale")), expectedVersion: 0, command: { type: "END_TURN" } });
+    assert.deepEqual([refused.ok, refused.sig], [false, undefined], "only accepted commands are signed");
+    const concede = await w.setup.app.games.concede(w.alice.id, { gameId, commandId: uuidV4(deterministicRandom("acked-concede")) });
+    acks.push(kept(gameId, concede));
+    for (let round = 0; round < 4; round += 1) {
+      await w.chain.broadcaster.runOnce();
+      w.ledger.produceBlock();
+    }
+    w.ledger.finalize();
+
+    // What an equivocating server would have signed: another head for an event, and an event the game never had.
+    const forge = (fields) => ({ ...fields, sig: testAckSigner.sign(ackMessage(fields)) });
+    const unsigned = { ...acks[2] };
+    delete unsigned.sig;
+    const divergent = forge({ ...unsigned, head: "ee".repeat(32) });
+    const omitted = forge({ ...unsigned, seq: acks.at(-1).seq + 5 });
+    const directory = await mkdtemp(join(tmpdir(), "m8-acks-"));
+    const server = await listen(w.setup.app);
+    const run = async (list) => {
+      const file = join(directory, `acks-${list.length}.json`);
+      await writeFile(file, JSON.stringify(list));
+      let output = "";
+      const code = await verifyCommand([gameId, "--root", ROOT, "--scan", "--server", server.base, "--acks", file], { reader: w.publishing.reader, write: (text) => (output += text) });
+      return { code, output };
+    };
+    try {
+      const honest = await run(acks);
+      assert.equal(honest.code, 0, honest.output);
+      assert.equal(honest.output.match(new RegExp(AckStatus.CONSISTENT, "g"))?.length, acks.length, honest.output);
+      const caught = await run([...acks, divergent, omitted]);
+      assert.equal(caught.code, 1, "a VALID game that contradicts a signed ack still fails");
+      assert.match(caught.output, /VERDICT: VALID/);
+      assert.match(caught.output, /DIVERGENT — PROOF: the published game differs/);
+      assert.match(caught.output, /OMITTED — PROOF: the published game ended without/);
+    } finally {
+      await server.close();
+    }
   });
 
   it("sends a record again, byte for byte, when its transaction expired unseen; an ambiguous broadcast error changes nothing", async () => {

@@ -43,7 +43,7 @@ Vista dello spettatore: `{ "gameId", "mode", "status", "players": [{ "seat", "ac
   - il primo posto sta in basso;
   - le mani di tutti e due sono dorsi di carta;
   - il banner dice di chi è il turno per nome;
-  - l'unico pulsante è "Stop watching";
+  - l'unico pulsante è "Leave";
   - a fine partita: "@bob wins", poi "Watch another".
 - La sessione è una `RemoteMatchSession` senza posto: `submit` rifiuta tutto (`SPECTATOR`) senza contattare il server.
 

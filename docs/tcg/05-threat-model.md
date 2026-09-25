@@ -69,6 +69,7 @@ Account shop: nessuna chiave sul server.  Account root: chiave active solo offli
 | T29 | **Pacchetti decisi dopo il pagamento** | il server sceglie il segreto dell'epoca dopo aver visto il txId del pagamento | L'impegno dell'epoca deve essere in un blocco prima dell'ordine (vendite bloccate finché non lo è); il verificatore dei pacchetti controlla impegno < pagamento | test pubblicazione, `verifyOrderPacks` |
 | T30 | **Rimborso dichiarato ma non pagato** | un operatore (o un attaccante nel pannello) segna un rimborso come pagato | Il pannello non può chiudere rimborsi: li chiude solo il trasferimento esatto visto sulla catena e confermato da 2 nodi | test admin |
 | T31 | **Spettatori usati per sovraccaricare** | molti utenti guardano la stessa partita, o uno guarda molte partite, per moltiplicare i messaggi del server | Al massimo 50 spettatori per partita e una partita per utente; limiti di messaggi della connessione; lista delle partite con limite per indirizzo e cache (10) | test `spectators` |
+| T32 | **Il server pubblica una partita diversa da quella giocata** | accetta una mossa e poi pubblica un'altra storia, o la omette | Ack firmati con una chiave che il root nomina sulla catena; il client li controlla e li conserva; il verificatore li confronta con la catena (`DIVERGENT`, `OMITTED`) (11) | test `acks`, test di pubblicazione |
 
 ## 5. Rischi residui accettati (v1)
 

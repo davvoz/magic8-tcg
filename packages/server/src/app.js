@@ -54,11 +54,12 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   chainReader?: import("./modules/chain/application/ports.js").PublicationReader | null,
  *   alarmPolicy?: Partial<typeof import("./modules/admin/index.js").DEFAULT_ALARM_POLICY>,
  *   chainPolicies?: { broadcast?: object, tracker?: object, rc?: object },
+ *   ackSigner?: import("./modules/gameplay/application/ports.js").AckSigner | null,
  * }} deps
  */
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
-  const { staticFiles, publishing, chainReader } = optionalAdapters(deps);
+  const { staticFiles, publishing, chainReader, ackSigner } = optionalAdapters(deps);
   const { identityPolicyOverrides, marketplacePolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
@@ -110,7 +111,7 @@ export async function createServerApp(deps) {
   const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
   const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, audit, clock, unitOfWork, logger });
   const rootAccount = /** @type {Record<string, string>} */ (config.rootAccounts)[defaultNetwork];
-  const chain = publishing === null ? null : buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies: chainPolicies });
+  const chain = publishing === null ? null : buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies: chainPolicies, ackKey: ackSigner?.publicKey ?? null });
   const chainRepository = new PgChainRepository(database);
   // With publishing on, a pack is sold only once its epoch's commitment is on chain (T12).
   const commitmentAnchored = chain === null ? null : async (epoch) => ANCHORED.has(await chainRepository.payloadStatus(sha256Hex(utf8(packEpochAnnouncement(epoch.id, epoch.commit))))) ;
@@ -118,7 +119,7 @@ export async function createServerApp(deps) {
   await marketplace.syncProducts();
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
-  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy });
+  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy, ackSigner });
   const rankedSettings = validateRankedSettings(content.ranked);
   if (!rankedSettings.ok) {
     throw new Error(`ranked settings are invalid: ${rankedSettings.error.message}`);
@@ -215,8 +216,8 @@ function precisionOf(providers, asset) {
  * The optional adapters of createServerApp, with their defaults.
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function optionalAdapters({ staticFiles = null, publishing = null, chainReader = null }) {
-  return { staticFiles, publishing, chainReader: chainReader ?? publishing?.reader ?? null };
+function optionalAdapters({ staticFiles = null, publishing = null, chainReader = null, ackSigner = null }) {
+  return { staticFiles, publishing, chainReader: chainReader ?? publishing?.reader ?? null, ackSigner };
 }
 
 /**
@@ -229,15 +230,15 @@ function policiesOf({ identityPolicyOverrides = {}, marketplacePolicy = {}, time
 
 /**
  * The broadcaster, the tracker and the Resource Credits monitor of one network.
- * @param {{ publishing: { transactions: any, reader: any }, rootAccount: string, database: import("./platform/db/Database.js").Database, clock: any, random: any, unitOfWork: any, logger: any, policies: { broadcast?: object, tracker?: object, rc?: object } }} deps
+ * @param {{ publishing: { transactions: any, reader: any }, rootAccount: string, database: import("./platform/db/Database.js").Database, clock: any, random: any, unitOfWork: any, logger: any, policies: { broadcast?: object, tracker?: object, rc?: object }, ackKey: string | null }} deps
  */
-function buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies }) {
+function buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies, ackKey }) {
   const { transactions, reader } = publishing;
   assertImplements(transactions, TRANSACTION_PROVIDER_METHODS, "TransactionProvider");
   assertImplements(reader, PUBLICATION_READER_METHODS, "PublicationReader");
   const repository = new PgChainRepository(database);
   const rc = new RcMonitor({ transactions, reader, repository, clock, logger, policy: policies.rc });
-  const manifests = new ManifestWatcher({ reader, rootAccount, logger });
+  const manifests = new ManifestWatcher({ reader, rootAccount, logger, ackKey });
   const broadcaster = new ChainBroadcaster({ repository, transactions, resources: rc, authorization: manifests, clock, random, unitOfWork, logger, policy: policies.broadcast });
   const tracker = new ChainTracker({ repository, reader, signers: transactions.signers, clock, unitOfWork, logger, policy: policies.tracker });
   return Object.freeze({ network: transactions.network, signers: transactions.signers, repository, rc, manifests, broadcaster, tracker });

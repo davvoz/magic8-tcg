@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { checklist, verdictBanner } from "../../verify/checklist.js";
+import { ackCheck, checklist, verdictBanner } from "../../verify/checklist.js";
 
 function result(overrides = {}) {
   return {
@@ -55,5 +55,17 @@ describe("verifier checklist", () => {
     assert.equal(checks[2].detail, "2 ignored (UNAUTHORIZED_SIGNER)");
     assert.equal(checks[3].detail, "record 2 does not chain");
     assert.deepEqual([verdictBanner("INVALID").tone, verdictBanner("IN_PROGRESS").tone], ["bad", "wait"]);
+  });
+
+  it("shows the acks kept while playing, and a contradiction as proof", () => {
+    const agreed = [{ status: "CONSISTENT", seq: 5 }, { status: "CONSISTENT", seq: 7 }, { status: "NOT_PUBLISHED", seq: 9 }];
+    const checks = checklist(result({ acks: agreed }), { root: "luciojolly", indexed: true });
+    assert.deepEqual(checks.at(-1), { label: "Your signed acks", ok: true, detail: "2 of 3 agree with the chain; 1 not published yet" });
+    assert.equal(checklist(result({ acks: [] }), { root: "luciojolly", indexed: true }).length, 6, "no acks, no check");
+    assert.equal(ackCheck([{ status: "CONSISTENT", seq: 5 }, { status: "BAD_SIGNATURE", seq: 7 }]).ok, null, "a worthless ack is not a proof either way");
+    const contradicted = [...agreed, { status: "DIVERGENT", seq: 11 }];
+    assert.match(ackCheck(contradicted).detail, /PROOF: .* event\(s\) 11 \(divergent\)/);
+    assert.equal(verdictBanner("VALID", contradicted).tone, "bad");
+    assert.equal(verdictBanner("VALID", agreed).tone, "good");
   });
 });

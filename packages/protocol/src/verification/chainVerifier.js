@@ -20,7 +20,8 @@ import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/regist
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { OperationId } from "../game/constants.js";
 import { openContent } from "../game/content.js";
-import { BroadcasterRegistry } from "../game/manifest.js";
+import { checkAck } from "../game/acks.js";
+import { AckKeyRegistry, BroadcasterRegistry } from "../game/manifest.js";
 import { decodeGameOperation } from "../game/OperationDecoder.js";
 import { verifyGame } from "../game/verifyGame.js";
 
@@ -126,9 +127,12 @@ function declaredContent(gameId, operations, registry) {
  *   blocks?: readonly number[] | null,
  *   fetchContent: (hash: string) => Promise<string | null>,
  *   maxHistoryPages?: number,
- * }} input `blocks`: an index of the blocks holding the game's records; null to scan the broadcasters' histories
+ *   acks?: readonly unknown[],
+ *   recoverSigner?: import("../game/acks.js").RecoverSigner,
+ * }} input `blocks`: an index of the blocks holding the game's records; null to scan the broadcasters' histories.
+ *   `acks`: signed acks a player kept, checked against the published game (needs `recoverSigner`).
  */
-export async function verifyGameOnChain({ gameId, reader, rootAccount, blocks = null, fetchContent, maxHistoryPages = 200 }) {
+export async function verifyGameOnChain({ gameId, reader, rootAccount, blocks = null, fetchContent, maxHistoryPages = 200, acks = [], recoverSigner }) {
   const head = await reader.head();
   const limits = { irreversibleBlock: head.irreversibleBlock, maxPages: maxHistoryPages };
   const manifests = await operationsOf(reader, rootAccount, OperationId.MANIFEST, limits);
@@ -160,6 +164,7 @@ export async function verifyGameOnChain({ gameId, reader, rootAccount, blocks = 
   });
   return Object.freeze({
     ...verification,
+    acks: checkAcks({ acks, recoverSigner, history: verification.history, manifests: manifests.operations, rootAccount, fallbackBlock: head.irreversibleBlock }),
     head,
     broadcasters: registry.accounts(),
     content: Object.freeze({ declared, verified: content !== null, localEngine: ENGINE_VERSION }),
@@ -167,4 +172,30 @@ export async function verifyGameOnChain({ gameId, reader, rootAccount, blocks = 
     missingBlocks: Object.freeze(collected.missing),
     complete: collected.complete,
   });
+}
+
+/**
+ * Checks a player's signed acks against the published game. An ack key must
+ * be authorised at the block where the game was created (or, for a game
+ * not published at all, at the last irreversible block).
+ * @param {{
+ *   acks: readonly unknown[],
+ *   recoverSigner: import("../game/acks.js").RecoverSigner | undefined,
+ *   history: import("../game/GameHistory.js").GameHistory,
+ *   manifests: readonly ChainOperation[],
+ *   rootAccount: string,
+ *   fallbackBlock: number,
+ * }} input
+ */
+function checkAcks({ acks, recoverSigner, history, manifests, rootAccount, fallbackBlock }) {
+  if (acks.length === 0) {
+    return Object.freeze([]);
+  }
+  if (recoverSigner === undefined) {
+    throw new TypeError("checking acks needs recoverSigner");
+  }
+  const { registry } = AckKeyRegistry.fromOperations(manifests, rootAccount);
+  const created = history.records.find(({ record }) => record.s === 0)?.source?.blockNum;
+  const anchor = typeof created === "number" ? created : fallbackBlock;
+  return Object.freeze(acks.map((ack) => checkAck(ack, { history, recoverSigner, isTrustedKey: (key) => registry.isAuthorized(key, anchor) })));
 }

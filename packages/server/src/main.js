@@ -6,7 +6,7 @@
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
-import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK } from "@magic8/steem";
+import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, signMessage } from "@magic8/steem";
 import { createServerApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { readServerContent } from "./contentFiles.js";
@@ -78,6 +78,7 @@ async function main() {
     staticFiles,
     publishing,
     chainReader: publishing?.reader ?? new SteemPublicationReader({ chain }),
+    ackSigner: ackSignerFrom(config, logger),
   });
 
   const restored = await app.games.restoreAll();
@@ -192,3 +193,24 @@ main().catch((error) => {
   process.stderr.write(`startup failed: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
 });
+
+/**
+ * The key that signs acks (docs/tcg/11-ack-firmati.md): M8_ACK_KEY, or in
+ * development a key made for this run, which no manifest names.
+ * @param {ReturnType<typeof loadConfig>} config
+ * @param {import("./kernel/logger.js").Logger} logger
+ */
+function ackSignerFrom(config, logger) {
+  let privateKey = config.ackKey === null ? null : decodeWif(config.ackKey);
+  if (config.ackKey !== null && privateKey === null) {
+    process.stderr.write("configuration error: M8_ACK_KEY: the WIF checksum does not match\n");
+    process.exit(1);
+  }
+  if (privateKey === null) {
+    privateKey = nodeSecureRandom.bytes(32);
+    logger.warn("M8_ACK_KEY is not set: acks are signed with a key made for this run, which verifiers will not trust");
+  }
+  const key = privateKey;
+  return Object.freeze({ publicKey: publicKeyOf(key), sign: (/** @type {string} */ message) => signMessage(message, key) });
+}
+

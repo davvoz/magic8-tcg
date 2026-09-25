@@ -50,6 +50,10 @@ export function keyPair(seedByte) {
   return { privateKey, publicKey: publicKeyOf(privateKey) };
 }
 
+/** The key test servers sign acks with (docs/tcg/11). */
+export const ACK_KEYS = keyPair(0x42);
+export const testAckSigner = Object.freeze({ publicKey: ACK_KEYS.publicKey, sign: (/** @type {string} */ message) => signMessage(message, ACK_KEYS.privateKey) });
+
 /**
  * The WIF form of a private key, as a wallet exports it.
  * @param {Uint8Array} privateKey
@@ -121,6 +125,7 @@ export async function buildTestApp(options = {}) {
     sealingPolicy,
     publishing,
     chainPolicies,
+    ackSigner: options.ackSigner === undefined ? testAckSigner : options.ackSigner,
   });
   return { app, clock, chain, ledger, users: app.users, sessions: app.sessions, challenges: app.challenges, logger, config, database: db };
 }

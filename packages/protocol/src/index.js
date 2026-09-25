@@ -39,7 +39,8 @@ export { SchemaError, validateEnvelope, validateRecord } from "./game/schema.js"
 export { RejectionReason, decodeGameOperation } from "./game/OperationDecoder.js";
 export { HistoryStatus, assembleGameHistory } from "./game/GameHistory.js";
 export { ReplayStatus, replayGame } from "./game/ReplayVerifier.js";
-export { BroadcasterRegistry, ManifestKind, broadcastersManifest } from "./game/manifest.js";
+export { ACK_KIND, AckStatus, ackMessage, checkAck, isSignedByItsKey, parseSignedAck } from "./game/acks.js";
+export { AckKeyRegistry, BroadcasterRegistry, ManifestKind, PUBLIC_KEY_PATTERN, ackKeysManifest, broadcastersManifest } from "./game/manifest.js";
 export { Verdict, verifyGame } from "./game/verifyGame.js";
 export { replayContentOf, verifyGameOnChain } from "./verification/chainVerifier.js";
 export { PackVerdict, verifyOrderOnChain, verifyOrderPacks } from "./verification/packVerifier.js";
