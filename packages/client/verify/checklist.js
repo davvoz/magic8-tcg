@@ -43,7 +43,7 @@ export function signatureChecks({ signatures, sessions }) {
   }
   const checks = [{ label: "Signed moves", ok: signatures.status === "VALID", detail: signatures.status === "VALID" ? "every player move is signed by the player's own session key" : signatures.message }];
   if (sessions.length > 0) {
-    const forged = sessions.some((session) => session.status === "FORGED");
+    const forged = sessions.some((session) => session.status === "FORGED" || session.status === "NOT_AUTHORIZED");
     const allAuthorized = sessions.every((session) => session.status === "AUTHORIZED");
     const detail = sessions.map((session) => `@${session.account} ${session.status.toLowerCase().replaceAll("_", " ")}`).join(", ");
     checks.push({ label: "Session keys", ok: forged ? false : allAuthorized || null, detail });

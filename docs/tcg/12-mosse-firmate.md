@@ -56,9 +56,15 @@
 | Controllo | Esito |
 |---|---|
 | Ogni `MOVE` è firmata dalla chiave che il posto aveva in quel momento | `signatures.status`: `VALID`, `UNSIGNED_MOVE`, `BAD_MOVE_SIGNATURE` (gli ultimi due rendono la partita `INVALID`) |
-| Chi ha autorizzato ogni chiave | `sessions[].status`: `AUTHORIZED` (una chiave posting dell'account, oggi), `KEY_NOT_CURRENT` (una chiave che l'account oggi non usa: cambiata dopo la partita, oppure mai sua), `FORGED` (non è una firma: partita `INVALID`), `UNCHECKED` (il lettore della catena non sa leggere gli account) |
+| Chi ha autorizzato ogni chiave | `sessions[].status`: `AUTHORIZED`, `NOT_AUTHORIZED`, `KEY_NOT_CURRENT`, `FORGED`, `UNCHECKED` (vedi sotto) |
 
-- `KEY_NOT_CURRENT` non basta per dire che la partita è falsa: un giocatore può aver cambiato la chiave posting dopo. Per deciderlo va letta la storia delle autorità dell'account (`account_update`). **Da fare.**
+Come si decide chi ha autorizzato una chiave di sessione:
+- **`AUTHORIZED`:** la firma è di una chiave posting dell'account, di oggi oppure di quando la partita è stata pubblicata. La storia delle chiavi (creazione e `account_update` dell'account) si legge con un'unica chiamata filtrata al nodo. È tollerato un cambio di chiave nell'ora prima della pubblicazione: il giocatore ha firmato prima di cambiarla.
+- **`NOT_AUTHORIZED`:** la storia, letta per intero dalla creazione dell'account, mostra che quella chiave non era dell'account in quel periodo. Qualcun altro ha autorizzato la sessione: partita `INVALID`.
+- **`FORGED`:** non è nemmeno una firma: partita `INVALID`.
+- **`KEY_NOT_CURRENT`:** la chiave non è di oggi e la storia non si è potuta leggere fino alla creazione (nodo senza storia completa o senza filtro). Non prova niente in nessun senso.
+- **`UNCHECKED`:** il lettore non sa leggere gli account.
+
 - `/verify.html` mostra "Signed moves" e "Session keys"; `tools/verify-game.js` stampa una riga per le mosse e una per sessione.
 
 ## Costi

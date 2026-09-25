@@ -119,6 +119,16 @@ describe("signed moves (game protocol v2)", () => {
     const rotatedSince = await run(async () => ["STM5different"]);
     assert.deepEqual(rotatedSince.sessions.map((session) => session.status), [SessionStatus.KEY_NOT_CURRENT, SessionStatus.KEY_NOT_CURRENT]);
     assert.deepEqual((await run(undefined)).sessions.map((session) => session.status), [SessionStatus.UNCHECKED, SessionStatus.UNCHECKED]);
+
+    // With the accounts' key history: a key rotated after the game still authorised it; one never held did not.
+    const runWithHistory = (history) => verifyGameOnChain({ gameId: GAME_ID, reader: { ...reader(async () => ["STM5different"]), postingKeyHistory: async (account) => history(account) }, rootAccount: "m8tcg", blocks: game.operations.map((op) => op.blockNum), fetchContent: async () => null, recoverSigner, verifyMoveSignature });
+    const rotatedAfter = await runWithHistory((account) => ({ complete: true, changes: [{ blockNum: 1, keys: [POSTING[account]], created: true }, { blockNum: 4000, keys: ["STM5different"], created: false }] }));
+    assert.deepEqual(rotatedAfter.sessions.map((session) => session.status), [SessionStatus.AUTHORIZED, SessionStatus.AUTHORIZED]);
+    const neverHeld = await runWithHistory(() => ({ complete: true, changes: [{ blockNum: 1, keys: ["STM5different"], created: true }] }));
+    assert.deepEqual(neverHeld.sessions.map((session) => session.status), [SessionStatus.NOT_AUTHORIZED, SessionStatus.NOT_AUTHORIZED]);
+    assert.equal(neverHeld.verdict, Verdict.INVALID, "someone else authorised the players' session keys");
+    const partial = await runWithHistory(() => ({ complete: false, changes: [{ blockNum: 3000, keys: ["STM5different"], created: false }] }));
+    assert.deepEqual(partial.sessions.map((session) => session.status), [SessionStatus.KEY_NOT_CURRENT, SessionStatus.KEY_NOT_CURRENT], "without the start of the history, nothing is proved");
     signed.clear();
     const forged = await run(async (account) => [POSTING[account]]);
     assert.deepEqual(forged.sessions.map((session) => session.status), [SessionStatus.FORGED, SessionStatus.FORGED], "nobody signed these authorisations");

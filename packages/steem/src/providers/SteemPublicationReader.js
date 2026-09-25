@@ -36,11 +36,27 @@ export function customJsonOperation({ txId, blockNum, opIndex, operation }) {
   return Object.freeze({ network: STEEM_NETWORK, txId, blockNum, opIndex, id, requiredAuths, requiredPostingAuths, json });
 }
 
+/**
+ * The keys that alone satisfy an authority as an operation carries it, or null when the operation leaves it unchanged.
+ * @param {unknown} authority { weight_threshold, key_auths: [[key, weight]…] }
+ * @returns {readonly string[] | null}
+ */
+function soleKeys(authority) {
+  if (authority === null || typeof authority !== "object") {
+    return null;
+  }
+  const { weight_threshold: threshold, key_auths: keyAuths } = /** @type {any} */ (authority);
+  if (!Number.isSafeInteger(threshold) || !Array.isArray(keyAuths)) {
+    return null;
+  }
+  return Object.freeze(keyAuths.filter((pair) => Array.isArray(pair) && typeof pair[0] === "string" && threshold > 0 && pair[1] >= threshold).map((pair) => pair[0]));
+}
+
 export class SteemPublicationReader {
   #chain;
 
   /**
-   * @param {{ chain: Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getHead" | "getAccountHistory" | "getLatestHistoryIndex" | "getBlock"> & Partial<Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getAccount">> }} deps
+   * @param {{ chain: Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getHead" | "getAccountHistory" | "getLatestHistoryIndex" | "getBlock"> & Partial<Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getAccount" | "getAuthorityHistory">> }} deps
    */
   constructor({ chain }) {
     this.#chain = chain;
@@ -74,6 +90,33 @@ export class SteemPublicationReader {
     }
     const { posting } = found;
     return Object.freeze(posting.keys.filter((entry) => posting.threshold > 0 && entry.weight >= posting.threshold).map((entry) => entry.key));
+  }
+
+  /**
+   * When the account's posting keys changed: at each creation or update that
+   * set the posting authority, the keys that alone satisfied it from that
+   * block on. Null when the node cannot tell (no filter support, unreachable).
+   * @param {string} account
+   * @returns {Promise<Readonly<{ complete: boolean, changes: readonly Readonly<{ blockNum: number, keys: readonly string[], created: boolean }>[] }> | null>}
+   *   `created`: the change is the account's creation, so the history starts there
+   */
+  async postingKeyHistory(account) {
+    if (this.#chain.getAuthorityHistory === undefined) {
+      return null;
+    }
+    let history;
+    try {
+      history = await this.#chain.getAuthorityHistory(account);
+    } catch {
+      return null;
+    }
+    const changes = history.entries.flatMap((entry) => {
+      const { data } = entry.operation;
+      const subject = data.new_account_name ?? data.account;
+      const keys = subject === account ? soleKeys(data.posting) : null;
+      return keys === null ? [] : [Object.freeze({ blockNum: entry.blockNum, keys, created: entry.operation.type !== "account_update" })];
+    });
+    return Object.freeze({ complete: history.complete, changes: Object.freeze(changes) });
   }
 
   /**

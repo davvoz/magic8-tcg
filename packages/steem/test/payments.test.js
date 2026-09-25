@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { ChainDataError, Confirmation, SteemBlockchainProvider, SteemTransferPaymentProvider, formatSteemAsset, parseSteemAsset } from "../src/index.js";
+import { ChainDataError, Confirmation, SteemBlockchainProvider, SteemPublicationReader, SteemTransferPaymentProvider, formatSteemAsset, parseSteemAsset } from "../src/index.js";
 
 const TX = "a1".repeat(20);
 const OTHER_TX = "b2".repeat(20);
@@ -146,3 +146,37 @@ describe("SteemTransferPaymentProvider", () => {
     assert.throws(() => new SteemTransferPaymentProvider({ history: node(), verifiers: [node(), node()], quorum: 1 }), RangeError);
   });
 });
+
+describe("posting key history", () => {
+  const authority = (keys, threshold = 1) => ({ weight_threshold: threshold, account_auths: [], key_auths: keys.map((key) => [key, 1]) });
+  const KEY_A = "STM6LLegbAgLAy28EHrffBVuANFWcFgmqRMW13wBmTExqFE9SCkg4";
+  const KEY_B = "STM8ZSw7FkF7dKVnQb4RLQ7QKy9cSBHrDTkxeWtxTU3ceFSfWfE8m";
+
+  it("reads key changes with the node's operation filter, in one call, from the account's creation on", async () => {
+    const { rpc, calls } = fakeRpc(() => [
+      entry(0, ["account_create", { creator: "steem", new_account_name: "alice", owner: authority([KEY_A]), active: authority([KEY_A]), posting: authority([KEY_A]) }], { block: 10 }),
+      entry(1, ["account_update", { account: "alice", posting: authority([KEY_B]) }], { block: 500 }),
+      entry(2, ["account_update", { account: "alice", memo_key: KEY_A }], { block: 600 }),
+      entry(3, ["account_create", { creator: "alice", new_account_name: "bob", posting: authority([KEY_B]) }], { block: 700 }),
+      entry(4, ["account_update", { account: "alice", posting: authority([KEY_A, KEY_B], 2) }], { block: 800 }),
+    ]);
+    const reader = new SteemPublicationReader({ chain: new SteemBlockchainProvider({ rpc }) });
+    const history = await reader.postingKeyHistory("alice");
+    assert.deepEqual(calls[0].params, ["alice", -1, 1000, 2 ** 9 + 2 ** 10 + 2 ** 23 + 2 ** 41, 0]);
+    assert.deepEqual(history, {
+      complete: true,
+      changes: [
+        { blockNum: 10, keys: [KEY_A], created: true },
+        { blockNum: 500, keys: [KEY_B], created: false },
+        { blockNum: 800, keys: [], created: false },
+      ],
+    }, "a memo-only update and another account's creation change nothing; a multi-key authority has no key that suffices alone");
+  });
+
+  it("says it cannot tell when the node refuses the filter", async () => {
+    const failing = { call: async () => { throw new Error("unknown parameter"); } };
+    assert.equal(await new SteemPublicationReader({ chain: new SteemBlockchainProvider({ rpc: failing }) }).postingKeyHistory("alice"), null);
+    assert.equal(await new SteemPublicationReader({ chain: {} }).postingKeyHistory("alice"), null);
+  });
+});
+

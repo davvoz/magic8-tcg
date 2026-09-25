@@ -35,6 +35,8 @@ const PAGE_SIZE = 1000;
  * @property {(account: string, after: number, limit: number) => Promise<readonly Readonly<{ index: number, operation: ChainOperation | null }>[]>} publications
  * @property {(blockNum: number) => Promise<readonly ChainOperation[] | null>} blockOperations
  * @property {(account: string) => Promise<readonly string[] | null>} [postingKeys] the keys of the account's posting authority today (null: no such account)
+ * @property {(account: string) => Promise<Readonly<{ complete: boolean, changes: readonly Readonly<{ blockNum: number, keys: readonly string[], created: boolean }>[] }> | null>} [postingKeyHistory]
+ *   when the account's posting keys changed (null: the node cannot tell)
  */
 
 /**
@@ -170,7 +172,7 @@ export async function verifyGameOnChain({ gameId, reader, rootAccount, blocks = 
   const sessions = await checkSessions({ history: verification.history, reader, recoverSigner });
   return Object.freeze({
     ...verification,
-    verdict: sessions.some((session) => session.status === SessionStatus.FORGED) ? Verdict.INVALID : verification.verdict,
+    verdict: sessions.some((session) => REFUTED.has(session.status)) ? Verdict.INVALID : verification.verdict,
     sessions,
     acks: checkAcks({ acks, recoverSigner, history: verification.history, manifests: manifests.operations, rootAccount, fallbackBlock: head.irreversibleBlock }),
     head,
@@ -209,10 +211,12 @@ function checkAcks({ acks, recoverSigner, history, manifests, rootAccount, fallb
 }
 
 export const SessionStatus = Object.freeze({
-  /** Signed by a key that satisfies the account's posting authority today. */
+  /** Signed by a posting key of the account: today's, or the one it had when the game was published. */
   AUTHORIZED: "AUTHORIZED",
-  /** A valid signature by a key the account does not use today: rotated since, or never its key. */
+  /** A valid signature by a key the account does not use today, and its key history could not be read to the start. */
   KEY_NOT_CURRENT: "KEY_NOT_CURRENT",
+  /** A valid signature by a key the account never had around the game's time: someone else authorised the session. */
+  NOT_AUTHORIZED: "NOT_AUTHORIZED",
   /** The authorisation is not a signature at all: nobody authorised this key. */
   FORGED: "FORGED",
   /** The chain reader cannot tell which keys the account uses. */
@@ -232,22 +236,98 @@ async function checkSessions({ history, reader, recoverSigner }) {
   if (recoverSigner === undefined) {
     throw new TypeError("checking session keys needs recoverSigner");
   }
-  /** @type {Map<string, readonly string[] | null>} */
-  const postingKeys = new Map();
+  const accounts = new AccountKeys(reader);
   const checked = [];
   for (const grant of grants) {
     const signer = recoverSigner(sessionAuthorization(history.gameId, grant.key), grant.authorization);
-    if (!postingKeys.has(grant.account)) {
-      postingKeys.set(grant.account, typeof reader.postingKeys === "function" ? await reader.postingKeys(grant.account) : null);
-    }
-    const known = postingKeys.get(grant.account) ?? null;
-    let status = SessionStatus.UNCHECKED;
-    if (signer === null) {
-      status = SessionStatus.FORGED;
-    } else if (known !== null) {
-      status = known.includes(signer) ? SessionStatus.AUTHORIZED : SessionStatus.KEY_NOT_CURRENT;
-    }
+    const status = signer === null ? SessionStatus.FORGED : await accounts.statusOf(grant.account, signer, blockOfEvent(history, grant.eventSeq));
     checked.push(Object.freeze({ seat: grant.seat, account: grant.account, eventSeq: grant.eventSeq, signer, status }));
   }
   return Object.freeze(checked);
+}
+
+/** Session statuses that make a game INVALID. */
+const REFUTED = new Set([SessionStatus.FORGED, SessionStatus.NOT_AUTHORIZED]);
+/** A key rotated this many blocks (one hour) before the record went on chain still counts: the player signed before rotating. */
+const ROTATION_GRACE_BLOCKS = 1200;
+
+/**
+ * The block of the record carrying an event, or null.
+ * @param {import("../game/GameHistory.js").GameHistory} history
+ * @param {number} eventSeq
+ */
+function blockOfEvent(history, eventSeq) {
+  const carrying = history.records.find(({ record }) => record.e.some((/** @type {any} */ event) => event.i === eventSeq));
+  const blockNum = carrying?.source?.blockNum;
+  return typeof blockNum === "number" ? blockNum : null;
+}
+
+/** An account's posting keys, today and over time, read once per account. */
+class AccountKeys {
+  #reader;
+  /** @type {Map<string, Promise<readonly string[] | null>>} */
+  #current = new Map();
+  /** @type {Map<string, Promise<any>>} */
+  #history = new Map();
+
+  /** @param {ChainReader} reader */
+  constructor(reader) {
+    this.#reader = reader;
+  }
+
+  /**
+   * @param {string} account
+   * @param {string} signer the key that signed the authorisation
+   * @param {number | null} blockNum where the game recorded it
+   */
+  async statusOf(account, signer, blockNum) {
+    const current = await this.#once(this.#current, account, () => (typeof this.#reader.postingKeys === "function" ? this.#reader.postingKeys(account) : Promise.resolve(null)));
+    if (current?.includes(signer) === true) {
+      return SessionStatus.AUTHORIZED;
+    }
+    const history = await this.#once(this.#history, account, () => (typeof this.#reader.postingKeyHistory === "function" ? this.#reader.postingKeyHistory(account) : Promise.resolve(null)));
+    if (history === null || blockNum === null) {
+      return current === null ? SessionStatus.UNCHECKED : SessionStatus.KEY_NOT_CURRENT;
+    }
+    if (heldAround(history.changes, signer, blockNum)) {
+      return SessionStatus.AUTHORIZED;
+    }
+    const fromTheStart = history.complete && history.changes.some((/** @type {any} */ change) => change.created);
+    return fromTheStart ? SessionStatus.NOT_AUTHORIZED : SessionStatus.KEY_NOT_CURRENT;
+  }
+
+  /**
+   * @template T
+   * @param {Map<string, Promise<T>>} cache
+   * @param {string} account
+   * @param {() => Promise<T>} load
+   */
+  #once(cache, account, load) {
+    if (!cache.has(account)) {
+      cache.set(account, load());
+    }
+    return /** @type {Promise<T>} */ (cache.get(account));
+  }
+}
+
+/**
+ * Whether `key` was a posting key at some block of [blockNum - grace, blockNum].
+ * @param {readonly { blockNum: number, keys: readonly string[] }[]} changes oldest first
+ * @param {string} key
+ * @param {number} blockNum
+ */
+function heldAround(changes, key, blockNum) {
+  const start = blockNum - ROTATION_GRACE_BLOCKS;
+  let inEffect = null;
+  for (const change of changes) {
+    if (change.blockNum > blockNum) {
+      break;
+    }
+    if (change.blockNum <= start) {
+      inEffect = change;
+    } else if (change.keys.includes(key)) {
+      return true;
+    }
+  }
+  return inEffect !== null && inEffect.keys.includes(key);
 }

@@ -78,6 +78,7 @@ describe("verifier checklist", () => {
     assert.equal(rotated[1].ok, null, "a key rotated since proves nothing either way");
     const bad = signatureChecks({ signatures: { status: "BAD_MOVE_SIGNATURE", message: "move 9 is not signed by s1's session key" }, sessions: [{ account: "bob", status: "FORGED" }] });
     assert.deepEqual(bad.map((check) => check.ok), [false, false]);
+    assert.equal(signatureChecks({ signatures: { status: "VALID", message: null }, sessions: [{ account: "bob", status: "NOT_AUTHORIZED" }] })[1].ok, false, "a key bob never held");
     assert.equal(checklist(result({ signatures: { status: "VALID", message: null }, sessions: [] }), { root: "luciojolly", indexed: true })[4].label, "Signed moves");
   });
 });

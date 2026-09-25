@@ -109,6 +109,10 @@ function parseOperation(raw, what) {
   return Object.freeze({ type: raw[0], data: Object.freeze({ ...requireObject(raw[1], `${what} data`) }) });
 }
 
+/** Operations that set an account's keys, and the node's filter bits for them (operation ids 9, 10, 23, 41). */
+export const AUTHORITY_OPERATIONS = Object.freeze(["account_create", "account_update", "create_claimed_account", "account_create_with_delegation"]);
+const AUTHORITY_FILTER_LOW = 2 ** 9 + 2 ** 10 + 2 ** 23 + 2 ** 41;
+
 /**
  * @param {unknown} pair [index, { trx_id, block, op_in_trx, virtual_op, timestamp, op }]
  * @param {string} what
@@ -192,6 +196,25 @@ export class SteemBlockchainProvider {
       }
     });
     return Object.freeze(entries.filter((entry) => entry.index > after && entry.index <= after + limit));
+  }
+
+  /**
+   * The operations that set an account's keys (creation and updates), newest
+   * last, read with the node's operation filter: one call however long the
+   * account's history. `complete` is false when there may be older ones.
+   * @param {string} account
+   * @returns {Promise<Readonly<{ complete: boolean, entries: readonly HistoryEntry[] }>>}
+   */
+  async getAuthorityHistory(account) {
+    if (!isValidAccountName(account)) {
+      throw new RangeError("getAuthorityHistory: invalid account");
+    }
+    const raw = await this.#rpc.call("condenser_api.get_account_history", [account, -1, MAX_HISTORY_PAGE, AUTHORITY_FILTER_LOW, 0]);
+    if (!Array.isArray(raw) || raw.length > MAX_HISTORY_PAGE + 1) {
+      throw new ChainDataError("get_account_history: expected a bounded array");
+    }
+    const entries = raw.map((pair, position) => parseHistoryEntry(pair, `history[${position}]`)).filter((entry) => AUTHORITY_OPERATIONS.includes(entry.operation.type));
+    return Object.freeze({ complete: raw.length < MAX_HISTORY_PAGE, entries: Object.freeze(entries) });
   }
 
   /**
