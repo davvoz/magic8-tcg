@@ -90,6 +90,12 @@ Il server rifiuta di partire con:
 - **Token delle metriche:** si cambia la variabile e si riavvia.
 - **Sessioni utente:** un utente che cambia la chiave posting perde le sessioni aperte entro 10 minuti (job di controllo delle chiavi).
 
+## 4.5 Scambi
+
+- Gli scambi aperti scadono da soli dopo 72 ore (job ogni minuto); le carte tornano al proponente.
+- Un giocatore che dice di aver perso carte: la storia di ogni copia è in `card_instance_events` (`LOCKED`, `TRANSFERRED`, `UNLOCKED`, con `ref = trade:<id>`), e ogni scambio concluso è sulla catena (`m8tcg_trade`).
+- **Non si spostano carte a mano nel database.** Uno scambio annullato per errore si rifà come nuovo scambio fra i due giocatori.
+
 ## 5. Allarmi (`alarm raised: …`)
 
 | Allarme | Significato | Cosa fare |

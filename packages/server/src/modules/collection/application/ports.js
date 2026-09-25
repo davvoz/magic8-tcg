@@ -15,6 +15,12 @@
  * @property {(instanceId: string) => Promise<readonly import("../domain/CardInstance.js").InstanceEvent[]>} history oldest first
  * @property {(ownerId: string, origins: readonly { kind: string, ref: string }[]) => Promise<readonly import("../domain/CardInstance.js").CardInstance[]>} listByOrigins
  *   copies minted for those origins (e.g. an order and its packs), by definition then serial
+ * @property {(ids: readonly string[]) => Promise<readonly import("../domain/CardInstance.js").CardInstance[]>} lockInstances
+ *   locks the rows of these copies until the unit of work ends, in id order
+ * @property {(ownerId: string, definitionId: string, count: number, origins: readonly string[]) => Promise<readonly import("../domain/CardInstance.js").CardInstance[]>} lockTradeable
+ *   up to `count` active copies of a card the owner may trade (highest serials first), locked
+ * @property {(change: { ids: readonly string[], status: string, ownerId: string | null }) => Promise<void>} updateCopies
+ * @property {(events: readonly { instanceId: string, kind: string, fromUserId: string | null, toUserId: string | null, ref: string, at: number }[]) => Promise<void>} insertEvents
  */
 
-export const INVENTORY_REPOSITORY_METHODS = Object.freeze(["reserveSerials", "insertMinted", "insertGrant", "hasGrant", "listOwned", "activeCounts", "findOwned", "history", "listByOrigins"]);
+export const INVENTORY_REPOSITORY_METHODS = Object.freeze(["reserveSerials", "insertMinted", "insertGrant", "hasGrant", "listOwned", "activeCounts", "findOwned", "history", "listByOrigins", "lockInstances", "lockTradeable", "updateCopies", "insertEvents"]);

@@ -45,6 +45,15 @@ export class PgUserRepository {
     return toUser(existing);
   }
 
+  /**
+   * @param {string} network
+   * @param {string} account
+   */
+  async findByAccount(network, account) {
+    const row = await this.#db.maybeOne("SELECT * FROM users WHERE network = $1 AND account = $2", [network, account]);
+    return row === null ? null : toUser(row);
+  }
+
   async findById(id) {
     const row = await this.#db.maybeOne("SELECT * FROM users WHERE id = $1", [id]);
     return row === null ? null : toUser(row);

@@ -8,7 +8,7 @@
  */
 import { sha256Hex, utf8 } from "@magic8/protocol";
 
-export const OutboxKind = Object.freeze({ GAME_RECORD: "GAME_RECORD", RECEIPT: "RECEIPT", EPOCH: "EPOCH" });
+export const OutboxKind = Object.freeze({ GAME_RECORD: "GAME_RECORD", RECEIPT: "RECEIPT", EPOCH: "EPOCH", TRADE: "TRADE" });
 /** Receipts and pack epochs go out before game records: buyers wait for them, and a commitment must precede the sales it binds. */
 const RECEIPT_PRIORITY = 0;
 const GAME_RECORD_PRIORITY = 1;
@@ -50,6 +50,14 @@ export class ChainOutbox {
    */
   async enqueueEpoch({ network, payload }) {
     await this.#repository.insert({ network, kind: OutboxKind.EPOCH, payload, payloadHash: sha256Hex(utf8(payload)), priority: RECEIPT_PRIORITY, at: this.#clock.now() });
+  }
+
+  /**
+   * A completed trade (m8tcg_trade), written with the swap it records.
+   * @param {{ network: string, tradeId: string, payload: string }} entry canonical JSON
+   */
+  async enqueueTrade({ network, payload }) {
+    await this.#repository.insert({ network, kind: OutboxKind.TRADE, payload, payloadHash: sha256Hex(utf8(payload)), priority: RECEIPT_PRIORITY, at: this.#clock.now() });
   }
 
   /**

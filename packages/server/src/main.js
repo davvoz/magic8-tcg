@@ -23,6 +23,7 @@ const PAYMENT_POLL_INTERVAL_MS = 5000;
 const REFUND_POLL_INTERVAL_MS = 30_000;
 const ALARM_INTERVAL_MS = 60_000;
 const RANKING_CATCH_UP_MS = 10 * 60 * 1000;
+const TRADE_EXPIRY_INTERVAL_MS = 60_000;
 const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
 const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
 const GAME_TICK_INTERVAL_MS = 1000;
@@ -99,6 +100,7 @@ async function main() {
     every(REFUND_POLL_INTERVAL_MS, "refunds", () => app.refunds.runOnce(), logger),
     every(ALARM_INTERVAL_MS, "alarms", () => app.monitor.evaluate(), logger),
     every(RANKING_CATCH_UP_MS, "ranking catch-up", () => app.ranking.catchUp(), logger),
+    every(TRADE_EXPIRY_INTERVAL_MS, "trade expiry", () => app.trading.expireDue(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "order expiry", () => app.marketplace.expireDue(), logger),
     every(EPOCH_REVEAL_INTERVAL_MS, "pack epoch reveal", () => app.epochs.revealSettled(), logger),
     // Keeps a pack epoch open ahead of sales, so its commitment is already on chain when a buyer orders.

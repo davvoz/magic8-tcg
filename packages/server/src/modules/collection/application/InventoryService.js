@@ -9,16 +9,26 @@
  * - grantOnce: a free grant (starter deck, promotion) identified by a key;
  *   the key is the primary key of `grants`, so a retry, a double click or a
  *   concurrent request can never grant twice.
+ * - escrow / release / transfer: what a trade does to copies
+ *   (docs/tcg/13-scambi.md), inside the trade's unit of work. Only copies
+ *   bought (orders, packs) can be traded: free grants would let anyone farm
+ *   starter decks on throwaway accounts and funnel them to one.
  */
 import { AppError } from "../../../kernel/AppError.js";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { isUuid, uuidV4 } from "../../../kernel/random.js";
-import { InstanceStatus, OriginKind, checkMintRequest } from "../domain/CardInstance.js";
+import { InstanceEventKind, InstanceStatus, OriginKind, checkMintRequest } from "../domain/CardInstance.js";
 import { INVENTORY_REPOSITORY_METHODS } from "./ports.js";
 
 /**
- * @typedef {Readonly<{ definitionId: string, copies: readonly Readonly<{ id: string, edition: string, serial: number, finish: string, status: string }>[] }>} CollectionEntry
+ * @typedef {Readonly<{ definitionId: string, copies: readonly Readonly<{ id: string, edition: string, serial: number, finish: string, status: string, tradeable: boolean }>[] }>} CollectionEntry
  */
+
+/** Where a copy must come from to be traded. */
+export const TRADEABLE_ORIGINS = Object.freeze([OriginKind.PURCHASE, OriginKind.PACK]);
+
+/** @param {import("../domain/CardInstance.js").CardInstance} instance */
+const isTradeable = (instance) => TRADEABLE_ORIGINS.includes(/** @type {any} */ (instance.originKind));
 
 export class InventoryService {
   #repository;
@@ -122,7 +132,7 @@ export class InventoryService {
     const groups = new Map();
     for (const instance of await this.#repository.listOwned(userId)) {
       const copies = groups.get(instance.definitionId) ?? [];
-      copies.push(Object.freeze({ id: instance.id, edition: instance.edition, serial: instance.serial, finish: instance.finish, status: instance.status }));
+      copies.push(Object.freeze({ id: instance.id, edition: instance.edition, serial: instance.serial, finish: instance.finish, status: instance.status, tradeable: isTradeable(instance) }));
       groups.set(instance.definitionId, copies);
     }
     return Object.freeze([...groups].map(([definitionId, copies]) => Object.freeze({ definitionId, copies: Object.freeze(copies) })));
@@ -135,6 +145,77 @@ export class InventoryService {
    */
   activeCounts(userId) {
     return this.#repository.activeCounts(userId);
+  }
+
+  /**
+   * Puts the owner's copies in escrow for a trade: they must be theirs, active and tradeable; they become locked (no deck, no other trade).
+   * Runs inside the caller's unit of work.
+   * @param {{ ownerId: string, instanceIds: readonly string[], ref: string }} escrow
+   * @returns {Promise<readonly import("../domain/CardInstance.js").CardInstance[]>}
+   */
+  async escrow({ ownerId, instanceIds, ref }) {
+    const copies = await this.#repository.lockInstances(instanceIds);
+    const problem = instanceIds.find((id) => {
+      const copy = copies.find((candidate) => candidate.id === id);
+      return copy === undefined || copy.ownerId !== ownerId || copy.status !== InstanceStatus.ACTIVE || !isTradeable(copy);
+    });
+    if (problem !== undefined) {
+      throw new AppError("CONFLICT", `card ${problem} is not one of your tradeable copies (bought, not in another trade)`);
+    }
+    await this.#change(copies, { status: InstanceStatus.LOCKED, ownerId: null, kind: InstanceEventKind.LOCKED, ref });
+    return copies;
+  }
+
+  /**
+   * Gives escrowed copies back to their owner (trade declined, cancelled, expired).
+   * @param {{ instanceIds: readonly string[], ref: string }} release
+   */
+  async release({ instanceIds, ref }) {
+    const copies = (await this.#repository.lockInstances(instanceIds)).filter((copy) => copy.status === InstanceStatus.LOCKED);
+    await this.#change(copies, { status: InstanceStatus.ACTIVE, ownerId: null, kind: InstanceEventKind.UNLOCKED, ref });
+  }
+
+  /**
+   * Up to `count` tradeable copies of each wanted card from the owner, locked for the rest of the unit of work; fails when there are not enough.
+   * @param {{ ownerId: string, wants: readonly { definitionId: string, count: number }[] }} request
+   */
+  async pickTradeable({ ownerId, wants }) {
+    const picked = [];
+    for (const { definitionId, count } of wants) {
+      const copies = await this.#repository.lockTradeable(ownerId, definitionId, count, TRADEABLE_ORIGINS);
+      if (copies.length < count) {
+        throw new AppError("CONFLICT", `you have ${copies.length} tradeable ${definitionId}, the offer asks for ${count}`);
+      }
+      picked.push(...copies);
+    }
+    return Object.freeze(picked);
+  }
+
+  /**
+   * Hands copies over (the other side of an accepted trade): they must belong to `fromId` (active, or in escrow for this trade).
+   * @param {{ fromId: string, toId: string, instanceIds: readonly string[], ref: string }} transfer
+   */
+  async transfer({ fromId, toId, instanceIds, ref }) {
+    const copies = await this.#repository.lockInstances(instanceIds);
+    if (copies.length !== instanceIds.length || copies.some((copy) => copy.ownerId !== fromId || copy.status === InstanceStatus.BURNED)) {
+      throw new AppError("CONFLICT", "a copy of the trade changed hands in the meantime");
+    }
+    await this.#change(copies, { status: InstanceStatus.ACTIVE, ownerId: toId, kind: InstanceEventKind.TRANSFERRED, ref, fromId, toId });
+    return copies;
+  }
+
+  /**
+   * @param {readonly import("../domain/CardInstance.js").CardInstance[]} copies
+   * @param {{ status: string, ownerId: string | null, kind: string, ref: string, fromId?: string, toId?: string }} change
+   */
+  async #change(copies, { status, ownerId, kind, ref, fromId, toId }) {
+    if (copies.length === 0) {
+      return;
+    }
+    const at = this.#clock.now();
+    const ids = copies.map((copy) => copy.id);
+    await this.#repository.updateCopies({ ids, status, ownerId });
+    await this.#repository.insertEvents(copies.map((copy) => ({ instanceId: copy.id, kind, fromUserId: fromId ?? copy.ownerId, toUserId: toId ?? copy.ownerId, ref, at })));
   }
 
   /**

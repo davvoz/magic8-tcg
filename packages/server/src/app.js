@@ -26,6 +26,7 @@ import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, regi
 import { GameService, PgGameRepository, registerGameMessages, registerGameRoutes } from "./modules/gameplay/index.js";
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
+import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
 import { WebSocketGateway } from "./platform/realtime/WebSocketGateway.js";
 import { presenceHandler, registerSessionMessages } from "./realtimeSession.js";
@@ -122,6 +123,7 @@ export async function createServerApp(deps) {
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
   const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy, ackSigner, gameProtocol: config.gameProtocol, signatures: moveSignatures(wallets.get(defaultNetwork), verifyMoveSignature) });
+  const trading = new TradeService({ repository: new PgTradeRepository(database), inventory, findUser: (network, account) => users.findByAccount(network, account), isKnownCard: (id) => currentContent().catalog.has(id), outbox, notifier: hub, audit, clock, random, unitOfWork, logger, network: defaultNetwork });
   const rankedSettings = validateRankedSettings(content.ranked);
   if (!rankedSettings.ok) {
     throw new Error(`ranked settings are invalid: ${rankedSettings.error.message}`);
@@ -138,6 +140,7 @@ export async function createServerApp(deps) {
   registerIdentityRoutes({ router, auth, cookie: { name: config.sessionCookieName, secure: config.secure }, clock });
   registerCatalogRoutes({ router, catalog });
   registerCollectionRoutes({ router, inventory });
+  registerTradeRoutes({ router, trading });
   registerDeckRoutes({ router, decks });
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
@@ -192,7 +195,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, ranking, hub, games, gameRepository, secrets, matchmaking, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, ranking, trading, hub, games, gameRepository, secrets, matchmaking, realtime });
 }
 
 /** Anchoring states that prove a payload is on chain. */

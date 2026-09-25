@@ -14,6 +14,7 @@ import { AccountDeckRepository } from "./application/decks/AccountDeckRepository
 import { AckReceipts } from "./application/online/AckReceipts.js";
 import { OnlineService } from "./application/online/OnlineService.js";
 import { RankingService } from "./application/ranking/RankingService.js";
+import { TradingService } from "./application/trading/TradingService.js";
 import { ShopService } from "./application/shop/ShopService.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
@@ -27,6 +28,7 @@ import { HttpLiveGamesApi } from "./infrastructure/api/HttpLiveGamesApi.js";
 import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
 import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js";
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
+import { HttpTradingApi } from "./infrastructure/api/HttpTradingApi.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
@@ -226,12 +228,15 @@ async function boot() {
     logger,
   });
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });
+  // Trades move copies between collections: the account reloads after each one.
+  const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), onCollectionChanged: () => account.refresh() });
   // A purchase, a connection and a standing belong to the account that started them.
   account.subscribe((state) => {
     if (state.account === null) {
       shop.dismiss();
       online.stop();
       ranking.reset();
+      trading.reset();
     }
   });
 
@@ -249,6 +254,7 @@ async function boot() {
     shop,
     online,
     ranking,
+    trading,
   });
 
   const { sceneManager } = buildPresentation(theme.value);
