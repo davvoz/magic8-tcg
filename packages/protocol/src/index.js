@@ -49,3 +49,4 @@ export { AckKeyRegistry, BroadcasterRegistry, ManifestKind, PUBLIC_KEY_PATTERN, 
 export { Verdict, verifyGame } from "./game/verifyGame.js";
 export { SessionStatus, replayContentOf, verifyGameOnChain } from "./verification/chainVerifier.js";
 export { PackVerdict, verifyOrderOnChain, verifyOrderPacks } from "./verification/packVerifier.js";
+export { ProvenanceVerdict, traceCopy, verifyCopyOnChain } from "./verification/provenance.js";

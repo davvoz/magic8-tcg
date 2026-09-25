@@ -38,6 +38,20 @@ Ogni scambio concluso è pubblicato dal pool di broadcaster:
 
 `a` ha proposto e ha dato le sue carte a `b`; `b` ha dato le sue ad `a`. Con le ricevute di acquisto (03 §12) si ricostruisce da chi è passata ogni copia, dal conio a oggi. Il tracker segue questi record come gli altri: un `m8tcg_trade` firmato dal nostro broadcaster e sconosciuto al database genera l'allarme `UNKNOWN_ON_CHAIN`.
 
+## Verificare una copia
+
+```
+node tools/verify-card.js <id copia> [--root account] [--nodes urls] [--json]
+```
+
+Legge dalla sola catena la ricevuta che ha coniato la copia e ogni scambio che l'ha spostata (`verifyCopyOnChain` in `@magic8/protocol`). Contano solo le operazioni firmate dai broadcaster che il root ha autorizzato.
+
+| Esito | Significato |
+|---|---|
+| `VALID` | Coniata da un solo ordine, e ogni scambio l'ha ceduta chi la possedeva in quel momento. Stampa il proprietario di oggi |
+| `UNKNOWN` | Nessuna ricevuta la nomina: una carta gratuita (non si pubblica e non si scambia), oppure non ancora pubblicata |
+| `INVALID` | La catena si contraddice: coniata da due ordini, ceduta da chi non la possedeva, scambiata prima di essere coniata, o come un'altra stampa, oppure due record diversi per lo stesso scambio |
+
 ## API
 
 | Richiesta | Cosa |
@@ -51,5 +65,4 @@ WebSocket: `trade.updated { tradeId }` a entrambi i giocatori a ogni cambiamento
 
 ## Da fare
 
-- Uno strumento di verifica che ricostruisca la storia di una copia dalla catena (ricevute e scambi).
 - Un limite giornaliero di scambi fra gli stessi due account, se i ranking o i premi acquisteranno valore: oggi scambiarsi carte non dà vantaggi in classificata.

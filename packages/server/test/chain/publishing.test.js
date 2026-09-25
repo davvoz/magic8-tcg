@@ -24,6 +24,7 @@ import { ACK_KEYS, buildTestApp, deterministicRandom, keyPair, listen, testAckSi
 import { grantFor, sessionKey, signedCommand } from "../support/sessionKeys.js";
 import { verifyCommand } from "../../../../tools/verify-game.js";
 import { verifyOrderCommand } from "../../../../tools/verify-order.js";
+import { verifyCardCommand } from "../../../../tools/verify-card.js";
 import { ApiClient } from "../support/apiClient.js";
 import { FakeSteemLedger } from "../support/fakeSteemLedger.js";
 
@@ -529,6 +530,24 @@ describe("ChainBroadcaster and ChainTracker", () => {
     assert.match(output, /VERDICT: VALID/);
     const early = await verifyOrderOnChain({ orderId: placed.order.id, reader: w.publishing.reader, rootAccount: ROOT, dropTables, paymentBlock: 1 });
     assert.match(early.problem, /committed on chain only after the payment/);
+
+    // alice gives one of her pack cards to bob; anyone can then follow the copy from its receipt to bob.
+    const [copy] = (await w.setup.app.inventory.collection(w.alice.id)).flatMap((entry) => entry.copies.filter((one) => one.tradeable));
+    const { trade } = await w.setup.app.trading.propose({ proposer: { id: w.alice.id, account: "alice" }, to: "bob", give: [copy.id], want: [], idempotencyKey: "pack-gift-key-00000001", ip: "x" });
+    await w.setup.app.trading.accept({ userId: w.bob.id, tradeId: trade.id, ip: "x" });
+    for (let round = 0; round < 3; round += 1) {
+      await w.chain.broadcaster.runOnce();
+      w.ledger.produceBlock();
+    }
+    w.ledger.finalize();
+    let traced = "";
+    assert.equal(await verifyCardCommand([copy.id, "--root", ROOT], { reader: w.publishing.reader, write: (text) => (traced += text) }), 0, traced);
+    assert.match(traced, new RegExp(`minted for @alice by order ${placed.order.id}`));
+    assert.match(traced, /@alice → @bob in trade/);
+    assert.match(traced, /owner: @bob/);
+    let unknown = "";
+    assert.equal(await verifyCardCommand([uuidV4(deterministicRandom("no-such-copy")), "--root", ROOT], { reader: w.publishing.reader, write: (text) => (unknown += text) }), 1);
+    assert.match(unknown, /VERDICT: UNKNOWN/);
   });
 
   it("refuses to start with a broadcaster key that also controls the active authority", async () => {
