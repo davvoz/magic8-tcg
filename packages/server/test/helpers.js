@@ -128,6 +128,7 @@ export async function buildTestApp(options = {}) {
     content: content ?? (await bundledContent()),
     identityPolicyOverrides: policy,
     marketplacePolicy,
+    salesPolicy: options.salesPolicy,
     timePolicy,
     sealingPolicy,
     publishing,

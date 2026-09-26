@@ -1,11 +1,13 @@
 /**
- * A card as a one-line strip for lists (deck builder): faction stripe,
- * cost gem, name in the display face, type and keywords, the copy count
- * and, for creatures, attack and health gems. Decorative only; the row's
+ * A card as a one-line strip for lists (deck builder, collection, shop,
+ * market): faction stripe, cost gem, name in the display face, rarity (in
+ * its colour, when known), type and keywords, the copy count and, for
+ * creatures, attack and health gems. Decorative only; the row's
  * buttons sit beside it.
  */
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";
 import { shade, withAlpha } from "../theme/color.js";
+import { rarityColor, rarityLabel } from "../theme/rarity.js";
 import { displayFont, factionTones, fontFor } from "../theme/Theme.js";
 import { drawTextInRect, fillRoundedRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
 import { capitalize, ellipsize } from "../text/textUtils.js";
@@ -33,9 +35,11 @@ export class CardStrip extends UiNode {
   muted;
   /** Drawn in the danger colour (an unknown card id). */
   broken;
+  /** The card's rarity, when known. @type {string | null} */
+  rarity;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, card: StripCard, count?: number | null, muted?: boolean, broken?: boolean }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, card: StripCard, count?: number | null, muted?: boolean, broken?: boolean, rarity?: string | null }} options
    */
   constructor(options) {
     super(options);
@@ -43,6 +47,7 @@ export class CardStrip extends UiNode {
     this.count = options.count ?? null;
     this.muted = options.muted ?? false;
     this.broken = options.broken ?? false;
+    this.rarity = options.rarity ?? null;
     this.passthrough = true;
   }
 
@@ -121,7 +126,16 @@ export class CardStrip extends UiNode {
     drawTextInRect(context, name, { x, y: area.y, width, height: area.height * 0.58 }, { font: nameFont, color: this.broken ? theme.colors.danger : theme.colors.accentLight, align: "left" });
     const keywords = (this.card.keywords ?? []).join(" · ");
     const subtitle = keywords.length === 0 ? capitalize(this.card.type) : `${capitalize(this.card.type)} · ${keywords}`;
+    const line = { x, y: area.y + area.height * 0.55, width, height: area.height * 0.4 };
+    let offset = 0;
+    if (this.rarity) {
+      const font = fontFor(theme, "tiny", "bold");
+      context.font = font;
+      const label = `${rarityLabel(this.rarity)} · `;
+      offset = Math.min(width, context.measureText(label).width);
+      drawTextInRect(context, label, { ...line, width: offset }, { font, color: rarityColor(theme, this.rarity), align: "left" });
+    }
     context.font = fontFor(theme, "tiny");
-    drawTextInRect(context, ellipsize((text) => context.measureText(text).width, subtitle, width), { x, y: area.y + area.height * 0.55, width, height: area.height * 0.4 }, { font: fontFor(theme, "tiny"), color: theme.colors.textMuted, align: "left" });
+    drawTextInRect(context, ellipsize((text) => context.measureText(text).width, subtitle, width - offset), { ...line, x: x + offset, width: width - offset }, { font: fontFor(theme, "tiny"), color: theme.colors.textMuted, align: "left" });
   }
 }

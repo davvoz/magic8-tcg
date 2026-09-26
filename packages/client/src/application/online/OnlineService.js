@@ -122,6 +122,10 @@ export class OnlineService {
     this.#connection.onStatus((status, { code }) => this.#onStatus(status, code));
     this.#connection.subscribe((message) => this.#onMessage(message));
     this.#connection.connect();
+    // Already open (the notifications opened it at sign-in): say hello now.
+    if (this.#connection.status === "open") {
+      this.#onStatus("open", null);
+    }
   }
 
   /** Disconnects for good (sign-out). */

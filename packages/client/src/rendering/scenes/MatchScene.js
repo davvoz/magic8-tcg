@@ -45,6 +45,8 @@ const INSPECT = Object.freeze({ width: 440, height: 640, card: Object.freeze({ w
 /** @typedef {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} Snapshot */
 
 export class MatchScene extends Scene {
+  /** @type {(cardId: string) => string | null} */
+  #rarityOf;
   /** @type {import("../../application/match/MatchSession.js").MatchSession | null} */
   #session = null;
   /** Where "Play again" leads: deck selection for practice, the lobby for online games. */
@@ -66,8 +68,13 @@ export class MatchScene extends Scene {
   #gameOverShown = false;
 
   /** @param {import("./Scene.js").SceneServices} services */
-  constructor(services) {
+  /**
+   * @param {import("./Scene.js").SceneServices} services
+   * @param {{ rarityOf?: (cardId: string) => string | null }} [cards] how rare a card is, for the inspect view
+   */
+  constructor(services, { rarityOf = () => null } = {}) {
     super(services);
+    this.#rarityOf = rarityOf;
     this.#presenter = new MatchPresenter(services.theme.animation);
   }
 
@@ -386,7 +393,7 @@ export class MatchScene extends Scene {
     const { viewport } = this.services;
     const modal = new Modal({ id: "inspect", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: INSPECT.width, panelHeight: INSPECT.height, onDismiss: () => this.closeModal() });
     const { panel } = modal;
-    panel.add(new CardDetail({ id: "inspect.card", x: (INSPECT.width - INSPECT.card.width) / 2, y: 20, width: INSPECT.card.width, height: INSPECT.card.height, card }));
+    panel.add(new CardDetail({ id: "inspect.card", x: (INSPECT.width - INSPECT.card.width) / 2, y: 20, width: INSPECT.card.width, height: INSPECT.card.height, card, rarity: this.#rarityOf(card.definitionId ?? card.id ?? "") }));
     panel.add(new Button({ id: "inspect.close", x: (INSPECT.width - INSPECT.card.width) / 2, y: INSPECT.height - 20 - 48, width: INSPECT.card.width, height: 48, text: "Close", onActivate: () => this.closeModal() }));
     this.openModal(modal);
   }

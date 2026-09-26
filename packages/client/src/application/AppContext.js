@@ -16,6 +16,9 @@
  * @property {import("./online/OnlineService.js").OnlineService} [online] online games; absent with `identity`
  * @property {import("./ranking/RankingService.js").RankingService} [ranking] ranked standing and leaderboard; absent with `identity`
  * @property {import("./trading/TradingService.js").TradingService} [trading] card-for-card trades; absent with `identity`
+ * @property {import("./sales/SalesService.js").SalesService} [sales] the player market (copies sold for STEEM); absent with `identity`
+ * @property {import("./notifications/NotificationService.js").NotificationService} [notifications] the player's notification feed; absent with `identity`
+ * @property {import("./content/CardRarities.js").CardRarities} [rarities] how rare each card is; absent when the rarities file could not be read
  */
 
 export const APP_CONTEXT_KEYS = Object.freeze(["content", "deckSelection", "deckBuilding", "matchSetup", "createSeed", "logger", "environment"]);

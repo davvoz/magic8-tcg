@@ -27,6 +27,8 @@ import { GameService, PgGameRepository, registerGameMessages, registerGameRoutes
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
+import { PgSalesRepository, SaleSettlement, SalesService, registerSalesRoutes } from "./modules/sales/index.js";
+import { NotificationRelay, NotificationService, PgNotificationRepository, registerNotificationRoutes } from "./modules/notifications/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
 import { WebSocketGateway } from "./platform/realtime/WebSocketGateway.js";
 import { presenceHandler, registerSessionMessages } from "./realtimeSession.js";
@@ -49,6 +51,7 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   staticFiles?: import("./platform/http/HttpApp.js").StaticHandler | null,
  *   identityPolicyOverrides?: Parameters<typeof identityPolicy>[0],
  *   marketplacePolicy?: Partial<typeof DEFAULT_MARKETPLACE_POLICY>,
+ *   salesPolicy?: Partial<typeof import("./modules/sales/index.js").DEFAULT_SALES_POLICY>,
  *   timePolicy?: Partial<import("./modules/gameplay/domain/TurnClock.js").TimePolicy>,
  *   sealingPolicy?: Partial<typeof import("./modules/gameplay/index.js").DEFAULT_SEALING_POLICY>,
  *   publishing?: { transactions: import("./modules/chain/application/ports.js").TransactionProvider, reader: import("./modules/chain/application/ports.js").PublicationReader } | null,
@@ -63,7 +66,7 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
   const { staticFiles, publishing, chainReader, ackSigner, verifyMoveSignature, recoverSigner } = optionalAdapters(deps);
-  const { identityPolicyOverrides, marketplacePolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy } = policiesOf(deps);
+  const { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
 
@@ -111,8 +114,10 @@ export async function createServerApp(deps) {
   const payments = new PaymentService({ repository: paymentRepository, random, clock, unitOfWork });
   const refunds = new RefundWatcher({ repository: paymentRepository, providers: paymentProviders, senderFor: receiverFor, audit, clock, logger });
   const outbox = new ChainOutbox({ repository: new PgOutboxRepository(database), clock });
+  // What a player should hear about is written with the change; each process pushes it to the players connected to it.
+  const notifications = new NotificationService({ repository: new PgNotificationRepository(database), clock, unitOfWork });
   const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
-  const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, audit, clock, unitOfWork, logger });
+  const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, notifications, audit, clock, unitOfWork, logger });
   const rootAccount = /** @type {Record<string, string>} */ (config.rootAccounts)[defaultNetwork];
   const chain = publishing === null ? null : buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies: chainPolicies, ackKey: ackSigner?.publicKey ?? null });
   const chainRepository = new PgChainRepository(database);
@@ -123,7 +128,11 @@ export async function createServerApp(deps) {
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
   const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy, ackSigner, gameProtocol: config.gameProtocol, signatures: moveSignatures(wallets.get(defaultNetwork), verifyMoveSignature) });
-  const trading = new TradeService({ repository: new PgTradeRepository(database), inventory, findUser: (network, account) => users.findByAccount(network, account), isKnownCard: (id) => currentContent().catalog.has(id), outbox, notifier: hub, audit, clock, random, unitOfWork, logger, network: defaultNetwork });
+  const trading = new TradeService({ repository: new PgTradeRepository(database), inventory, findUser: (network, account) => users.findByAccount(network, account), isKnownCard: (id) => currentContent().catalog.has(id), outbox, notifier: hub, notifications, audit, clock, random, unitOfWork, logger, network: defaultNetwork });
+  // Sales between players: paid straight to the seller, watched with the shop's payment providers.
+  const salesRepository = new PgSalesRepository(database);
+  const sales = new SalesService({ repository: salesRepository, inventory, assets: () => economy.acceptedAssets(), providers: paymentProviders, notifier: hub, notifications, audit, clock, random, unitOfWork, logger, policy: salesPolicy });
+  const saleSettlement = new SaleSettlement({ repository: salesRepository, sales, inventory, providers: paymentProviders, outbox, notifications, audit, clock, unitOfWork, logger });
   const rankedSettings = validateRankedSettings(content.ranked);
   if (!rankedSettings.ok) {
     throw new Error(`ranked settings are invalid: ${rankedSettings.error.message}`);
@@ -131,7 +140,8 @@ export async function createServerApp(deps) {
   const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: rankedSettings.value, games, clock, unitOfWork, logger });
   games.onGameFinished((summary) => ranking.record(summary).then(() => undefined));
   const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger, ranking });
-  const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, clock, unitOfWork, logger });
+  const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, notifications, formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)), clock, unitOfWork, logger });
+  const notificationRelay = new NotificationRelay({ notifications, listen: (channel, onPayload, options) => database.listen(channel, onPayload, options), hub, logger });
 
 
   const verification = new GameVerification({ repository: chainRepository, reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash), clock, verifyMoveSignature, recoverSigner });
@@ -141,6 +151,8 @@ export async function createServerApp(deps) {
   registerCatalogRoutes({ router, catalog });
   registerCollectionRoutes({ router, inventory });
   registerTradeRoutes({ router, trading });
+  registerSalesRoutes({ router, sales, settlement: saleSettlement });
+  registerNotificationRoutes({ router, notifications });
   registerDeckRoutes({ router, decks });
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
@@ -195,7 +207,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, ranking, trading, hub, games, gameRepository, secrets, matchmaking, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, ranking, trading, sales, saleSettlement, notifications, notificationRelay, hub, games, gameRepository, secrets, matchmaking, realtime });
 }
 
 /** Anchoring states that prove a payload is on chain. */
@@ -247,8 +259,8 @@ function optionalAdapters({ staticFiles = null, publishing = null, chainReader =
  * The tunable policies of createServerApp (tests shorten times, lower limits).
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function policiesOf({ identityPolicyOverrides = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {}, chainPolicies = {}, alarmPolicy = {} }) {
-  return { identityPolicyOverrides, marketplacePolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy };
+function policiesOf({ identityPolicyOverrides = {}, marketplacePolicy = {}, salesPolicy = {}, timePolicy = {}, sealingPolicy = {}, chainPolicies = {}, alarmPolicy = {} }) {
+  return { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy };
 }
 
 /**

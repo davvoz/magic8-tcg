@@ -30,11 +30,15 @@ function parseInt8(text) {
 /** @implements {SqlDriver} */
 export class PgDriver {
   #pool;
+  #connectionString;
+  #onError;
 
   /**
    * @param {{ connectionString: string, maxConnections?: number, onError: (error: Error) => void }} options
    */
   constructor({ connectionString, maxConnections = 10, onError }) {
+    this.#connectionString = connectionString;
+    this.#onError = onError;
     this.#pool = new pg.Pool({
       connectionString,
       max: maxConnections,
@@ -84,10 +88,87 @@ export class PgDriver {
     }
   }
 
+  /**
+   * LISTEN on a connection of its own (a pooled one would be handed to
+   * queries). A lost connection is reopened with backoff; `onReconnect`
+   * then tells the caller that notifications may have been missed.
+   * @param {string} channel checked by Database
+   * @param {(payload: string) => void} onPayload
+   * @param {import("./Database.js").ListenOptions} options
+   */
+  async listen(channel, onPayload, { onReconnect = () => undefined } = {}) {
+    let stopped = false;
+    let attempt = 0;
+    /** @type {pg.Client | null} */
+    let client = null;
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let retry = null;
+    const open = async () => {
+      const next = new pg.Client({ connectionString: this.#connectionString, application_name: "magic8-tcg-listen" });
+      next.on("notification", (message) => {
+        if (message.channel === channel) {
+          onPayload(message.payload ?? "");
+        }
+      });
+      next.on("error", (error) => lost(next, error));
+      next.on("end", () => lost(next, new Error("listening connection ended")));
+      await next.connect();
+      await next.query(listenStatement(channel));
+      client = next;
+      attempt = 0;
+    };
+    const lost = (which, error) => {
+      if (stopped || client !== which) {
+        return;
+      }
+      client = null;
+      which.end().catch(() => undefined);
+      this.#onError(error);
+      schedule();
+    };
+    const schedule = () => {
+      const delay = LISTEN_BACKOFF_MS[Math.min(attempt, LISTEN_BACKOFF_MS.length - 1)];
+      attempt += 1;
+      retry = setTimeout(() => {
+        retry = null;
+        open().then(
+          () => (stopped ? undefined : onReconnect()),
+          (error) => {
+            this.#onError(error);
+            if (!stopped) {
+              schedule();
+            }
+          },
+        );
+      }, delay);
+      retry.unref?.();
+    };
+    await open();
+    return async () => {
+      stopped = true;
+      if (retry !== null) {
+        clearTimeout(retry);
+      }
+      const current = client;
+      client = null;
+      await current?.end().catch(() => undefined);
+    };
+  }
+
   async close() {
     await this.#pool.end();
   }
 }
+
+/**
+ * LISTEN takes no parameters: the channel is quoted as an identifier
+ * (Database.listen already admits only lowercase letters, digits and _).
+ * @param {string} channel
+ */
+const listenStatement = (channel) => "LISTEN ".concat(pg.escapeIdentifier(channel));
+
+/** Waits before reopening a lost listening connection. */
+const LISTEN_BACKOFF_MS = Object.freeze([500, 1000, 2000, 5000, 10_000]);
 
 /** @implements {SqlDriver} */
 export class PGliteDriver {
@@ -132,6 +213,17 @@ export class PGliteDriver {
    */
   withSession(work) {
     return this.#exclusive(() => work({ query: (text, params) => this.#run(text, params), exec: (text) => this.#execRaw(text) }));
+  }
+
+  /**
+   * In process: nothing to reconnect. NOTIFY is delivered after the commit
+   * of the transaction that sent it.
+   * @param {string} channel checked by Database
+   * @param {(payload: string) => void} onPayload
+   */
+  async listen(channel, onPayload) {
+    const unlisten = await this.#exclusive(() => this.#db.listen(channel, onPayload));
+    return () => this.#exclusive(() => unlisten());
   }
 
   close() {

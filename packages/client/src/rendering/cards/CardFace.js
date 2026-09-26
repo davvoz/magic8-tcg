@@ -1,8 +1,9 @@
 /**
  * The face of a card, drawn procedurally at any size: a bevelled frame in
  * the faction's tones with a gold rim, a cost gem, the name on a banner,
- * the art window (see CardArt), a type ribbon, the rules text box and, for
- * creatures, attack and health gems. Runtime state (damage, summoning
+ * the art window (see CardArt), a type ribbon ending in the rarity gem (when
+ * the rarity is known), the rules text box and, for creatures, attack and
+ * health gems. Runtime state (damage, summoning
  * sickness, exhaustion) is layered on top when present, so the deck
  * builder's inspect view and the board share one painter.
  *
@@ -11,10 +12,12 @@
  */
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
+import { rarityColor, rarityLabel } from "../theme/rarity.js";
 import { bodyFont, displayFont, factionTones } from "../theme/Theme.js";
 import { bevelRoundedRect, drawOutlinedText, drawTextInRect, fillRoundedRect, insetRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
 import { capitalize, ellipsize, wrapText } from "../text/textUtils.js";
 import { paintCardArt } from "./CardArt.js";
+import { drawGem } from "../ui/shapes.js";
 import { drawCostGem, drawStatGem } from "./statGem.js";
 
 const ELLIPSIS = "…";
@@ -92,24 +95,26 @@ export function cardFaceLayout(frame, profile, type) {
 }
 
 /**
- * Type ribbon text: "Creature · Ember".
+ * Type ribbon text: "Creature · Ember", and "· Rare" when the rarity is given.
  * @param {Pick<CardFaceModel, "type" | "faction">} model
+ * @param {string | null} [rarity]
  */
-export function typeLineFor(model) {
-  return `${capitalize(model.type)} · ${capitalize(model.faction)}`;
+export function typeLineFor(model, rarity = null) {
+  const base = `${capitalize(model.type)} · ${capitalize(model.faction)}`;
+  return rarity ? `${base} · ${rarityLabel(rarity)}` : base;
 }
 
 /**
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").Theme} theme
  * @param {CardFaceModel} model
- * @param {{ frame: Rect, profile: CardFaceProfile }} placement
+ * @param {{ frame: Rect, profile: CardFaceProfile, rarity?: string | null }} placement `rarity`: the card's, when known
  */
-export function paintCardFace(context, theme, model, { frame, profile }) {
+export function paintCardFace(context, theme, model, { frame, profile, rarity = null }) {
   if (frame.width <= 0 || frame.height <= 0) {
     return;
   }
-  const face = { context, theme, model, tones: factionTones(theme, model.faction), layout: cardFaceLayout(frame, profile, model.type), profile };
+  const face = { context, theme, model, tones: factionTones(theme, model.faction), layout: cardFaceLayout(frame, profile, model.type), profile, rarity };
   paintFrame(face);
   paintArtWindow(face);
   paintHeader(face);
@@ -122,7 +127,7 @@ export function paintCardFace(context, theme, model, { frame, profile }) {
 }
 
 /**
- * @typedef {{ context: CanvasRenderingContext2D, theme: import("../theme/Theme.js").Theme, model: CardFaceModel, tones: import("../theme/Theme.js").FactionTones, layout: CardFaceLayout, profile: CardFaceProfile }} Face
+ * @typedef {{ context: CanvasRenderingContext2D, theme: import("../theme/Theme.js").Theme, model: CardFaceModel, tones: import("../theme/Theme.js").FactionTones, layout: CardFaceLayout, profile: CardFaceProfile, rarity: string | null }} Face
  */
 
 /** Outer slab in the faction's dark tone, bevelled, with a gold hairline just inside the edge. @param {Face} face */
@@ -181,11 +186,28 @@ function fitName(context, theme, name, { size, budget }) {
   return { font, text: ellipsize(measure, name, budget) };
 }
 
-/** Faction-coloured ribbon with the type. @param {Face} face */
-function paintTypeLine({ context, theme, model, tones, layout, profile }) {
+/**
+ * Faction-coloured ribbon with the type and, when known, the rarity: a gem
+ * in the rarity's colour at its right end (named in full at inspect size).
+ * @param {Face} face
+ */
+function paintTypeLine({ context, theme, model, tones, layout, profile, rarity }) {
   const { typeLine, frame } = layout;
   fillRoundedRect(context, typeLine, { fill: verticalGradient(context, typeLine, [[0, tones.base], [1, shade(tones.base, -0.4)]]), stroke: withAlpha(theme.colors.accent, 0.4), radius: typeLine.height / 2, lineWidth: 1 });
-  drawOutlinedText(context, typeLineFor(model), typeLine, { font: bodyFont(theme, frame.height * profile.typeRatio, "bold"), color: theme.colors.text, outline: withAlpha(tones.dark, 0.8), outlineWidth: Math.max(1, frame.height * 0.008) });
+  const gem = rarity ? typeLine.height * 0.42 : 0;
+  const textArea = rarity ? { ...typeLine, x: typeLine.x + gem * 2, width: typeLine.width - gem * 4 } : typeLine;
+  const text = typeLineFor(model, profile.keywordsLine ? rarity : null);
+  const font = bodyFont(theme, frame.height * profile.typeRatio, "bold");
+  context.font = font;
+  // The gem narrows the ribbon: only then may the text need shortening.
+  const fitted = rarity ? ellipsize((value) => context.measureText(value).width, text, textArea.width) : text;
+  drawOutlinedText(context, fitted, textArea, { font, color: theme.colors.text, outline: withAlpha(tones.dark, 0.8), outlineWidth: Math.max(1, frame.height * 0.008) });
+  if (rarity) {
+    const color = rarityColor(theme, rarity);
+    const center = { x: typeLine.x + typeLine.width - typeLine.height / 2, y: typeLine.y + typeLine.height / 2 };
+    const box = { x: center.x - gem, y: center.y - gem, width: gem * 2, height: gem * 2 };
+    drawGem(context, center, gem, { fill: verticalGradient(context, box, [[0, mix(color, "#ffffff", 0.35)], [1, shade(color, -0.35)]]), rim: shade(color, -0.55), highlight: withAlpha("#ffffff", 0.4), sides: 4, rimWidth: Math.max(0.6, gem * 0.18) });
+  }
 }
 
 /**

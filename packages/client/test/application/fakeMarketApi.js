@@ -10,10 +10,12 @@ import { fail, ok } from "@magic8/engine/shared/Result.js";
 
 const DATA = resolve(import.meta.dirname, "../../../../data");
 const readData = (path) => JSON.parse(readFileSync(resolve(DATA, path), "utf8"));
+/** An amount as the server formats it: STEEM's three decimals ("2.5" → "2.500"). @param {string} amount */
+const steem = (amount) => Number(amount).toFixed(3);
 /** The server's price list (data/economy/pricing.json), as the listing publishes it. */
 const PRICE_LIST = Object.freeze({
   asset: "STEEM",
-  singles: Object.entries(readData("economy/pricing.json").singles.prices).map(([rarity, price]) => Object.freeze({ rarity, standard: price.standard, foil: price.foil ?? null })),
+  singles: Object.entries(readData("economy/pricing.json").singles.prices).map(([rarity, price]) => Object.freeze({ rarity, standard: steem(price.standard), foil: price.foil === undefined ? null : steem(price.foil) })),
 });
 const RARITY_OF = readData("economy/rarities.json").cards;
 const ARCANE = readData("decks/precon_arcane.deck.json");
@@ -34,8 +36,8 @@ export const LISTING = Object.freeze({
   products: [
     product({ id: "core_booster", kind: "pack", name: "Core Booster", amount: "1.000", contents: [{ type: "pack", ref: "core_booster", count: 1, finish: null }], cards: 5, perOrder: 20, description: "5 unknown cards." }),
     product({ id: "core_mini_booster", kind: "pack", name: "Core Mini Booster", amount: "0.500", contents: [{ type: "pack", ref: "core_mini_booster", count: 1, finish: null }], cards: 3, perOrder: 20, description: "3 unknown cards." }),
-    // 10.750: the sum of its 30 cards as singles, as the server prices it.
-    product({ id: "deck_precon_arcane", kind: "deck", name: "Arcane Conclave", amount: "10.750", contents: [{ type: "deck", ref: "precon_arcane", count: 1, finish: null }], cards: 30 }),
+    // 49.000: the sum of its 30 cards as singles, as the server prices it.
+    product({ id: "deck_precon_arcane", kind: "deck", name: "Arcane Conclave", amount: "49.000", contents: [{ type: "deck", ref: "precon_arcane", count: 1, finish: null }], cards: 30 }),
     product({ id: "core_booster_box", kind: "bundle", name: "Core Booster Box", amount: "10.000", contents: [{ type: "product", ref: "core_booster", count: 12, finish: null }], cards: 60, perOrder: 5, description: "12 boosters." }),
     ...singles("pyre_drake", "Pyre Drake"),
     ...ARCANE.cards.flatMap((entry) => singles(entry.cardId, entry.cardId)),

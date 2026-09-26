@@ -1,5 +1,6 @@
 /**
- * HTTP surface of trades (docs/tcg/13-scambi.md): a player's own trades only.
+ * HTTP surface of trades (docs/tcg/13-scambi.md): a player's own trades, and
+ * what another player could give in one (counts per card, no copy details).
  */
 import { Auth } from "../../../platform/http/Router.js";
 import { validated } from "../../../platform/http/validateBody.js";
@@ -17,6 +18,14 @@ export function registerTradeRoutes({ router, trading }) {
     auth: Auth.REQUIRED,
     rateLimit: READ_RATE,
     handler: async (context) => ({ status: 200, body: { trades: await trading.list(context.principal.user.id) } }),
+  });
+
+  router.add({
+    method: "GET",
+    path: "/api/trades/tradeable/:account",
+    auth: Auth.REQUIRED,
+    rateLimit: READ_RATE,
+    handler: async (context) => ({ status: 200, body: { cards: await trading.tradeableOf({ userId: context.principal.user.id, account: context.params.account }) } }),
   });
 
   router.add({

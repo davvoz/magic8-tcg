@@ -17,6 +17,9 @@ import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/S
 import { ShopCategory, deckBreakdown, mainOfferOf, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardStrip } from "../cards/CardStrip.js";
+import { CardThumb } from "../cards/CardThumb.js";
+import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
+import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
 import { factionTones } from "../theme/Theme.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -41,7 +44,8 @@ const PRICE_WIDTH = 170;
 const QUANTITY = Object.freeze({ height: 52, width: 80 });
 const BUY = Object.freeze({ height: 60, width: 420 });
 const SINGLE = Object.freeze({ card: Object.freeze({ width: 300, height: 442 }), finishHeight: 52, legendColumn: 120 });
-const DECK_LINE = 30;
+/** A deck's cards as thumbnails: the card, "copies × price each", its rarity. */
+const DECK_THUMB = Object.freeze({ width: 84, gap: 12, rarity: 20 });
 const REVEAL = Object.freeze({ width: 1100, height: 780, row: 44, gap: 6, packGap: 16 });
 const DETAIL_WIDTH = COLUMNS.right.width - 2 * INSET;
 /** Where the purchase controls start in the detail panel; everything else fits above. */
@@ -49,14 +53,13 @@ const PURCHASE_TOP = COLUMNS.height - INSET - 2 * LINE - 8 - BUY.height - INSET 
 
 const TAB_TITLES = Object.freeze({ [ShopCategory.PACKS]: "Packs", [ShopCategory.DECKS]: "Decks", [ShopCategory.SINGLES]: "Singles", [ShopCategory.OFFERS]: "Offers" });
 /** Rarities drawn in theme colours, commonest to rarest. */
-const RARITY_COLORS = Object.freeze({ common: "textMuted", uncommon: "success", rare: "resource", epic: "attack", legendary: "accent" });
 const EMPTY_SHELVES = shelvesOf({ products: [], dropTables: [], rarities: [], priceList: { asset: "", singles: [] } });
 
 /** What the player sees at each step of a purchase. */
 const STAGE_TEXT = Object.freeze({
   [PurchaseStage.ORDERING]: () => "Creating your order…",
   [PurchaseStage.SIGNING]: (purchase) => `Approve the transfer in Keychain: ${purchase.order.payment.amount} ${purchase.order.payment.asset} to @${purchase.order.payment.to}.`,
-  [PurchaseStage.CONFIRMING]: () => "Payment sent. Waiting for the STEEM blockchain to make it final (about a minute)…",
+  [PurchaseStage.CONFIRMING]: () => "Payment sent. The STEEM blockchain makes it final in about a minute: keep playing, you will be notified when your cards arrive.",
   [PurchaseStage.DONE]: () => "Done: your cards are in your collection.",
 });
 
@@ -67,7 +70,7 @@ const STAGE_TEXT = Object.freeze({
  */
 
 /** @param {string | null} rarity */
-const rarityColor = (rarity) => RARITY_COLORS[/** @type {keyof typeof RARITY_COLORS} */ (rarity ?? "")] ?? "textMuted";
+const rarityColor = (rarity) => rarityColorKey(rarity);
 /** @param {Product} product */
 const priceText = (product) => `${priceOf(product).amount} ${priceOf(product).asset}`;
 /** @param {number} count */
@@ -183,7 +186,11 @@ export class ShopScene extends Scene {
     const account = this.#app.account?.state.account ?? null;
     this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 200, height: HEADER.height, text: "Shop", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const note = account === null ? "Sign in with Keychain to buy. Prices are paid in STEEM, straight from your wallet." : `Buying as @${account}. Payments go straight from your wallet; nothing is stored in the game.`;
-    this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y, width: viewport.logicalWidth - 2 * HEADER.sideMargin - 200 - HEADER.backWidth - INSET, height: HEADER.height, text: note, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    const market = this.services.hasScene(SceneId.MARKET);
+    this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y, width: viewport.logicalWidth - 2 * HEADER.sideMargin - 200 - (market ? 2 : 1) * (HEADER.backWidth + 16), height: HEADER.height, text: note, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    if (market) {
+      this.root.add(new Button({ id: "shop.market", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
+    }
     return this.root.add(new Button({ id: "shop.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back to menu", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
   }
 
@@ -312,7 +319,7 @@ export class ShopScene extends Scene {
     return singles.map((offer, index) => {
       const card = this.#app.content.catalog.get(offer.cardId);
       const selected = offer.cardId === this.#selected[ShopCategory.SINGLES];
-      list.add(new CardStrip({ x: 0, y: rowY(index), width: stripWidth, height: ROW.height, card: card ?? unknownCard(offer.cardId), broken: card === undefined, muted: !selected }));
+      list.add(new CardStrip({ x: 0, y: rowY(index), width: stripWidth, height: ROW.height, card: card ?? unknownCard(offer.cardId), broken: card === undefined, muted: !selected, rarity: offer.rarity ?? rarityOf(this.#app, offer.cardId) }));
       return list.add(new Button({ id: `shop.card.${offer.cardId}`, x: stripWidth + ACTION.gap, y: rowY(index), width: PRICE_WIDTH, height: ROW.height, text: priceText(mainOfferOf(offer)), variant: selected ? "primary" : "secondary", textSize: "small", onActivate: () => this.#select(offer.cardId) }));
     });
   }
@@ -364,22 +371,52 @@ export class ShopScene extends Scene {
     const { lines, total } = deckBreakdown(deck.entries, singles);
     const top = 150;
     const bottom = PURCHASE_TOP - INSET - LINE;
-    panel.add(new Label({ x: INSET, y: top, width: DETAIL_WIDTH, height: LINE, text: `${deck.faction} deck · ${cardsText(product.cards)}, ${lines.length} different · price of each card as a single:`, size: "small", align: "left", colorKey: "accentLight", fit: true }));
+    panel.add(new Label({ x: INSET, y: top, width: DETAIL_WIDTH, height: LINE, text: `${deck.faction} deck · ${cardsText(product.cards)}, ${lines.length} different · copies × price as a single · tap a card for its details`, size: "small", align: "left", colorKey: "accentLight", fit: true }));
     const list = panel.add(new ScrollList({ id: "shop.deckCards", x: INSET, y: top + LINE + 6, width: DETAIL_WIDTH, height: bottom - top - LINE - 6 }));
-    const amountWidth = 150;
-    const rarityWidth = 130;
-    const nameWidth = list.rowWidth - rarityWidth - amountWidth;
+    const perRow = Math.max(1, Math.floor((list.rowWidth + DECK_THUMB.gap) / (DECK_THUMB.width + DECK_THUMB.gap)));
+    const cellHeight = CardThumb.heightFor(DECK_THUMB.width) + DECK_THUMB.rarity + DECK_THUMB.gap;
     lines.forEach((line, index) => {
-      const y = index * DECK_LINE;
-      const name = this.#app.content.catalog.get(line.cardId)?.name ?? line.cardId;
-      const each = line.unit === null ? "" : ` (${line.unit} each)`;
-      list.add(new Label({ x: 0, y, width: nameWidth, height: DECK_LINE, text: `${line.count} × ${name}${line.count > 1 ? each : ""}`, size: "small", align: "left", fit: true }));
-      list.add(new Label({ x: nameWidth, y, width: rarityWidth, height: DECK_LINE, text: line.rarity ?? "", size: "small", align: "left", colorKey: rarityColor(line.rarity) }));
-      list.add(new Label({ x: nameWidth + rarityWidth, y, width: amountWidth, height: DECK_LINE, text: line.amount ?? "not sold alone", size: "small", align: "right", colorKey: line.amount === null ? "textMuted" : "text" }));
+      const x = (index % perRow) * (DECK_THUMB.width + DECK_THUMB.gap);
+      const y = Math.floor(index / perRow) * cellHeight;
+      const card = this.#app.content.catalog.get(line.cardId);
+      const rarity = line.rarity ?? rarityOf(this.#app, line.cardId);
+      list.add(
+        new CardThumb({
+          id: `shop.deckCard.${line.cardId}`,
+          x,
+          y,
+          width: DECK_THUMB.width,
+          card: card ?? { ...unknownCard(line.cardId), text: "" },
+          caption: `${line.count} × ${line.unit ?? "—"}`,
+          rarity,
+          onActivate: card === undefined ? null : () => this.#showDeckCard(line, product),
+        }),
+      );
+      list.add(new Label({ x, y: y + CardThumb.heightFor(DECK_THUMB.width), width: DECK_THUMB.width, height: DECK_THUMB.rarity, text: rarityLabel(rarity), size: "tiny", weight: "bold", colorKey: rarityColor(rarity), fit: true }));
     });
-    list.contentHeight = lines.length * DECK_LINE;
+    list.contentHeight = Math.ceil(lines.length / perRow) * cellHeight - DECK_THUMB.gap;
     const sum = total === null ? "" : `Sum of the cards: ${total} ${priceOf(product).asset} · `;
     panel.add(new Label({ id: "shop.deckTotal", x: INSET, y: bottom, width: DETAIL_WIDTH, height: LINE, text: `${sum}Deck price: ${priceText(product)}`, size: "small", weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
+  }
+
+  /**
+   * One card of a deck on sale, in detail: how many the deck holds and what they cost as singles.
+   * @param {ReturnType<typeof deckBreakdown>["lines"][number]} line
+   * @param {Product} product
+   */
+  #showDeckCard(line, product) {
+    const card = this.#app.content.catalog.get(line.cardId);
+    if (card === undefined) {
+      return;
+    }
+    const { asset } = priceOf(product);
+    const lines = [`In this deck: ${line.count}`];
+    if (line.unit === null) {
+      lines.push("Not sold as a single");
+    } else {
+      lines.push(`As a single: ${line.unit} ${asset} each`, `${line.count} in the deck: ${line.amount} ${asset}`);
+    }
+    this.openModal(buildCardInfoModal({ viewport: this.services.viewport, card, rarity: line.rarity ?? rarityOf(this.#app, line.cardId), lines, onClose: () => this.closeModal() }));
   }
 
   /**
@@ -392,12 +429,12 @@ export class ShopScene extends Scene {
   #buildSingleDetail(panel, offer) {
     const card = this.#app.content.catalog.get(offer.cardId);
     if (card !== undefined) {
-      panel.add(new CardDetail({ id: "shop.cardDetail", x: INSET, y: INSET, width: SINGLE.card.width, height: SINGLE.card.height, card }));
+      panel.add(new CardDetail({ id: "shop.cardDetail", x: INSET, y: INSET, width: SINGLE.card.width, height: SINGLE.card.height, card, rarity: offer.rarity ?? rarityOf(this.#app, offer.cardId) }));
     }
     const x = INSET + SINGLE.card.width + INSET;
     const width = COLUMNS.right.width - x - INSET;
     panel.add(new Label({ x, y: INSET, width, height: 40, text: card?.name ?? offer.cardId, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    panel.add(new Label({ id: "shop.rarity", x, y: INSET + 44, width, height: LINE, text: offer.rarity ?? "", weight: "bold", align: "left", colorKey: rarityColor(offer.rarity) }));
+    panel.add(new Label({ id: "shop.rarity", x, y: INSET + 44, width, height: LINE, text: rarityLabel(offer.rarity), weight: "bold", align: "left", colorKey: rarityColor(offer.rarity) }));
     const owned = this.#ownedCopies(offer.cardId);
     if (owned !== null) {
       panel.add(new Label({ id: "shop.owned", x, y: INSET + 44 + LINE, width, height: LINE, text: owned === 0 ? "Not in your collection yet" : `You own ${owned}`, size: "small", align: "left", colorKey: "textMuted" }));
@@ -620,7 +657,7 @@ export class ShopScene extends Scene {
       for (const card of group.cards) {
         const definition = this.#app.content.catalog.get(card.definitionId);
         const foil = card.finish === "foil";
-        list.add(new CardStrip({ x: 0, y, width: list.rowWidth - 220, height: REVEAL.row, card: definition ?? unknownCard(card.definitionId), broken: definition === undefined }));
+        list.add(new CardStrip({ x: 0, y, width: list.rowWidth - 220, height: REVEAL.row, card: definition ?? unknownCard(card.definitionId), broken: definition === undefined, rarity: rarityOf(this.#app, card.definitionId) }));
         list.add(new Label({ x: list.rowWidth - 210, y, width: 210, height: REVEAL.row, text: `#${card.serial}${foil ? " · foil" : ""}`, size: "small", align: "left", colorKey: foil ? "accentLight" : "textMuted" }));
         y += REVEAL.row + REVEAL.gap;
       }

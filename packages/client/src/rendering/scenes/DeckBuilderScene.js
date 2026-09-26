@@ -121,6 +121,7 @@ export class DeckBuilderScene extends Scene {
       buildInspectModal({
         viewport: this.services.viewport,
         card,
+        rarity: this.#app.rarities?.of(cardId) ?? null,
         count: entry?.count ?? builder.draft?.countOf(cardId) ?? 0,
         maxCopies: builder.rules.maxCopies,
         canAdd: entry?.canAdd ?? false,

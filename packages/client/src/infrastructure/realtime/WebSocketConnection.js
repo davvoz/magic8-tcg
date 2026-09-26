@@ -44,6 +44,14 @@ export class WebSocketConnection {
     this.#timers = timers;
   }
 
+  /** @returns {"connecting" | "open" | "closed"} */
+  get status() {
+    if (this.#socket === null) {
+      return "closed";
+    }
+    return this.#socket.readyState === 1 ? "open" : "connecting";
+  }
+
   connect() {
     this.#wanted = true;
     if (this.#socket === null) {

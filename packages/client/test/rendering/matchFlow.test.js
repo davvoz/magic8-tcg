@@ -69,7 +69,7 @@ describe("registerScenes", () => {
   it("registers every scene and the menu can reach them all", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     registerScenes(manager, appContext());
-    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.LEADERBOARD, SceneId.LIVE_GAMES, SceneId.TRADES];
+    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.LEADERBOARD, SceneId.LIVE_GAMES, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
     assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map((id) => !accountScenes.includes(id)), "account scenes need a game server");
     assert.equal(manager.navigate(SceneId.MAIN_MENU), true);
     assert.equal(buttonNamed(manager.current, "Deck Builder").enabled, true);
@@ -104,7 +104,7 @@ describe("DeckSelectionScene", () => {
 
   it("shows unplayable decks disabled with the reason, and disables start when nothing is playable", async () => {
     const app = appContext();
-    app.deckSelection = { listDecks: () => [], listPlayableDecks: () => [] };
+    app.deckSelection = { listDecks: () => [], listPlayableDecks: () => [], listRivalDecks: () => [] };
     const empty = new DeckSelectionScene(services(), app);
     empty.enter({});
     assert.equal(buttonNamed(empty, "Start match").enabled, false);

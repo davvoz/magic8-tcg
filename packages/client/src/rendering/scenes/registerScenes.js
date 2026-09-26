@@ -11,8 +11,10 @@ import { ErrorScene } from "./ErrorScene.js";
 import { LeaderboardScene } from "./LeaderboardScene.js";
 import { LiveGamesScene } from "./LiveGamesScene.js";
 import { LoginScene } from "./LoginScene.js";
+import { MarketScene } from "./MarketScene.js";
 import { MainMenuScene } from "./MainMenuScene.js";
 import { MatchScene } from "./MatchScene.js";
+import { NotificationsScene } from "./NotificationsScene.js";
 import { OnlineScene } from "./OnlineScene.js";
 import { SceneId } from "./sceneIds.js";
 import { ShopScene } from "./ShopScene.js";
@@ -28,7 +30,7 @@ export function registerScenes(sceneManager, app) {
     .register(SceneId.MAIN_MENU, (services) => new MainMenuScene(services, app))
     .register(SceneId.DECK_SELECTION, (services) => new DeckSelectionScene(services, app))
     .register(SceneId.DECK_BUILDER, (services) => new DeckBuilderScene(services, app))
-    .register(SceneId.MATCH, (services) => new MatchScene(services))
+    .register(SceneId.MATCH, (services) => new MatchScene(services, { rarityOf: (cardId) => app.rarities?.of(cardId) ?? null }))
     .register(SceneId.LOGIN, (services) => new LoginScene(services, app))
     .register(SceneId.ERROR, (services) => new ErrorScene(services));
   if (app.account !== undefined) {
@@ -50,5 +52,11 @@ export function registerScenes(sceneManager, app) {
   }
   if (app.shop !== undefined) {
     sceneManager.register(SceneId.SHOP, (services) => new ShopScene(services, app));
+  }
+  if (app.sales !== undefined) {
+    sceneManager.register(SceneId.MARKET, (services) => new MarketScene(services, app));
+  }
+  if (app.notifications !== undefined) {
+    sceneManager.register(SceneId.NOTIFICATIONS, (services) => new NotificationsScene(services, app));
   }
 }

@@ -20,14 +20,18 @@
  *   query: (text: string, params: readonly unknown[]) => Promise<QueryResult>,
  *   exec: (text: string) => Promise<void>,
  * }} SqlSession
+ * @typedef {{ onReconnect?: () => void }} ListenOptions `onReconnect`: the listening connection was lost and is back (notifications in between are lost)
  * @typedef {SqlSession & {
  *   withSession: <T>(work: (session: SqlSession) => Promise<T>) => Promise<T>,
+ *   listen: (channel: string, onPayload: (payload: string) => void, options?: ListenOptions) => Promise<() => Promise<void>>,
  *   close: () => Promise<void>,
  * }} SqlDriver
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { DbError, DbErrorCode, toDbError } from "./DbError.js";
+
+const CHANNEL_PATTERN = /^[a-z_][a-z0-9_]{0,62}$/;
 
 export class Database {
   #driver;
@@ -114,6 +118,22 @@ export class Database {
       }
       return result;
     });
+  }
+
+  /**
+   * Listens to a notification channel (LISTEN/NOTIFY). A NOTIFY sent inside
+   * a transaction arrives only once that transaction commits, and reaches
+   * every process listening on the database.
+   * @param {string} channel lowercase letters, digits and _
+   * @param {(payload: string) => void} onPayload
+   * @param {ListenOptions} [options]
+   * @returns {Promise<() => Promise<void>>} stop listening
+   */
+  listen(channel, onPayload, options = {}) {
+    if (!CHANNEL_PATTERN.test(channel)) {
+      throw new RangeError(`invalid notification channel "${channel}"`);
+    }
+    return this.#driver.listen(channel, onPayload, options);
   }
 
   async close() {

@@ -2,6 +2,10 @@
  * Holds scene factories by id and runs exactly one scene at a time. It is
  * the GameLoop's and InputManager's single target, and the only way scenes
  * move between each other (`navigate`). Scenes never construct one another.
+ * An optional overlay (the toasts) is drawn above every scene and sees
+ * pointer events first.
+ *
+ * @typedef {{ update: (dtMs: number) => boolean, render: (context: CanvasRenderingContext2D, theme: import("../theme/Theme.js").Theme) => void, onPointer: (input: { type: string, x: number, y: number }) => boolean }} SceneOverlay
  */
 export class SceneManager {
   /** @type {Map<string, (services: import("./Scene.js").SceneServices) => import("./Scene.js").Scene>} */
@@ -12,6 +16,8 @@ export class SceneManager {
   #currentId = null;
   #services;
   #requestRender;
+  /** @type {SceneOverlay | null} */
+  #overlay = null;
 
   /**
    * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void }} deps
@@ -45,6 +51,12 @@ export class SceneManager {
     return this.#factories.has(sceneId);
   }
 
+  /** @param {SceneOverlay | null} overlay */
+  setOverlay(overlay) {
+    this.#overlay = overlay;
+    this.#requestRender();
+  }
+
   get currentId() {
     return this.#currentId;
   }
@@ -74,16 +86,22 @@ export class SceneManager {
 
   /** @param {number} dtMs */
   update(dtMs) {
-    return this.#current?.update(dtMs) ?? false;
+    const scene = this.#current?.update(dtMs) ?? false;
+    const overlay = this.#overlay?.update(dtMs) ?? false;
+    return scene || overlay;
   }
 
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
     this.#current?.render(context);
+    this.#overlay?.render(context, this.#services.theme);
   }
 
   /** @param {import("../../input/InputManager.js").PointerInput | import("../../input/InputManager.js").WheelInput} input */
   onPointer(input) {
+    if (this.#overlay?.onPointer(/** @type {{ type: string, x: number, y: number }} */ (input))) {
+      return;
+    }
     this.#current?.onPointer(input);
   }
 

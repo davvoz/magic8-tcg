@@ -10,9 +10,9 @@
  *   the key is the primary key of `grants`, so a retry, a double click or a
  *   concurrent request can never grant twice.
  * - escrow / release / transfer: what a trade does to copies
- *   (docs/tcg/13-scambi.md), inside the trade's unit of work. Only copies
- *   bought (orders, packs) can be traded: free grants would let anyone farm
- *   starter decks on throwaway accounts and funnel them to one.
+ *   (docs/tcg/13-scambi.md), inside the trade's unit of work. Bought copies
+ *   (orders, packs) and free grants (the starter deck) can be traded;
+ *   rewards cannot.
  */
 import { AppError } from "../../../kernel/AppError.js";
 import { assertImplements } from "../../../kernel/contracts.js";
@@ -25,7 +25,7 @@ import { INVENTORY_REPOSITORY_METHODS } from "./ports.js";
  */
 
 /** Where a copy must come from to be traded. */
-export const TRADEABLE_ORIGINS = Object.freeze([OriginKind.PURCHASE, OriginKind.PACK]);
+export const TRADEABLE_ORIGINS = Object.freeze([OriginKind.PURCHASE, OriginKind.PACK, OriginKind.GRANT]);
 
 /** @param {import("../domain/CardInstance.js").CardInstance} instance */
 const isTradeable = (instance) => TRADEABLE_ORIGINS.includes(/** @type {any} */ (instance.originKind));
@@ -148,6 +148,22 @@ export class InventoryService {
   }
 
   /**
+   * Copies per card that may be offered or asked for in a trade now: active (not in a trade) and of a tradeable origin.
+   * @param {string} userId
+   * @returns {Promise<ReadonlyMap<string, number>>}
+   */
+  async tradeableCounts(userId) {
+    /** @type {Map<string, number>} */
+    const counts = new Map();
+    for (const instance of await this.#repository.listOwned(userId)) {
+      if (instance.status === InstanceStatus.ACTIVE && isTradeable(instance)) {
+        counts.set(instance.definitionId, (counts.get(instance.definitionId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
+  /**
    * Puts the owner's copies in escrow for a trade: they must be theirs, active and tradeable; they become locked (no deck, no other trade).
    * Runs inside the caller's unit of work.
    * @param {{ ownerId: string, instanceIds: readonly string[], ref: string }} escrow
@@ -160,7 +176,7 @@ export class InventoryService {
       return copy === undefined || copy.ownerId !== ownerId || copy.status !== InstanceStatus.ACTIVE || !isTradeable(copy);
     });
     if (problem !== undefined) {
-      throw new AppError("CONFLICT", `card ${problem} is not one of your tradeable copies (bought, not in another trade)`);
+      throw new AppError("CONFLICT", `card ${problem} is not one of your tradeable copies (not in another trade)`);
     }
     await this.#change(copies, { status: InstanceStatus.LOCKED, ownerId: null, kind: InstanceEventKind.LOCKED, ref });
     return copies;
@@ -169,10 +185,12 @@ export class InventoryService {
   /**
    * Gives escrowed copies back to their owner (trade declined, cancelled, expired).
    * @param {{ instanceIds: readonly string[], ref: string }} release
+   * @returns {Promise<readonly import("../domain/CardInstance.js").CardInstance[]>} the copies given back
    */
   async release({ instanceIds, ref }) {
     const copies = (await this.#repository.lockInstances(instanceIds)).filter((copy) => copy.status === InstanceStatus.LOCKED);
     await this.#change(copies, { status: InstanceStatus.ACTIVE, ownerId: null, kind: InstanceEventKind.UNLOCKED, ref });
+    return copies;
   }
 
   /**

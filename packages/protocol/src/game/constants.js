@@ -31,6 +31,8 @@ export const OperationId = Object.freeze({
   EPOCH: "m8tcg_epoch",
   /** Card-for-card trades between players (docs/tcg/13). */
   TRADE: "m8tcg_trade",
+  /** Copies sold between players for a direct payment (docs/tcg/14). */
+  SALE: "m8tcg_sale",
 });
 
 export const EventKind = Object.freeze({

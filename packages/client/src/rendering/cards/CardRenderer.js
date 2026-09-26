@@ -28,7 +28,7 @@ const RING_COLORS = Object.freeze({
 /**
  * @typedef {import("./CardFace.js").CardFaceModel} BoardCard
  * @typedef {{ x: number, y: number, width: number, height: number, alpha: number }} CardPlacement
- * @typedef {{ highlight?: string | null, focused?: boolean }} CardStyle
+ * @typedef {{ highlight?: string | null, focused?: boolean, rarity?: string | null }} CardStyle `rarity`: shown on the type ribbon when known
  */
 
 /**
@@ -49,7 +49,7 @@ export function drawCard(context, theme, card, at) {
   if (ring !== null) {
     glowRoundedRect(context, BASE_FRAME, { color: ring.color, radius: RING.radius, blur: RING.blur, lineWidth: ring.width });
   }
-  paintCardFace(context, theme, card, { frame: BASE_FRAME, profile: CardFaceProfile.COMPACT });
+  paintCardFace(context, theme, card, { frame: BASE_FRAME, profile: CardFaceProfile.COMPACT, rarity: at.rarity ?? null });
   if (ring !== null) {
     fillRoundedRect(context, BASE_FRAME, { stroke: ring.color, radius: RING.radius, lineWidth: ring.width });
   }

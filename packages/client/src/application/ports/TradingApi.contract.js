@@ -12,6 +12,7 @@
  *
  * @typedef {object} TradingApi
  * @property {() => Promise<import("@magic8/engine/shared/Result.js").Ok<readonly Trade[]> | import("@magic8/engine/shared/Result.js").Fail>} list
+ * @property {(account: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<readonly TradeWant[]> | import("@magic8/engine/shared/Result.js").Fail>} tradeableOf the cards another player could give in a trade now, with how many copies
  * @property {(offer: { to: string, give: readonly string[], want: readonly TradeWant[], idempotencyKey: string }) => Promise<TradeResult>} propose
  * @property {(tradeId: string) => Promise<TradeResult>} accept
  * @property {(tradeId: string) => Promise<TradeResult>} decline

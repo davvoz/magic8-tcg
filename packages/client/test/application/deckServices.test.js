@@ -130,6 +130,25 @@ describe("DeckBuildingService", () => {
     assert.equal(builder.removeCard("ember_imp").value.countOf("ember_imp"), 2);
   });
 
+  it("gives an unrestricted deck the faction it holds most cards of", () => {
+    const { builder } = services();
+    assert.equal(builder.startNew().value.faction, content.deckRules.deckFactions[0], "an empty deck starts on the first faction");
+    builder.addCard("iron_watcher");
+    assert.equal(builder.draft.faction, "iron");
+    builder.addCard("ember_imp");
+    assert.equal(builder.draft.faction, "iron", "a tie keeps the current faction");
+    builder.addCard("ember_imp");
+    assert.equal(builder.draft.faction, "ember");
+    builder.removeCard("ember_imp");
+    builder.removeCard("ember_imp");
+    assert.equal(builder.draft.faction, "iron");
+
+    const strict = services(restricted).builder;
+    strict.startNew("ember");
+    strict.addCard("iron_watcher");
+    assert.equal(strict.draft.faction, "ember", "a restricted deck keeps the faction the player chose");
+  });
+
   it("copies preconstructed decks instead of editing them, and caps saved decks", async () => {
     const { builder, repository } = services();
     const precon = content.preconDecks[0];
@@ -175,5 +194,20 @@ describe("DeckSelectionService", () => {
     assert.equal(selection.listPlayableDecks().length, content.preconDecks.length);
     assert.equal(selection.find("custom_1").deck.name, "WIP");
     assert.equal(selection.find("nope"), undefined);
+  });
+
+  it("leaves the preconstructed decks out of the player's decks when they are not theirs, but keeps them as rivals", async () => {
+    const logger = new MemoryLogger();
+    const repository = new StoredDeckRepository({ store: new InMemoryStore(), logger });
+    let signedIn = true;
+    const selection = new DeckSelectionService({ content, repository, logger, showPreconstructed: () => !signedIn });
+    const builder = new DeckBuildingService({ content, repository });
+    builder.edit(content.preconDecks[0]);
+    await builder.save();
+    assert.deepEqual(selection.listDecks().map((option) => option.source), [DeckSource.CUSTOM], "signed in: only the account's decks");
+    assert.equal(selection.listRivalDecks().length, content.preconDecks.length, "the AI still plays the preconstructed decks");
+    assert.ok(selection.listRivalDecks().every((option) => option.source === DeckSource.PRECONSTRUCTED));
+    signedIn = false;
+    assert.equal(selection.listDecks().length, content.preconDecks.length + 1, "offline: the preconstructed decks are the player's too");
   });
 });

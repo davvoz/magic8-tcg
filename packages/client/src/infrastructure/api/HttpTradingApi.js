@@ -65,6 +65,16 @@ export class HttpTradingApi {
     return trades === null ? badResponse() : ok(trades);
   }
 
+  /** @param {string} account */
+  async tradeableOf(account) {
+    const response = await this.#transport.request("GET", `/api/trades/tradeable/${encodeURIComponent(account)}`);
+    if (!response.ok) {
+      return response;
+    }
+    const cards = listOf(/** @type {any} */ (response.value)?.cards, want);
+    return cards === null ? badResponse() : ok(cards);
+  }
+
   /** @param {{ to: string, give: readonly string[], want: readonly { definitionId: string, count: number }[], idempotencyKey: string }} offer */
   async propose({ to, give, want: wanted, idempotencyKey }) {
     return this.#one(await this.#transport.request("POST", "/api/trades", { body: { to, give, want: wanted }, headers: { "Idempotency-Key": idempotencyKey } }));

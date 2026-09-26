@@ -5,10 +5,13 @@
  * Anything that moves copies reloads the collection too.
  */
 /**
- * @typedef {Readonly<{ loading: boolean, busy: boolean, trades: readonly import("../ports/TradingApi.contract.js").Trade[], error: string | null, notice: string | null }>} TradingState
+ * @typedef {Readonly<{ account: string, loading: boolean, cards: readonly import("../ports/TradingApi.contract.js").TradeWant[], error: string | null }>} Askable what the player may ask `account` for
+ * @typedef {Readonly<{ loading: boolean, busy: boolean, trades: readonly import("../ports/TradingApi.contract.js").Trade[], error: string | null, notice: string | null, askable: Askable | null }>} TradingState
  */
 
-const INITIAL = Object.freeze({ loading: false, busy: false, trades: Object.freeze([]), error: null, notice: null });
+const INITIAL = Object.freeze({ loading: false, busy: false, trades: Object.freeze([]), error: null, notice: null, askable: null });
+/** Pause after the last keystroke before asking the server for a player's cards. */
+const LOOKUP_DELAY_MS = 350;
 const ACTION_NOTICES = Object.freeze({ accept: "Trade done: the cards are in your collection.", decline: "Offer declined.", cancel: "Offer cancelled: your cards are back." });
 
 export class TradingService {
@@ -20,13 +23,17 @@ export class TradingService {
   /** @type {Set<(state: TradingState) => void>} */
   #listeners = new Set();
   #generation = 0;
+  #scheduler;
+  /** Bumped by every lookup, so only the latest one reaches the server. */
+  #lookups = 0;
 
   /**
-   * @param {{ api: import("../ports/TradingApi.contract.js").TradingApi, newKey: () => string, onCollectionChanged?: () => void }} deps
+   * @param {{ api: import("../ports/TradingApi.contract.js").TradingApi, newKey: () => string, scheduler: import("../ports/Scheduler.contract.js").Scheduler, onCollectionChanged?: () => void }} deps
    */
-  constructor({ api, newKey, onCollectionChanged = () => undefined }) {
+  constructor({ api, newKey, scheduler, onCollectionChanged = () => undefined }) {
     this.#api = api;
     this.#newKey = newKey;
+    this.#scheduler = scheduler;
     this.#onCollectionChanged = onCollectionChanged;
   }
 
@@ -48,6 +55,33 @@ export class TradingService {
       return;
     }
     this.#set(listed.ok ? { loading: false, trades: listed.value, error: null } : { loading: false, error: listed.error.message });
+  }
+
+  /**
+   * Looks up the cards another player could give, shortly after the account stops changing; null clears it.
+   * Only the latest lookup reaches the server and is kept.
+   * @param {string | null} account
+   */
+  async lookUpAskable(account) {
+    const lookup = (this.#lookups += 1);
+    const wanted = account?.trim().toLowerCase() ?? "";
+    if (wanted === "") {
+      this.#set({ askable: null });
+      return;
+    }
+    if (this.#state.askable?.account === wanted && this.#state.askable.error === null) {
+      return;
+    }
+    this.#set({ askable: Object.freeze({ account: wanted, loading: true, cards: Object.freeze([]), error: null }) });
+    await this.#scheduler.delay(LOOKUP_DELAY_MS);
+    if (lookup !== this.#lookups) {
+      return;
+    }
+    const found = await this.#api.tradeableOf(wanted);
+    if (lookup !== this.#lookups) {
+      return;
+    }
+    this.#set({ askable: Object.freeze({ account: wanted, loading: false, cards: found.ok ? found.value : Object.freeze([]), error: found.ok ? null : found.error.message }) });
   }
 
   /**
@@ -77,6 +111,7 @@ export class TradingService {
   /** Forgets everything (sign-out, account change). */
   reset() {
     this.#generation += 1;
+    this.lookUpAskable(null);
     this.#set(INITIAL);
   }
 
@@ -96,7 +131,7 @@ export class TradingService {
       return result;
     }
     const others = this.#state.trades.filter((trade) => trade.id !== result.value.id);
-    this.#set({ busy: false, trades: Object.freeze([result.value, ...others]), notice });
+    this.#set({ busy: false, trades: Object.freeze([result.value, ...others]), notice, askable: null });
     this.#onCollectionChanged();
     return result;
   }

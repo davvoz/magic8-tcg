@@ -11,12 +11,16 @@
  *            queued for refund. A payment that left the chain (micro-fork)
  *            is dropped and its order waits for payment again.
  *
+ * A buyer whose payment must be refunded hears of it in their notification
+ * feed (docs/tcg/15-notifiche.md).
+ *
  * Fulfilment (VERIFIED → FULFILLED) is a separate step, so a fulfilment bug
  * never loses a verified payment. Everything is idempotent and every state
  * change is compare-and-set: several server processes may run it at once.
  */
 import { AppError } from "../../../kernel/AppError.js";
 import { isUuid } from "../../../kernel/random.js";
+import { NotificationKind } from "../../notifications/index.js";
 import { OrderStatus } from "../domain/Order.js";
 import { MatchProblem, isOrderMemo, matchTransfer } from "../domain/PaymentMatch.js";
 
@@ -32,6 +36,8 @@ export class PaymentSettlement {
   #providers;
   #receiverFor;
   #audit;
+  #notifications;
+  #formatAmount;
   #clock;
   #unitOfWork;
   #logger;
@@ -45,17 +51,21 @@ export class PaymentSettlement {
    *   providers: ReadonlyMap<string, import("../../payments/application/ports.js").PaymentProvider>,
    *   receiverFor: (network: string) => string,
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
+   *   notifications: { notify: (userId: string, kind: string, data: Record<string, unknown>) => Promise<unknown> },
+   *   formatAmount: (units: number, asset: string) => string,
    *   clock: import("../../../kernel/time.js").Clock,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   logger: import("../../../kernel/logger.js").Logger,
    * }} deps
    */
-  constructor({ orders, payments, providers, receiverFor, audit, clock, unitOfWork, logger }) {
+  constructor({ orders, payments, providers, receiverFor, audit, notifications, formatAmount, clock, unitOfWork, logger }) {
     this.#orders = orders;
     this.#payments = payments;
     this.#providers = providers;
     this.#receiverFor = receiverFor;
     this.#audit = audit;
+    this.#notifications = notifications;
+    this.#formatAmount = formatAmount;
     this.#clock = clock;
     this.#unitOfWork = unitOfWork;
     this.#logger = logger;
@@ -196,6 +206,10 @@ export class PaymentSettlement {
         return false;
       }
       this.#logger.warn("payment needs a refund", { payment: payment.id, problem: payment.problem, from: payment.from, amount: payment.amount, asset: payment.asset });
+      const order = payment.orderId === null ? null : await this.#orders.findOrder(payment.orderId);
+      if (order !== null) {
+        await this.#notifications.notify(order.userId, NotificationKind.ORDER_REFUND, { orderId: order.id, amount: this.#formatAmount(payment.amount, payment.asset), asset: payment.asset, problem: payment.problem });
+      }
       await this.#audit.record({ actorKind: "system", action: "payments.refund_required", targetKind: "payment", targetId: payment.id, details: { problem: payment.problem, to: payment.from, amount: payment.amount, asset: payment.asset, order: payment.orderId } });
       return true;
     });

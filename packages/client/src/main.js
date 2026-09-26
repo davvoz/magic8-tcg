@@ -7,14 +7,18 @@
  * validation the ErrorScene explains why instead of a broken screen.
  */
 import { ContentResource } from "./application/ports/ContentSource.contract.js";
-import { AccountService } from "./application/account/AccountService.js";
+import { AccountService, AccountStatus } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
-import { AccountDeckRepository } from "./application/decks/AccountDeckRepository.js";
+import { buildCardRarities } from "./application/content/CardRarities.js";
+import { COLLECTION_CHANGING_KINDS, describeNotification } from "./application/notifications/describeNotification.js";
+import { NotificationService } from "./application/notifications/NotificationService.js";
+import { AccountDeckRepository, DeckStorage } from "./application/decks/AccountDeckRepository.js";
 import { AckReceipts } from "./application/online/AckReceipts.js";
 import { OnlineService } from "./application/online/OnlineService.js";
 import { RankingService } from "./application/ranking/RankingService.js";
 import { TradingService } from "./application/trading/TradingService.js";
+import { SalesService } from "./application/sales/SalesService.js";
 import { ShopService } from "./application/shop/ShopService.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
@@ -29,6 +33,8 @@ import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
 import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js";
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
 import { HttpTradingApi } from "./infrastructure/api/HttpTradingApi.js";
+import { HttpSalesApi } from "./infrastructure/api/HttpSalesApi.js";
+import { HttpNotificationsApi } from "./infrastructure/api/HttpNotificationsApi.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
@@ -47,6 +53,7 @@ import { ErrorScene } from "./rendering/scenes/ErrorScene.js";
 import { SceneManager } from "./rendering/scenes/SceneManager.js";
 import { registerScenes } from "./rendering/scenes/registerScenes.js";
 import { SceneId } from "./rendering/scenes/sceneIds.js";
+import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 
 const ENGINE_VERSION = "0.9.0";
@@ -69,6 +76,7 @@ const CONTENT_MANIFEST = Object.freeze({
   [ContentResource.GAME_RULES]: "data/rules/game-rules.json",
   [ContentResource.DECK_RULES]: "data/rules/deck-rules.json",
   theme: "data/ui/theme.json",
+  rarities: "data/economy/rarities.json",
 });
 
 /** Theme used only to render the error screen when the real theme cannot be loaded. */
@@ -178,7 +186,7 @@ async function boot() {
     timers: { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
   });
   const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet });
-  const [rawTheme, content] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), identity.restore()]);
+  const [rawTheme, content, rawRarities] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("rarities"), identity.restore()]);
   if (!content.ok) {
     showFatal("Content failed to load", content.error.message);
     return;
@@ -188,6 +196,13 @@ async function boot() {
     showFatal("Theme failed to load", theme.error.message);
     return;
   }
+
+  // Rarity is shown on every card; without the file the game still runs, rarities unknown.
+  const builtRarities = rawRarities.ok ? buildCardRarities(rawRarities.value, content.value.catalog) : { ok: /** @type {const} */ (false), message: rawRarities.error.message };
+  if (!builtRarities.ok) {
+    logger.warn("card rarities unavailable", builtRarities.message);
+  }
+  const rarities = builtRarities.ok ? { rarities: builtRarities.value } : {};
 
   const localStore = new LocalStorageStore(globalThis.localStorage);
   const storageAvailable = localStore.isAvailable();
@@ -205,8 +220,10 @@ async function boot() {
   account.start();
   const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID() });
   const timers = { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (handle) => globalThis.clearTimeout(handle) };
+  // One realtime connection per signed-in player, shared by online play and notifications.
+  const realtime = new WebSocketConnection({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`, createSocket: (url) => new WebSocket(url), timers });
   const online = new OnlineService({
-    connection: new WebSocketConnection({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`, createSocket: (url) => new WebSocket(url), timers }),
+    connection: realtime,
     randomHex: (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join(""),
     newCommandId: () => crypto.randomUUID(),
     // The account's decks as the server judged them (ownership included).
@@ -229,21 +246,31 @@ async function boot() {
   });
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });
   // Trades move copies between collections: the account reloads after each one.
-  const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), onCollectionChanged: () => account.refresh() });
+  const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), scheduler: browserScheduler, onCollectionChanged: () => account.refresh() });
+  // The player market: payments go from the buyer's wallet straight to the seller; the collection reloads when a card moves.
+  const sales = new SalesService({ api: new HttpSalesApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID(), onCollectionChanged: () => account.refresh() });
   // A purchase, a connection and a standing belong to the account that started them.
+  // What happened to the player's orders, trades and sales: read at sign-in, pushed while here.
+  const notifications = new NotificationService({ api: new HttpNotificationsApi({ fetch: httpFetch }), connection: realtime, logger });
   account.subscribe((state) => {
+    if (state.status === AccountStatus.READY) {
+      notifications.start();
+    }
     if (state.account === null) {
+      notifications.stop();
       shop.dismiss();
       online.stop();
       ranking.reset();
       trading.reset();
+      sales.reset();
     }
   });
 
   /** @type {import("./application/AppContext.js").AppContext} */
   const app = Object.freeze({
     content: content.value,
-    deckSelection: new DeckSelectionService({ content: content.value, repository, logger }),
+    // Signed in, the player's decks are the account's; the preconstructed ones are offline practice only.
+    deckSelection: new DeckSelectionService({ content: content.value, repository, logger, showPreconstructed: () => repository.storage === DeckStorage.BROWSER }),
     deckBuilding,
     matchSetup: new MatchSetupService({ content: content.value, effects: createCoreEffectRegistry(), scheduler: browserScheduler, logger }),
     createSeed,
@@ -255,10 +282,22 @@ async function boot() {
     online,
     ranking,
     trading,
+    sales,
+    notifications,
+    ...rarities,
   });
 
-  const { sceneManager } = buildPresentation(theme.value);
+  const { sceneManager, loop } = buildPresentation(theme.value);
   registerScenes(sceneManager, app);
+  // A notification that arrives shows as a toast on any screen; a click opens the feed.
+  const toasts = new ToastLayer({ viewport: theme.value.layout, onOpen: () => sceneManager.navigate(SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
+  sceneManager.setOverlay(toasts);
+  notifications.onArrival((notification) => {
+    toasts.show(describeNotification(notification, content.value.catalog));
+    if (COLLECTION_CHANGING_KINDS.includes(notification.kind)) {
+      account.refresh();
+    }
+  });
   sceneManager.navigate(SceneId.MAIN_MENU);
 }
 

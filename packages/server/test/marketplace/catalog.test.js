@@ -84,7 +84,7 @@ describe("market catalog", () => {
       assert.equal(products.get(`single_${cardId}`).prices.get("STEEM"), standard, cardId);
       assert.equal(products.get(`single_${cardId}_foil`).prices.get("STEEM"), foil, cardId);
     }
-    assert.equal(products.get("single_pyre_drake").prices.get("STEEM"), 500, "a rare");
+    assert.equal(products.get("single_pyre_drake").prices.get("STEEM"), 2500, "a rare");
     assert.deepEqual(
       onSale.filter((product) => product.kind === "pack").map((pack) => [pack.id, pack.cardsPerUnit, pack.prices.get("STEEM")]),
       [["core_booster", 5, 1000], ["core_mini_booster", 3, 500]],
@@ -108,7 +108,7 @@ describe("market catalog", () => {
       .get("precon_arcane")
       .entries.filter((entry) => rarities.of.get(entry.cardId) === "common")
       .reduce((total, entry) => total + entry.count, 0);
-    assert.equal(products.get("deck_precon_arcane").prices.get("STEEM"), 10750 + 50 * commons);
+    assert.equal(products.get("deck_precon_arcane").prices.get("STEEM"), 49000 - 400 * commons, "each common now 0.100 instead of 0.500");
   });
 
   it("refuses a broken price list", () => {

@@ -20,13 +20,16 @@ const HALO_BLUR = 36;
 export class CardDetail extends UiNode {
   /** @type {CardLike} */
   card;
+  /** The card's rarity, when known. @type {string | null} */
+  rarity;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width: number, height: number, card: CardLike }} options
+   * @param {{ id?: string, x?: number, y?: number, width: number, height: number, card: CardLike, rarity?: string | null }} options
    */
   constructor(options) {
     super(options);
     this.card = options.card;
+    this.rarity = options.rarity ?? null;
   }
 
   /**
@@ -37,6 +40,6 @@ export class CardDetail extends UiNode {
     const frame = this.bounds;
     const tones = factionTones(theme, this.card.faction);
     glowRoundedRect(context, frame, { color: withAlpha(tones.light, 0.55), radius: frame.width * 0.06, blur: HALO_BLUR, lineWidth: 2 });
-    paintCardFace(context, theme, this.card, { frame, profile: CardFaceProfile.FULL });
+    paintCardFace(context, theme, this.card, { frame, profile: CardFaceProfile.FULL, rarity: this.rarity });
   }
 }

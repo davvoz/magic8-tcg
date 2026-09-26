@@ -1,7 +1,8 @@
 /**
  * Entry screen: a fan of cards under a glowing title, the navigation
  * buttons and a content summary. Buttons whose destination scene is not
- * registered are disabled rather than pretending to work.
+ * registered are disabled rather than pretending to work. Signed in, the
+ * top-right button opens the notifications and counts the unread ones.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
@@ -23,11 +24,14 @@ const SUBTITLE_Y = 268;
 const ORNAMENT_Y = 314;
 const BUTTONS_Y = 360;
 const SUMMARY = Object.freeze({ y: 718, lineHeight: 28, width: 900 });
+const BELL = Object.freeze({ width: 260, height: 48, margin: 40 });
 
 export class MainMenuScene extends Scene {
   #app;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
+  /** @type {(() => void) | null} */
+  #unsubscribeNotifications = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -41,6 +45,7 @@ export class MainMenuScene extends Scene {
   enter() {
     // The account loads after sign-in; redraw when it does (and when it fails).
     this.#unsubscribe = this.#app.account?.subscribe(() => this.#rebuild()) ?? null;
+    this.#unsubscribeNotifications = this.#app.notifications?.subscribe(() => this.#rebuild()) ?? null;
     this.#rebuild();
     this.services.logger.info("main menu ready", { theme: this.services.theme.layout });
   }
@@ -48,6 +53,8 @@ export class MainMenuScene extends Scene {
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#unsubscribeNotifications?.();
+    this.#unsubscribeNotifications = null;
     super.exit();
   }
 
@@ -89,6 +96,7 @@ export class MainMenuScene extends Scene {
       first ??= button;
     });
 
+    this.#buildBell(width);
     const draft = this.#draftSummary();
     const lines = [
       { text: this.#accountSummary(), colorKey: "accentLight" },
@@ -109,6 +117,32 @@ export class MainMenuScene extends Scene {
     const { theme, viewport } = this.services;
     drawSceneBackdrop(context, theme, viewport.bounds, { seed: "menu" });
     super.render(context);
+  }
+
+  /**
+   * The notifications button, once signed in and the account is loaded.
+   * @param {number} width
+   */
+  #buildBell(width) {
+    const notifications = this.#app.notifications;
+    if (notifications === undefined || this.#app.account?.state.status !== AccountStatus.READY) {
+      return;
+    }
+    const { unread } = notifications.state;
+    const count = unread > 99 ? "99+" : String(unread);
+    this.root.add(
+      new Button({
+        id: "notifications",
+        x: width - BELL.margin - BELL.width,
+        y: BELL.margin / 2,
+        width: BELL.width,
+        height: BELL.height,
+        text: unread === 0 ? "Notifications" : `Notifications (${count})`,
+        variant: unread === 0 ? "secondary" : "primary",
+        enabled: this.services.hasScene(SceneId.NOTIFICATIONS),
+        onActivate: () => this.services.navigate(SceneId.NOTIFICATIONS),
+      }),
+    );
   }
 
   /** Online play, once signed in and the account is loaded. */

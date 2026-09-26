@@ -24,6 +24,7 @@ const REFUND_POLL_INTERVAL_MS = 30_000;
 const ALARM_INTERVAL_MS = 60_000;
 const RANKING_CATCH_UP_MS = 10 * 60 * 1000;
 const TRADE_EXPIRY_INTERVAL_MS = 60_000;
+const SALE_POLL_INTERVAL_MS = 5000;
 const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
 const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
 const GAME_TICK_INTERVAL_MS = 1000;
@@ -33,6 +34,7 @@ const BROADCAST_INTERVAL_MS = 3000;
 const TRACKER_INTERVAL_MS = 6000;
 const RC_INTERVAL_MS = 60 * 1000;
 const SHUTDOWN_GRACE_MS = 10_000;
+const NOTIFICATION_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../..");
 
 async function main() {
@@ -90,6 +92,8 @@ async function main() {
   const server = createServer({ headersTimeout: 15_000, requestTimeout: 30_000 }, app.http.listener);
   server.maxHeadersCount = 64;
   app.realtime.attach(server);
+  // Notifications committed by any process reach the players connected to this one.
+  const stopRelay = await app.notificationRelay.start();
   const jobs = [
     setInterval(() => app.keyAuditor.run().catch((error) => logger.error("session key audit failed", { error })), KEY_AUDIT_INTERVAL_MS),
     setInterval(() => app.challenges.purgeExpired(systemClock.now()).catch((error) => logger.error("challenge purge failed", { error })), CHALLENGE_PURGE_INTERVAL_MS),
@@ -101,12 +105,15 @@ async function main() {
     every(ALARM_INTERVAL_MS, "alarms", () => app.monitor.evaluate(), logger),
     every(RANKING_CATCH_UP_MS, "ranking catch-up", () => app.ranking.catchUp(), logger),
     every(TRADE_EXPIRY_INTERVAL_MS, "trade expiry", () => app.trading.expireDue(), logger),
+    every(SALE_POLL_INTERVAL_MS, "sale settlement", () => app.saleSettlement.runOnce(), logger),
+    every(TRADE_EXPIRY_INTERVAL_MS, "listing expiry", () => app.sales.expireDue(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "order expiry", () => app.marketplace.expireDue(), logger),
     every(EPOCH_REVEAL_INTERVAL_MS, "pack epoch reveal", () => app.epochs.revealSettled(), logger),
     // Keeps a pack epoch open ahead of sales, so its commitment is already on chain when a buyer orders.
     every(ORDER_EXPIRY_INTERVAL_MS, "pack epoch rollover", () => app.epochs.current(), logger),
     every(GAME_TICK_INTERVAL_MS, "game timers", () => app.games.tick(), logger),
     every(RECORD_SEAL_INTERVAL_MS, "record sealing", () => app.games.sealStale(), logger),
+    every(NOTIFICATION_PURGE_INTERVAL_MS, "notification retention", () => app.notifications.purge(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "matchmaking", async () => {
       await app.matchmaking.expireStale();
       await app.matchmaking.pair();
@@ -128,6 +135,7 @@ async function main() {
   const shutdown = (signal) => {
     logger.info("shutting down", { signal });
     jobs.forEach(clearInterval);
+    stopRelay().catch((error) => logger.warn("notification relay did not stop cleanly", { error }));
     app.realtime.close();
     setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS).unref();
     server.close(() => {

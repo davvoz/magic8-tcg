@@ -6,6 +6,7 @@
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { CardStrip } from "../cards/CardStrip.js";
+import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
@@ -25,6 +26,7 @@ const CARD_ROW = Object.freeze({ height: 44, gap: 6 });
 const TAKE_HEIGHT = 60;
 const FOOTER_Y = 800;
 const BACK = Object.freeze({ width: 220, height: 56 });
+const INFO = Object.freeze({ width: 64, gap: 8 });
 
 /** User-facing text for failure codes; anything else shows the server's message. */
 const FAILURE_TEXT = Object.freeze({
@@ -122,8 +124,11 @@ export class StarterScene extends Scene {
     const list = panel.add(new ScrollList({ id: `starter.cards.${choice.id}`, x: INSET, y: LIST_TOP, width: inner, height: listHeight }));
     const catalog = this.#app.content.catalog;
     const rows = [...choice.cards].map((entry) => ({ entry, card: catalog.get(entry.cardId) })).sort((left, right) => (left.card?.cost ?? 0) - (right.card?.cost ?? 0) || (left.card?.name ?? left.entry.cardId).localeCompare(right.card?.name ?? right.entry.cardId));
+    const stripWidth = list.rowWidth - INFO.width - INFO.gap;
     rows.forEach(({ entry, card }, index) => {
-      list.add(new CardStrip({ x: 0, y: index * (CARD_ROW.height + CARD_ROW.gap), width: list.rowWidth, height: CARD_ROW.height, card: card ?? unknownCard(entry.cardId), count: entry.count, broken: card === undefined }));
+      const y = index * (CARD_ROW.height + CARD_ROW.gap);
+      list.add(new CardStrip({ x: 0, y, width: stripWidth, height: CARD_ROW.height, card: card ?? unknownCard(entry.cardId), count: entry.count, broken: card === undefined, rarity: rarityOf(this.#app, entry.cardId) }));
+      list.add(new Button({ id: `starter.info.${choice.id}.${entry.cardId}`, x: stripWidth + INFO.gap, y, width: INFO.width, height: CARD_ROW.height, text: "Info", textSize: "small", enabled: card !== undefined, onActivate: () => this.#showCard(entry.cardId, entry.count) }));
     });
     list.contentHeight = rows.length === 0 ? 0 : rows.length * (CARD_ROW.height + CARD_ROW.gap) - CARD_ROW.gap;
 
@@ -141,6 +146,17 @@ export class StarterScene extends Scene {
       }),
     );
     return take;
+  }
+
+  /**
+   * @param {string} cardId
+   * @param {number} count
+   */
+  #showCard(cardId, count) {
+    const card = this.#app.content.catalog.get(cardId);
+    if (card !== undefined) {
+      this.openModal(buildCardInfoModal({ viewport: this.services.viewport, card, rarity: rarityOf(this.#app, cardId), lines: [`In this deck: ${count}`], onClose: () => this.closeModal() }));
+    }
   }
 
   #choices() {

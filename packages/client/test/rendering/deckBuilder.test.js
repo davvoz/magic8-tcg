@@ -59,22 +59,22 @@ function rendered(scene) {
 }
 
 describe("DeckBuilderScene — library", () => {
-  it("lists the bundled decks with Copy, offers a new deck per faction, and goes back to the menu", () => {
+  it("lists the bundled decks with Copy, offers a single new deck, and goes back to the menu", () => {
     const { scene, navigated } = harness();
     assert.equal(scene.isEditing, false);
     const texts = rendered(scene);
     assert.ok(texts.includes("Your decks"));
     assert.ok(texts.some((text) => text.includes("preconstructed")));
-    for (const faction of content.deckRules.deckFactions) {
-      assert.ok(byId(scene, `library.new.${faction}`), `New ${faction} deck`);
+    assert.equal(byId(scene, "library.new").text, "New deck");
+    for (const faction of content.deckRules.factions) {
+      assert.equal(byId(scene, `library.new.${faction}`), null, "no faction to pick when any card may go in");
     }
-    assert.equal(byId(scene, "library.new.neutral"), null, "the shared pool is not a theme to start a deck from");
-    assert.ok(rendered(scene).some((text) => text.includes("Start from a faction (ember, iron, shadow, verdant or arcane); any card may be added.")));
+    assert.ok(rendered(scene).some((text) => text.includes("Any card may go in; the deck takes the faction it holds most cards of.")));
     for (const deck of content.preconDecks) {
       assert.equal(byId(scene, `library.edit.${deck.id}`).text, "Copy");
       assert.equal(byId(scene, `library.delete.${deck.id}`), null, "bundled decks cannot be deleted");
     }
-    assert.equal(scene.focusedNode, byId(scene, "library.new.ember"));
+    assert.equal(scene.focusedNode, byId(scene, "library.new"));
     click(byId(scene, "builder.back"));
     assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
   });
@@ -83,7 +83,7 @@ describe("DeckBuilderScene — library", () => {
 describe("DeckBuilderScene — editor", () => {
   it("creates a deck, adds and removes cards through the catalog and the deck list, and reports rule problems", () => {
     const { scene, app } = harness();
-    click(byId(scene, "library.new.iron"));
+    click(byId(scene, "library.new"));
     assert.equal(scene.isEditing, true);
     assert.ok(rendered(scene).includes("Deck Builder · editing"));
     assert.ok(rendered(scene).some((text) => text.startsWith("deck has 0 cards; minimum is 30")));
@@ -114,7 +114,7 @@ describe("DeckBuilderScene — editor", () => {
 
   it("keeps the scroll offset and focus across rebuilds", () => {
     const { scene } = harness();
-    click(byId(scene, "library.new.ember"));
+    click(byId(scene, "library.new"));
     const catalog = byId(scene, "editor.catalog");
     catalog.scrollTo(catalog.maxScrollY);
     assert.ok(catalog.scrollY > 0);
@@ -130,7 +130,7 @@ describe("DeckBuilderScene — editor", () => {
 
   it("renames through the text field, refuses empty names without losing the typed text, and saves", async () => {
     const { scene, app, repository } = harness();
-    click(byId(scene, "library.new.iron"));
+    click(byId(scene, "library.new"));
     const field = byId(scene, "editor.name");
     assert.ok(field instanceof TextField);
     assert.equal(field.value, "New Deck");
@@ -171,7 +171,7 @@ describe("DeckBuilderScene — editor", () => {
 
   it("inspects a card in a modal with add/remove, confined focus and Escape to close", () => {
     const { scene, app } = harness();
-    click(byId(scene, "library.new.ember"));
+    click(byId(scene, "library.new"));
     click(byId(scene, "catalog.info.ember_imp"));
     assert.ok(scene.modal, "inspect modal open");
     const imp = content.catalog.get("ember_imp");
@@ -236,7 +236,7 @@ describe("DeckBuilderScene — editor", () => {
 
   it("resumes an open draft when re-entered and surfaces refused saves", async () => {
     const { scene, app } = harness();
-    click(byId(scene, "library.new.iron"));
+    click(byId(scene, "library.new"));
     click(byId(scene, "catalog.add.iron_watcher"));
     const again = new DeckBuilderScene({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined, navigate: () => undefined, hasScene: () => true }, app);
     again.enter({});

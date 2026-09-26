@@ -6,6 +6,7 @@
  * would be saved.
  */
 import { CardStrip } from "../../cards/CardStrip.js";
+import { rarityOf } from "../../cards/cardInfo.js";
 import { unknownCard } from "../../cards/unknownCard.js";
 import { Button } from "../../ui/Button.js";
 import { Label } from "../../ui/Label.js";
@@ -138,7 +139,7 @@ export class EditorView {
   #buildDeckRow(list, { y, card, count, cardId, canAdd, known }) {
     const actionsWidth = ACTION.width + 2 * ACTION.small + 2 * ACTION.gap;
     const labelWidth = list.rowWidth - actionsWidth - ACTION.gap;
-    list.add(new CardStrip({ x: 0, y, width: labelWidth, height: ROW.height, card, count, broken: !known }));
+    list.add(new CardStrip({ x: 0, y, width: labelWidth, height: ROW.height, card, count, broken: !known, rarity: rarityOf(this.#host.app, cardId) }));
     let x = labelWidth + ACTION.gap;
     list.add(new Button({ id: `deck.info.${cardId}`, x, y, width: ACTION.width, height: ROW.height, text: "Info", enabled: known, onActivate: () => this.#host.inspect(cardId) }));
     x += ACTION.width + ACTION.gap;
@@ -185,7 +186,7 @@ export class EditorView {
   #buildCatalogRow(list, { card, count, limit, canAdd }, y) {
     const addWidth = ACTION.width + ACTION.small;
     const labelWidth = list.rowWidth - ACTION.width - addWidth - 2 * ACTION.gap;
-    list.add(new CardStrip({ x: 0, y, width: labelWidth, height: ROW.height, card, count, muted: count === 0 }));
+    list.add(new CardStrip({ x: 0, y, width: labelWidth, height: ROW.height, card, count, muted: count === 0, rarity: rarityOf(this.#host.app, card.id) }));
     list.add(new Button({ id: `catalog.info.${card.id}`, x: labelWidth + ACTION.gap, y, width: ACTION.width, height: ROW.height, text: "Info", onActivate: () => this.#host.inspect(card.id) }));
     list.add(new Button({ id: `catalog.add.${card.id}`, x: labelWidth + ACTION.width + 2 * ACTION.gap, y, width: addWidth, height: ROW.height, text: `+ (${count}/${limit})`, enabled: canAdd, onActivate: () => this.#apply(this.#host.app.deckBuilding.addCard(card.id)) }));
   }

@@ -96,6 +96,13 @@ Il server rifiuta di partire con:
 - Un giocatore che dice di aver perso carte: la storia di ogni copia è in `card_instance_events` (`LOCKED`, `TRANSFERRED`, `UNLOCKED`, con `ref = trade:<id>`), e ogni scambio concluso è sulla catena (`m8tcg_trade`).
 - **Non si spostano carte a mano nel database.** Uno scambio annullato per errore si rifà come nuovo scambio fra i due giocatori.
 
+## 4.6 Vendite fra giocatori
+
+- Il job `sale settlement` (ogni 5 secondi) legge lo storico dei venditori con acquisti in corso e consegna le carte pagate; `listing expiry` (ogni minuto) chiude gli annunci scaduti senza acquisti in corso.
+- Un compratore dice di aver pagato senza ricevere la carta: cercare l'acquisto nell'audit (`sales.reserved`, `sales.payment_detected`, `sales.payment_mismatch`, `sales.completed`). Con `payment_mismatch` il trasferimento non corrispondeva alle istruzioni (il campo `problem` dice perché): i soldi sono al venditore e **il server non può restituirli**; si indica al compratore la transazione da mostrare al venditore.
+- `DETECTED` da molto tempo: il trasferimento non è ancora irreversibile per 2 nodi, oppure un nodo non risponde. Si controllano i nodi (`M8_STEEM_NODES`), non l'acquisto.
+- Ogni vendita conclusa è sulla catena (`m8tcg_sale`) e nella storia della copia (`ref = sale:<id annuncio>`). Come per gli scambi, niente carte spostate a mano.
+
 ## 5. Allarmi (`alarm raised: …`)
 
 | Allarme | Significato | Cosa fare |

@@ -15,6 +15,7 @@ export { CanonicalJsonError, CanonicalJsonErrorCode, canonicalize, parseCanonica
 export { HashTag, bytesToHex, hexToBytes, isHash, sha256Hex, taggedHash, taggedHashHex, utf8 } from "./crypto/hash.js";
 export { FINISH_CODES, RECEIPT_VERSION, buildReceipts } from "./receipts/receipts.js";
 export { MAX_TRADE_CARDS, TRADE_VERSION, parseTradeRecord, tradeRecord } from "./trades/trades.js";
+export { SALE_VERSION, parseSaleRecord, saleRecord } from "./sales/sales.js";
 export { DROP_TABLE_VERSION, Finish, PACK_SECRET_BYTES, PackEpochKind, drawPack, dropTableHash, dropTableOdds, packEpochAnnouncement, packEpochCommitment, packEpochReveal, packSeed, validateDropTable } from "./packs/packs.js";
 export {
   EVENT_KINDS,

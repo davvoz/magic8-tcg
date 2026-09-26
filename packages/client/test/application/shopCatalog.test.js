@@ -35,10 +35,10 @@ describe("shop shelves", () => {
     const entries = [{ cardId: "pyre_drake", count: 2 }, { cardId: "arcane_apprentice", count: 3 }];
     const breakdown = deckBreakdown(entries, singles);
     assert.deepEqual(breakdown.lines, [
-      { cardId: "pyre_drake", count: 2, rarity: "rare", unit: "0.500", amount: "1.000" },
-      { cardId: "arcane_apprentice", count: 3, rarity: "common", unit: "0.050", amount: "0.150" },
+      { cardId: "pyre_drake", count: 2, rarity: "rare", unit: "2.500", amount: "5.000" },
+      { cardId: "arcane_apprentice", count: 3, rarity: "common", unit: "0.500", amount: "1.500" },
     ]);
-    assert.equal(breakdown.total, "1.150");
+    assert.equal(breakdown.total, "6.500");
     assert.equal(deckBreakdown([...entries, { cardId: "ghost", count: 1 }], singles).total, null);
   });
 

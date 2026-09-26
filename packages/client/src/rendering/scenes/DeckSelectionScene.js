@@ -1,11 +1,13 @@
 /**
- * Deck selection: pick a legal deck and start a match against the built-in
- * AI, which plays one of the other playable decks (chosen by the match
- * seed). Every known deck is listed as a banner row in its faction's
- * colour; decks that break the rules are shown disabled with the first
- * problem so the player knows to fix them in the deck builder.
+ * Deck selection: pick one of your decks and start a match against the
+ * built-in AI, which plays a preconstructed deck (chosen by the match seed).
+ * Signed in, "your decks" are the account's (the starter you took and the
+ * decks you built); offline, the preconstructed decks too. Each deck is a
+ * banner row in its faction's colour; decks that break the rules are shown
+ * disabled with the first problem so the player knows to fix them.
  */
 import { BasicAiController } from "../../application/match/BasicAiController.js";
+import { DeckSource } from "../../application/decks/DeckSelectionService.js";
 import { humanController } from "../../application/match/HumanController.js";
 import { factionTones } from "../theme/Theme.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -62,7 +64,7 @@ export class DeckSelectionScene extends Scene {
     const { viewport } = this.services;
     const panel = this.root.add(new Panel({ x: (viewport.logicalWidth - PANEL.width) / 2, y: (viewport.logicalHeight - PANEL.height) / 2, width: PANEL.width, height: PANEL.height }));
     panel.add(new Label({ x: 0, y: 24, width: PANEL.width, height: 56, text: "Choose your deck", size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
-    panel.add(new Label({ x: 0, y: 80, width: PANEL.width, height: 28, text: "The opponent plays another available deck.", size: "small", colorKey: "textMuted" }));
+    panel.add(new Label({ x: 0, y: 80, width: PANEL.width, height: 28, text: "The opponent plays one of the preconstructed decks.", size: "small", colorKey: "textMuted" }));
     panel.add(new Ornament({ x: PANEL.width / 2 - 160, y: 112, width: 320, height: 14 }));
     this.#buildList(panel);
     const start = this.#buildFooter(panel);
@@ -76,7 +78,7 @@ export class DeckSelectionScene extends Scene {
     const width = PANEL.width - 2 * INSET;
     const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: LIST_TOP, width, height: PANEL.height - LIST_TOP - LIST_BOTTOM }));
     if (options.length === 0) {
-      list.add(new Label({ x: 0, y: 0, width, height: ROW.height, text: "No decks are available.", colorKey: "textMuted" }));
+      list.add(new Label({ x: 0, y: 0, width, height: ROW.height, text: this.#app.account?.needsStarter ? "No decks yet: take your free starter deck from the main menu." : "No decks are available.", colorKey: "textMuted" }));
       list.contentHeight = ROW.height;
       return;
     }
@@ -132,7 +134,7 @@ export class DeckSelectionScene extends Scene {
       return;
     }
     const seed = this.#app.createSeed();
-    const others = options.filter((option) => option.deck.id !== selected.deck.id);
+    const others = this.#app.deckSelection.listRivalDecks().filter((option) => option.deck.id !== selected.deck.id);
     const rival = others.length === 0 ? selected : others[seedIndex(seed, others.length)];
     const created = this.#app.matchSetup.createMatch({
       seats: [
@@ -168,10 +170,11 @@ function seedIndex(seed, length) {
 }
 
 /**
- * Subtitle of a deck row: faction, size, origin and, when not playable, why.
+ * Subtitle of a deck row: faction, size, "preconstructed" for the offline
+ * decks and, when not playable, why.
  * @param {import("../../application/decks/DeckSelectionService.js").DeckOption} option
  */
 function describeOption({ deck, source, report }) {
-  const base = `${deck.faction} · ${deck.totalCards} cards · ${source}`;
+  const base = `${deck.faction} · ${deck.totalCards} cards${source === DeckSource.PRECONSTRUCTED ? " · preconstructed" : ""}`;
   return report.valid ? base : `${base} · not playable: ${report.problems[0].message}`;
 }

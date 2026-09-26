@@ -29,7 +29,7 @@ export const DEFAULT_TRACKER_POLICY = Object.freeze({
 });
 
 /** @type {ReadonlySet<string>} */
-const OUR_OPERATIONS = Object.freeze(new Set([OperationId.GAME, OperationId.RECEIPT, OperationId.EPOCH, OperationId.TRADE]));
+const OUR_OPERATIONS = Object.freeze(new Set([OperationId.GAME, OperationId.RECEIPT, OperationId.EPOCH, OperationId.TRADE, OperationId.SALE]));
 
 export const AlertKind = Object.freeze({
   UNKNOWN_ON_CHAIN: "UNKNOWN_ON_CHAIN",

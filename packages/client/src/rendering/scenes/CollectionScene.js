@@ -7,6 +7,8 @@
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardStrip } from "../cards/CardStrip.js";
+import { rarityOf } from "../cards/cardInfo.js";
+import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -112,7 +114,10 @@ export class CollectionScene extends Scene {
     const statusX = HEADER.sideMargin + STATUS_OFFSET;
     this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: STATUS_OFFSET, height: HEADER.height, text: "Collection", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const status = this.#status();
-    this.root.add(new Label({ id: "collection.status", x: statusX, y: HEADER.y, width: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16 - INSET - statusX, height: HEADER.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
+    this.root.add(new Label({ id: "collection.status", x: statusX, y: HEADER.y, width: viewport.logicalWidth - HEADER.sideMargin - (this.services.hasScene(SceneId.MARKET) ? 3 : 2) * (HEADER.backWidth + 16) - INSET - statusX, height: HEADER.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
+    if (this.services.hasScene(SceneId.MARKET)) {
+      this.root.add(new Button({ id: "collection.market", x: viewport.logicalWidth - HEADER.sideMargin - 3 * HEADER.backWidth - 32, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.COLLECTION }) }));
+    }
     if (this.services.hasScene(SceneId.TRADES)) {
       this.root.add(new Button({ id: "collection.trades", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Trades", onActivate: () => this.services.navigate(SceneId.TRADES) }));
     }
@@ -189,7 +194,7 @@ export class CollectionScene extends Scene {
     cards.forEach((owned, index) => {
       const y = rowY(index);
       const selected = owned.definitionId === this.#selectedId;
-      list.add(new CardStrip({ x: 0, y, width: labelWidth, height: ROW.height, card: owned.card ?? unknownCard(owned.definitionId), count: owned.copies.length, broken: owned.card === undefined, muted: !selected }));
+      list.add(new CardStrip({ x: 0, y, width: labelWidth, height: ROW.height, card: owned.card ?? unknownCard(owned.definitionId), count: owned.copies.length, broken: owned.card === undefined, muted: !selected, rarity: rarityOf(this.#app, owned.definitionId) }));
       const view = list.add(new Button({ id: `collection.view.${owned.definitionId}`, x: labelWidth + ACTION.gap, y, width: ACTION.width, height: ROW.height, text: "View", variant: selected ? "primary" : "secondary", onActivate: () => this.#select(owned.definitionId) }));
       first ??= view;
     });
@@ -222,14 +227,16 @@ export class CollectionScene extends Scene {
     const card = owned.card ?? unknownCard(owned.definitionId);
     const top = (COLUMNS.height - DETAIL.height) / 2;
     if (owned.card !== undefined) {
-      panel.add(new CardDetail({ id: "collection.card", x: INSET, y: top, width: DETAIL.width, height: DETAIL.height, card: owned.card }));
+      panel.add(new CardDetail({ id: "collection.card", x: INSET, y: top, width: DETAIL.width, height: DETAIL.height, card: owned.card, rarity: rarityOf(this.#app, owned.definitionId) }));
     }
     const x = INSET + DETAIL.width + INSET;
     const width = COLUMNS.right.width - x - INSET;
+    const rarity = rarityOf(this.#app, owned.definitionId);
     panel.add(new Label({ x, y: top, width, height: 40, text: card.name, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Label({ id: "collection.rarity", x, y: top + 42, width, height: 28, text: rarity === null ? "Rarity unknown" : rarityLabel(rarity), weight: "bold", align: "left", colorKey: rarityColorKey(rarity) }));
     const active = owned.copies.filter((copy) => copy.status === "active").length;
-    panel.add(new Label({ id: "collection.owned", x, y: top + 46, width, height: 28, text: `You own ${owned.copies.length} (${active} playable)`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
-    const list = panel.add(new ScrollList({ id: COPIES_ID, x, y: top + 84, width, height: DETAIL.height - 84 }));
+    panel.add(new Label({ id: "collection.owned", x, y: top + 72, width, height: 28, text: `You own ${owned.copies.length} (${active} playable)`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    const list = panel.add(new ScrollList({ id: COPIES_ID, x, y: top + 108, width, height: DETAIL.height - 108 }));
     const copies = [...owned.copies].sort((left, right) => left.edition.localeCompare(right.edition) || left.serial - right.serial);
     copies.forEach((copy, index) => {
       const status = copy.status === "active" ? "" : ` · ${copy.status}`;

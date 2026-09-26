@@ -47,6 +47,11 @@ export class ConnectionHub {
     return true;
   }
 
+  /** Users with a live connection to this process. */
+  connectedUsers() {
+    return [...this.#connections.keys()];
+  }
+
   /** @param {string} userId */
   isConnected(userId) {
     return this.#connections.has(userId);

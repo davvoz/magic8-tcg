@@ -12,6 +12,11 @@
  * owned cards are offered and a deck holds at most the copies owned; the
  * server enforces the same rule on save. Without counts (offline practice)
  * the whole catalog is available.
+ *
+ * Faction: when the rules restrict cards by faction, the player picks the
+ * deck's faction up front. When they do not, the faction is only the deck's
+ * theme, so it follows the cards: the faction with the most copies (shared
+ * cards aside) once the deck holds any.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { DeckList } from "@magic8/engine/domain/decks/DeckList.js";
@@ -66,11 +71,12 @@ export class DeckBuildingService {
   }
 
   /**
-   * Starts an empty deck of the given faction.
-   * @param {string} faction
+   * Starts an empty deck. The faction is needed only when the rules restrict
+   * cards by faction; otherwise the deck's faction follows its cards.
+   * @param {string} [faction]
    * @param {string} [name]
    */
-  startNew(faction, name = "New Deck") {
+  startNew(faction = this.rules.deckFactions[0], name = "New Deck") {
     if (!this.rules.isDeckFaction(faction)) {
       return fail(DeckBuildingError.INVALID_FACTION, `a deck cannot be built around "${faction}"; choose one of: ${this.rules.deckFactions.join(", ")}`);
     }
@@ -122,7 +128,7 @@ export class DeckBuildingService {
     if (draft.value.totalCards >= this.rules.maxSize) {
       return fail(DeckBuildingError.LIMIT_REACHED, `at most ${this.rules.maxSize} cards in a deck`);
     }
-    this.#draft = draft.value.withCardAdded(cardId);
+    this.#draft = this.#themed(draft.value.withCardAdded(cardId));
     return ok(this.#draft);
   }
 
@@ -132,7 +138,7 @@ export class DeckBuildingService {
     if (!draft.ok) {
       return draft;
     }
-    this.#draft = draft.value.withCardRemoved(cardId);
+    this.#draft = this.#themed(draft.value.withCardRemoved(cardId));
     return ok(this.#draft);
   }
 
@@ -254,6 +260,32 @@ export class DeckBuildingService {
       this.#saved = null;
     }
     return result;
+  }
+
+  /**
+   * With unrestricted cards, gives the deck the faction it holds most
+   * copies of (shared cards aside); a tie keeps the current faction if it
+   * is among the leaders, else the first in rule order.
+   * @param {DeckList} draft
+   */
+  #themed(draft) {
+    if (this.rules.restrictsCards) {
+      return draft;
+    }
+    const copies = new Map();
+    for (const entry of draft.entries) {
+      const faction = this.#content.catalog.get(entry.cardId)?.faction;
+      if (faction !== undefined && this.rules.isDeckFaction(faction)) {
+        copies.set(faction, (copies.get(faction) ?? 0) + entry.count);
+      }
+    }
+    if (copies.size === 0) {
+      return draft;
+    }
+    const most = Math.max(...copies.values());
+    const leaders = this.rules.deckFactions.filter((faction) => copies.get(faction) === most);
+    const faction = leaders.includes(draft.faction) ? draft.faction : leaders[0];
+    return faction === draft.faction ? draft : draft.withFaction(faction);
   }
 
   /** @param {DeckList} draft */

@@ -3,7 +3,7 @@
  *
  * One unit of work claims the order (compare-and-set), mints what its items
  * give, opens its packs, saves bought decks, queues the on-chain receipt and
- * writes the audit entry. Either all of it happens or none: a crash or a
+ * writes the audit entry and the buyer's notification (docs/tcg/15). Either all of it happens or none: a crash or a
  * concurrent worker can never mint an order twice (T9), and a failure leaves
  * the order verified, to be retried.
  *
@@ -14,6 +14,7 @@
  */
 import { buildReceipts, drawPack, packSeed } from "@magic8/protocol";
 import { AppError } from "../../../kernel/AppError.js";
+import { NotificationKind, countCards } from "../../notifications/index.js";
 import { OrderStatus } from "../domain/Order.js";
 import { expandProduct } from "../domain/Product.js";
 
@@ -36,6 +37,7 @@ export class FulfilmentService {
   #epochs;
   #payments;
   #outbox;
+  #notifications;
   #audit;
   #clock;
   #unitOfWork;
@@ -50,13 +52,14 @@ export class FulfilmentService {
    *   epochs: import("./PackEpochService.js").PackEpochService,
    *   payments: import("../../payments/index.js").PaymentService,
    *   outbox: import("../../chain/index.js").ChainOutbox,
+   *   notifications: { notify: (userId: string, kind: string, data: Record<string, unknown>) => Promise<unknown> },
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
    *   clock: import("../../../kernel/time.js").Clock,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   logger: import("../../../kernel/logger.js").Logger,
    * }} deps
    */
-  constructor({ orders, catalog, inventory, decks, epochs, payments, outbox, audit, clock, unitOfWork, logger }) {
+  constructor({ orders, catalog, inventory, decks, epochs, payments, outbox, notifications, audit, clock, unitOfWork, logger }) {
     this.#orders = orders;
     this.#catalog = catalog;
     this.#inventory = inventory;
@@ -64,6 +67,7 @@ export class FulfilmentService {
     this.#epochs = epochs;
     this.#payments = payments;
     this.#outbox = outbox;
+    this.#notifications = notifications;
     this.#audit = audit;
     this.#clock = clock;
     this.#unitOfWork = unitOfWork;
@@ -115,6 +119,13 @@ export class FulfilmentService {
         cards: [...minted.cards, ...minted.packs.flatMap((pack) => pack.cards)],
       });
       await this.#outbox.enqueueReceipt({ network: order.network, orderId: order.id, parts });
+      const allCards = [...minted.cards, ...minted.packs.flatMap((pack) => pack.cards)];
+      await this.#notifications.notify(order.userId, NotificationKind.ORDER_FULFILLED, {
+        orderId: order.id,
+        items: order.items.map((item) => ({ productId: item.productId, name: this.#catalog.products.get(item.productId)?.name ?? item.productId, quantity: item.quantity })),
+        cards: countCards(allCards),
+        total: allCards.length,
+      });
       await this.#audit.record({
         actorKind: "system",
         action: "marketplace.order_fulfilled",

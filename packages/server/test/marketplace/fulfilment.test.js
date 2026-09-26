@@ -67,6 +67,12 @@ describe("fulfilment", () => {
     assert.equal(await setup.app.fulfilment.fulfilVerified(), 1);
     const fulfilled = await orderOf(aliceClient, order.id);
     assert.equal(fulfilled.status, "FULFILLED");
+    const feed = (await aliceClient.get("/api/notifications")).json;
+    const [told] = feed.notifications;
+    assert.deepEqual([told.kind, told.data.orderId, told.data.total, told.data.items[0].quantity, told.read], ["shop.fulfilled", order.id, 10, 2, false], "the buyer is told the cards are in");
+    assert.equal(told.data.cards.reduce((sum, entry) => sum + entry.count, 0), 10);
+    assert.equal((await bobClient.get("/api/notifications")).json.notifications.length, 0);
+    assert.deepEqual((await aliceClient.post("/api/notifications/read", { ids: [told.id] })).json, { unread: feed.unread - 1 });
     const { fulfilment } = fulfilled;
     assert.match(fulfilment.txId, /^[0-9a-f]{40}$/);
     assert.equal(fulfilment.packs.length, 2);

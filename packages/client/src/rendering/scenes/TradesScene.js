@@ -1,9 +1,13 @@
 /**
  * Trades (docs/tcg/13-scambi.md): the offers the player made and received,
  * with what they can do about each, and a composer for a new offer: the
- * other player's account, some of the player's bought copies, and the cards
- * asked in return. The server holds the offered copies in escrow.
+ * other player's account, some of the player's tradeable copies, and cards
+ * of that player's asked in return (only what they have). The server holds the offered copies in escrow.
  */
+import { CardThumb } from "../cards/CardThumb.js";
+import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
+import { rarityLabel } from "../theme/rarity.js";
+import { unknownCard } from "../cards/unknownCard.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -12,12 +16,13 @@ import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
-import { COLUMNS, HEADER, INSET, ROW, rowY, rowsHeight } from "./deckBuilder/layout.js";
+import { ACTION, COLUMNS, HEADER, INSET, ROW, rowY, rowsHeight } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const MAX_CARDS = 10;
 const MAX_ASK = 3;
+const THUMB = Object.freeze({ width: 92, gap: 10 });
 const DAY = 24 * 60 * 60 * 1000;
 const ACCOUNT_PATTERN = /^[a-z][a-z0-9.-]{2,15}$/;
 
@@ -71,6 +76,7 @@ export class TradesScene extends Scene {
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#trading().lookUpAskable(null);
     super.exit();
   }
 
@@ -140,15 +146,81 @@ export class TradesScene extends Scene {
       panel.add(new TextBlock({ x: INSET, y: 20, width, height: 60, text: "Pick a trade to see it, or make a new offer.", size: "body", colorKey: "textMuted" }));
       return;
     }
-    const names = (copies) => copies.map((copy) => `${this.#cardName(copy.definitionId)} #${copy.serial}${copy.finish === "foil" ? " (foil)" : ""}`).join(", ") || "nothing";
-    const asked = trade.wants.map((want) => `${want.count} × ${this.#cardName(want.definitionId)}`).join(", ") || "nothing (a gift)";
-    const lines = [
-      `@${trade.proposer} offers: ${names(trade.give)}`,
-      `and asks @${trade.counterparty} for: ${asked}`,
-      trade.status === "ACCEPTED" ? `@${trade.counterparty} gave: ${names(trade.take)}` : `Status: ${trade.status.toLowerCase()}`,
+    const listHeight = trade.status === "OPEN" ? COLUMNS.height - 2 * INSET - 52 - 16 : COLUMNS.height - 2 * INSET;
+    const list = panel.add(new ScrollList({ id: "trades.detail", x: INSET, y: INSET, width, height: listHeight }));
+    const copyThumbs = (copies) => copies.map((copy) => ({ definitionId: copy.definitionId, caption: `#${copy.serial}${copy.finish === "foil" ? " · foil" : ""}`, highlight: copy.finish === "foil", lines: [`Copy #${copy.serial} · ${copy.finish}`] }));
+    const sections = [
+      { title: `@${trade.proposer} offers`, thumbs: copyThumbs(trade.give), empty: "nothing" },
+      { title: `and asks @${trade.counterparty} for`, thumbs: trade.wants.map((want) => ({ definitionId: want.definitionId, caption: `× ${want.count}`, highlight: false, lines: [`Asked: ${want.count}`] })), empty: "nothing (a gift)" },
     ];
-    lines.forEach((text, index) => panel.add(new TextBlock({ id: `trades.detail.${index}`, x: INSET, y: 20 + index * 90, width, height: 84, text, size: "body", colorKey: "text" })));
+    if (trade.status === "ACCEPTED") {
+      sections.push({ title: `@${trade.counterparty} gave`, thumbs: copyThumbs(trade.take), empty: "nothing" });
+    }
+    let y = 0;
+    for (const section of sections) {
+      y = this.#buildThumbSection(list, section, y);
+    }
+    if (trade.status !== "ACCEPTED") {
+      list.add(new Label({ id: "trades.detail.status", x: 0, y, width: list.rowWidth, height: 28, text: `Status: ${trade.status.toLowerCase()}`, size: "body", colorKey: "text", align: "left" }));
+      y += 28;
+    }
+    list.contentHeight = y;
     this.#buildActions(panel, trade, width);
+  }
+
+  /**
+   * A heading and a grid of card thumbnails; returns the y below it.
+   * @param {ScrollList} list
+   * @param {{ title: string, thumbs: { definitionId: string, caption: string, highlight: boolean, lines: string[] }[], empty: string }} section
+   * @param {number} top
+   */
+  #buildThumbSection(list, { title, thumbs, empty }, top) {
+    list.add(new Label({ x: 0, y: top, width: list.rowWidth, height: 28, text: thumbs.length === 0 ? `${title}: ${empty}` : title, size: "body", weight: "bold", colorKey: "accent", align: "left" }));
+    let y = top + 36;
+    if (thumbs.length === 0) {
+      return y;
+    }
+    const perRow = Math.max(1, Math.floor((list.rowWidth + THUMB.gap) / (THUMB.width + THUMB.gap)));
+    const height = CardThumb.heightFor(THUMB.width);
+    thumbs.forEach((thumb, index) => {
+      const known = this.#app.content.catalog.get(thumb.definitionId);
+      const card = known ?? { ...unknownCard(thumb.definitionId), text: "" };
+      list.add(
+        new CardThumb({
+          id: `trades.card.${index}.${thumb.definitionId}`,
+          x: (index % perRow) * (THUMB.width + THUMB.gap),
+          y: y + Math.floor(index / perRow) * (height + THUMB.gap),
+          width: THUMB.width,
+          card,
+          caption: thumb.caption,
+          highlight: thumb.highlight,
+          rarity: rarityOf(this.#app, thumb.definitionId),
+          onActivate: known === undefined ? null : () => this.#showCard(thumb.definitionId, thumb.lines),
+        }),
+      );
+    });
+    y += Math.ceil(thumbs.length / perRow) * (height + THUMB.gap);
+    return y + 12;
+  }
+
+  /**
+   * An "i" button that opens a card's details.
+   * @param {ScrollList} list
+   * @param {{ id: string, x: number, y: number, definitionId: string, lines: readonly string[] }} button
+   */
+  #infoButton(list, { id, x, y, definitionId, lines }) {
+    list.add(new Button({ id, x, y, width: ACTION.small, height: ROW.height, text: "i", enabled: this.#app.content.catalog.has(definitionId), onActivate: () => this.#showCard(definitionId, lines) }));
+  }
+
+  /**
+   * @param {string} definitionId
+   * @param {readonly string[]} lines
+   */
+  #showCard(definitionId, lines) {
+    const card = this.#app.content.catalog.get(definitionId);
+    if (card !== undefined) {
+      this.openModal(buildCardInfoModal({ viewport: this.services.viewport, card, rarity: rarityOf(this.#app, definitionId), lines, onClose: () => this.closeModal() }));
+    }
   }
 
   /**
@@ -190,25 +262,58 @@ export class TradesScene extends Scene {
   #buildGiveList(list) {
     const copies = this.#tradeableCopies();
     if (copies.length === 0) {
-      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: "No tradeable cards: only cards bought in the shop can be traded, not the free starter deck.", size: "small", colorKey: "textMuted" }));
+      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: "No tradeable cards: cards already offered in another trade cannot be offered again.", size: "small", colorKey: "textMuted" }));
       list.contentHeight = 3 * ROW.height;
       return;
     }
+    const rowWidth = list.rowWidth - ACTION.small - ACTION.gap;
     copies.forEach((copy, index) => {
       const chosen = this.#give.has(copy.id);
-      list.add(new OptionRow({ id: `trades.give.${copy.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: this.#cardName(copy.definitionId), subtitle: `#${copy.serial} · ${copy.finish}`, selected: chosen, enabled: chosen || this.#give.size < MAX_CARDS, onActivate: () => this.#toggleGive(copy.id) }));
+      const subtitle = [rarityLabel(rarityOf(this.#app, copy.definitionId)), `#${copy.serial}`, copy.finish].filter((part) => part.length > 0).join(" · ");
+      list.add(new OptionRow({ id: `trades.give.${copy.id}`, x: 0, y: rowY(index), width: rowWidth, height: ROW.height, text: this.#cardName(copy.definitionId), subtitle, selected: chosen, enabled: chosen || this.#give.size < MAX_CARDS, onActivate: () => this.#toggleGive(copy.id) }));
+      this.#infoButton(list, { id: `trades.give.info.${copy.id}`, x: rowWidth + ACTION.gap, y: rowY(index), definitionId: copy.definitionId, lines: [`Copy #${copy.serial} · ${copy.finish}`] });
     });
     list.contentHeight = rowsHeight(copies.length);
   }
 
   /** @param {ScrollList} list */
   #buildAskList(list) {
-    const cards = [...this.#app.content.catalog.all()].sort((left, right) => left.name.localeCompare(right.name));
-    cards.forEach((card, index) => {
-      const count = this.#ask.get(card.id) ?? 0;
-      list.add(new OptionRow({ id: `trades.ask.${card.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: card.name, subtitle: count === 0 ? card.faction : `asking ${count}`, selected: count > 0, onActivate: () => this.#cycleAsk(card.id) }));
+    const askable = this.#trading().state.askable;
+    const message = this.#askListMessage(askable);
+    if (message !== null) {
+      list.add(new TextBlock({ id: "trades.ask.message", x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: message, size: "small", colorKey: askable !== null && askable.error !== null ? "danger" : "textMuted" }));
+      list.contentHeight = 3 * ROW.height;
+      return;
+    }
+    const cards = /** @type {NonNullable<typeof askable>} */ (askable).cards
+      .map(({ definitionId, count }) => ({ definitionId, has: count, name: this.#cardName(definitionId) }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const rowWidth = list.rowWidth - ACTION.small - ACTION.gap;
+    cards.forEach(({ definitionId, has, name }, index) => {
+      const count = this.#ask.get(definitionId) ?? 0;
+      const rarity = rarityLabel(rarityOf(this.#app, definitionId));
+      const asked = count === 0 ? `has ${has}` : `asking ${count} of ${has}`;
+      list.add(new OptionRow({ id: `trades.ask.${definitionId}`, x: 0, y: rowY(index), width: rowWidth, height: ROW.height, text: name, subtitle: rarity.length === 0 ? asked : `${rarity} · ${asked}`, selected: count > 0, onActivate: () => this.#cycleAsk(definitionId, has) }));
+      this.#infoButton(list, { id: `trades.ask.info.${definitionId}`, x: rowWidth + ACTION.gap, y: rowY(index), definitionId, lines: [`@${this.#to} has ${has}`] });
     });
     list.contentHeight = rowsHeight(cards.length);
+  }
+
+  /**
+   * Why the ask list shows no cards, or null when it shows the recipient's.
+   * @param {import("../../application/trading/TradingService.js").Askable | null} askable
+   */
+  #askListMessage(askable) {
+    if (!ACCOUNT_PATTERN.test(this.#to) || askable === null || askable.account !== this.#to) {
+      return "Type the player's account to see the cards you can ask them for.";
+    }
+    if (askable.loading) {
+      return `Looking at @${askable.account}'s cards…`;
+    }
+    if (askable.error !== null) {
+      return askable.error;
+    }
+    return askable.cards.length === 0 ? `@${askable.account} has no cards to trade: you can still send a gift.` : null;
   }
 
   /** The player's copies that may be offered: bought, and not already in a trade. */
@@ -230,12 +335,19 @@ export class TradesScene extends Scene {
 
   #toggleComposer() {
     this.#composing = !this.#composing;
+    this.#trading().lookUpAskable(this.#composing && ACCOUNT_PATTERN.test(this.#to) ? this.#to : null);
     this.#rebuild();
   }
 
   /** @param {string} value */
   #changeRecipient(value) {
-    this.#to = value.trim().toLowerCase();
+    const to = value.trim().toLowerCase();
+    if (to === this.#to) {
+      return;
+    }
+    this.#to = to;
+    this.#ask.clear();
+    this.#trading().lookUpAskable(ACCOUNT_PATTERN.test(to) ? to : null);
     const send = this.root.findById("trades.send");
     if (send !== null) {
       send.enabled = ACCOUNT_PATTERN.test(this.#to) && this.#give.size > 0;
@@ -251,9 +363,13 @@ export class TradesScene extends Scene {
     this.#rebuild();
   }
 
-  /** @param {string} definitionId tap: one more, back to none after the maximum */
-  #cycleAsk(definitionId) {
-    const next = ((this.#ask.get(definitionId) ?? 0) + 1) % (MAX_ASK + 1);
+  /**
+   * Tap: one more, back to none after the maximum (or all the recipient has).
+   * @param {string} definitionId
+   * @param {number} has copies the recipient could give
+   */
+  #cycleAsk(definitionId, has) {
+    const next = ((this.#ask.get(definitionId) ?? 0) + 1) % (Math.min(MAX_ASK, has) + 1);
     if (next === 0) {
       this.#ask.delete(definitionId);
     } else {

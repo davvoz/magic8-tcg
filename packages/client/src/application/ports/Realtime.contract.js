@@ -7,7 +7,8 @@
  * @typedef {Readonly<{ t: string, d: any }>} ServerMessage
  * @typedef {"connecting" | "open" | "closed"} ConnectionStatus
  * @typedef {object} RealtimeConnection
- * @property {() => void} connect
+ * @property {() => void} connect idempotent: several services share one connection
+ * @property {ConnectionStatus} [status] where it stands now (a listener added late missed "open")
  * @property {() => void} close for good (no reconnection)
  * @property {(type: string, data: unknown) => Promise<import("@magic8/engine/shared/Result.js").Ok<ServerMessage> | import("@magic8/engine/shared/Result.js").Fail>} request
  * @property {(listener: (message: ServerMessage) => void) => () => void} subscribe messages that are not replies

@@ -2,7 +2,7 @@
  * Card-for-card trades on the real services (docs/tcg/13): the proposer's
  * copies go into escrow with the offer; acceptance swaps both sides at once
  * and queues the public record; decline, cancel and expiry give the copies
- * back; only the right player may act, once; free starter cards cannot be
+ * back; only the right player may act, once; free starter cards can be
  * traded; offers are idempotent and limited.
  */
 import assert from "node:assert/strict";
@@ -75,8 +75,14 @@ describe("trades", () => {
     assert.deepEqual(done.take.map((copy) => copy.serial), [1], "bob kept his better serials");
 
     const [lonely] = await w.bought(alice, "ember_imp", 1);
-    const second = await w.offer(alice, { to: "bob", give: [lonely.id], want: [{ definitionId: "iron_watcher", count: 3 }] });
-    await assert.rejects(w.app.trading.accept({ userId: bob.id, tradeId: second.trade.id, ip: "x" }), /you have 2 tradeable iron_watcher, the offer asks for 3/);
+    const askable = await w.app.trading.tradeableOf({ userId: alice.id, account: "bob" });
+    assert.deepEqual([...askable].sort((left, right) => left.definitionId.localeCompare(right.definitionId)), [{ definitionId: "ember_imp", count: 1 }, { definitionId: "iron_watcher", count: 2 }], "what alice may ask bob for");
+    await assert.rejects(w.app.trading.tradeableOf({ userId: alice.id, account: "alice" }), /another player/);
+    await assert.rejects(w.offer(alice, { to: "bob", give: [lonely.id], want: [{ definitionId: "iron_watcher", count: 3 }] }), /@bob has 2 tradeable iron_watcher, the offer asks for 3/);
+    await assert.rejects(w.offer(alice, { to: "bob", give: [lonely.id], want: [{ definitionId: "arcane_apprentice", count: 1 }] }), /@bob has 0 tradeable arcane_apprentice/);
+    const second = await w.offer(alice, { to: "bob", give: [lonely.id], want: [{ definitionId: "iron_watcher", count: 2 }] });
+    await w.offer(bob, { to: "alice", give: [watchers[1].id], want: [] });
+    await assert.rejects(w.app.trading.accept({ userId: bob.id, tradeId: second.trade.id, ip: "x" }), /you have 1 tradeable iron_watcher, the offer asks for 2/, "bob offered one elsewhere meanwhile");
     assert.equal((await w.app.trading.list(alice.id)).find((row) => row.id === second.trade.id).status, "OPEN", "still open");
   });
 
@@ -105,12 +111,12 @@ describe("trades", () => {
     assert.deepEqual(await w.statusOf(imps.map((copy) => copy.id)), imps.map(() => [alice.id, "active"]), "every copy is back");
   });
 
-  it("refuses free starter cards, copies already in a trade, self-trades and strangers, and limits open offers", async () => {
+  it("trades free starter cards, refuses copies already in a trade, self-trades and strangers, and limits open offers", async () => {
     const w = await world();
     const alice = await w.player("alice");
     await w.player("bob");
     const [starter] = await w.bought(alice, "ember_imp", 1, "grant");
-    await assert.rejects(w.offer(alice, { to: "bob", give: [starter.id], want: [] }), /not one of your tradeable copies/);
+    await w.offer(alice, { to: "bob", give: [starter.id], want: [] });
     const [imp] = await w.bought(alice, "ember_imp", 1);
     await w.offer(alice, { to: "bob", give: [imp.id], want: [] });
     await assert.rejects(w.offer(alice, { to: "bob", give: [imp.id], want: [] }), /not one of your tradeable copies/, "already in escrow");
@@ -119,10 +125,10 @@ describe("trades", () => {
     await assert.rejects(w.offer(alice, { to: "bob", give: [imp.id], want: [{ definitionId: "no_such_card", count: 1 }] }), /no such card/);
     await assert.rejects(w.offer(alice, { to: "bob", give: [], want: [] }), /give/);
     const others = await w.bought(alice, "arcane_apprentice", 10);
-    for (const copy of others.slice(0, 9)) {
+    for (const copy of others.slice(0, 8)) {
       await w.offer(alice, { to: "bob", give: [copy.id], want: [] });
     }
-    await assert.rejects(w.offer(alice, { to: "bob", give: [others[9].id], want: [] }), /at most 10 open offers/);
+    await assert.rejects(w.offer(alice, { to: "bob", give: [others[8].id], want: [] }), /at most 10 open offers/);
   });
 
   it("answers a repeated offer with the same trade, and settles racing acceptances once", async () => {
@@ -148,7 +154,8 @@ describe("trades", () => {
     const w = await world();
     const keys = keyPair(41);
     w.setup.chain.setAccount("alice", [keys.publicKey]);
-    await w.player("bob");
+    const bob = await w.player("bob");
+    await w.bought(bob, "iron_watcher", 2);
     const server = await listen(w.app);
     try {
       const client = new ApiClient(server.base);
@@ -161,6 +168,8 @@ describe("trades", () => {
       assert.equal((await client.get("/api/trades")).json.trades[0].id, created.json.trade.id);
       assert.equal((await client.post(`/api/trades/${created.json.trade.id}/cancel`, {})).json.trade.status, "CANCELLED");
       assert.equal((await client.post("/api/trades/not-a-trade/accept", {})).status, 404);
+      assert.deepEqual((await client.get("/api/trades/tradeable/bob")).json.cards, [{ definitionId: "iron_watcher", count: 2 }]);
+      assert.equal((await client.get("/api/trades/tradeable/nobody")).status, 400);
     } finally {
       await server.close();
     }

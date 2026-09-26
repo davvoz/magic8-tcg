@@ -2,7 +2,8 @@
  * Trades on the client (docs/tcg/13): the HTTP adapter checks every answer,
  * the service lists and acts on trades (and reloads the collection when
  * copies moved), and the screen lists trades, offers the right actions,
- * and composes a new offer from bought copies only.
+ * and composes a new offer from tradeable copies, asking only for cards
+ * the recipient has.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -11,6 +12,7 @@ import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { TradingService } from "../../src/application/trading/TradingService.js";
 import { HttpTradingApi } from "../../src/infrastructure/api/HttpTradingApi.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
+import { immediateScheduler } from "../../src/infrastructure/time/ImmediateScheduler.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { TradesScene, tradeSubtitle } from "../../src/rendering/scenes/TradesScene.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
@@ -52,6 +54,11 @@ describe("HttpTradingApi", () => {
     assert.equal((await api.cancel(TRADE.id)).error.code, "BAD_RESPONSE");
     answer = { trades: [{ ...TRADE, status: "STOLEN" }] };
     assert.equal((await api.list()).error.code, "BAD_RESPONSE");
+    answer = { cards: [{ definitionId: "iron_watcher", count: 2 }] };
+    assert.deepEqual((await api.tradeableOf("carol")).value, [{ definitionId: "iron_watcher", count: 2 }]);
+    assert.match(requests.at(-1).url, /\/api\/trades\/tradeable\/carol$/);
+    answer = { cards: [{ definitionId: "<script>", count: 1 }] };
+    assert.equal((await api.tradeableOf("carol")).error.code, "BAD_RESPONSE");
   });
 });
 
@@ -63,6 +70,7 @@ function fakeApi() {
   return {
     calls,
     list: async () => (calls.push(["list"]), ok(state.trades)),
+    tradeableOf: async (account) => (calls.push(["tradeableOf", account]), account === "ghost" ? fail("VALIDATION", "trade with another player who has played here before") : ok(account === "carol" ? [{ definitionId: "iron_watcher", count: 2 }, { definitionId: "ember_imp", count: 1 }] : [])),
     propose: async (offer) => (calls.push(["propose", offer]), offer.to === "nobody" ? fail("VALIDATION", "trade with another player who has played here before") : result({ ...TRADE, id: uuid(2), role: "proposer", proposer: "bob", counterparty: offer.to })),
     accept: async (id) => (calls.push(["accept", id]), result({ ...TRADE, status: "ACCEPTED", take: [{ id: uuid(21), definitionId: "iron_watcher", serial: 9, finish: "standard" }] })),
     decline: async (id) => (calls.push(["decline", id]), result({ ...TRADE, status: "DECLINED" })),
@@ -73,7 +81,7 @@ function fakeApi() {
 function screen() {
   const api = fakeApi();
   let reloads = 0;
-  const trading = new TradingService({ api, newKey: () => "offer-key-000000000001", onCollectionChanged: () => (reloads += 1) });
+  const trading = new TradingService({ api, newKey: () => "offer-key-000000000001", onCollectionChanged: () => (reloads += 1), scheduler: immediateScheduler });
   const copy = (id, serial, tradeable) => ({ id: uuid(id), edition: "core-1", serial, finish: "standard", status: "active", tradeable });
   const account = { collection: { state: { cards: [{ definitionId: "ember_imp", copies: [copy(31, 1, true), copy(32, 2, false)] }] } } };
   const viewport = new Viewport(theme.layout);
@@ -110,25 +118,46 @@ describe("TradesScene", () => {
     assert.ok(rendered(scene).some((text) => text.includes("Trade done")));
   });
 
-  it("composes an offer from bought copies only, and asks for cards by tapping", async () => {
+  it("composes an offer from tradeable copies only, and asks for cards by tapping", async () => {
     const { api, scene } = screen();
     scene.enter({});
     await flush();
     byId(scene, "trades.new").activate();
-    assert.equal(byId(scene, `trades.give.${uuid(32)}`), null, "a free starter copy cannot be offered");
+    assert.equal(byId(scene, `trades.give.${uuid(32)}`), null, "a copy the server calls untradeable cannot be offered");
     assert.equal(byId(scene, "trades.send").enabled, false);
     byId(scene, `trades.give.${uuid(31)}`).activate();
+    assert.equal(byId(scene, "trades.ask.iron_watcher"), null, "no cards to ask for before a recipient is named");
+    byId(scene, "trades.to").onChange("Carol");
+    await flush();
+    assert.deepEqual(api.calls.at(-1), ["tradeableOf", "carol"]);
+    assert.equal(byId(scene, "trades.ask.arcane_apprentice"), null, "only cards carol has");
+    assert.equal(byId(scene, "trades.ask.iron_watcher").subtitle, "has 2");
+    for (let tap = 0; tap < 3; tap += 1) {
+      byId(scene, "trades.ask.iron_watcher").activate();
+    }
+    assert.equal(byId(scene, "trades.ask.iron_watcher").subtitle, "has 2", "never more than carol has: the third tap goes back to none");
     byId(scene, "trades.ask.iron_watcher").activate();
     byId(scene, "trades.ask.iron_watcher").activate();
-    assert.equal(byId(scene, "trades.ask.iron_watcher").subtitle, "asking 2");
-    byId(scene, "trades.to").onChange("Nobody");
-    assert.equal(byId(scene, "trades.send").enabled, true);
+    assert.equal(byId(scene, "trades.ask.iron_watcher").subtitle, "asking 2 of 2");
+
+    byId(scene, "trades.to").onChange("ghost");
+    await flush();
+    assert.equal(byId(scene, "trades.ask.iron_watcher"), null, "another recipient: the asks start over");
+    assert.match(byId(scene, "trades.ask.message").text, /another player/, "an unknown player is explained");
+    byId(scene, "trades.to").onChange("nobody");
+    await flush();
+    assert.match(byId(scene, "trades.ask.message").text, /no cards to trade/);
+    assert.equal(byId(scene, "trades.send").enabled, true, "a gift needs no asks");
     byId(scene, "trades.send").activate();
     await flush();
-    assert.deepEqual(api.calls.at(-1), ["propose", { to: "nobody", give: [uuid(31)], want: [{ definitionId: "iron_watcher", count: 2 }], idempotencyKey: "offer-key-000000000001" }]);
+    assert.deepEqual(api.calls.at(-1), ["propose", { to: "nobody", give: [uuid(31)], want: [], idempotencyKey: "offer-key-000000000001" }]);
     assert.ok(rendered(scene).some((text) => text.includes("another player")), "the refusal is shown");
     byId(scene, "trades.to").onChange("carol");
+    await flush();
+    byId(scene, "trades.ask.iron_watcher").activate();
     byId(scene, "trades.send").activate();
+    await flush();
+    assert.deepEqual(api.calls.at(-1), ["propose", { to: "carol", give: [uuid(31)], want: [{ definitionId: "iron_watcher", count: 1 }], idempotencyKey: "offer-key-000000000001" }]);
     await flush();
     assert.equal(byId(scene, "trades.send"), null, "back to the list");
     assert.equal(byId(scene, `trades.row.${uuid(2)}`).text, "to @carol");

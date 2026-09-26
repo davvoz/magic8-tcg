@@ -311,6 +311,25 @@ describe("ChainBroadcaster and ChainTracker", () => {
     assert.deepEqual(await alerts(w), [], "our own trade record is not an unknown operation");
   });
 
+  it("publishes a completed sale, and the tracker follows it like any record of ours", async () => {
+    const w = await world();
+    const [imp] = await w.setup.app.inventory.mint({ ownerId: w.alice.id, items: [{ definitionId: "ember_imp", count: 1 }], edition: "core-1", finish: "standard", origin: { kind: "purchase", ref: "test:sale:a" } });
+    const { listing } = await w.setup.app.sales.list({ seller: { id: w.alice.id, account: "alice", network: "steem" }, copy: imp.id, price: "0.5", asset: "STEEM", idempotencyKey: "chain-sale-000000001", ip: "x" });
+    const purchase = await w.setup.app.sales.reserve({ buyer: { id: w.bob.id, account: "bob", network: "steem" }, listingId: listing.id, ip: "x" });
+    const { txId } = w.ledger.transfer({ from: "bob", to: "alice", amount: "0.500 STEEM", memo: purchase.payment.memo, time: w.setup.clock.now() });
+    w.ledger.finalize();
+    assert.equal((await w.setup.app.saleSettlement.runOnce()).completed, 1);
+    assert.equal(await w.chain.broadcaster.runOnce(), 1);
+    const operation = w.ledger.mempool[0].operations[0].data;
+    assert.equal(operation.id, OperationId.SALE);
+    assert.deepEqual([JSON.parse(operation.json).t, JSON.parse(operation.json).x], [listing.id, txId]);
+    w.ledger.produceBlock();
+    await w.chain.tracker.runOnce();
+    const [row] = await w.setup.database.rows("SELECT status, reconciliation FROM blockchain_events WHERE kind = 'SALE'");
+    assert.deepEqual([row.status, row.reconciliation], ["INCLUDED", "MATCH"]);
+    assert.deepEqual(await alerts(w), [], "our own sale record is not an unknown operation");
+  });
+
   it("sends a record again, byte for byte, when its transaction expired unseen; an ambiguous broadcast error changes nothing", async () => {
     const w = await world({ signers: [B1] });
     const gameId = await w.newGame();

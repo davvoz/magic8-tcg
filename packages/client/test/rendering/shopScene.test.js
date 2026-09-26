@@ -87,12 +87,19 @@ describe("ShopScene", () => {
     const { scene } = await harness();
     click(byId(scene, "shop.tab.decks"));
     const deck = byId(scene, "shop.product.deck_precon_arcane");
-    assert.equal(deck.subtitle, "30 cards · arcane · 10.750 STEEM");
-    assert.equal(byId(scene, "shop.deckTotal").text, "Sum of the cards: 10.750 STEEM · Deck price: 10.750 STEEM");
-    const texts = rendered(scene);
-    assert.ok(texts.includes(`2 × ${content.catalog.get("arcane_apprentice").name} (0.050 each)`));
-    assert.ok(texts.includes("0.100"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 10.750 STEEM");
+    assert.equal(deck.subtitle, "30 cards · arcane · 49.000 STEEM");
+    assert.equal(byId(scene, "shop.deckTotal").text, "Sum of the cards: 49.000 STEEM · Deck price: 49.000 STEEM");
+    const apprentice = byId(scene, "shop.deckCard.arcane_apprentice");
+    assert.deepEqual([apprentice.card.id, apprentice.caption, apprentice.rarity], ["arcane_apprentice", "2 × 0.500", "common"], "each card as a thumbnail: copies × price, and its rarity");
+    assert.ok(rendered(scene).includes("Common"));
+    click(apprentice);
+    const info = (id) => scene.modal.findById(id);
+    assert.equal(info("cardInfo.name").text, content.catalog.get("arcane_apprentice").name);
+    assert.equal(info("cardInfo.rarity").text, "Common");
+    assert.deepEqual([0, 1, 2].map((index) => info(`cardInfo.line.${index}`).text), ["In this deck: 2", "As a single: 0.500 STEEM each", "2 in the deck: 1.000 STEEM"]);
+    click(info("cardInfo.close"));
+    assert.equal(scene.modal, null);
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 49.000 STEEM");
   });
 
   it("sells every card by rarity, rarest first, filterable, in standard or foil", async () => {
@@ -102,16 +109,16 @@ describe("ShopScene", () => {
     click(byId(scene, "shop.rarity.rare"));
     assert.equal(byId(scene, "shop.card.arcane_apprentice"), null, "commons are filtered out");
     click(byId(scene, "shop.card.pyre_drake"));
-    assert.equal(byId(scene, "shop.card.pyre_drake").text, "0.500 STEEM");
-    assert.equal(byId(scene, "shop.rarity").text, "rare");
+    assert.equal(byId(scene, "shop.card.pyre_drake").text, "2.500 STEEM");
+    assert.equal(byId(scene, "shop.rarity").text, "Rare");
     assert.ok(byId(scene, "shop.owned"), "a signed-in player sees how many they own");
     assert.ok(rendered(scene).includes("Single prices (STEEM)"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 0.500 STEEM");
-    assert.equal(byId(scene, "shop.finish.foil").text, "Foil · 2.500");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 2.500 STEEM");
+    assert.equal(byId(scene, "shop.finish.foil").text, "Foil · 5.000");
 
     click(byId(scene, "shop.finish.foil"));
     click(byId(scene, "shop.more"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 5.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 10.000 STEEM");
     click(byId(scene, "shop.buy"));
     await settle();
     assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { productId: "single_pyre_drake_foil", quantity: 2, asset: "STEEM" });

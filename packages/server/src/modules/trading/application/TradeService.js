@@ -10,14 +10,17 @@
  *   queued for publication on chain (m8tcg_trade) in that same unit of work.
  * - Decline, cancel, expiry: the escrowed copies go back.
  *
- * Only bought copies can be traded (free starter cards could otherwise be
- * farmed on throwaway accounts). Trades are card for card: selling cards for
+ * Both players hear of every change in their notification feed, written in
+ * the unit of work of the change (docs/tcg/15-notifiche.md).
+ *
+ * Bought copies and the free starter cards can be traded. Trades are card for card: selling cards for
  * STEEM would need an escrow of funds, which this server can never hold
  * (no active keys on the server, docs/tcg/05).
  */
 import { MAX_TRADE_CARDS, canonicalize, sha256Hex, tradeRecord, utf8 } from "@magic8/protocol";
 import { AppError } from "../../../kernel/AppError.js";
 import { isUuid, uuidV4 } from "../../../kernel/random.js";
+import { NotificationKind, countCards } from "../../notifications/index.js";
 import { TradeStatus, checkProposal, matchesWants } from "../domain/Trade.js";
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
@@ -45,6 +48,7 @@ export class TradeService {
   #isKnownCard;
   #outbox;
   #notifier;
+  #notifications;
   #audit;
   #clock;
   #random;
@@ -61,6 +65,7 @@ export class TradeService {
    *   isKnownCard: (definitionId: string) => boolean,
    *   outbox: { enqueueTrade: (entry: { network: string, tradeId: string, payload: string }) => Promise<void> },
    *   notifier: { send: (userId: string, type: string, data: unknown) => void },
+   *   notifications: { notify: (userId: string, kind: string, data: Record<string, unknown>) => Promise<unknown> },
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
    *   clock: import("../../../kernel/time.js").Clock,
    *   random: import("../../../kernel/random.js").SecureRandom,
@@ -70,13 +75,14 @@ export class TradeService {
    *   policy?: Partial<typeof DEFAULT_TRADE_POLICY>,
    * }} deps
    */
-  constructor({ repository, inventory, findUser, isKnownCard, outbox, notifier, audit, clock, random, unitOfWork, logger, network, policy = {} }) {
+  constructor({ repository, inventory, findUser, isKnownCard, outbox, notifier, notifications, audit, clock, random, unitOfWork, logger, network, policy = {} }) {
     this.#repository = repository;
     this.#inventory = inventory;
     this.#findUser = findUser;
     this.#isKnownCard = isKnownCard;
     this.#outbox = outbox;
     this.#notifier = notifier;
+    this.#notifications = notifications;
     this.#audit = audit;
     this.#clock = clock;
     this.#random = random;
@@ -104,6 +110,7 @@ export class TradeService {
       throw new AppError("VALIDATION", proposal.message);
     }
     const counterparty = await this.#counterpartyFor(proposer.id, to);
+    await this.#checkWantsAvailable(counterparty, proposal.wants);
     const now = this.#clock.now();
     /** @type {import("../domain/Trade.js").Trade} */
     const trade = Object.freeze({ id: uuidV4(this.#random), proposerId: proposer.id, counterpartyId: counterparty.id, status: TradeStatus.OPEN, wants: proposal.wants, idempotencyKey, requestHash, createdAt: now, expiresAt: now + this.#policy.ttlMs, closedAt: null });
@@ -111,8 +118,9 @@ export class TradeService {
       if (!(await this.#repository.insert(trade))) {
         return false;
       }
-      await this.#inventory.escrow({ ownerId: proposer.id, instanceIds: proposal.give, ref: refOf(trade.id) });
+      const escrowed = await this.#inventory.escrow({ ownerId: proposer.id, instanceIds: proposal.give, ref: refOf(trade.id) });
       await this.#repository.insertItems(trade.id, "give", proposal.give);
+      await this.#notifications.notify(counterparty.id, NotificationKind.TRADE_OFFERED, { tradeId: trade.id, account: proposer.account, give: countCards(escrowed), wants: trade.wants });
       await this.#audit.record({ actorKind: "user", actorUserId: proposer.id, action: "trading.offered", targetKind: "trade", targetId: trade.id, ip, details: { to: counterparty.account, give: proposal.give.length, want: proposal.wants } });
       return true;
     });
@@ -140,6 +148,36 @@ export class TradeService {
   }
 
   /**
+   * The cards another player could give in a trade now, for composing an offer to them.
+   * @param {{ userId: string, account: unknown }} request
+   * @returns {Promise<readonly Readonly<{ definitionId: string, count: number }>[]>}
+   */
+  async tradeableOf({ userId, account }) {
+    const other = typeof account === "string" && ACCOUNT_PATTERN.test(account) ? await this.#findUser(this.#network, account) : null;
+    if (other === null || other.id === userId) {
+      throw new AppError("VALIDATION", "trade with another player who has played here before");
+    }
+    const counts = await this.#inventory.tradeableCounts(other.id);
+    return Object.freeze([...counts].filter(([definitionId]) => this.#isKnownCard(definitionId)).map(([definitionId, count]) => Object.freeze({ definitionId, count })));
+  }
+
+  /**
+   * An offer may only ask for cards the counterparty has (they may still trade them away before answering).
+   * @param {{ id: string, account: string }} counterparty
+   * @param {readonly { definitionId: string, count: number }[]} wants
+   */
+  async #checkWantsAvailable(counterparty, wants) {
+    if (wants.length === 0) {
+      return;
+    }
+    const counts = await this.#inventory.tradeableCounts(counterparty.id);
+    const missing = wants.find((want) => (counts.get(want.definitionId) ?? 0) < want.count);
+    if (missing !== undefined) {
+      throw new AppError("VALIDATION", `@${counterparty.account} has ${counts.get(missing.definitionId) ?? 0} tradeable ${missing.definitionId}, the offer asks for ${missing.count}`);
+    }
+  }
+
+  /**
    * The counterparty accepts: their copies (these, or ones picked for them) for the escrowed ones.
    * @param {{ userId: string, tradeId: unknown, copies?: unknown, ip: string }} request
    */
@@ -161,7 +199,8 @@ export class TradeService {
       const toProposer = await this.#inventory.transfer({ fromId: userId, toId: open.proposerId, instanceIds: taken.map((copy) => copy.id), ref });
       await this.#repository.insertItems(open.id, "take", taken.map((copy) => copy.id));
       await this.#repository.close(open.id, TradeStatus.ACCEPTED, now);
-      await this.#publish(open, toCounterparty, toProposer);
+      const accounts = await this.#publish(open, toCounterparty, toProposer);
+      await this.#notifications.notify(open.proposerId, NotificationKind.TRADE_ACCEPTED, { tradeId: open.id, account: accounts.counterparty, received: countCards(toProposer), gave: countCards(toCounterparty) });
       await this.#audit.record({ actorKind: "user", actorUserId: userId, action: "trading.accepted", targetKind: "trade", targetId: open.id, ip, details: { gave: taken.length, received: given.length } });
       return open;
     });
@@ -192,7 +231,11 @@ export class TradeService {
         if (open === null || open.status !== TradeStatus.OPEN || this.#clock.now() < open.expiresAt) {
           return null;
         }
-        await this.#giveBack(open, TradeStatus.EXPIRED);
+        const returned = await this.#giveBack(open, TradeStatus.EXPIRED);
+        const accounts = await this.#repository.accountsOf(open.id);
+        const give = countCards(returned);
+        await this.#notifications.notify(open.proposerId, NotificationKind.TRADE_EXPIRED, { tradeId: open.id, account: accounts.counterparty, give, wants: open.wants });
+        await this.#notifications.notify(open.counterpartyId, NotificationKind.TRADE_EXPIRED, { tradeId: open.id, account: accounts.proposer, give, wants: open.wants });
         await this.#audit.record({ actorKind: "system", action: "trading.expired", targetKind: "trade", targetId: open.id });
         return open;
       });
@@ -219,7 +262,8 @@ export class TradeService {
   async #close({ userId, tradeId, ip, status, may }) {
     const trade = await this.#unitOfWork(async () => {
       const open = await this.#openTrade(tradeId, may);
-      await this.#giveBack(open, status);
+      const returned = await this.#giveBack(open, status);
+      await this.#tellOtherSide(open, status, countCards(returned));
       await this.#audit.record({ actorKind: "user", actorUserId: userId, action: `trading.${status.toLowerCase()}`, targetKind: "trade", targetId: open.id, ip });
       return open;
     });
@@ -232,8 +276,24 @@ export class TradeService {
    * @param {string} status
    */
   async #giveBack(trade, status) {
-    await this.#inventory.release({ instanceIds: await this.#repository.itemIds(trade.id, "give"), ref: refOf(trade.id) });
+    const returned = await this.#inventory.release({ instanceIds: await this.#repository.itemIds(trade.id, "give"), ref: refOf(trade.id) });
     await this.#repository.close(trade.id, status, this.#clock.now());
+    return returned;
+  }
+
+  /**
+   * A decline reaches the proposer, a cancellation the counterparty.
+   * @param {import("../domain/Trade.js").Trade} trade
+   * @param {string} status DECLINED or CANCELLED
+   * @param {ReturnType<typeof countCards>} give the offered cards
+   */
+  async #tellOtherSide(trade, status, give) {
+    const accounts = await this.#repository.accountsOf(trade.id);
+    if (status === TradeStatus.DECLINED) {
+      await this.#notifications.notify(trade.proposerId, NotificationKind.TRADE_DECLINED, { tradeId: trade.id, account: accounts.counterparty, give, wants: trade.wants });
+    } else {
+      await this.#notifications.notify(trade.counterpartyId, NotificationKind.TRADE_CANCELLED, { tradeId: trade.id, account: accounts.proposer, give, wants: trade.wants });
+    }
   }
 
   /**
@@ -257,12 +317,14 @@ export class TradeService {
    * @param {import("../domain/Trade.js").Trade} trade
    * @param {readonly import("../../collection/domain/CardInstance.js").CardInstance[]} toCounterparty
    * @param {readonly import("../../collection/domain/CardInstance.js").CardInstance[]} toProposer
+   * @returns {Promise<{ proposer: string, counterparty: string }>} the two accounts
    */
   async #publish(trade, toCounterparty, toProposer) {
     const { proposer, counterparty } = await this.#repository.accountsOf(trade.id);
     const cardsOf = (copies) => copies.map((copy) => ({ id: copy.id, definitionId: copy.definitionId, serial: copy.serial, finish: copy.finish }));
     const payload = tradeRecord({ tradeId: trade.id, proposer: { account: proposer, cards: cardsOf(toCounterparty) }, counterparty: { account: counterparty, cards: cardsOf(toProposer) } });
     await this.#outbox.enqueueTrade({ network: this.#network, tradeId: trade.id, payload });
+    return { proposer, counterparty };
   }
 
   /**
