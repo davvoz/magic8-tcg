@@ -22,7 +22,7 @@ function result(overrides = {}) {
 
 describe("verifier checklist", () => {
   it("lists every check of a valid game", () => {
-    const checks = checklist(result(), { root: "luciojolly", indexed: true });
+    const checks = checklist(result(), { root: "verdu.green", indexed: true });
     assert.deepEqual(checks.map((check) => [check.label, check.ok]), [
       ["Trust anchor", true],
       ["Records found", true],
@@ -31,7 +31,7 @@ describe("verifier checklist", () => {
       ["Content", true],
       ["Reveals and replay", true],
     ]);
-    assert.equal(checks[0].detail, "@luciojolly authorises @m8tcg-b1");
+    assert.equal(checks[0].detail, "@verdu.green authorises @m8tcg-b1");
     assert.equal(checks[1].detail, "3 record(s) in the indexed blocks");
     assert.match(checks[5].detail, /winner s1 \(concede\)/);
     assert.equal(verdictBanner("VALID").tone, "good");
@@ -59,9 +59,9 @@ describe("verifier checklist", () => {
 
   it("shows the acks kept while playing, and a contradiction as proof", () => {
     const agreed = [{ status: "CONSISTENT", seq: 5 }, { status: "CONSISTENT", seq: 7 }, { status: "NOT_PUBLISHED", seq: 9 }];
-    const checks = checklist(result({ acks: agreed }), { root: "luciojolly", indexed: true });
+    const checks = checklist(result({ acks: agreed }), { root: "verdu.green", indexed: true });
     assert.deepEqual(checks.at(-1), { label: "Your signed acks", ok: true, detail: "2 of 3 agree with the chain; 1 not published yet" });
-    assert.equal(checklist(result({ acks: [] }), { root: "luciojolly", indexed: true }).length, 6, "no acks, no check");
+    assert.equal(checklist(result({ acks: [] }), { root: "verdu.green", indexed: true }).length, 6, "no acks, no check");
     assert.equal(ackCheck([{ status: "CONSISTENT", seq: 5 }, { status: "BAD_SIGNATURE", seq: 7 }]).ok, null, "a worthless ack is not a proof either way");
     const contradicted = [...agreed, { status: "DIVERGENT", seq: 11 }];
     assert.match(ackCheck(contradicted).detail, /PROOF: .* event\(s\) 11 \(divergent\)/);
@@ -78,6 +78,6 @@ describe("verifier checklist", () => {
     assert.equal(rotated[1].ok, null, "a key rotated since proves nothing either way");
     const bad = signatureChecks({ signatures: { status: "BAD_MOVE_SIGNATURE", message: "move 9 is not signed by s1's session key" }, sessions: [{ account: "bob", status: "FORGED" }] });
     assert.deepEqual(bad.map((check) => check.ok), [false, false]);
-    assert.equal(checklist(result({ signatures: { status: "VALID", message: null }, sessions: [] }), { root: "luciojolly", indexed: true })[4].label, "Signed moves");
+    assert.equal(checklist(result({ signatures: { status: "VALID", message: null }, sessions: [] }), { root: "verdu.green", indexed: true })[4].label, "Signed moves");
   });
 });

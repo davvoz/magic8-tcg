@@ -6,7 +6,7 @@
  * Options:
  *   --root <account>    the project's root account: the trust anchor whose
  *                       manifests say which broadcasters may sign
- *                       (default: luciojolly). Do not take it from the server.
+ *                       (default: verdu.green). Do not take it from the server.
  *   --server <origin>   a game server: used only as an index of the blocks
  *                       holding the game and to download the content by hash
  *                       (both are checked; a server can hide records, which
@@ -29,7 +29,7 @@ import { parseArgs } from "node:util";
 import { AckStatus, GAME_ID_PATTERN, Verdict, verifyGameOnChain } from "@magic8/protocol";
 import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, recoverSigner, verifySessionSignature } from "@magic8/steem";
 
-export const DEFAULT_ROOT = "luciojolly";
+export const DEFAULT_ROOT = "verdu.green";
 export const DEFAULT_NODES = Object.freeze(["https://api.moecki.online", "https://api.justyy.com", "https://api.steemit.com"]);
 
 const USAGE = "usage: node tools/verify-game.js <gameId> [--root account] [--server origin] [--scan] [--content file] [--acks file] [--nodes urls] [--json]";

@@ -249,7 +249,7 @@ async function main() {
     clock: systemClock,
     random: nodeSecureRandom,
     logger,
-    wallets: new Map([["steem", new SteemWalletProvider({ chain: wallets, appName: "luciojolly" })]]),
+    wallets: new Map([["steem", new SteemWalletProvider({ chain: wallets, appName: "verdu.green" })]]),
     paymentProviders: new Map([["steem", ledger.paymentProvider()]]),
     defaultNetwork: "steem",
     database,

@@ -7,6 +7,7 @@
 import { LIMITS, stripControlCharacters } from "../../shared/limits.js";
 import {
   Issues,
+  allDefined,
   checkArrayOf,
   checkBoolean,
   checkInteger,
@@ -53,10 +54,11 @@ export function checkDeckList(issues, raw, path, requireSchemaVersion) {
   const preconstructed = checkBoolean(issues, object.preconstructed ?? false, `${path}.preconstructed`);
   const entries = checkEntries(issues, object.cards, `${path}.cards`);
 
-  if (!issues.isEmpty || entries === undefined) {
+  const fields = allDefined({ id, name, faction, preconstructed, entries });
+  if (!issues.isEmpty || fields === undefined) {
     return undefined;
   }
-  return new DeckList({ id, name: stripControlCharacters(name), faction, preconstructed, entries });
+  return new DeckList({ ...fields, name: stripControlCharacters(fields.name) });
 }
 
 /**

@@ -22,6 +22,7 @@ const LIST_ID = "online.decks";
 const BUTTON = Object.freeze({ height: 60 });
 const MODE = Object.freeze({ y: 64, height: 48, gap: 12 });
 export const QueueMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
+/** @typedef {typeof QueueMode[keyof typeof QueueMode]} Mode */
 
 /** What the lobby says in each state. */
 const STATUS_TEXT = Object.freeze({
@@ -40,6 +41,7 @@ export class OnlineScene extends Scene {
   #unsubscribe = null;
   /** @type {string | null} */
   #selectedId = null;
+  /** @type {Mode} */
   #mode = QueueMode.CASUAL;
   /** @type {(() => void) | null} */
   #unsubscribeRanking = null;
@@ -210,6 +212,12 @@ export class OnlineScene extends Scene {
     }
     const idle = state.status !== OnlineStatus.SEARCHING;
     const half = (width - MODE.gap) / 2;
+    /**
+     * @param {Mode} mode
+     * @param {number} x
+     * @param {string} text
+     * @param {boolean} enabled
+     */
     const choice = (mode, x, text, enabled) =>
       panel.add(new Button({ id: `online.mode.${mode}`, x, y: MODE.y, width: half, height: MODE.height, text, variant: this.#mode === mode ? "primary" : "secondary", enabled: enabled && idle, onActivate: () => this.#choose(mode) }));
     choice(QueueMode.CASUAL, INSET, "Casual", true);
@@ -218,7 +226,7 @@ export class OnlineScene extends Scene {
     return MODE.y + MODE.height + 70;
   }
 
-  /** @param {string} mode */
+  /** @param {Mode} mode */
   #choose(mode) {
     this.#mode = mode;
     this.#rebuild();

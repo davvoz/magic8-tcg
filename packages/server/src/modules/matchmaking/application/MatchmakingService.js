@@ -67,8 +67,9 @@ export class MatchmakingService {
   /**
    * @param {{ user: { id: string, account: string }, mode: unknown, deckId: unknown }} request
    */
-  async join({ user, mode, deckId }) {
-    if (!MODES.includes(/** @type {string} */ (mode))) {
+  async join({ user, mode: requested, deckId }) {
+    const mode = MODES.find((known) => known === requested);
+    if (mode === undefined) {
       throw new AppError("VALIDATION", `mode must be one of ${MODES.join(", ")}`);
     }
     if ((await this.#games.activeGameOf(user.id)) !== null) {

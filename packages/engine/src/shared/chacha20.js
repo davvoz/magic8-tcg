@@ -42,6 +42,7 @@ const DOUBLE_ROUND = Object.freeze([
  */
 function permute(initial) {
   const x = initial.slice();
+  /** @param {readonly number[]} indices */
   const quarterRound = ([a, b, c, d]) => {
     x[a] = (x[a] + x[b]) >>> 0;
     x[d] = rotl(x[d] ^ x[a], 16);

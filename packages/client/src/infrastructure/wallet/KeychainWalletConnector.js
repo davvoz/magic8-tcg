@@ -27,7 +27,7 @@ export class KeychainWalletConnector {
   #timeoutMs;
 
   /**
-   * @param {{ locate: () => unknown, timers: { setTimeout: typeof setTimeout, clearTimeout: typeof clearTimeout }, timeoutMs?: number }} deps
+   * @param {{ locate: () => unknown, timers: { setTimeout: (callback: () => void, ms: number) => unknown, clearTimeout: (id: any) => void }, timeoutMs?: number }} deps
    *   `locate` returns the injected extension object (or undefined), read at call time because extensions inject late
    */
   constructor({ locate, timers, timeoutMs = DEFAULT_TIMEOUT_MS }) {

@@ -48,6 +48,7 @@ export class MatchScene extends Scene {
   /** @type {import("../../application/match/MatchSession.js").MatchSession | null} */
   #session = null;
   /** Where "Play again" leads: deck selection for practice, the lobby for online games. */
+  /** @type {string} */
   #againScene = SceneId.DECK_SELECTION;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
@@ -380,7 +381,7 @@ export class MatchScene extends Scene {
     this.openModal(modal);
   }
 
-  /** @param {import("@magic8/engine/domain/game/GameSnapshot.js").CardView} card */
+  /** @param {import("../cards/CardDetail.js").CardLike} card */
   #showInspect(card) {
     const { viewport } = this.services;
     const modal = new Modal({ id: "inspect", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: INSPECT.width, panelHeight: INSPECT.height, onDismiss: () => this.closeModal() });

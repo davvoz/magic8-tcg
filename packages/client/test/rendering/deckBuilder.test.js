@@ -33,7 +33,7 @@ function harness(overrides = {}) {
     deckSelection: new DeckSelectionService({ content, repository, logger }),
     deckBuilding: new DeckBuildingService({ content, repository }),
     matchSetup: {},
-    createSeed: () => 1,
+    createSeed: () => "9f".repeat(32),
     logger,
     environment: { version: "test", storage: "memory" },
   };

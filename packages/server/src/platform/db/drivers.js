@@ -25,7 +25,9 @@ function parseInt8(text) {
   return value;
 }
 
-/** @implements {import("./Database.js").SqlDriver} */
+/** @typedef {import("./Database.js").SqlDriver} SqlDriver */
+
+/** @implements {SqlDriver} */
 export class PgDriver {
   #pool;
 
@@ -87,7 +89,7 @@ export class PgDriver {
   }
 }
 
-/** @implements {import("./Database.js").SqlDriver} */
+/** @implements {SqlDriver} */
 export class PGliteDriver {
   #db;
   /** @type {Promise<unknown>} */

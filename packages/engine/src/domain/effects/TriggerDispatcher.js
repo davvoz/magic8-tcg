@@ -28,6 +28,7 @@ export function playTriggerFor(definition) {
 export function enqueuePlayTriggers(card, chosenTargets, state, context) {
   let chosenIndex = 0;
   for (const ability of card.definition.abilitiesFor(playTriggerFor(card.definition))) {
+    /** @type {readonly string[]} */
     let targetIds = [];
     if (ability.target?.isAutomatic) {
       targetIds = resolveAutomaticTargets(state, ability.target, { controllerId: card.controllerId, excludeId: card.instanceId });

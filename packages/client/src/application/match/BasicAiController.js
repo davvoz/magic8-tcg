@@ -24,6 +24,12 @@ import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
 import { ControllerKind } from "./PlayerController.contract.js";
 
 /** @typedef {import("@magic8/engine/domain/game/GameSnapshot.js").CardView} CardView */
+/** @typedef {ReturnType<import("@magic8/engine/domain/game/GameEngine.js").GameEngine["getSnapshot"]>} Snapshot */
+/** @typedef {Snapshot["players"][number]} PlayerView */
+/**
+ * The snapshot of the player to move, whose legal moves are known.
+ * @typedef {Snapshot & { legalMoves: NonNullable<Snapshot["legalMoves"]> }} MoveSnapshot
+ */
 
 const DAMAGE = "deal_damage";
 const DRAIN = "drain";
@@ -37,7 +43,7 @@ export class BasicAiController {
   kind = ControllerKind.AI;
 
   /**
-   * @param {ReturnType<import("@magic8/engine/domain/game/GameEngine.js").GameEngine["getSnapshot"]>} snapshot
+   * @param {Snapshot} snapshot
    * @returns {Readonly<Record<string, unknown>> | null}
    */
   decide(snapshot) {
@@ -45,22 +51,23 @@ export class BasicAiController {
     if (me === null || snapshot.isOver || snapshot.awaitingPlayerId !== me || snapshot.legalMoves === null) {
       return null;
     }
-    const board = boardFor(snapshot, me);
-    switch (snapshot.phase) {
+    const moving = /** @type {MoveSnapshot} */ (snapshot);
+    const board = boardFor(moving, me);
+    switch (moving.phase) {
       case GamePhase.MAIN_1:
       case GamePhase.MAIN_2:
-        return this.#mainPhase(snapshot, board);
+        return this.#mainPhase(moving, board);
       case GamePhase.COMBAT_ATTACKERS:
-        return declareAttackers(me, chooseAttackers(snapshot, board));
+        return declareAttackers(me, chooseAttackers(moving, board));
       case GamePhase.COMBAT_BLOCKERS:
-        return declareBlockers(me, chooseBlocks(snapshot, board));
+        return declareBlockers(me, chooseBlocks(moving, board));
       default:
         return null;
     }
   }
 
   /**
-   * @param {ReturnType<import("@magic8/engine/domain/game/GameEngine.js").GameEngine["getSnapshot"]>} snapshot
+   * @param {MoveSnapshot} snapshot
    * @param {Board} board
    */
   #mainPhase(snapshot, board) {
@@ -79,21 +86,22 @@ export class BasicAiController {
 }
 
 /**
- * @typedef {{ me: ReturnType<import("@magic8/engine/domain/game/GameEngine.js").GameEngine["getSnapshot"]>["players"][number], enemy: ReturnType<import("@magic8/engine/domain/game/GameEngine.js").GameEngine["getSnapshot"]>["players"][number] }} Board
+ * The player to move (whose hand is always revealed to them) and the opponent.
+ * @typedef {{ me: PlayerView & { hand: NonNullable<PlayerView["hand"]> }, enemy: PlayerView }} Board
  */
 
 /**
- * @param {ReturnType<import("@magic8/engine/domain/game/GameEngine.js").GameEngine["getSnapshot"]>} snapshot
+ * @param {Snapshot} snapshot
  * @param {string} me
  * @returns {Board}
  */
 function boardFor(snapshot, me) {
   const mine = snapshot.players.find((player) => player.id === me);
   const theirs = snapshot.players.find((player) => player.id !== me);
-  if (mine === undefined || theirs === undefined) {
+  if (mine === undefined || mine.hand === null || theirs === undefined) {
     throw new Error("BasicAiController: malformed snapshot");
   }
-  return { me: mine, enemy: theirs };
+  return { me: { ...mine, hand: mine.hand }, enemy: theirs };
 }
 
 /**
@@ -216,7 +224,7 @@ function choosePreferredTarget(effect, params, { creatures, players, board }) {
   if (effect === DAMAGE || effect === DRAIN) {
     return chooseDamageTarget(Number(params?.amount ?? 0), { creatures, players, board });
   }
-  if (REMOVAL.includes(effect)) {
+  if (effect !== undefined && REMOVAL.includes(effect)) {
     return strongest(enemies)?.instanceId;
   }
   if (effect === MODIFY_STATS && isDebuff(params)) {
@@ -297,7 +305,7 @@ function strongest(creatures) {
 }
 
 /**
- * @param {ReturnType<import("@magic8/engine/domain/game/GameEngine.js").GameEngine["getSnapshot"]>} snapshot
+ * @param {MoveSnapshot} snapshot
  * @param {Board} board
  * @returns {string[]}
  */
@@ -313,7 +321,7 @@ function chooseAttackers(snapshot, board) {
 }
 
 /**
- * @param {ReturnType<import("@magic8/engine/domain/game/GameEngine.js").GameEngine["getSnapshot"]>} snapshot
+ * @param {MoveSnapshot} snapshot
  * @param {Board} board
  * @returns {{ attackerId: string, blockerId: string }[]}
  */

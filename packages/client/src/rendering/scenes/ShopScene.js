@@ -1,12 +1,24 @@
 /**
- * The shop: what is on sale on the left; on the right the selected
- * product, what it contains, its pack odds, the quantity and Buy. Paying
- * goes through the wallet (Keychain shows the exact transfer); when the
- * order is fulfilled the cards received are revealed, pack by pack.
+ * The shop, in three shelves chosen with tabs on the left:
+ *
+ *   Packs    boosters of cards you do not know in advance, at a fixed price
+ *   Decks    complete preconstructed decks, priced at the sum of their cards
+ *   Singles  every card, priced by its rarity, standard or foil; filterable
+ *            by rarity
+ *
+ * (plus Offers, only when the server sells something else). On the right,
+ * the selected item: a pack's odds, a deck's card-by-card price, a card at
+ * full size with its finishes and the price list by rarity; then the
+ * quantity and Buy. Paying goes through the wallet (Keychain shows the exact
+ * transfer); when the order is fulfilled the cards received are revealed,
+ * pack by pack. Every price shown is the server's.
  */
-import { PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
+import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
+import { ShopCategory, deckBreakdown, mainOfferOf, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
+import { CardDetail } from "../cards/CardDetail.js";
 import { CardStrip } from "../cards/CardStrip.js";
 import { unknownCard } from "../cards/unknownCard.js";
+import { factionTones } from "../theme/Theme.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -19,10 +31,26 @@ import { ACTION, COLUMNS, HEADER, INSET, ROW, rowY, rowsHeight } from "./deckBui
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
-const LIST_ID = "shop.products";
+const LIST_ID = "shop.list";
+const ALL = "all";
 const LINE = 28;
+const TABS = Object.freeze({ top: 14, height: 46, gap: 8 });
+const FILTER = Object.freeze({ top: 70, height: 38, gap: 6 });
+const LIST_TOP = Object.freeze({ plain: 76, filtered: 122 });
+const PRICE_WIDTH = 170;
+const QUANTITY = Object.freeze({ height: 52, width: 80 });
 const BUY = Object.freeze({ height: 60, width: 420 });
+const SINGLE = Object.freeze({ card: Object.freeze({ width: 300, height: 442 }), finishHeight: 52, legendColumn: 120 });
+const DECK_LINE = 30;
 const REVEAL = Object.freeze({ width: 1100, height: 780, row: 44, gap: 6, packGap: 16 });
+const DETAIL_WIDTH = COLUMNS.right.width - 2 * INSET;
+/** Where the purchase controls start in the detail panel; everything else fits above. */
+const PURCHASE_TOP = COLUMNS.height - INSET - 2 * LINE - 8 - BUY.height - INSET - QUANTITY.height;
+
+const TAB_TITLES = Object.freeze({ [ShopCategory.PACKS]: "Packs", [ShopCategory.DECKS]: "Decks", [ShopCategory.SINGLES]: "Singles", [ShopCategory.OFFERS]: "Offers" });
+/** Rarities drawn in theme colours, commonest to rarest. */
+const RARITY_COLORS = Object.freeze({ common: "textMuted", uncommon: "success", rare: "resource", epic: "attack", legendary: "accent" });
+const EMPTY_SHELVES = shelvesOf({ products: [], dropTables: [], rarities: [], priceList: { asset: "", singles: [] } });
 
 /** What the player sees at each step of a purchase. */
 const STAGE_TEXT = Object.freeze({
@@ -32,13 +60,34 @@ const STAGE_TEXT = Object.freeze({
   [PurchaseStage.DONE]: () => "Done: your cards are in your collection.",
 });
 
+/**
+ * @typedef {import("../../application/ports/MarketApi.contract.js").Product} Product
+ * @typedef {import("../../application/shop/shopCatalog.js").SingleOffer} SingleOffer
+ * @typedef {import("../../application/shop/shopCatalog.js").Shelves} Shelves
+ */
+
+/** @param {string | null} rarity */
+const rarityColor = (rarity) => RARITY_COLORS[/** @type {keyof typeof RARITY_COLORS} */ (rarity ?? "")] ?? "textMuted";
+/** @param {Product} product */
+const priceText = (product) => `${priceOf(product).amount} ${priceOf(product).asset}`;
+/** @param {number} count */
+const cardsText = (count) => `${count} card${count === 1 ? "" : "s"}`;
+
 export class ShopScene extends Scene {
   #app;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
-  /** @type {string | null} */
-  #selectedId = null;
+  /** The shelf shown (a ShopCategory). @type {string} */
+  #category = ShopCategory.PACKS;
+  /** Rarity shown among singles, or "all". @type {string} */
+  #rarity = ALL;
+  /** The selected entry of each shelf: a product id, or a card id among singles. @type {Record<string, string | null>} */
+  #selected = { [ShopCategory.PACKS]: null, [ShopCategory.DECKS]: null, [ShopCategory.SINGLES]: null, [ShopCategory.OFFERS]: null };
+  /** The foil finish is chosen for the selected single. */
+  #foil = false;
   #quantity = 1;
+  /** The list starts from the top on the next rebuild (another shelf or filter). */
+  #scrollToTop = false;
   /** The reveal of the last fulfilled order was closed. */
   #revealClosed = false;
 
@@ -84,29 +133,48 @@ export class ShopScene extends Scene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
-    const list = this.root.findById(LIST_ID);
-    const scrollY = list instanceof ScrollList ? list.scrollY : 0;
+    const scrollY = this.#takeScroll();
     this.closeModal();
     this.root.clear();
-    const products = this.#shop().state.listing?.products ?? [];
-    this.#keepSelectionIn(products);
+    const shelves = this.#shelves();
     const back = this.#buildHeader();
-    const firstRow = this.#buildProducts(products, scrollY);
-    const buy = this.#buildDetail(products.find((product) => product.id === this.#selectedId));
+    const listPanel = this.root.add(new Panel({ x: COLUMNS.left.x, y: COLUMNS.top, width: COLUMNS.left.width, height: COLUMNS.height }));
+    const firstControl = this.#buildShelfControls(listPanel, shelves);
+    const firstRow = this.#buildList(listPanel, shelves, scrollY);
+    const buy = this.#buildDetail(shelves);
     const reveal = this.#openRevealIfDone();
-    this.focus(reveal ?? this.root.findById(focusedId) ?? buy ?? firstRow ?? back);
+    this.focus(reveal ?? this.root.findById(focusedId) ?? buy ?? firstRow ?? firstControl ?? back);
     this.services.requestRender();
   }
 
-  /**
-   * The selected product stays selected while it is on sale; otherwise the first one is.
-   * @param {readonly import("../../application/ports/MarketApi.contract.js").Product[]} products
-   */
-  #keepSelectionIn(products) {
-    if (!products.some((product) => product.id === this.#selectedId)) {
-      this.#selectedId = products[0]?.id ?? null;
-      this.#quantity = 1;
+  /** Where the list was scrolled, or the top after a change of shelf or filter. */
+  #takeScroll() {
+    const list = this.root.findById(LIST_ID);
+    const scrollY = list instanceof ScrollList && !this.#scrollToTop ? list.scrollY : 0;
+    this.#scrollToTop = false;
+    return scrollY;
+  }
+
+  /** The listing's shelves; the Offers shelf is left when it empties. */
+  #shelves() {
+    const listing = this.#shop().state.listing;
+    const shelves = listing === null ? EMPTY_SHELVES : shelvesOf(listing);
+    if (this.#category === ShopCategory.OFFERS && shelves.offers.length === 0) {
+      this.#category = ShopCategory.PACKS;
     }
+    return shelves;
+  }
+
+  /**
+   * The tabs, and the rarity filter on the Singles shelf.
+   * @param {Panel} panel
+   * @param {Shelves} shelves
+   * @returns {Button | null} the first filter, else the first tab
+   */
+  #buildShelfControls(panel, shelves) {
+    const firstTab = this.#buildTabs(panel, shelves);
+    const rarities = this.#shop().state.listing?.rarities ?? [];
+    return this.#category === ShopCategory.SINGLES ? this.#buildRarityFilter(panel, rarities) : firstTab;
   }
 
   /** @returns {Button} */
@@ -120,78 +188,293 @@ export class ShopScene extends Scene {
   }
 
   /**
-   * @param {readonly import("../../application/ports/MarketApi.contract.js").Product[]} products
-   * @param {number} scrollY
-   * @returns {Button | null}
+   * @param {Panel} panel
+   * @param {Shelves} shelves
+   * @returns {Button | null} the first tab
    */
-  #buildProducts(products, scrollY) {
-    const panel = this.root.add(new Panel({ x: COLUMNS.left.x, y: COLUMNS.top, width: COLUMNS.left.width, height: COLUMNS.height }));
-    const width = COLUMNS.left.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "For sale", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
-    const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: 60, width, height: COLUMNS.height - 60 - INSET }));
-    const { status, error } = this.#shop().state;
-    if (products.length === 0) {
-      const text = status === ShopStatus.FAILED ? `The shop could not be loaded: ${error?.message ?? "unknown error"}` : "Loading the shop…";
-      list.add(new Label({ id: "shop.empty", x: 0, y: 0, width: list.rowWidth, height: ROW.height, text, colorKey: status === ShopStatus.FAILED ? "danger" : "textMuted", fit: true }));
-      list.contentHeight = ROW.height;
-      return null;
-    }
+  #buildTabs(panel, shelves) {
+    const categories = [ShopCategory.PACKS, ShopCategory.DECKS, ShopCategory.SINGLES, ...(shelves.offers.length > 0 ? [ShopCategory.OFFERS] : [])];
+    const inner = COLUMNS.left.width - 2 * INSET;
+    const width = (inner - (categories.length - 1) * TABS.gap) / categories.length;
     /** @type {Button | null} */
     let first = null;
-    products.forEach((product, index) => {
-      const price = product.prices[0];
-      const row = list.add(
-        new OptionRow({
-          id: `shop.product.${product.id}`,
-          x: 0,
-          y: rowY(index),
-          width: list.rowWidth,
-          height: ROW.height,
-          text: product.name,
-          subtitle: `${price.amount} ${price.asset} · ${product.cards} card${product.cards === 1 ? "" : "s"} · ${product.kind}`,
-          selected: product.id === this.#selectedId,
-          onActivate: () => this.#select(product.id),
+    categories.forEach((category, index) => {
+      const count = category === ShopCategory.SINGLES ? shelves.singles.length : shelves[/** @type {"packs" | "decks" | "offers"} */ (category)].length;
+      const tab = panel.add(
+        new Button({
+          id: `shop.tab.${category}`,
+          x: INSET + index * (width + TABS.gap),
+          y: TABS.top,
+          width,
+          height: TABS.height,
+          text: count > 0 ? `${TAB_TITLES[category]} (${count})` : TAB_TITLES[category],
+          variant: category === this.#category ? "primary" : "secondary",
+          onActivate: () => this.#show(category),
         }),
       );
-      first ??= row;
+      first ??= tab;
     });
-    list.contentHeight = rowsHeight(products.length);
-    list.scrollTo(scrollY);
     return first;
   }
 
   /**
-   * @param {import("../../application/ports/MarketApi.contract.js").Product | undefined} product
+   * @param {Panel} panel
+   * @param {readonly string[]} rarities
+   * @returns {Button | null} the first filter
+   */
+  #buildRarityFilter(panel, rarities) {
+    const options = [ALL, ...rarities];
+    const inner = COLUMNS.left.width - 2 * INSET;
+    const width = (inner - (options.length - 1) * FILTER.gap) / options.length;
+    /** @type {Button | null} */
+    let first = null;
+    options.forEach((rarity, index) => {
+      const button = panel.add(
+        new Button({
+          id: `shop.rarity.${rarity}`,
+          x: INSET + index * (width + FILTER.gap),
+          y: FILTER.top,
+          width,
+          height: FILTER.height,
+          text: rarity,
+          variant: rarity === this.#rarity ? "primary" : "secondary",
+          textSize: "small",
+          onActivate: () => this.#filter(rarity),
+        }),
+      );
+      first ??= button;
+    });
+    return first;
+  }
+
+  /**
+   * The shelf's entries, keeping (or making) a selection among them.
+   * @param {Panel} panel
+   * @param {Shelves} shelves
+   * @param {number} scrollY
+   * @returns {Button | null} the first row
+   */
+  #buildList(panel, shelves, scrollY) {
+    const top = this.#category === ShopCategory.SINGLES ? LIST_TOP.filtered : LIST_TOP.plain;
+    const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: top, width: COLUMNS.left.width - 2 * INSET, height: COLUMNS.height - top - INSET }));
+    const keys = this.#entryKeys(shelves);
+    if (!keys.includes(this.#selected[this.#category] ?? "")) {
+      this.#selected[this.#category] = keys[0] ?? null;
+      this.#resetChoice();
+    }
+    if (keys.length === 0) {
+      const { status, error } = this.#shop().state;
+      const text = { [ShopStatus.FAILED]: `The shop could not be loaded: ${error?.message ?? "unknown error"}`, [ShopStatus.READY]: "Nothing on sale here right now." }[status] ?? "Loading the shop…";
+      list.add(new Label({ id: "shop.empty", x: 0, y: 0, width: list.rowWidth, height: ROW.height, text, colorKey: status === ShopStatus.FAILED ? "danger" : "textMuted", fit: true }));
+      list.contentHeight = ROW.height;
+      return null;
+    }
+    const rows = this.#category === ShopCategory.SINGLES ? this.#singleRows(list, this.#visibleSingles(shelves)) : this.#productRows(list, /** @type {readonly Product[]} */ (shelves[/** @type {"packs" | "decks" | "offers"} */ (this.#category)]));
+    list.contentHeight = rowsHeight(keys.length);
+    list.scrollTo(scrollY);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * @param {ScrollList} list
+   * @param {readonly Product[]} products
+   */
+  #productRows(list, products) {
+    return products.map((product, index) => {
+      const deck = this.#deckOf(product);
+      const subtitle = {
+        [ShopCategory.PACKS]: () => `${product.cards} unknown cards · ${priceText(product)}`,
+        [ShopCategory.DECKS]: () => `${cardsText(product.cards)} · ${deck?.faction ?? "deck"} · ${priceText(product)}`,
+      }[this.#category] ?? (() => `${cardsText(product.cards)} · ${priceText(product)}`);
+      return list.add(new OptionRow({ id: `shop.product.${product.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: product.name, subtitle: subtitle(), stripeColor: this.#stripeOf(deck), selected: product.id === this.#selected[this.#category], onActivate: () => this.#select(product.id) }));
+    });
+  }
+
+  /**
+   * A deck's row is striped in its faction's colour, a pack's in gold.
+   * @param {import("@magic8/engine/domain/decks/DeckList.js").DeckList | undefined} deck
+   */
+  #stripeOf(deck) {
+    const { theme } = this.services;
+    if (deck !== undefined) {
+      return factionTones(theme, deck.faction).base;
+    }
+    return this.#category === ShopCategory.PACKS ? theme.colors.accent : null;
+  }
+
+  /**
+   * A card strip per single, with its price as the button that selects it.
+   * @param {ScrollList} list
+   * @param {readonly SingleOffer[]} singles
+   */
+  #singleRows(list, singles) {
+    const stripWidth = list.rowWidth - PRICE_WIDTH - ACTION.gap;
+    return singles.map((offer, index) => {
+      const card = this.#app.content.catalog.get(offer.cardId);
+      const selected = offer.cardId === this.#selected[ShopCategory.SINGLES];
+      list.add(new CardStrip({ x: 0, y: rowY(index), width: stripWidth, height: ROW.height, card: card ?? unknownCard(offer.cardId), broken: card === undefined, muted: !selected }));
+      return list.add(new Button({ id: `shop.card.${offer.cardId}`, x: stripWidth + ACTION.gap, y: rowY(index), width: PRICE_WIDTH, height: ROW.height, text: priceText(mainOfferOf(offer)), variant: selected ? "primary" : "secondary", textSize: "small", onActivate: () => this.#select(offer.cardId) }));
+    });
+  }
+
+  /**
+   * @param {Shelves} shelves
    * @returns {Button | null} the Buy button
    */
-  #buildDetail(product) {
+  #buildDetail(shelves) {
     const panel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
+    const selected = this.#selected[this.#category];
+    if (this.#category === ShopCategory.SINGLES) {
+      const offer = shelves.singles.find((candidate) => candidate.cardId === selected);
+      return offer === undefined ? null : this.#buildSingleDetail(panel, offer);
+    }
+    const products = /** @type {readonly Product[]} */ (shelves[/** @type {"packs" | "decks" | "offers"} */ (this.#category)]);
+    const product = products.find((candidate) => candidate.id === selected);
     if (product === undefined) {
       return null;
     }
-    const width = COLUMNS.right.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: 14, width, height: 40, text: product.name, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    panel.add(new TextBlock({ x: INSET, y: 62, width, height: 3 * LINE, text: product.description, size: "small", colorKey: "textMuted" }));
-    const lines = [...this.#contentLines(product), ...this.#oddsLines(product)];
-    lines.forEach((line, index) => panel.add(new Label({ x: INSET, y: 150 + index * LINE, width, height: LINE, text: line.text, size: "small", align: "left", colorKey: line.colorKey, fit: true })));
+    this.#buildTitle(panel, product);
+    const deck = this.#deckOf(product);
+    if (deck !== undefined) {
+      this.#buildDeckContents(panel, product, deck, shelves.singles);
+    } else {
+      const lines = [...this.#contentLines(product), ...this.#oddsLines(product)];
+      lines.forEach((line, index) => panel.add(new Label({ x: INSET, y: 150 + index * LINE, width: DETAIL_WIDTH, height: LINE, text: line.text, size: "small", align: "left", colorKey: line.colorKey, fit: true })));
+    }
     return this.#buildPurchase(panel, product);
   }
 
   /**
    * @param {Panel} panel
-   * @param {import("../../application/ports/MarketApi.contract.js").Product} product
+   * @param {Product} product
+   */
+  #buildTitle(panel, product) {
+    panel.add(new Label({ x: INSET, y: 14, width: DETAIL_WIDTH, height: 40, text: product.name, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new TextBlock({ x: INSET, y: 62, width: DETAIL_WIDTH, height: 3 * LINE, text: product.description, size: "small", colorKey: "textMuted" }));
+  }
+
+  /**
+   * A deck's cards with what each costs as a single; the deck costs their sum.
+   * @param {Panel} panel
+   * @param {Product} product
+   * @param {import("@magic8/engine/domain/decks/DeckList.js").DeckList} deck
+   * @param {readonly SingleOffer[]} singles
+   */
+  #buildDeckContents(panel, product, deck, singles) {
+    const { lines, total } = deckBreakdown(deck.entries, singles);
+    const top = 150;
+    const bottom = PURCHASE_TOP - INSET - LINE;
+    panel.add(new Label({ x: INSET, y: top, width: DETAIL_WIDTH, height: LINE, text: `${deck.faction} deck · ${cardsText(product.cards)}, ${lines.length} different · price of each card as a single:`, size: "small", align: "left", colorKey: "accentLight", fit: true }));
+    const list = panel.add(new ScrollList({ id: "shop.deckCards", x: INSET, y: top + LINE + 6, width: DETAIL_WIDTH, height: bottom - top - LINE - 6 }));
+    const amountWidth = 150;
+    const rarityWidth = 130;
+    const nameWidth = list.rowWidth - rarityWidth - amountWidth;
+    lines.forEach((line, index) => {
+      const y = index * DECK_LINE;
+      const name = this.#app.content.catalog.get(line.cardId)?.name ?? line.cardId;
+      const each = line.unit === null ? "" : ` (${line.unit} each)`;
+      list.add(new Label({ x: 0, y, width: nameWidth, height: DECK_LINE, text: `${line.count} × ${name}${line.count > 1 ? each : ""}`, size: "small", align: "left", fit: true }));
+      list.add(new Label({ x: nameWidth, y, width: rarityWidth, height: DECK_LINE, text: line.rarity ?? "", size: "small", align: "left", colorKey: rarityColor(line.rarity) }));
+      list.add(new Label({ x: nameWidth + rarityWidth, y, width: amountWidth, height: DECK_LINE, text: line.amount ?? "not sold alone", size: "small", align: "right", colorKey: line.amount === null ? "textMuted" : "text" }));
+    });
+    list.contentHeight = lines.length * DECK_LINE;
+    const sum = total === null ? "" : `Sum of the cards: ${total} ${priceOf(product).asset} · `;
+    panel.add(new Label({ id: "shop.deckTotal", x: INSET, y: bottom, width: DETAIL_WIDTH, height: LINE, text: `${sum}Deck price: ${priceText(product)}`, size: "small", weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
+  }
+
+  /**
+   * A single: the card at full size; beside it its rarity, how many you own,
+   * the finish (standard or foil) and the price list by rarity.
+   * @param {Panel} panel
+   * @param {SingleOffer} offer
+   * @returns {Button} the Buy button
+   */
+  #buildSingleDetail(panel, offer) {
+    const card = this.#app.content.catalog.get(offer.cardId);
+    if (card !== undefined) {
+      panel.add(new CardDetail({ id: "shop.cardDetail", x: INSET, y: INSET, width: SINGLE.card.width, height: SINGLE.card.height, card }));
+    }
+    const x = INSET + SINGLE.card.width + INSET;
+    const width = COLUMNS.right.width - x - INSET;
+    panel.add(new Label({ x, y: INSET, width, height: 40, text: card?.name ?? offer.cardId, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Label({ id: "shop.rarity", x, y: INSET + 44, width, height: LINE, text: offer.rarity ?? "", weight: "bold", align: "left", colorKey: rarityColor(offer.rarity) }));
+    const owned = this.#ownedCopies(offer.cardId);
+    if (owned !== null) {
+      panel.add(new Label({ id: "shop.owned", x, y: INSET + 44 + LINE, width, height: LINE, text: owned === 0 ? "Not in your collection yet" : `You own ${owned}`, size: "small", align: "left", colorKey: "textMuted" }));
+    }
+    const finishY = INSET + 44 + 2 * LINE + 16;
+    const half = (width - ACTION.gap) / 2;
+    const finishes = [
+      { id: "standard", title: "Standard", product: offer.standard, foil: false },
+      { id: "foil", title: "Foil", product: offer.foil, foil: true },
+    ];
+    finishes.forEach((finish, index) => {
+      const text = finish.product === null ? `${finish.title}: not sold` : `${finish.title} · ${priceOf(finish.product).amount}`;
+      panel.add(new Button({ id: `shop.finish.${finish.id}`, x: x + index * (half + ACTION.gap), y: finishY, width: half, height: SINGLE.finishHeight, text, textSize: "small", variant: this.#foil === finish.foil ? "primary" : "secondary", enabled: finish.product !== null, onActivate: () => this.#chooseFinish(finish.foil) }));
+    });
+    this.#buildPriceLegend(panel, { x, y: finishY + SINGLE.finishHeight + INSET, width }, offer.rarity);
+    return this.#buildPurchase(panel, this.#chosenSingle(offer));
+  }
+
+  /**
+   * What a single costs, by rarity and finish (the server's price list).
+   * @param {Panel} panel
+   * @param {{ x: number, y: number, width: number }} area
+   * @param {string | null} current the rarity of the card shown
+   */
+  #buildPriceLegend(panel, { x, y, width }, current) {
+    const priceList = this.#shop().state.listing?.priceList;
+    if (priceList === undefined) {
+      return;
+    }
+    const column = SINGLE.legendColumn;
+    /** @type {readonly { width: number, align: CanvasTextAlign }[]} */
+    const columns = [
+      { width: width - 2 * column, align: "left" },
+      { width: column, align: "right" },
+      { width: column, align: "right" },
+    ];
+    panel.add(new Label({ x, y, width, height: LINE, text: `Single prices (${priceList.asset})`, size: "small", weight: "bold", align: "left", colorKey: "accentLight" }));
+    /** @type {{ text: string, colorKey: string, weight: "normal" | "bold" }[][]} */
+    const rows = [
+      ["Rarity", "Standard", "Foil"].map((text) => ({ text, colorKey: "textMuted", weight: /** @type {const} */ ("normal") })),
+      ...priceList.singles.map((price) => {
+        /** @type {"normal" | "bold"} */
+        const weight = price.rarity === current ? "bold" : "normal";
+        return [
+          { text: price.rarity, colorKey: rarityColor(price.rarity), weight },
+          { text: price.standard, colorKey: "text", weight },
+          { text: price.foil ?? "—", colorKey: "text", weight },
+        ];
+      }),
+    ];
+    rows.forEach((cells, row) => {
+      let cellX = x;
+      cells.forEach((cell, index) => {
+        const { width: cellWidth, align } = columns[index];
+        panel.add(new Label({ x: cellX, y: y + (row + 1) * LINE, width: cellWidth, height: LINE, text: cell.text, size: "small", align, colorKey: cell.colorKey, weight: cell.weight }));
+        cellX += cellWidth;
+      });
+    });
+  }
+
+  /**
+   * Quantity, Buy and the purchase's progress, at the bottom of the detail panel.
+   * @param {Panel} panel
+   * @param {Product} product
+   * @returns {Button} the Buy button
    */
   #buildPurchase(panel, product) {
     const shop = this.#shop();
     const { purchase } = shop.state;
-    const price = product.prices[0];
-    const y = COLUMNS.height - INSET - BUY.height - 2 * LINE - INSET - 52;
-    const quantityY = y;
-    panel.add(new Button({ id: "shop.less", x: INSET, y: quantityY, width: ACTION.small, height: 52, text: "−", enabled: this.#quantity > 1, onActivate: () => this.#changeQuantity(-1, product) }));
-    panel.add(new Label({ id: "shop.quantity", x: INSET + ACTION.small, y: quantityY, width: 80, height: 52, text: String(this.#quantity), size: "heading", weight: "bold" }));
-    panel.add(new Button({ id: "shop.more", x: INSET + ACTION.small + 80, y: quantityY, width: ACTION.small, height: 52, text: "+", enabled: this.#quantity < product.perOrder, onActivate: () => this.#changeQuantity(1, product) }));
-    const total = `${multiplyAmount(price.amount, this.#quantity)} ${price.asset}`;
-    const buyY = quantityY + 52 + INSET;
+    const quantityY = PURCHASE_TOP;
+    panel.add(new Button({ id: "shop.less", x: INSET, y: quantityY, width: ACTION.small, height: QUANTITY.height, text: "−", enabled: this.#quantity > 1, onActivate: () => this.#changeQuantity(-1, product) }));
+    panel.add(new Label({ id: "shop.quantity", x: INSET + ACTION.small, y: quantityY, width: QUANTITY.width, height: QUANTITY.height, text: String(this.#quantity), size: "heading", weight: "bold" }));
+    panel.add(new Button({ id: "shop.more", x: INSET + ACTION.small + QUANTITY.width, y: quantityY, width: ACTION.small, height: QUANTITY.height, text: "+", enabled: this.#quantity < product.perOrder, onActivate: () => this.#changeQuantity(1, product) }));
+    const each = this.#quantity > 1 ? `${this.#quantity} × ${priceText(product)}` : `Up to ${product.perOrder} per order`;
+    panel.add(new Label({ id: "shop.each", x: INSET + 2 * ACTION.small + QUANTITY.width + INSET, y: quantityY, width: DETAIL_WIDTH - 2 * ACTION.small - QUANTITY.width - INSET, height: QUANTITY.height, text: each, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    const price = priceOf(product);
+    const buyY = quantityY + QUANTITY.height + INSET;
     const buy = panel.add(
       new Button({
         id: "shop.buy",
@@ -199,14 +482,14 @@ export class ShopScene extends Scene {
         y: buyY,
         width: BUY.width,
         height: BUY.height,
-        text: `Buy for ${total}`,
+        text: `Buy for ${multiplyAmount(price.amount, this.#quantity)} ${price.asset}`,
         variant: "primary",
         enabled: this.#canBuy(),
         onActivate: () => shop.buy({ productId: product.id, quantity: this.#quantity, asset: price.asset }),
       }),
     );
     const status = this.#statusLine(purchase);
-    panel.add(new TextBlock({ id: "shop.status", x: INSET, y: buyY + BUY.height + 8, width: COLUMNS.right.width - 2 * INSET, height: 2 * LINE, text: status.text, size: "small", colorKey: status.colorKey }));
+    panel.add(new TextBlock({ id: "shop.status", x: INSET, y: buyY + BUY.height + 8, width: DETAIL_WIDTH, height: 2 * LINE, text: status.text, size: "small", colorKey: status.colorKey }));
     if (purchase.stage === PurchaseStage.FAILED && purchase.order?.payment) {
       const x = INSET + BUY.width + INSET;
       const half = (COLUMNS.right.width - x - INSET - ACTION.gap) / 2;
@@ -218,7 +501,7 @@ export class ShopScene extends Scene {
 
   #canBuy() {
     const shop = this.#shop();
-    const busy = [PurchaseStage.ORDERING, PurchaseStage.SIGNING, PurchaseStage.CONFIRMING].includes(shop.state.purchase.stage);
+    const busy = BUSY_STAGES.includes(shop.state.purchase.stage);
     return shop.state.status === ShopStatus.READY && (this.#app.account?.state.account ?? null) !== null && !busy;
   }
 
@@ -237,14 +520,17 @@ export class ShopScene extends Scene {
     return (this.#app.account?.state.account ?? null) === null ? { text: "Sign in to buy.", colorKey: "textMuted" } : { text: "Keychain will show the exact transfer before anything is paid.", colorKey: "textMuted" };
   }
 
-  /** @param {import("../../application/ports/MarketApi.contract.js").Product} product */
+  /**
+   * What a pack or an offer contains.
+   * @param {Product} product
+   */
   #contentLines(product) {
     const { content } = this.#app;
     const listing = this.#shop().state.listing;
     /** @type {Record<string, (item: import("../../application/ports/MarketApi.contract.js").ProductContent) => string>} */
     const describe = {
       card: (item) => `${content.catalog.get(item.ref)?.name ?? item.ref}${item.finish === "foil" ? " (foil)" : ""}`,
-      pack: (item) => `booster pack of ${listing?.dropTables.find((table) => table.id === item.ref)?.size ?? 0} cards`,
+      pack: (item) => `pack of ${listing?.dropTables.find((table) => table.id === item.ref)?.size ?? 0} unknown cards, drawn when your payment is final`,
       deck: (item) => {
         const deck = content.preconDecks.find((candidate) => candidate.id === item.ref);
         return `complete deck: ${deck?.name ?? item.ref} (${deck?.totalCards ?? "?"} cards), saved to your account`;
@@ -256,7 +542,7 @@ export class ShopScene extends Scene {
 
   /**
    * Pack odds, as the server publishes them (products may nest packs in bundles).
-   * @param {import("../../application/ports/MarketApi.contract.js").Product} product
+   * @param {Product} product
    */
   #oddsLines(product) {
     const listing = this.#shop().state.listing;
@@ -267,8 +553,11 @@ export class ShopScene extends Scene {
         return [];
       }
       const slots = table.slots.map((slot, index) => {
-        const odds = Object.entries(slot.odds).map(([rarity, chance]) => `${rarity} ${percent(chance)}`).join(" · ");
-        return { text: `Slot ${index + 1} (${slot.count} card${slot.count === 1 ? "" : "s"}): ${odds}`, colorKey: "textMuted" };
+        const odds = Object.entries(slot.odds)
+          .sort(([left], [right]) => (listing?.rarities.indexOf(left) ?? 0) - (listing?.rarities.indexOf(right) ?? 0))
+          .map(([rarity, chance]) => `${rarity} ${percent(chance)}`)
+          .join(" · ");
+        return { text: `Slot ${index + 1} (${cardsText(slot.count)}): ${odds}`, colorKey: "textMuted" };
       });
       return [{ text: "Pack odds", colorKey: "accentLight" }, ...slots, { text: `Each card is foil with probability ${percent(table.foil)}. Packs are provably fair: see /api/pack-epochs.`, colorKey: "textMuted" }];
     });
@@ -290,7 +579,7 @@ export class ShopScene extends Scene {
     const { panel } = modal;
     const width = REVEAL.width - 2 * INSET;
     const total = fulfilment.cards.length + fulfilment.packs.reduce((sum, pack) => sum + pack.cards.length, 0);
-    panel.add(new Label({ x: INSET, y: INSET, width, height: 44, text: `You received ${total} card${total === 1 ? "" : "s"}`, size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
+    panel.add(new Label({ x: INSET, y: INSET, width, height: 44, text: `You received ${cardsText(total)}`, size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
     this.#buildRevealList(panel.add(new ScrollList({ id: "reveal.cards", x: INSET, y: 80, width, height: REVEAL.height - 80 - 2 * INSET - 56 })), fulfilment);
     const buttonWidth = (width - ACTION.gap) / 2;
     const buttonsY = REVEAL.height - INSET - 56;
@@ -340,16 +629,90 @@ export class ShopScene extends Scene {
     list.contentHeight = y;
   }
 
-  /** @param {string} productId */
-  #select(productId) {
-    this.#selectedId = productId;
+  /**
+   * Keys of the current shelf's entries, in list order.
+   * @param {Shelves} shelves
+   * @returns {string[]}
+   */
+  #entryKeys(shelves) {
+    if (this.#category === ShopCategory.SINGLES) {
+      return this.#visibleSingles(shelves).map((offer) => offer.cardId);
+    }
+    return shelves[/** @type {"packs" | "decks" | "offers"} */ (this.#category)].map((product) => product.id);
+  }
+
+  /** @param {Shelves} shelves */
+  #visibleSingles(shelves) {
+    return shelves.singles.filter((offer) => this.#rarity === ALL || offer.rarity === this.#rarity);
+  }
+
+  /**
+   * The selected single in the chosen finish (standard when foil is not sold).
+   * @param {SingleOffer} offer
+   * @returns {Product}
+   */
+  #chosenSingle(offer) {
+    return (this.#foil ? offer.foil : offer.standard) ?? mainOfferOf(offer);
+  }
+
+  /**
+   * The preconstructed deck a product sells, if it sells exactly one.
+   * @param {Product} product
+   */
+  #deckOf(product) {
+    const [only] = product.contents;
+    return product.contents.length === 1 && only.type === "deck" ? this.#app.content.preconDecks.find((deck) => deck.id === only.ref) : undefined;
+  }
+
+  /**
+   * Copies of a card the signed-in player owns; null when signed out.
+   * @param {string} cardId
+   */
+  #ownedCopies(cardId) {
+    const account = this.#app.account;
+    if (account === undefined || account.state.account === null) {
+      return null;
+    }
+    return account.collection.state.cards.find((entry) => entry.definitionId === cardId)?.copies.length ?? 0;
+  }
+
+  /** @param {string} category */
+  #show(category) {
+    this.#category = category;
+    this.#resetChoice();
+    this.#scrollToTop = true;
+    this.#rebuild();
+  }
+
+  /** @param {string} rarity */
+  #filter(rarity) {
+    this.#rarity = rarity;
+    this.#scrollToTop = true;
+    this.#rebuild();
+  }
+
+  /** @param {string} key a product id, or a card id among singles */
+  #select(key) {
+    this.#selected[this.#category] = key;
+    this.#resetChoice();
+    this.#rebuild();
+  }
+
+  /** @param {boolean} foil */
+  #chooseFinish(foil) {
+    this.#foil = foil;
     this.#quantity = 1;
     this.#rebuild();
   }
 
+  #resetChoice() {
+    this.#foil = false;
+    this.#quantity = 1;
+  }
+
   /**
    * @param {number} delta
-   * @param {import("../../application/ports/MarketApi.contract.js").Product} product
+   * @param {Product} product
    */
   #changeQuantity(delta, product) {
     this.#quantity = Math.min(product.perOrder, Math.max(1, this.#quantity + delta));
@@ -366,8 +729,8 @@ export class ShopScene extends Scene {
 
 /**
  * Drop tables a product's packs come from, following bundles.
- * @param {import("../../application/ports/MarketApi.contract.js").Product} product
- * @param {readonly import("../../application/ports/MarketApi.contract.js").Product[]} products
+ * @param {Product} product
+ * @param {readonly Product[]} products
  * @param {number} [depth]
  * @returns {string[]}
  */
@@ -382,18 +745,6 @@ function packTablesOf(product, products, depth = 0) {
     const nested = item.type === "product" ? products.find((candidate) => candidate.id === item.ref) : undefined;
     return nested === undefined ? [] : packTablesOf(nested, products, depth + 1);
   });
-}
-
-/**
- * Display only (the server's total is what gets paid): "1.000" × 3 → "3.000", exactly.
- * @param {string} amount
- * @param {number} times
- */
-export function multiplyAmount(amount, times) {
-  const [whole, fraction = ""] = amount.split(".");
-  const units = BigInt(`${whole}${fraction}`) * BigInt(times);
-  const digits = units.toString().padStart(fraction.length + 1, "0");
-  return fraction.length === 0 ? digits : `${digits.slice(0, -fraction.length)}.${digits.slice(-fraction.length)}`;
 }
 
 /** @param {{ numerator: number, denominator: number }} chance */

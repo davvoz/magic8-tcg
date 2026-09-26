@@ -259,6 +259,7 @@ function sendRouteResponse(response, result) {
  * @param {AppError} error
  */
 function sendError(response, error) {
+  /** @type {Record<string, string>} */
   const headers = error.code === "RATE_LIMITED" && error.details !== null ? { "Retry-After": String(error.details.retryAfterSeconds) } : {};
   sendJson(response, error.status, { error: { code: error.code, message: error.message, ...(error.details === null ? {} : { details: error.details }) } }, headers);
 }

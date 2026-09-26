@@ -10,8 +10,6 @@
  *
  * Integers are drawn by rejection sampling, so `nextInt(n)` is exactly
  * uniform (no modulo bias).
- *
- * @implements {import("./RandomSource.contract.js").RandomSource}
  */
 import { chacha20Block } from "../../shared/chacha20.js";
 import { bytesToHex, hexToBytes, isHexOfLength } from "../../shared/bytes.js";
@@ -27,6 +25,9 @@ const UINT32_RANGE = 0x100000000;
  * the current block (16 when no block is buffered).
  */
 
+/** @typedef {import("./RandomSource.contract.js").RandomSource} RandomSource */
+
+/** @implements {RandomSource} */
 export class ChaChaRandom {
   /** @type {Uint8Array} */
   #key;

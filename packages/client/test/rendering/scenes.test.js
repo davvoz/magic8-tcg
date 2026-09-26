@@ -174,7 +174,7 @@ describe("MainMenuScene", () => {
     deckSelection: { listDecks: () => [{ source: "preconstructed" }, { source: "custom" }] },
     deckBuilding: {},
     matchSetup: {},
-    createSeed: () => 1,
+    createSeed: () => "9f".repeat(32),
     logger: new MemoryLogger(),
     environment: { version: "test", storage },
   });

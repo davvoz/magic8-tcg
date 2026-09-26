@@ -28,7 +28,9 @@ function toEntry(row) {
   });
 }
 
-/** @implements {import("../../kernel/audit/AuditTrail.js").AuditStore} */
+/** @typedef {import("../../kernel/audit/AuditTrail.js").AuditStore} AuditStore */
+
+/** @implements {AuditStore} */
 export class PgAuditStore {
   #db;
 

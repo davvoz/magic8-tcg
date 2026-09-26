@@ -2,6 +2,8 @@
  * Marketplace module (MarketplaceService): products, drop tables, orders,
  * pack epochs, fulfilment. Other modules use only what is exported here.
  */
+
+/** @typedef {import("./domain/MarketCatalog.js").RawMarketData} RawMarketData */
 export { DEFAULT_MARKETPLACE_POLICY, MarketplaceService } from "./application/MarketplaceService.js";
 export { FulfilmentService } from "./application/FulfilmentService.js";
 export { PackEpochService } from "./application/PackEpochService.js";

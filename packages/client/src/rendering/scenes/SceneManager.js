@@ -8,6 +8,7 @@ export class SceneManager {
   #factories = new Map();
   /** @type {import("./Scene.js").Scene | null} */
   #current = null;
+  /** @type {string | null} */
   #currentId = null;
   #services;
   #requestRender;

@@ -24,15 +24,16 @@ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
  * @param {Issues} issues
  * @param {unknown} value
  * @param {string} path
- * @param {readonly string[]} keys
- * @returns {Record<string, number> | undefined}
+ * @template {string} K
+ * @param {readonly K[]} keys
+ * @returns {Record<K, number> | undefined}
  */
 function integers(issues, value, path, keys) {
   const object = checkObject(issues, value, path, keys);
   if (object === undefined) {
     return undefined;
   }
-  return Object.fromEntries(keys.map((key) => [key, /** @type {number} */ (checkInteger(issues, object[key], `${path}.${key}`, { min: 0, max: 1_000_000 }))]));
+  return /** @type {Record<K, number>} */ (Object.fromEntries(keys.map((key) => [key, checkInteger(issues, object[key], `${path}.${key}`, { min: 0, max: 1_000_000 })])));
 }
 
 /**
@@ -57,6 +58,9 @@ export function validateRankedSettings(raw) {
       const id = checkString(issues, season.id, `${path}.id`, { pattern: /^[a-z0-9-]{1,32}$/ });
       const name = checkString(issues, season.name, `${path}.name`, { minLength: 1, maxLength: 64 });
       const startsAt = checkString(issues, season.startsAt, `${path}.startsAt`, { pattern: ISO_UTC });
+      if (id === undefined || name === undefined) {
+        return undefined;
+      }
       return Object.freeze({ id, name, startsAt: startsAt === undefined ? Number.NaN : Date.parse(startsAt) });
     },
   });

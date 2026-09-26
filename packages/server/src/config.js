@@ -34,14 +34,14 @@ export function loadConfig(env) {
     allowedOrigins: Object.freeze([publicOrigin]),
     secure,
     trustProxy: parseBoolean(env.M8_TRUST_PROXY ?? "false", "M8_TRUST_PROXY"),
-    appName: env.M8_APP_NAME ?? "luciojolly",
+    appName: env.M8_APP_NAME ?? "verdu.green",
     logLevel: parseEnum(env.M8_LOG_LEVEL ?? "info", ["debug", "info", "warn", "error"], "M8_LOG_LEVEL"),
     steemNodes: Object.freeze(nodes),
     sessionCookieName: secure ? "__Host-m8_session" : "m8_session",
     maxBodyBytes: 16 * 1024,
     serveClient: parseBoolean(env.M8_SERVE_CLIENT ?? "true", "M8_SERVE_CLIENT"),
     databaseUrl: parseDatabaseUrl(env.M8_DATABASE_URL, secure),
-    shopAccounts: Object.freeze({ steem: parseAccount(env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_SHOP_ACCOUNT") }),
+    shopAccounts: Object.freeze({ steem: parseAccount(env.M8_SHOP_ACCOUNT ?? "verdu.green", "M8_SHOP_ACCOUNT") }),
     ...parseChainSettings(env),
     ...parseDataKeys(env, secure),
     ackKey: parseAckKey(env, secure),
@@ -109,10 +109,10 @@ function parseKeyHex(value, name) {
  */
 function parseChainSettings(env) {
   return {
-    rootAccounts: Object.freeze({ steem: parseAccount(env.M8_ROOT_ACCOUNT ?? "luciojolly", "M8_ROOT_ACCOUNT") }),
+    rootAccounts: Object.freeze({ steem: parseAccount(env.M8_ROOT_ACCOUNT ?? "verdu.green", "M8_ROOT_ACCOUNT") }),
     broadcasterKeys: parseBroadcasterKeys(env.M8_BROADCASTER_KEYS ?? ""),
     metricsToken: parseMetricsToken(env.M8_METRICS_TOKEN),
-    adminAccounts: Object.freeze({ steem: parseAccountList(env.M8_ADMIN_ACCOUNTS ?? env.M8_SHOP_ACCOUNT ?? "luciojolly", "M8_ADMIN_ACCOUNTS") }),
+    adminAccounts: Object.freeze({ steem: parseAccountList(env.M8_ADMIN_ACCOUNTS ?? env.M8_SHOP_ACCOUNT ?? "verdu.green", "M8_ADMIN_ACCOUNTS") }),
   };
 }
 

@@ -4,6 +4,7 @@
  */
 import {
   Issues,
+  allDefined,
   checkBoolean,
   checkEnum,
   checkInteger,
@@ -104,7 +105,7 @@ export function validateGameRules(raw) {
     return issues.toResult(undefined);
   }
   checkInteger(issues, object.schemaVersion, "gameRules.schemaVersion", { min: GAME_RULES_SCHEMA_VERSION, max: GAME_RULES_SCHEMA_VERSION });
-  const fields = {
+  const fields = allDefined({
     startingLife: checkInteger(issues, object.startingLife, "gameRules.startingLife", BOUNDS.life),
     startingHandSize: checkInteger(issues, object.startingHandSize, "gameRules.startingHandSize", BOUNDS.handSize),
     cardsDrawnPerTurn: checkInteger(issues, object.cardsDrawnPerTurn, "gameRules.cardsDrawnPerTurn", BOUNDS.draw),
@@ -115,8 +116,8 @@ export function validateGameRules(raw) {
     combat: checkCombat(issues, object.combat, "gameRules.combat"),
     emptyLibrary: checkEmptyLibrary(issues, object.emptyLibrary, "gameRules.emptyLibrary"),
     limits: checkLimits(issues, object.limits, "gameRules.limits"),
-  };
-  if (!issues.isEmpty) {
+  });
+  if (!issues.isEmpty || fields === undefined) {
     return issues.toResult(undefined);
   }
   return issues.toResult(new GameRules(fields));
@@ -136,7 +137,7 @@ function checkResource(issues, raw, path) {
   const gainPerTurn = checkInteger(issues, object.gainPerTurn, `${path}.gainPerTurn`, BOUNDS.resource);
   const max = checkInteger(issues, object.max, `${path}.max`, BOUNDS.resource);
   const startingMax = checkInteger(issues, object.startingMax ?? 0, `${path}.startingMax`, { min: 0, max: max ?? BOUNDS.resource.max });
-  return { type, gainPerTurn, max, startingMax };
+  return allDefined({ type, gainPerTurn, max, startingMax });
 }
 
 /**
@@ -149,11 +150,11 @@ function checkCombat(issues, raw, path) {
   if (object === undefined) {
     return undefined;
   }
-  return {
+  return allDefined({
     blockersEnabled: checkBoolean(issues, object.blockersEnabled, `${path}.blockersEnabled`),
     summoningSickness: checkBoolean(issues, object.summoningSickness, `${path}.summoningSickness`),
     maxBlockersPerAttacker: checkInteger(issues, object.maxBlockersPerAttacker, `${path}.maxBlockersPerAttacker`, BOUNDS.blockers),
-  };
+  });
 }
 
 /**
@@ -166,10 +167,10 @@ function checkEmptyLibrary(issues, raw, path) {
   if (object === undefined) {
     return undefined;
   }
-  return {
+  return allDefined({
     mode: checkEnum(issues, object.mode, `${path}.mode`, Object.values(EmptyLibraryMode)),
     damagePerDraw: checkInteger(issues, object.damagePerDraw ?? 0, `${path}.damagePerDraw`, BOUNDS.damage),
-  };
+  });
 }
 
 /**
@@ -182,8 +183,8 @@ function checkLimits(issues, raw, path) {
   if (object === undefined) {
     return undefined;
   }
-  return {
+  return allDefined({
     maxEffectsPerResolution: checkInteger(issues, object.maxEffectsPerResolution, `${path}.maxEffectsPerResolution`, BOUNDS.effects),
     maxEventsPerCommand: checkInteger(issues, object.maxEventsPerCommand, `${path}.maxEventsPerCommand`, BOUNDS.events),
-  };
+  });
 }

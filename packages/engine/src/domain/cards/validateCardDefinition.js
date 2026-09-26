@@ -97,7 +97,7 @@ function checkCard(issues, raw, path, context) {
   const keywords = checkKeywords(issues, object.keywords, `${path}.keywords`);
   const abilities = type === undefined ? undefined : checkAbilities(issues, object.abilities, `${path}.abilities`, { cardType: type, context });
 
-  if ([identity, type, cost, stats, keywords, abilities].some((part) => part === undefined)) {
+  if (identity === undefined || type === undefined || cost === undefined || stats === undefined || keywords === undefined || abilities === undefined) {
     return undefined;
   }
   return new CardDefinition({ ...identity, type, cost, ...stats, keywords, abilities });
@@ -197,7 +197,7 @@ function checkAbility(issues, raw, path, scope) {
   if (effect !== undefined && descriptor === undefined) {
     issues.add(`${path}.effect`, `unknown effect "${effect}"`);
   }
-  if (trigger === undefined || descriptor === undefined) {
+  if (trigger === undefined || effect === undefined || descriptor === undefined) {
     return undefined;
   }
   const params = scope.context.effects.validateParams(issues, effect, object.params, `${path}.params`);

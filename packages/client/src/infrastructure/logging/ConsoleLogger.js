@@ -4,7 +4,9 @@
  * Logger port so diagnostics can be redirected or silenced.
  */
 
-/** @implements {import("../../application/ports/Logger.contract.js").Logger} */
+/** @typedef {import("../../application/ports/Logger.contract.js").Logger} Logger */
+
+/** @implements {Logger} */
 export class ConsoleLogger {
   #prefix;
 

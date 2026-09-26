@@ -56,6 +56,26 @@ describe("marketplace orders over HTTP", () => {
     assert.match(table.hash, /^[0-9a-f]{64}$/);
     assert.deepEqual(table.odds[2].odds.legendary, { numerator: 2, denominator: 100 });
     assert.deepEqual(listing.json.rarities, ["common", "uncommon", "rare", "epic", "legendary"]);
+    assert.equal(booster.rarity, null);
+  });
+
+  it("sells every card by rarity, packs at a fixed price and decks at the sum of their cards", async () => {
+    const { json } = await new ApiClient(server.base).get("/api/products");
+    const byId = new Map(json.products.map((product) => [product.id, product]));
+    const common = json.priceList.singles.find((price) => price.rarity === "common");
+    assert.equal(json.priceList.asset, "STEEM");
+    assert.deepEqual(common, { rarity: "common", standard: "0.050", foil: "0.250" });
+    const drake = byId.get("single_pyre_drake");
+    assert.equal(drake.rarity, "rare");
+    assert.deepEqual(drake.prices, [{ asset: "STEEM", amount: "0.500" }]);
+    assert.deepEqual(byId.get("single_pyre_drake_foil").prices, [{ asset: "STEEM", amount: "2.500" }]);
+    assert.equal(json.products.filter((product) => product.kind === "single" && product.contents[0].finish === null).length, setup.app.marketplace.catalog.rarities.of.size, "every card is on sale");
+    assert.deepEqual(json.products.filter((product) => product.kind === "pack").map((pack) => [pack.id, pack.cards, pack.prices[0].amount]), [["core_booster", 5, "1.000"], ["core_mini_booster", 3, "0.500"]]);
+    const deck = byId.get("deck_precon_arcane");
+    assert.equal(deck.cards, 30);
+    assert.equal(deck.prices[0].amount, "10.750", "the sum of its 30 cards as singles");
+    assert.equal(byId.has("core_booster_box"), false, "retired products are not listed");
+    assert.equal((await order(aliceClient, { productId: "core_booster_box", quantity: 1, asset: "STEEM" })).status, 409, "nor sold");
   });
 
   it("prices the order on the server and returns payment instructions", async () => {
@@ -65,7 +85,7 @@ describe("marketplace orders over HTTP", () => {
     assert.equal(placed.status, "PAYMENT_PENDING");
     assert.deepEqual(placed.total, { asset: "STEEM", amount: "3.000" });
     assert.deepEqual(placed.items, [{ productId: "core_booster", name: "Core Booster", quantity: 3, unitAmount: "1.000" }]);
-    assert.equal(placed.payment.to, "luciojolly");
+    assert.equal(placed.payment.to, "verdu.green");
     assert.equal(placed.payment.from, "alice");
     assert.equal(placed.payment.amount, "3.000");
     assert.match(placed.payment.memo, /^m8tcg-[a-z2-7]{26}$/);
@@ -138,7 +158,7 @@ describe("marketplace orders over HTTP", () => {
   });
 
   it("shows an order only to its buyer, and cancels it once", async () => {
-    const created = await order(aliceClient, { productId: "deck_arcane_conclave", quantity: 1, asset: "STEEM" });
+    const created = await order(aliceClient, { productId: "deck_precon_arcane", quantity: 1, asset: "STEEM" });
     const id = created.json.order.id;
     assert.equal((await bobClient.get(`/api/orders/${id}`)).status, 404, "someone else's order does not exist");
     assert.equal((await bobClient.post(`/api/orders/${id}/cancel`, {})).status, 404);

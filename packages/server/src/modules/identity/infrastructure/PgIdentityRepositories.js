@@ -19,7 +19,9 @@ function toUser(row) {
   });
 }
 
-/** @implements {import("../application/ports.js").UserRepository} */
+/** @typedef {import("../application/ports.js").UserRepository} UserRepository */
+
+/** @implements {UserRepository} */
 export class PgUserRepository {
   #db;
 
@@ -87,7 +89,9 @@ function toChallenge(row) {
   });
 }
 
-/** @implements {import("../application/ports.js").ChallengeRepository} */
+/** @typedef {import("../application/ports.js").ChallengeRepository} ChallengeRepository */
+
+/** @implements {ChallengeRepository} */
 export class PgChallengeRepository {
   #db;
 
@@ -144,7 +148,9 @@ function toSession(row) {
   });
 }
 
-/** @implements {import("../application/ports.js").SessionRepository} */
+/** @typedef {import("../application/ports.js").SessionRepository} SessionRepository */
+
+/** @implements {SessionRepository} */
 export class PgSessionRepository {
   #db;
 
@@ -193,6 +199,11 @@ export class PgSessionRepository {
     return result.rowCount;
   }
 
+  /**
+   * @param {number} now
+   * @param {number} limit
+   * @param {{ userId: string, loginPublicKey: string } | null} [after]
+   */
   async listActiveLoginKeys(now, limit, after = null) {
     const rows = await this.#db.rows(
       `SELECT DISTINCT user_id, login_public_key FROM sessions

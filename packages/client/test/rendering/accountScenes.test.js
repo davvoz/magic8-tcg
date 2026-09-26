@@ -32,7 +32,7 @@ function harness(options = {}) {
     deckSelection: new DeckSelectionService({ content, repository: world.repository, logger: world.logger }),
     deckBuilding: world.builder,
     matchSetup: {},
-    createSeed: () => 1,
+    createSeed: () => "9f".repeat(32),
     logger: world.logger,
     environment: { version: "test", storage: "local" },
     identity: world.identity,

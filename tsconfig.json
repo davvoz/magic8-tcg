@@ -1,0 +1,19 @@
+{
+  // Type-checks the JSDoc annotations of the JavaScript sources; nothing is
+  // compiled or emitted. Run with `npm run typecheck`.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noImplicitAny": false
+  },
+  "include": ["packages/*/src/**/*.js"]
+}

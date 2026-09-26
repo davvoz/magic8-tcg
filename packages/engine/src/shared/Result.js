@@ -14,6 +14,11 @@
 
 /**
  * @template T
+ * @typedef {Ok<T> | Fail} Result
+ */
+
+/**
+ * @template T
  * @param {T} value
  * @returns {Ok<T>}
  */
@@ -39,5 +44,5 @@ export function fail(code, message, details) {
  * @returns {result is Ok<unknown>}
  */
 export function isOk(result) {
-  return typeof result === "object" && result !== null && result.ok === true;
+  return typeof result === "object" && result !== null && "ok" in result && result.ok === true;
 }

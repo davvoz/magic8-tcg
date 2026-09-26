@@ -45,10 +45,20 @@ function product(value) {
   const contents = all(value.contents, (content) =>
     isString(content.type) && isString(content.ref) && isCount(content.count) && (content.finish === null || isString(content.finish)) ? Object.freeze({ type: content.type, ref: content.ref, count: content.count, finish: content.finish }) : null,
   );
-  if (!isString(value.id) || !isString(value.kind) || !isString(value.name) || !isString(value.description) || prices === null || contents === null || !isCount(value.cards) || !isCount(value.limits?.perOrder)) {
+  const rarity = value.rarity ?? null;
+  const named = ["id", "kind", "name", "description"].every((key) => isString(value[key]));
+  if (!named || prices === null || contents === null || !(rarity === null || isString(rarity)) || !isCount(value.cards) || !isCount(value.limits?.perOrder)) {
     return null;
   }
-  return Object.freeze({ id: value.id, kind: value.kind, name: value.name, description: value.description, prices, contents, cards: value.cards, perOrder: value.limits.perOrder });
+  return Object.freeze({ id: value.id, kind: value.kind, name: value.name, description: value.description, prices, contents, rarity, cards: value.cards, perOrder: value.limits.perOrder });
+}
+
+/** @param {unknown} value */
+function priceList(value) {
+  const raw = /** @type {any} */ (value);
+  const isAmount = (amount) => isString(amount) && AMOUNT_PATTERN.test(amount);
+  const singles = isObject(raw) ? all(raw.singles, (entry) => (isString(entry.rarity) && isAmount(entry.standard) && (entry.foil === null || isAmount(entry.foil)) ? Object.freeze({ rarity: entry.rarity, standard: entry.standard, foil: entry.foil }) : null)) : null;
+  return singles !== null && isString(raw.asset) ? Object.freeze({ asset: raw.asset, singles }) : null;
 }
 
 /** @param {any} value */
@@ -124,7 +134,9 @@ function order(value) {
  */
 const shaped = (value) => (value === null ? fail(ApiFailure.BAD_RESPONSE, "unexpected response from the game server") : ok(value));
 
-/** @implements {import("../../application/ports/MarketApi.contract.js").MarketApi} */
+/** @typedef {import("../../application/ports/MarketApi.contract.js").MarketApi} MarketApi */
+
+/** @implements {MarketApi} */
 export class HttpMarketApi {
   #transport;
 
@@ -141,7 +153,9 @@ export class HttpMarketApi {
     const body = /** @type {any} */ (response.value);
     const products = all(body?.products, product);
     const dropTables = all(body?.dropTables, dropTable);
-    return shaped(products !== null && dropTables !== null ? Object.freeze({ products, dropTables }) : null);
+    const rarities = Array.isArray(body?.rarities) && body.rarities.every(isString) ? Object.freeze([...body.rarities]) : null;
+    const prices = priceList(body?.priceList);
+    return shaped(products !== null && dropTables !== null && rarities !== null && prices !== null ? Object.freeze({ products, dropTables, rarities, priceList: prices }) : null);
   }
 
   /**

@@ -26,7 +26,9 @@ function toInstance(row) {
   });
 }
 
-/** @implements {import("../application/ports.js").InventoryRepository} */
+/** @typedef {import("../application/ports.js").InventoryRepository} InventoryRepository */
+
+/** @implements {InventoryRepository} */
 export class PgInventoryRepository {
   #db;
 

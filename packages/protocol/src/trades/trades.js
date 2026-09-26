@@ -58,13 +58,14 @@ export function tradeRecord({ tradeId, proposer, counterparty }) {
  * @param {Issues} issues
  * @param {unknown} value
  * @param {string} path
+ * @returns {string | undefined} the side's account
  */
 function checkSide(issues, value, path) {
   const side = checkObject(issues, value, path, ["cards", "u"]);
   if (side === undefined) {
-    return;
+    return undefined;
   }
-  checkString(issues, side.u, `${path}.u`, { pattern: ACCOUNT_PATTERN });
+  const account = checkString(issues, side.u, `${path}.u`, { pattern: ACCOUNT_PATTERN });
   checkArrayOf(issues, side.cards, `${path}.cards`, {
     minLength: 0,
     maxLength: MAX_TRADE_CARDS,
@@ -80,6 +81,7 @@ function checkSide(issues, value, path) {
       return entry;
     },
   });
+  return account;
 }
 
 /**
@@ -102,9 +104,9 @@ export function parseTradeRecord(json) {
   if (record !== undefined) {
     checkInteger(issues, record.v, "trade.v", { min: TRADE_VERSION, max: TRADE_VERSION });
     checkString(issues, record.t, "trade.t", { pattern: UUID });
-    checkSide(issues, record.a, "trade.a");
-    checkSide(issues, record.b, "trade.b");
-    if (issues.isEmpty && record.a.u === record.b.u) {
+    const a = checkSide(issues, record.a, "trade.a");
+    const b = checkSide(issues, record.b, "trade.b");
+    if (issues.isEmpty && a === b) {
       issues.add("trade", "a player cannot trade with themselves");
     }
   }

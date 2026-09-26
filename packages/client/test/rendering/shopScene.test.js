@@ -11,7 +11,7 @@ import { DeckSelectionService } from "../../src/application/decks/DeckSelectionS
 import { PurchaseStage, ShopService } from "../../src/application/shop/ShopService.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
-import { ShopScene, multiplyAmount } from "../../src/rendering/scenes/ShopScene.js";
+import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
 import { fakeMarketApi } from "../application/fakeMarketApi.js";
@@ -39,7 +39,7 @@ async function harness({ signedIn = true } = {}) {
     deckSelection: new DeckSelectionService({ content, repository: world.repository, logger: world.logger }),
     deckBuilding: world.builder,
     matchSetup: {},
-    createSeed: () => 1,
+    createSeed: () => "9f".repeat(32),
     logger: world.logger,
     environment: { version: "test", storage: "local" },
     identity: world.identity,
@@ -66,42 +66,84 @@ function rendered(scene) {
 }
 
 describe("ShopScene", () => {
-  it("lists products with prices and shows a pack's odds", async () => {
+  it("opens on the packs, cheapest first, each with its fixed price and odds", async () => {
     const { scene } = await harness();
-    const booster = byId(scene, "shop.product.core_booster");
-    assert.equal(booster.subtitle, "1.000 STEEM · 5 cards · booster");
-    assert.equal(booster.selected, true, "the first product is selected");
-    const texts = rendered(scene);
-    assert.ok(texts.includes("1 × booster pack of 5 cards"));
-    assert.ok(texts.includes("Pack odds"));
-    assert.ok(texts.includes("Slot 3 (1 card): epic 10% · legendary 2% · rare 88%"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 1.000 STEEM");
+    assert.equal(byId(scene, "shop.tab.packs").variant, "primary");
+    assert.equal(byId(scene, "shop.tab.packs").text, "Packs (2)");
+    const mini = byId(scene, "shop.product.core_mini_booster");
+    assert.equal(mini.subtitle, "3 unknown cards · 0.500 STEEM");
+    assert.equal(mini.selected, true, "the first pack is selected");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 0.500 STEEM");
 
+    click(byId(scene, "shop.product.core_booster"));
+    const texts = rendered(scene);
+    assert.ok(texts.includes("1 × pack of 5 unknown cards, drawn when your payment is final"));
+    assert.ok(texts.includes("Pack odds"));
+    assert.ok(texts.includes("Slot 3 (1 card): rare 88% · epic 10% · legendary 2%"), "odds commonest first");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 1.000 STEEM");
+  });
+
+  it("sells complete decks at the sum of their cards as singles", async () => {
+    const { scene } = await harness();
+    click(byId(scene, "shop.tab.decks"));
+    const deck = byId(scene, "shop.product.deck_precon_arcane");
+    assert.equal(deck.subtitle, "30 cards · arcane · 10.750 STEEM");
+    assert.equal(byId(scene, "shop.deckTotal").text, "Sum of the cards: 10.750 STEEM · Deck price: 10.750 STEEM");
+    const texts = rendered(scene);
+    assert.ok(texts.includes(`2 × ${content.catalog.get("arcane_apprentice").name} (0.050 each)`));
+    assert.ok(texts.includes("0.100"));
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 10.750 STEEM");
+  });
+
+  it("sells every card by rarity, rarest first, filterable, in standard or foil", async () => {
+    const { scene, market } = await harness();
+    click(byId(scene, "shop.tab.singles"));
+    assert.equal(byId(scene, "shop.card.archmage_of_the_spire").variant, "primary", "a legendary comes first");
+    click(byId(scene, "shop.rarity.rare"));
+    assert.equal(byId(scene, "shop.card.arcane_apprentice"), null, "commons are filtered out");
+    click(byId(scene, "shop.card.pyre_drake"));
+    assert.equal(byId(scene, "shop.card.pyre_drake").text, "0.500 STEEM");
+    assert.equal(byId(scene, "shop.rarity").text, "rare");
+    assert.ok(byId(scene, "shop.owned"), "a signed-in player sees how many they own");
+    assert.ok(rendered(scene).includes("Single prices (STEEM)"));
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 0.500 STEEM");
+    assert.equal(byId(scene, "shop.finish.foil").text, "Foil · 2.500");
+
+    click(byId(scene, "shop.finish.foil"));
+    click(byId(scene, "shop.more"));
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 5.000 STEEM");
+    click(byId(scene, "shop.buy"));
+    await settle();
+    assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { productId: "single_pyre_drake_foil", quantity: 2, asset: "STEEM" });
+  });
+
+  it("shows other offers on their own shelf", async () => {
+    const { scene } = await harness();
+    click(byId(scene, "shop.tab.offers"));
     click(byId(scene, "shop.product.core_booster_box"));
     assert.ok(rendered(scene).includes("12 × Core Booster"));
     assert.ok(rendered(scene).includes("Pack odds"), "a bundle shows the odds of the packs inside");
-    click(byId(scene, "shop.product.single_pyre_drake_foil"));
-    assert.ok(rendered(scene).includes("1 × Pyre Drake (foil)"));
-    assert.equal(byId(scene, "shop.more").enabled, false, "one per order");
   });
 
   it("changes the quantity within the product's limit and shows the total", async () => {
     const { scene } = await harness();
+    click(byId(scene, "shop.product.core_booster"));
     assert.equal(byId(scene, "shop.less").enabled, false);
     click(byId(scene, "shop.more"));
     click(byId(scene, "shop.more"));
     assert.equal(byId(scene, "shop.quantity").text, "3");
+    assert.equal(byId(scene, "shop.each").text, "3 × 1.000 STEEM");
     assert.equal(byId(scene, "shop.buy").text, "Buy for 3.000 STEEM");
     click(byId(scene, "shop.less"));
     assert.equal(byId(scene, "shop.buy").text, "Buy for 2.000 STEEM");
-    assert.equal(multiplyAmount("2.500", 3), "7.500");
-    assert.equal(multiplyAmount("0.001", 1000), "1.000");
   });
 
   it("asks to sign in before buying", async () => {
     const { scene } = await harness({ signedIn: false });
     assert.equal(byId(scene, "shop.buy").enabled, false);
     assert.equal(byId(scene, "shop.status").text, "Sign in to buy.");
+    click(byId(scene, "shop.tab.singles"));
+    assert.equal(byId(scene, "shop.owned"), null);
   });
 
   it("buys through the wallet and reveals the cards, pack by pack", async () => {

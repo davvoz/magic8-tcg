@@ -21,7 +21,7 @@ import { AppError } from "../../../kernel/AppError.js";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { isUuid, uuidV4 } from "../../../kernel/random.js";
 import { AWAITING_PAYMENT, OrderStatus, memoFrom } from "../domain/Order.js";
-import { MAX_CARDS_PER_ORDER, expandProduct } from "../domain/Product.js";
+import { ContentType, MAX_CARDS_PER_ORDER, expandProduct } from "../domain/Product.js";
 import { MARKETPLACE_REPOSITORY_METHODS } from "./ports.js";
 
 export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
@@ -116,14 +116,20 @@ export class MarketplaceService {
     return this.#repository.syncProducts([...this.#catalog.products.values()], this.#clock.now());
   }
 
-  /** What is on sale now, with prices, contents and the odds of every pack. */
+  /** What is on sale now, with prices, contents, the odds of every pack and the price list by rarity. */
   async listing() {
     const now = this.#clock.now();
     const products = [...this.#catalog.products.values()].filter((product) => isOnSale(product, now)).map((product) => this.#productView(product));
     const dropTables = [...this.#catalog.dropTables.values()].map(({ table, hash, size, odds }) =>
       Object.freeze({ id: table.id, hash, edition: table.edition, size, odds, foil: table.foil, pools: table.pools, table }),
     );
-    return Object.freeze({ products: Object.freeze(products), dropTables: Object.freeze(dropTables), rarities: this.#catalog.rarities.order });
+    const { asset, singles } = this.#catalog.priceList;
+    const format = (units) => this.#economy.format(units, asset);
+    const priceList = Object.freeze({
+      asset,
+      singles: Object.freeze([...singles].map(([rarity, price]) => Object.freeze({ rarity, standard: format(price.standard), foil: price.foil === null ? null : format(price.foil) }))),
+    });
+    return Object.freeze({ products: Object.freeze(products), dropTables: Object.freeze(dropTables), rarities: this.#catalog.rarities.order, priceList });
   }
 
   /**
@@ -305,6 +311,15 @@ export class MarketplaceService {
     return order;
   }
 
+  /**
+   * The rarity of a product that is one card, null for anything else.
+   * @param {import("../domain/Product.js").Product} product
+   */
+  #rarityOf({ contents }) {
+    const [only] = contents;
+    return contents.length === 1 && only.type === ContentType.CARD && only.count === 1 ? (this.#catalog.rarities.of.get(only.ref) ?? null) : null;
+  }
+
   /** @param {import("../domain/Product.js").Product} product */
   #productView(product) {
     return Object.freeze({
@@ -314,6 +329,7 @@ export class MarketplaceService {
       description: product.description,
       prices: Object.freeze([...product.prices].map(([asset, units]) => Object.freeze({ asset, amount: this.#economy.format(units, asset) }))),
       contents: product.contents,
+      rarity: this.#rarityOf(product),
       cards: product.cardsPerUnit,
       limits: product.limits,
     });

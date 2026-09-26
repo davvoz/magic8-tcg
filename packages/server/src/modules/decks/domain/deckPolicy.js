@@ -76,5 +76,9 @@ export function evaluateDeck(draft, content, owned) {
  * @param {DeckDraft} draft
  */
 export function toDeckList(draft) {
-  return validateDeckList({ id: DRAFT_ID, name: draft.name, faction: draft.faction, cards: draft.entries }, { requireSchemaVersion: false }).value;
+  const result = validateDeckList({ id: DRAFT_ID, name: draft.name, faction: draft.faction, cards: draft.entries }, { requireSchemaVersion: false });
+  if (!result.ok) {
+    throw new TypeError(`toDeckList: a stored deck is not a valid deck list: ${result.error.message}`);
+  }
+  return result.value;
 }

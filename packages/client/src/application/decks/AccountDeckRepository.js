@@ -8,7 +8,9 @@ import { IdentityStatus } from "../identity/IdentityService.js";
 
 export const DeckStorage = Object.freeze({ ACCOUNT: "account", BROWSER: "browser" });
 
-/** @implements {import("../ports/DeckRepository.contract.js").DeckRepository} */
+/** @typedef {import("../ports/DeckRepository.contract.js").DeckRepository} DeckRepository */
+
+/** @implements {DeckRepository} */
 export class AccountDeckRepository {
   #identity;
   #account;

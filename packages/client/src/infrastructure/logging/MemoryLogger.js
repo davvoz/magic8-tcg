@@ -1,6 +1,8 @@
+/** @typedef {import("../../application/ports/Logger.contract.js").Logger} Logger */
+
 /**
  * Logger that records entries so tests can assert on diagnostics.
- * @implements {import("../../application/ports/Logger.contract.js").Logger}
+ * @implements {Logger}
  */
 export class MemoryLogger {
   /** @type {{ level: string, message: string, data: unknown }[]} */

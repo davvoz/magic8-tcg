@@ -90,9 +90,10 @@ export function stateCommitment(salt, digest) {
  * @returns {readonly (readonly [string, number])[]}
  */
 export function canonicalDeck(entries) {
+  /** @type {Map<string, number>} */
   const counts = new Map();
   for (const entry of entries) {
-    const [cardId, count] = Array.isArray(entry) ? entry : [entry.cardId, entry.count];
+    const [cardId, count] = isPair(entry) ? entry : [entry.cardId, entry.count];
     if (typeof cardId !== "string" || !CARD_ID_PATTERN.test(cardId) || !Number.isSafeInteger(count) || count < 1) {
       throw new ProtocolError(`invalid deck entry ${JSON.stringify(entry)}`);
     }
@@ -104,8 +105,17 @@ export function canonicalDeck(entries) {
   return Object.freeze(
     [...counts]
       .sort(([left], [right]) => (left < right ? -1 : 1))
-      .map(([cardId, count]) => Object.freeze([cardId, count])),
+      .map(([cardId, count]) => Object.freeze(/** @type {[string, number]} */ ([cardId, count]))),
   );
+}
+
+/**
+ * `Array.isArray` does not narrow a union with a readonly tuple.
+ * @param {{ cardId: string, count: number } | readonly [string, number]} entry
+ * @returns {entry is readonly [string, number]}
+ */
+function isPair(entry) {
+  return Array.isArray(entry);
 }
 
 /**

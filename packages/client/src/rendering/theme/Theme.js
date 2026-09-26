@@ -79,7 +79,8 @@ export function validateTheme(raw) {
   if (!issues.isEmpty) {
     return issues.toResult(undefined);
   }
-  return issues.toResult(Object.freeze(theme));
+  // Every check passed, so each part has the shape the checks enforce.
+  return issues.toResult(/** @type {Theme} */ (Object.freeze(theme)));
 }
 
 /**

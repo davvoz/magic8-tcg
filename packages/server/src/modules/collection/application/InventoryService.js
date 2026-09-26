@@ -80,7 +80,7 @@ export class InventoryService {
               serial: first + offset,
               finish: request.finish,
               ownerId: request.ownerId,
-              status: /** @type {const} */ (InstanceStatus.ACTIVE),
+              status: InstanceStatus.ACTIVE,
               originKind: /** @type {any} */ (request.origin.kind),
               originRef: request.origin.ref,
               mintedAt: now,

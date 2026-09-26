@@ -56,10 +56,10 @@ Requires Node ≥ 22.
 | `M8_HOST` / `M8_PORT` | `127.0.0.1` / `8080` | Listen address |
 | `M8_TRUST_PROXY` | `false` | Take the client IP from `X-Forwarded-For` (only behind your own reverse proxy) |
 | `M8_STEEM_NODES` | `api.moecki.online`, then three public fallbacks | Comma-separated https JSON-RPC nodes, in priority order. At least two: a payment is confirmed only when two nodes agree. |
-| `M8_APP_NAME` | `luciojolly` | First line of the login message users sign |
+| `M8_APP_NAME` | `verdu.green` | First line of the login message users sign |
 | `M8_DATABASE_URL` | `pglite:.data/pglite` for localhost | `postgres://user:pass@host:5432/db?sslmode=require` for a PostgreSQL server (required with an https origin). `pglite:<dir>` or `pglite:memory` runs PostgreSQL in process, for development only. The schema is migrated at startup. |
 | `M8_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `M8_SHOP_ACCOUNT` | `luciojolly` | STEEM account that receives payments. Its keys never go on the server. |
+| `M8_SHOP_ACCOUNT` | `verdu.green` | STEEM account that receives payments. Its keys never go on the server. |
 | `M8_DATA_KEY` | public development key on localhost | 64 hex characters (`openssl rand -hex 32`) that encrypt secrets at rest (pack epochs). **Required** with an https origin. |
 | `M8_DATA_KEY_ID` / `M8_DATA_KEYS_OLD` | `1` / — | Key rotation: the current key's id, and retired keys as `id:hex,id:hex` so older secrets still open. |
 

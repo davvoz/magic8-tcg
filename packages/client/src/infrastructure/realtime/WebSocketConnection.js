@@ -15,7 +15,10 @@ const REQUEST_TIMEOUT_MS = 10_000;
  * @typedef {{ send: (data: string) => void, close: () => void, readyState: number, onopen: any, onclose: any, onmessage: any, onerror: any }} SocketLike
  */
 
-/** @implements {import("../../application/ports/Realtime.contract.js").RealtimeConnection} */
+/** @typedef {import("../../application/ports/Realtime.contract.js").RealtimeConnection} RealtimeConnection */
+/** @typedef {import("../../application/ports/Realtime.contract.js").ConnectionStatus} ConnectionStatus */
+
+/** @implements {RealtimeConnection} */
 export class WebSocketConnection {
   #url;
   #createSocket;
@@ -29,7 +32,7 @@ export class WebSocketConnection {
   #pending = new Map();
   /** @type {Set<(message: any) => void>} */
   #listeners = new Set();
-  /** @type {Set<(status: string, detail: { code: number | null }) => void>} */
+  /** @type {Set<(status: ConnectionStatus, detail: { code: number | null }) => void>} */
   #statusListeners = new Set();
 
   /**
@@ -84,7 +87,7 @@ export class WebSocketConnection {
     return () => this.#listeners.delete(listener);
   }
 
-  /** @param {(status: string, detail: { code: number | null }) => void} listener */
+  /** @param {(status: ConnectionStatus, detail: { code: number | null }) => void} listener */
   onStatus(listener) {
     this.#statusListeners.add(listener);
     return () => this.#statusListeners.delete(listener);
@@ -146,7 +149,7 @@ export class WebSocketConnection {
   }
 
   /**
-   * @param {string} status
+   * @param {ConnectionStatus} status
    * @param {number | null} code
    */
   #emitStatus(status, code) {

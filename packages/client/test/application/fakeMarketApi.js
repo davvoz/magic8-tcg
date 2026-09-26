@@ -3,14 +3,45 @@
  * status in `progression` each time they are read, ending FULFILLED with the
  * given cards; `fail` makes the next call to a method fail.
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { fail, ok } from "@magic8/engine/shared/Result.js";
+
+const DATA = resolve(import.meta.dirname, "../../../../data");
+const readData = (path) => JSON.parse(readFileSync(resolve(DATA, path), "utf8"));
+/** The server's price list (data/economy/pricing.json), as the listing publishes it. */
+const PRICE_LIST = Object.freeze({
+  asset: "STEEM",
+  singles: Object.entries(readData("economy/pricing.json").singles.prices).map(([rarity, price]) => Object.freeze({ rarity, standard: price.standard, foil: price.foil ?? null })),
+});
+const RARITY_OF = readData("economy/rarities.json").cards;
+const ARCANE = readData("decks/precon_arcane.deck.json");
+
+const product = ({ id, kind, name, amount, contents, rarity = null, cards = 1, perOrder = 3, description = `${name}.` }) =>
+  Object.freeze({ id, kind, name, description, prices: [{ asset: "STEEM", amount }], contents, rarity, cards, perOrder });
+/** Standard and foil singles of a card, priced by its rarity like the server does. */
+const singles = (cardId, name) => {
+  const rarity = RARITY_OF[cardId];
+  const price = PRICE_LIST.singles.find((entry) => entry.rarity === rarity);
+  return [
+    product({ id: `single_${cardId}`, kind: "single", name, amount: price.standard, contents: [{ type: "card", ref: cardId, count: 1, finish: null }], rarity }),
+    product({ id: `single_${cardId}_foil`, kind: "single", name: `${name} (foil)`, amount: price.foil, contents: [{ type: "card", ref: cardId, count: 1, finish: "foil" }], rarity }),
+  ];
+};
 
 export const LISTING = Object.freeze({
   products: [
-    { id: "core_booster", kind: "booster", name: "Core Booster", description: "5 cards.", prices: [{ asset: "STEEM", amount: "1.000" }], contents: [{ type: "pack", ref: "core_booster", count: 1, finish: null }], cards: 5, perOrder: 20 },
-    { id: "core_booster_box", kind: "bundle", name: "Core Booster Box", description: "12 boosters.", prices: [{ asset: "STEEM", amount: "10.000" }], contents: [{ type: "product", ref: "core_booster", count: 12, finish: null }], cards: 60, perOrder: 5 },
-    { id: "single_pyre_drake_foil", kind: "single", name: "Pyre Drake (foil)", description: "One foil Pyre Drake.", prices: [{ asset: "STEEM", amount: "2.500" }], contents: [{ type: "card", ref: "pyre_drake", count: 1, finish: "foil" }], cards: 1, perOrder: 1 },
+    product({ id: "core_booster", kind: "pack", name: "Core Booster", amount: "1.000", contents: [{ type: "pack", ref: "core_booster", count: 1, finish: null }], cards: 5, perOrder: 20, description: "5 unknown cards." }),
+    product({ id: "core_mini_booster", kind: "pack", name: "Core Mini Booster", amount: "0.500", contents: [{ type: "pack", ref: "core_mini_booster", count: 1, finish: null }], cards: 3, perOrder: 20, description: "3 unknown cards." }),
+    // 10.750: the sum of its 30 cards as singles, as the server prices it.
+    product({ id: "deck_precon_arcane", kind: "deck", name: "Arcane Conclave", amount: "10.750", contents: [{ type: "deck", ref: "precon_arcane", count: 1, finish: null }], cards: 30 }),
+    product({ id: "core_booster_box", kind: "bundle", name: "Core Booster Box", amount: "10.000", contents: [{ type: "product", ref: "core_booster", count: 12, finish: null }], cards: 60, perOrder: 5, description: "12 boosters." }),
+    ...singles("pyre_drake", "Pyre Drake"),
+    ...ARCANE.cards.flatMap((entry) => singles(entry.cardId, entry.cardId)),
   ],
+  rarities: ["common", "uncommon", "rare", "epic", "legendary"],
+  priceList: PRICE_LIST,
   dropTables: [
     {
       id: "core_booster",
@@ -20,6 +51,16 @@ export const LISTING = Object.freeze({
         { count: 3, odds: { common: { numerator: 1, denominator: 1 } } },
         { count: 1, odds: { uncommon: { numerator: 1, denominator: 1 } } },
         { count: 1, odds: { epic: { numerator: 10, denominator: 100 }, legendary: { numerator: 2, denominator: 100 }, rare: { numerator: 88, denominator: 100 } } },
+      ],
+      foil: { numerator: 1, denominator: 20 },
+    },
+    {
+      id: "core_mini_booster",
+      hash: "cd".repeat(32),
+      size: 3,
+      slots: [
+        { count: 2, odds: { common: { numerator: 1, denominator: 1 } } },
+        { count: 1, odds: { uncommon: { numerator: 80, denominator: 100 }, rare: { numerator: 16, denominator: 100 }, epic: { numerator: 3, denominator: 100 }, legendary: { numerator: 1, denominator: 100 } } },
       ],
       foil: { numerator: 1, denominator: 20 },
     },
@@ -41,7 +82,7 @@ export function fakeMarketApi({ progression = ["PAYMENT_DETECTED", "PAYMENT_VERI
       status,
       items: [{ productId: entry.productId, name: entry.productId, quantity: entry.quantity, unitAmount: "1.000" }],
       total: { asset: "STEEM", amount: `${entry.quantity}.000` },
-      payment: status === "PAYMENT_PENDING" ? { network: "steem", from: "alice", to: "luciojolly", asset: "STEEM", amount: `${entry.quantity}.000`, memo: `m8tcg-${"a".repeat(26)}`, expiresAt: 1 } : null,
+      payment: status === "PAYMENT_PENDING" ? { network: "steem", from: "alice", to: "verdu.green", asset: "STEEM", amount: `${entry.quantity}.000`, memo: `m8tcg-${"a".repeat(26)}`, expiresAt: 1 } : null,
       failureReason: null,
       createdAt: 0,
       fulfilment: status === "FULFILLED" ? { txId: "cd".repeat(20), cards: [], packs: [{ index: 0, cards: PACK_CARDS }] } : null,

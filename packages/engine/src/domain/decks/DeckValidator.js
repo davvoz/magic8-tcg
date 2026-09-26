@@ -31,7 +31,10 @@ export const DeckProblem = Object.freeze({
 export function validateDeck(deck, rules, catalog) {
   /** @type {DeckProblemEntry[]} */
   const problems = [];
-  const report = (code, message, cardId = null) => problems.push(Object.freeze({ code, message, cardId }));
+  /** @type {EntryScope["report"]} */
+  const report = (code, message, cardId = null) => {
+    problems.push(Object.freeze({ code, message, cardId }));
+  };
 
   checkDeckLevel(deck, rules, report);
   const scope = { deck, rules, catalog, report };

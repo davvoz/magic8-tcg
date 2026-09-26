@@ -12,7 +12,7 @@ import { ApiClient } from "../support/apiClient.js";
 
 const alice = keyPair(1);
 const bob = keyPair(2);
-const SHOP = "luciojolly";
+const SHOP = "verdu.green";
 const MINUTE = 60 * 1000;
 let keys = 0;
 const newKey = () => `pay-key-${String((keys += 1)).padStart(10, "0")}`;

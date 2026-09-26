@@ -139,7 +139,7 @@ export class DeckBuilderScene extends Scene {
     this.#rebuild();
   }
 
-  /** @param {{ title: string, message: string, confirmText: string, onConfirm: () => void }} request */
+  /** @param {{ title: string, message: string, confirmText: string, destructive?: boolean, onConfirm: () => void }} request */
   #confirm(request) {
     this.openModal(
       buildConfirmModal({

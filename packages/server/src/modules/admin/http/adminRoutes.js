@@ -82,7 +82,7 @@ export function registerAdminRoutes({ router, admin }) {
       if (!/^[1-9]\d{0,15}$/.test(context.params.id)) {
         throw new AppError("NOT_FOUND", "no open alert with this id");
       }
-      const resolved = await admin.resolveAlert(operator, Number(context.params.id), body.note, context.ip);
+      const resolved = await admin.resolveAlert(operator, Number(context.params.id), /** @type {string} */ (body.note), context.ip);
       return { status: 200, body: { resolved } };
     },
   });

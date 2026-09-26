@@ -215,6 +215,7 @@ class LiveConnection {
   #socket;
   #policy;
   #clock;
+  /** @type {number} */
   #tokens;
   #refilledAt;
   #violations = 0;
@@ -349,6 +350,10 @@ function parseEnvelope(text) {
 }
 
 /** @param {unknown} value */
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 /**

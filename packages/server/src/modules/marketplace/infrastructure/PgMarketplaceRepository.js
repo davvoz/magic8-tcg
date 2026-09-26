@@ -53,7 +53,9 @@ function toEpoch(row) {
   });
 }
 
-/** @implements {import("../application/ports.js").MarketplaceRepository} */
+/** @typedef {import("../application/ports.js").MarketplaceRepository} MarketplaceRepository */
+
+/** @implements {MarketplaceRepository} */
 export class PgMarketplaceRepository {
   #db;
 
@@ -63,23 +65,30 @@ export class PgMarketplaceRepository {
   }
 
   async syncProducts(products, at) {
+    const ids = products.map((product) => product.id);
+    const prices = products.flatMap((product) => [...product.prices].map(([asset, amount]) => ({ id: product.id, asset, amount })));
+    const items = products.flatMap((product) => product.contents.map((content, position) => ({ id: product.id, position, ...content })));
+    // One statement per table, whatever the number of products (the price list makes one per card and finish).
     await this.#db.transaction(async () => {
-      await this.#db.query("UPDATE products SET active = false, updated_at = $2 WHERE active AND NOT (id = ANY($1::text[]))", [products.map((product) => product.id), toTimestamp(at)]);
-      for (const product of products) {
-        await this.#db.query(
-          `INSERT INTO products (id, kind, name, description, active, limits, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (id) DO UPDATE SET kind = $2, name = $3, description = $4, active = $5, limits = $6, updated_at = $7`,
-          [product.id, product.kind, product.name, product.description, product.active, JSON.stringify(product.limits), toTimestamp(at)],
-        );
-        await this.#db.query("DELETE FROM product_prices WHERE product_id = $1", [product.id]);
-        for (const [asset, amount] of product.prices) {
-          await this.#db.query("INSERT INTO product_prices (product_id, asset, amount) VALUES ($1, $2, $3)", [product.id, asset, amount]);
-        }
-        await this.#db.query("DELETE FROM product_items WHERE product_id = $1", [product.id]);
-        for (const [position, content] of product.contents.entries()) {
-          await this.#db.query("INSERT INTO product_items (product_id, position, item_type, ref, count, finish) VALUES ($1, $2, $3, $4, $5, $6)", [product.id, position, content.type, content.ref, content.count, content.finish]);
-        }
-      }
+      await this.#db.query("UPDATE products SET active = false, updated_at = $2 WHERE active AND NOT (id = ANY($1::text[]))", [ids, toTimestamp(at)]);
+      await this.#db.query(
+        `INSERT INTO products (id, kind, name, description, active, limits, updated_at)
+         SELECT id, kind, name, description, active, limits::jsonb, $7::timestamptz
+         FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::boolean[], $6::text[]) AS p (id, kind, name, description, active, limits)
+         ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, name = EXCLUDED.name, description = EXCLUDED.description, active = EXCLUDED.active, limits = EXCLUDED.limits, updated_at = EXCLUDED.updated_at`,
+        [ids, products.map((product) => product.kind), products.map((product) => product.name), products.map((product) => product.description), products.map((product) => product.active), products.map((product) => JSON.stringify(product.limits)), toTimestamp(at)],
+      );
+      await this.#db.query("DELETE FROM product_prices WHERE product_id = ANY($1::text[])", [ids]);
+      await this.#db.query("INSERT INTO product_prices (product_id, asset, amount) SELECT * FROM unnest($1::text[], $2::text[], $3::bigint[])", [prices.map((price) => price.id), prices.map((price) => price.asset), prices.map((price) => price.amount)]);
+      await this.#db.query("DELETE FROM product_items WHERE product_id = ANY($1::text[])", [ids]);
+      await this.#db.query("INSERT INTO product_items (product_id, position, item_type, ref, count, finish) SELECT * FROM unnest($1::text[], $2::integer[], $3::text[], $4::text[], $5::integer[], $6::text[])", [
+        items.map((item) => item.id),
+        items.map((item) => item.position),
+        items.map((item) => item.type),
+        items.map((item) => item.ref),
+        items.map((item) => item.count),
+        items.map((item) => item.finish),
+      ]);
     });
   }
 
@@ -142,6 +151,12 @@ export class PgMarketplaceRepository {
     return /** @type {import("../../../platform/db/Database.js").Row} */ (row).open;
   }
 
+  /**
+   * @param {string} id
+   * @param {string} from
+   * @param {string} to
+   * @param {{ at: number, paymentId?: string | null, failureReason?: string | null }} changes
+   */
   async transition(id, from, to, { at, paymentId, failureReason }) {
     const row = await this.#db.maybeOne(
       `UPDATE orders

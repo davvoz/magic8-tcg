@@ -5,7 +5,7 @@
  */
 import { ManifestKind, OperationId, ackKeysManifest, broadcastersManifest } from "@magic8/protocol";
 
-const DEFAULT_ROOT = "luciojolly";
+const DEFAULT_ROOT = "verdu.green";
 
 /** Per manifest kind: how the list is labelled, how the payload is built, what Keychain shows. */
 const KINDS = Object.freeze({

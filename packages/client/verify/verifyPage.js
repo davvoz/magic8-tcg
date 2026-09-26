@@ -8,7 +8,7 @@ import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, recove
 import { receiptsKey } from "../src/application/online/AckReceipts.js";
 import { checklist, verdictBanner } from "./checklist.js";
 
-const DEFAULT_ROOT = "luciojolly";
+const DEFAULT_ROOT = "verdu.green";
 const DEFAULT_NODES = Object.freeze(["https://api.moecki.online", "https://api.justyy.com", "https://api.steemit.com"]);
 const LOCAL_HOSTS = Object.freeze(["127.0.0.1", "localhost"]);
 

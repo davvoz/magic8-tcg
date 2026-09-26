@@ -1,3 +1,4 @@
+import { isPlayerTargeted } from "./Ability.js";
 import { CardType } from "./CardType.js";
 
 /**
@@ -67,6 +68,6 @@ export class CardDefinition {
 
   /** Abilities whose targets the player must choose when playing the card. */
   get playerTargetedAbilities() {
-    return this.abilities.filter((ability) => ability.requiresTarget && !ability.target.isAutomatic);
+    return this.abilities.filter(isPlayerTargeted);
   }
 }

@@ -255,6 +255,18 @@ DropTable (data/drop-tables/*.json)
 
 Il `kind` non guida la logica: il fulfilment espande ricorsivamente i `contents` (con limite di profondità e di carte totali). Un nuovo tipo di prodotto è quasi sempre solo un nuovo JSON.
 
+I prodotti del catalogo standard non si scrivono a mano: li genera il **listino** (`data/economy/pricing.json`, `PriceList.js`) all'avvio, e passano dalla stessa validazione dei file in `data/economy/products/` (che restano per offerte speciali e prodotti ritirati):
+
+```
+pricing.json
+  asset, edition
+  singles: { perOrder, prices: { <rarità>: { standard, foil? } } }   → single_<carta>, single_<carta>_foil
+  packs:   [ { id, name, description, dropTable, price, perOrder } ] → un prodotto per pacchetto, prezzo fisso
+  decks:   { perOrder }                                              → deck_<mazzo>, prezzo = Σ carte × prezzo singola standard
+```
+
+Ogni rarità deve avere un prezzo, così ogni carta è in vendita e ogni mazzo ha un prezzo. Gli id generati sono stabili: cambiare un prezzo non tocca gli ordini già creati, che hanno il prezzo congelato.
+
 **Macchina a stati dell'ordine** (transizioni esplicite, ogni transizione è un `UPDATE … WHERE status = <atteso>`):
 
 ```mermaid

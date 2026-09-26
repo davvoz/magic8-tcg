@@ -4,7 +4,9 @@
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
-/** @implements {import("../../application/ports/ContentSource.contract.js").ContentSource} */
+/** @typedef {import("../../application/ports/ContentSource.contract.js").ContentSource} ContentSource */
+
+/** @implements {ContentSource} */
 export class StaticContentSource {
   #resources;
 

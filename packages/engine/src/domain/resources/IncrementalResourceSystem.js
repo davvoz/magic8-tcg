@@ -1,10 +1,12 @@
 import { ResourceModel } from "../game/GameRules.js";
 import { ResourcePool } from "./ResourcePool.js";
 
+/** @typedef {import("./ResourceSystem.contract.js").ResourceSystem} ResourceSystem */
+
 /**
  * Resource model of the vertical slice: maximum grows by a fixed amount each
  * turn up to a cap, and the pool refills at the start of the owner's turn.
- * @implements {import("./ResourceSystem.contract.js").ResourceSystem}
+ * @implements {ResourceSystem}
  */
 export class IncrementalResourceSystem {
   #config;

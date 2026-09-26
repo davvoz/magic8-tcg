@@ -6,7 +6,7 @@
  *
  * @typedef {Readonly<{ network: string, asset: string, precision: number }>} AcceptedAsset
  */
-import { parseAmount } from "./Money.js";
+import { formatAmount, parseAmount } from "./Money.js";
 import { Issues, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 
 const FILE_KEYS = Object.freeze(["schemaVersion", "accepted"]);
@@ -45,6 +45,19 @@ export class AssetRegistry {
   parse(asset, text) {
     const accepted = this.find(asset);
     return accepted === undefined ? null : parseAmount(text, accepted.precision);
+  }
+
+  /**
+   * @param {string} asset an accepted asset
+   * @param {number} units smallest units
+   * @returns {string} the exact decimal amount, e.g. "12.500"
+   */
+  format(asset, units) {
+    const accepted = this.find(asset);
+    if (accepted === undefined) {
+      throw new Error(`AssetRegistry.format: unknown asset ${asset}`);
+    }
+    return formatAmount(units, accepted.precision);
   }
 }
 

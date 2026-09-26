@@ -106,7 +106,7 @@ describe("config", () => {
     assert.deepEqual([...rotated.dataKeys.keys()].sort(), [1, 2]);
     const local = loadConfig({});
     assert.equal(local.dataKeyIsDevelopment, true);
-    assert.equal(local.shopAccounts.steem, "luciojolly");
+    assert.equal(local.shopAccounts.steem, "verdu.green");
     assert.equal(loadConfig({ M8_SHOP_ACCOUNT: "shop.m8" }).shopAccounts.steem, "shop.m8");
   });
 
@@ -117,7 +117,7 @@ describe("config", () => {
     assert.equal(config.rootAccounts.steem, "m8tcg");
     assert.equal(JSON.stringify(config).includes(wif), false, "keys never show up when the configuration is serialized");
     assert.equal(loadConfig({}).broadcasterKeys.size, 0, "none by default: nothing is published");
-    assert.equal(loadConfig({}).rootAccounts.steem, "luciojolly");
+    assert.equal(loadConfig({}).rootAccounts.steem, "verdu.green");
     assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: "m8tcg-b1:not-a-key" }), /not a WIF/);
     assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: `${wif}` }), /M8_BROADCASTER_KEYS/);
     assert.throws(() => loadConfig({ M8_BROADCASTER_KEYS: `m8tcg-b1:${wif},m8tcg-b1:${wif}` }), /twice/);
@@ -127,7 +127,7 @@ describe("config", () => {
     const config = loadConfig({});
     assert.equal(config.steemNodes[0], "https://api.moecki.online", "moecki is the primary node");
     assert.ok(config.steemNodes.length > 1, "with public fallbacks");
-    assert.equal(config.appName, "luciojolly");
+    assert.equal(config.appName, "verdu.green");
     assert.equal(config.databaseUrl, DEFAULT_DEVELOPMENT_DATABASE);
   });
 
@@ -280,7 +280,7 @@ describe("clientAddress", () => {
 describe("config: operations", () => {
   it("reads the operator accounts and the metrics token", () => {
     const local = loadConfig({});
-    assert.deepEqual(local.adminAccounts.steem, ["luciojolly"], "the shop account by default");
+    assert.deepEqual(local.adminAccounts.steem, ["verdu.green"], "the shop account by default");
     assert.equal(local.metricsToken, null, "no token: no metrics endpoint");
     const configured = loadConfig({ M8_ADMIN_ACCOUNTS: "ops-one, ops-two", M8_METRICS_TOKEN: "a".repeat(32) });
     assert.deepEqual(configured.adminAccounts.steem, ["ops-one", "ops-two"]);

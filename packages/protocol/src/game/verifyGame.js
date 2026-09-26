@@ -43,6 +43,7 @@ export function verifyGame({ gameId, operations, isAuthorizedBroadcaster, resolv
   return Object.freeze({ verdict: verdictOf(history, replay, signatures), history, signatures, replay, rejected: Object.freeze(rejected) });
 }
 
+/** @type {ReadonlySet<string>} */
 const SIGNED = new Set([SignatureStatus.NOT_REQUIRED, SignatureStatus.VALID]);
 
 /**

@@ -25,7 +25,9 @@ function toDeck(row, cards) {
   });
 }
 
-/** @implements {import("../application/ports.js").DeckRepository} */
+/** @typedef {import("../application/ports.js").DeckRepository} DeckRepository */
+
+/** @implements {DeckRepository} */
 export class PgDeckRepository {
   #db;
 

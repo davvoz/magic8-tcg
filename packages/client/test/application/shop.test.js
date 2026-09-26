@@ -38,7 +38,7 @@ describe("ShopService", () => {
     const created = market.calls.find((call) => call.name === "createOrder");
     assert.deepEqual(created.args[0], { productId: "core_booster", quantity: 2, asset: "STEEM" });
     assert.match(created.args[1], /^key-/);
-    assert.deepEqual(transfers, [{ from: "alice", to: "luciojolly", amount: "2.000", asset: "STEEM", memo: `m8tcg-${"a".repeat(26)}` }], "exactly the server's instructions");
+    assert.deepEqual(transfers, [{ from: "alice", to: "verdu.green", amount: "2.000", asset: "STEEM", memo: `m8tcg-${"a".repeat(26)}` }], "exactly the server's instructions");
     assert.deepEqual(market.calls.find((call) => call.name === "paymentHint").args.slice(1), [TX]);
     assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
     assert.equal(shop.state.purchase.txId, TX);

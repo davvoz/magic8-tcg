@@ -31,14 +31,15 @@ async function readJsonDirectory(directory) {
  */
 export async function readServerContent(dataDirectory) {
   const economy = join(dataDirectory, "economy");
-  const [raw, starterOffer, assets, rarities, dropTables, products, ranked] = await Promise.all([
+  const [raw, starterOffer, assets, rarities, dropTables, pricing, products, ranked] = await Promise.all([
     readContentDirectory(dataDirectory),
     readJson(join(economy, "starter-offer.json")),
     readJson(join(economy, "assets.json")),
     readJson(join(economy, "rarities.json")),
     readJsonDirectory(join(economy, "drop-tables")),
+    readJson(join(economy, "pricing.json")),
     readJsonDirectory(join(economy, "products")),
     readJson(join(dataDirectory, "ranked", "ranked.json")),
   ]);
-  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, products }), ranked });
+  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, pricing, products }), ranked });
 }

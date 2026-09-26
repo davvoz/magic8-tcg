@@ -29,7 +29,9 @@ export const clientDeckId = (serverId) => `${CLIENT_ID_PREFIX}${serverId.replace
  * @typedef {Readonly<{ serverId: string, version: number, playable: boolean, problems: readonly import("../../application/ports/CollectionApi.contract.js").DeckProblem[] }>} DeckRef
  */
 
-/** @implements {import("../../application/ports/DeckRepository.contract.js").DeckRepository} */
+/** @typedef {import("../../application/ports/DeckRepository.contract.js").DeckRepository} DeckRepository */
+
+/** @implements {DeckRepository} */
 export class RemoteDeckRepository {
   #api;
   /** @type {readonly import("@magic8/engine/domain/decks/DeckList.js").DeckList[]} */

@@ -29,7 +29,10 @@ function entry(value) {
     : null;
 }
 
-/** @param {any} value */
+/**
+ * @param {any} value
+ * @returns {import("../../application/ports/RankingApi.contract.js").Standing | null}
+ */
 function standing(value) {
   const counts = ["deviation", "games", "wins", "losses", "draws", "casualGamesNeeded"].every((key) => isCount(value?.[key]));
   const parsedSeason = season(value?.season);
@@ -40,7 +43,11 @@ function standing(value) {
   return Object.freeze({ season: parsedSeason, rating, deviation, provisional, rank, games, wins, losses, draws, eligible, casualGamesNeeded });
 }
 
-/** @param {unknown} value */
+/**
+ * @template T
+ * @param {T | null} value
+ * @returns {import("@magic8/engine/shared/Result.js").Result<T>}
+ */
 const shaped = (value) => (value === null ? fail(ApiFailure.BAD_RESPONSE, "the game server sent an unexpected response") : ok(value));
 
 export class HttpRankingApi {

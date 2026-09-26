@@ -5,6 +5,7 @@
 import { LIMITS } from "../../shared/limits.js";
 import {
   Issues,
+  allDefined,
   checkArrayOf,
   checkEnum,
   checkInteger,
@@ -138,12 +139,11 @@ export function validateDeckRules(raw) {
   const maxSavedDecks = checkInteger(issues, object.maxSavedDecks, "deckRules.maxSavedDecks", { min: 1, max: MAX_SAVED_DECKS_LIMIT });
   const deckNameMaxLength = checkInteger(issues, object.deckNameMaxLength, "deckRules.deckNameMaxLength", { min: 1, max: LIMITS.NAME_MAX_LENGTH });
 
-  if (!issues.isEmpty) {
+  const fields = allDefined({ minSize, maxSize, maxCopies, allowedTypes, factions, factionRule, maxSavedDecks, deckNameMaxLength });
+  if (!issues.isEmpty || fields === undefined) {
     return issues.toResult(undefined);
   }
-  return issues.toResult(
-    new DeckRules({ minSize, maxSize, maxCopies, allowedTypes, factions, factionRule, maxSavedDecks, deckNameMaxLength }),
-  );
+  return issues.toResult(new DeckRules(fields));
 }
 
 /**

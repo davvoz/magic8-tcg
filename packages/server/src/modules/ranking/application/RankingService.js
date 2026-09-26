@@ -29,7 +29,7 @@ const LEADERBOARD_SIZE = 100;
  */
 
 /**
- * @param {string} winnerSeat
+ * @param {string | null} winnerSeat null for a draw
  * @param {string} seat
  * @returns {0 | 0.5 | 1}
  */

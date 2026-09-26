@@ -44,7 +44,7 @@ function appWith(identityService) {
     deckSelection: { listDecks: () => [] },
     deckBuilding: {},
     matchSetup: {},
-    createSeed: () => 1,
+    createSeed: () => "9f".repeat(32),
     logger: new MemoryLogger(),
     environment: { version: "test", storage: "local" },
     identity: identityService,

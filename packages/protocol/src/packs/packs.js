@@ -47,8 +47,18 @@ const ORDER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 const TX_ID_PATTERN = /^[0-9a-f]{40}$/;
 const MAX_PACK_INDEX = 10_000;
 
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const isInt = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
+/**
+ * @param {unknown} value
+ * @param {number} min
+ * @param {number} max
+ * @returns {value is number}
+ */
+const isInt = (value, min, max) => typeof value === "number" && Number.isSafeInteger(value) && value >= min && value <= max;
 
 /**
  * Structural check of a resolved drop table; throws ProtocolError with the first problem.

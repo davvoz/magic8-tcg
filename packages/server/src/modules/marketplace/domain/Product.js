@@ -1,6 +1,8 @@
 /**
- * Products: data (data/economy/products/*.json), validated at startup
- * against the content, the accepted assets and the drop tables. `kind` is a
+ * Products: generated from the price list (singles, packs, decks: see
+ * PriceList.js) or written by hand (data/economy/products/*.json: special
+ * offers, retired products), validated together at startup against the
+ * content, the accepted assets and the drop tables. `kind` is a
  * presentation label only; what a product gives is its `contents`, expanded
  * recursively (a bundle is a product made of products). A new kind of
  * product is usually just a new file (docs/tcg/01-architettura.md §7.2).

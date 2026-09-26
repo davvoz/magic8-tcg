@@ -124,7 +124,8 @@ export class TurnClock {
     if (absentSince !== undefined && now >= Math.max(absentSince, decision.since) + this.#policy.disconnectGraceMs) {
       return Object.freeze({ seat: decision.seat, why: "disconnect" });
     }
-    return now >= this.deadline() ? Object.freeze({ seat: decision.seat, why: "timeout" }) : null;
+    const deadline = this.deadline();
+    return deadline !== null && now >= deadline ? Object.freeze({ seat: decision.seat, why: "timeout" }) : null;
   }
 
   /** When the current decision times out (ignoring disconnection), or null when nobody is awaited. */

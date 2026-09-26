@@ -21,6 +21,8 @@ export const InteractionMode = Object.freeze({
   WAITING: "waiting",
 });
 
+/** @typedef {typeof InteractionMode[keyof typeof InteractionMode]} Mode */
+
 /** How the board should draw a card or player right now. */
 export const Highlight = Object.freeze({
   PLAYABLE: "playable",
@@ -36,6 +38,7 @@ export class MatchInteraction {
   #playerId;
   /** @type {Snapshot | null} */
   #snapshot = null;
+  /** @type {Mode} */
   #mode = InteractionMode.WAITING;
   /** @type {{ cardId: string, groups: readonly (readonly string[])[], chosen: string[] } | null} */
   #targeting = null;

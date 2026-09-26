@@ -219,13 +219,19 @@ export function verifyOrderPacks({ orderId, operations, isAuthorizedBroadcaster,
  * @param {string} account
  * @param {ReadonlySet<string>} ids
  * @param {number} maxPages
+ * @returns {Promise<ChainOperation[]>}
  */
 async function historyOperations(reader, account, ids, maxPages) {
+  /** @type {ChainOperation[]} */
   const found = [];
   let cursor = -1;
   for (let page = 0; page < maxPages; page += 1) {
     const entries = await reader.publications(account, cursor, PAGE_SIZE);
-    found.push(...entries.map((entry) => entry.operation).filter((operation) => operation !== null && ids.has(operation.id)));
+    for (const { operation } of entries) {
+      if (operation !== null && ids.has(operation.id)) {
+        found.push(operation);
+      }
+    }
     if (entries.length < PAGE_SIZE) {
       break;
     }

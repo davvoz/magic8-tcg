@@ -10,6 +10,7 @@ export class GameLoop {
   #requestFrame;
   #cancelFrame;
   #now;
+  /** @type {number | null} */
   #handle = null;
   #last = 0;
   #dirty = true;

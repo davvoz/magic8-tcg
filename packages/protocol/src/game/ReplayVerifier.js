@@ -92,7 +92,7 @@ export function replayGame(history, resolveContent) {
 }
 
 /**
- * @param {{ events: readonly import("./EventChain.js").ChainedEvent[], created: any, terminal: any, content: ReplayContent, gameId: string }} input
+ * @param {{ events: readonly import("./EventChain.js").ChainedEvent[], created: any, terminal: any, content: ReplayContent, gameId: string, version: number }} input
  * @returns {ReplayResult}
  */
 function runReplay({ events, created, terminal, content, gameId, version }) {

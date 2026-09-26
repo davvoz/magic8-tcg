@@ -179,6 +179,9 @@ describe("static client files", () => {
       assert.equal(page.headers.get("content-security-policy"), pageCsp(html));
       assert.match(page.headers.get("content-security-policy"), /script-src 'self' 'sha256-[A-Za-z0-9+/=]+'/);
       assert.doesNotMatch(page.headers.get("content-security-policy"), /unsafe-inline/);
+      // Browsers hash inline blocks after newline normalisation, so a CRLF checkout must give the same policy.
+      const multiline = "<style>\n  body { margin: 0; }\n</style>";
+      assert.equal(pageCsp(multiline.replaceAll("\n", "\r\n")), pageCsp(multiline));
       assert.equal((await fetch(`${server.base}/data/cards.json`)).status, 200);
       for (const path of ["/../secret.txt", "/%2e%2e/secret.txt", "/data/..%2f..%2fsecret.txt", "/missing.js", "/main.exe"]) {
         assert.equal((await fetch(`${server.base}${path}`)).status, 404, path);

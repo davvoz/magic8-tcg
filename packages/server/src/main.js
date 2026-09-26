@@ -112,15 +112,16 @@ async function main() {
       await app.matchmaking.pair();
     }, logger),
   ];
-  if (app.chain !== null) {
+  const chainModule = app.chain;
+  if (chainModule !== null) {
     jobs.push(
-      every(RC_INTERVAL_MS, "resource credits", () => app.chain.rc.runOnce(), logger),
-      every(RC_INTERVAL_MS, "root manifests", () => app.chain.manifests.runOnce(), logger),
-      every(BROADCAST_INTERVAL_MS, "chain broadcast", () => app.chain.broadcaster.runOnce(), logger),
-      every(TRACKER_INTERVAL_MS, "chain tracking", () => app.chain.tracker.runOnce(), logger),
+      every(RC_INTERVAL_MS, "resource credits", () => chainModule.rc.runOnce(), logger),
+      every(RC_INTERVAL_MS, "root manifests", () => chainModule.manifests.runOnce(), logger),
+      every(BROADCAST_INTERVAL_MS, "chain broadcast", () => chainModule.broadcaster.runOnce(), logger),
+      every(TRACKER_INTERVAL_MS, "chain tracking", () => chainModule.tracker.runOnce(), logger),
     );
-    app.chain.rc.runOnce().catch((error) => logger.warn("resource credits could not be read", { error: error instanceof Error ? error.message : String(error) }));
-    app.chain.manifests.runOnce().catch((error) => logger.warn("root manifests could not be read", { error: error instanceof Error ? error.message : String(error) }));
+    chainModule.rc.runOnce().catch((error) => logger.warn("resource credits could not be read", { error: error instanceof Error ? error.message : String(error) }));
+    chainModule.manifests.runOnce().catch((error) => logger.warn("root manifests could not be read", { error: error instanceof Error ? error.message : String(error) }));
   }
   server.listen(config.port, config.host, () => logger.info("server listening", { host: config.host, port: config.port, origin: config.publicOrigin }));
 

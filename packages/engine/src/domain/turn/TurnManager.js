@@ -168,6 +168,9 @@ export class TurnManager {
   #discardToHandLimit(player, context) {
     while (player.hand.size > this.#rules.maxHandSize) {
       const card = player.hand.takeBottom();
+      if (card === undefined) {
+        return;
+      }
       player.graveyard.add(card);
       context.events.emit(GameEventType.CARD_DISCARDED, { playerId: player.id, instanceId: card.instanceId, definitionId: card.definitionId });
     }

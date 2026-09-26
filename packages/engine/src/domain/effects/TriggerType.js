@@ -12,5 +12,8 @@ export const TriggerType = Object.freeze({
 
 export const TRIGGER_TYPES = Object.freeze(Object.values(TriggerType));
 
-/** Triggers whose targets are chosen by the player at command time. */
+/**
+ * Triggers whose targets are chosen by the player at command time.
+ * @type {readonly string[]}
+ */
 export const PLAYER_TARGETED_TRIGGERS = Object.freeze([TriggerType.ON_PLAY, TriggerType.ON_CAST]);

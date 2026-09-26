@@ -17,7 +17,9 @@ export const DeckRepositoryError = Object.freeze({
   NOT_FOUND: "DECK_NOT_FOUND",
 });
 
-/** @implements {import("../../application/ports/DeckRepository.contract.js").DeckRepository} */
+/** @typedef {import("../../application/ports/DeckRepository.contract.js").DeckRepository} DeckRepository */
+
+/** @implements {DeckRepository} */
 export class StoredDeckRepository {
   #store;
   #logger;

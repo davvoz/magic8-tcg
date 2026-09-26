@@ -46,16 +46,16 @@ export function checkProposal({ give, want }, isKnownCard) {
         return undefined;
       }
       const definitionId = checkString(issues, object.definitionId, `${path}.definitionId`, { pattern: CARD_ID });
-      checkInteger(issues, object.count, `${path}.count`, { min: 1, max: MAX_TRADE_CARDS });
+      const count = checkInteger(issues, object.count, `${path}.count`, { min: 1, max: MAX_TRADE_CARDS });
       if (definitionId !== undefined && !isKnownCard(definitionId)) {
         issues.add(`${path}.definitionId`, "no such card");
       }
-      return object;
+      return definitionId === undefined || count === undefined ? undefined : { definitionId, count };
     },
   });
   if (wants !== undefined) {
     checkUnique(issues, wants, "want", (entry) => entry.definitionId);
-    if (wants.reduce((sum, entry) => sum + (Number.isSafeInteger(entry.count) ? entry.count : 0), 0) > MAX_TRADE_CARDS) {
+    if (wants.reduce((sum, entry) => sum + entry.count, 0) > MAX_TRADE_CARDS) {
       issues.add("want", `at most ${MAX_TRADE_CARDS} copies`);
     }
   }

@@ -10,7 +10,7 @@
  * Options:
  *   --server <origin>        where to download the drop tables (each is
  *                            accepted only if it hashes to the receipt's)
- *   --root <account>         the trust anchor (default: luciojolly)
+ *   --root <account>         the trust anchor (default: verdu.green)
  *   --payment-block <n>      the block of the payment: the epoch must have
  *                            been committed before it
  *   --nodes <urls>           STEEM API nodes, comma-separated

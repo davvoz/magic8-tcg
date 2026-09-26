@@ -11,6 +11,7 @@
  * targets itself with its own play ability, so a lone creature cannot
  * satisfy its own ally-targeted ability.
  */
+import { isPlayerTargeted } from "../cards/Ability.js";
 import { CommandError } from "../commands/CommandError.js";
 import { candidatesFor, validateChosenTargets } from "../effects/TargetResolver.js";
 import { playTriggerFor } from "../effects/TriggerDispatcher.js";
@@ -24,7 +25,7 @@ import { playTriggerFor } from "../effects/TriggerDispatcher.js";
  * @param {import("../cards/CardDefinition.js").CardDefinition} definition
  */
 export function playerTargetedPlayAbilities(definition) {
-  return definition.abilitiesFor(playTriggerFor(definition)).filter((ability) => ability.target !== null && !ability.target.isAutomatic);
+  return definition.abilitiesFor(playTriggerFor(definition)).filter(isPlayerTargeted);
 }
 
 /**

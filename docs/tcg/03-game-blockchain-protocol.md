@@ -201,7 +201,7 @@ Un verificatore conosce solo il nome dell'account root (configurazione). Da lì 
 
 **Nessuna autorizzazione retroattiva.** Un manifest vale dal blocco `max(from_block, blocco del manifest)`: un record incluso prima è invalido per sempre. Per questo il server (`ManifestWatcher`) legge i manifest del root come un verificatore e un broadcaster pubblica solo quando il manifest lo autorizza **al blocco irreversibile**; fino ad allora i suoi record aspettano nell'outbox. Il manifest va quindi pubblicato prima di dare le chiavi al server.
 
-*Nomi degli account:* su STEEM ogni parte di un nome separata da punti deve avere almeno 3 caratteri: `luciojolly.b1` non è valido, `luciojolly-b1` sì.
+*Nomi degli account:* su STEEM ogni parte di un nome separata da punti deve avere almeno 3 caratteri: `verdu.green.b1` non è valido, `verdu.green-b1` sì.
 
 ### 11.1 Epoche dei pacchetti (`m8tcg_epoch`)
 

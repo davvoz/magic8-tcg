@@ -5,7 +5,9 @@
  * first version that introduced it, with the latest definition as data.
  */
 
-/** @implements {import("../application/ports.js").ContentRepository} */
+/** @typedef {import("../application/ports.js").ContentRepository} ContentRepository */
+
+/** @implements {ContentRepository} */
 export class PgContentRepository {
   #db;
 

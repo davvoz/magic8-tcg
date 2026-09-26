@@ -38,6 +38,6 @@ export function rowsHeight(count) {
  * @property {import("../../theme/Theme.js").Theme} theme
  * @property {() => void} rebuild re-read the service and redraw everything
  * @property {(cardId: string) => void} inspect open the card detail overlay
- * @property {(request: { title: string, message: string, confirmText: string, onConfirm: () => void }) => void} confirm
+ * @property {(request: { title: string, message: string, confirmText: string, destructive?: boolean, onConfirm: () => void }) => void} confirm
  * @property {Record<string, number>} scroll persisted scroll offsets by list id
  */

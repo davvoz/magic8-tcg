@@ -18,6 +18,7 @@ export const PROTOCOL_VERSION = 1;
  *   authorised (SESSION events), docs/tcg/12-mosse-firmate.md.
  */
 export const GameProtocol = Object.freeze({ V1: 1, V2: 2 });
+/** @type {readonly number[]} */
 export const GAME_PROTOCOL_VERSIONS = Object.freeze([GameProtocol.V1, GameProtocol.V2]);
 export const LATEST_GAME_PROTOCOL = GameProtocol.V2;
 

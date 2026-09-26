@@ -35,3 +35,16 @@ export class Ability {
     return this.target !== null;
   }
 }
+
+/**
+ * An ability whose targets the player chooses when the card is played.
+ * @typedef {Ability & { readonly target: import("../effects/TargetSpec.js").TargetSpec }} PlayerTargetedAbility
+ */
+
+/**
+ * @param {Ability} ability
+ * @returns {ability is PlayerTargetedAbility}
+ */
+export function isPlayerTargeted(ability) {
+  return ability.target !== null && !ability.target.isAutomatic;
+}

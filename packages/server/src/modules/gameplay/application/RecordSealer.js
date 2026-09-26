@@ -21,9 +21,11 @@ export const DEFAULT_SEALING_POLICY = Object.freeze({
 });
 
 /** The game is over: nothing more to count. */
+/** @type {ReadonlySet<string>} */
 const TERMINAL_KINDS = Object.freeze(new Set([EventKind.GAME_FINISHED, EventKind.GAME_ABORTED]));
 
 /** Events after which the pending run is sealed immediately. */
+/** @type {ReadonlySet<string>} */
 const CLOSING_KINDS = Object.freeze(new Set([EventKind.GAME_STARTED, EventKind.STATE_CHECKPOINT, EventKind.GAME_FINISHED, EventKind.GAME_ABORTED]));
 
 export class RecordSealer {

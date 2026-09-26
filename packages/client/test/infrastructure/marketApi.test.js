@@ -14,7 +14,7 @@ const ORDER = Object.freeze({
   status: "PAYMENT_PENDING",
   items: [{ productId: "core_booster", name: "Core Booster", quantity: 1, unitAmount: "1.000" }],
   total: { asset: "STEEM", amount: "1.000" },
-  payment: { network: "steem", from: "alice", to: "luciojolly", asset: "STEEM", amount: "1.000", memo: "m8tcg-x", expiresAt: 5 },
+  payment: { network: "steem", from: "alice", to: "verdu.green", asset: "STEEM", amount: "1.000", memo: "m8tcg-x", expiresAt: 5 },
   rngEpochId: 1,
   failureReason: null,
   createdAt: 1,
@@ -22,9 +22,13 @@ const ORDER = Object.freeze({
   fulfilment: null,
 });
 const LISTING = Object.freeze({
-  products: [{ id: "core_booster", kind: "booster", name: "Core Booster", description: "d", prices: [{ asset: "STEEM", amount: "1.000" }], contents: [{ type: "pack", ref: "core_booster", count: 1, finish: null }], cards: 5, limits: { perOrder: 20, availableFrom: null, availableUntil: null } }],
+  products: [
+    { id: "core_booster", kind: "pack", name: "Core Booster", description: "d", prices: [{ asset: "STEEM", amount: "1.000" }], contents: [{ type: "pack", ref: "core_booster", count: 1, finish: null }], rarity: null, cards: 5, limits: { perOrder: 20, availableFrom: null, availableUntil: null } },
+    { id: "single_ember_imp", kind: "single", name: "Ember Imp", description: "d", prices: [{ asset: "STEEM", amount: "0.050" }], contents: [{ type: "card", ref: "ember_imp", count: 1, finish: null }], rarity: "common", cards: 1, limits: { perOrder: 3, availableFrom: null, availableUntil: null } },
+  ],
   dropTables: [{ id: "core_booster", hash: "cd".repeat(32), edition: "core-1", size: 5, odds: [{ count: 5, odds: { common: { numerator: 1, denominator: 1 } } }], foil: { numerator: 1, denominator: 20 }, pools: { common: ["ember_imp"] } }],
   rarities: ["common"],
+  priceList: { asset: "STEEM", singles: [{ rarity: "common", standard: "0.050", foil: null }] },
 });
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -41,6 +45,16 @@ describe("HttpMarketApi", () => {
     const listing = await apiWith(() => json(200, LISTING)).api.listing();
     assert.equal(listing.value.products[0].perOrder, 20);
     assert.deepEqual(listing.value.dropTables[0].slots, [{ count: 5, odds: { common: { numerator: 1, denominator: 1 } } }]);
+    assert.deepEqual(listing.value.products.map((product) => product.rarity), [null, "common"]);
+    assert.deepEqual(listing.value.rarities, ["common"]);
+    assert.deepEqual(listing.value.priceList, { asset: "STEEM", singles: [{ rarity: "common", standard: "0.050", foil: null }] });
+  });
+
+  it("refuses a listing without a valid price list", async () => {
+    for (const priceList of [undefined, { asset: "STEEM", singles: [{ rarity: "common", standard: "cheap", foil: null }] }, { singles: [] }]) {
+      const listing = await apiWith(() => json(200, { ...LISTING, priceList })).api.listing();
+      assert.equal(listing.ok, false, JSON.stringify(priceList));
+    }
   });
 
   it("creates orders with the Idempotency-Key and never sends a price", async () => {
@@ -99,13 +113,13 @@ function keychainWith(respond) {
 }
 
 describe("KeychainWalletConnector transfers", () => {
-  const REQUEST = Object.freeze({ from: "alice", to: "luciojolly", amount: "1.000", asset: "STEEM", memo: "m8tcg-x" });
+  const REQUEST = Object.freeze({ from: "alice", to: "verdu.green", amount: "1.000", asset: "STEEM", memo: "m8tcg-x" });
 
   it("asks for exactly the instructed transfer, from the buyer's account only", async () => {
     const { keychain, transfers } = keychainWith((callback) => callback({ success: true, result: { id: TX, block_num: 1 } }));
     const connector = new KeychainWalletConnector({ locate: () => keychain, timers: realTimers });
     assert.deepEqual(await connector.requestTransfer(REQUEST), { ok: true, value: TX });
-    assert.deepEqual(transfers, [["alice", "luciojolly", "1.000", "m8tcg-x", "STEEM", true]], "enforce: Keychain may not switch account");
+    assert.deepEqual(transfers, [["alice", "verdu.green", "1.000", "m8tcg-x", "STEEM", true]], "enforce: Keychain may not switch account");
   });
 
   it("maps refusals, odd results and a missing transfer method to failures", async () => {

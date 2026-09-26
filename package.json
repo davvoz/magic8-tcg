@@ -18,14 +18,17 @@
     "test": "npm test --workspaces --if-present",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
     "lint": "eslint packages tools",
-    "check": "npm run lint && npm test",
+    "typecheck": "tsc -p .",
+    "check": "npm run lint && npm run typecheck && npm test",
     "serve": "node tools/dev-server.js",
     "start": "npm start -w @magic8/server",
     "simulate": "npm run simulate -w @magic8/client --"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@types/node": "^22.20.4",
     "eslint": "^9.0.0",
-    "eslint-plugin-sonarjs": "4.2.1"
+    "eslint-plugin-sonarjs": "4.2.1",
+    "typescript": "^6.0.3"
   }
 }

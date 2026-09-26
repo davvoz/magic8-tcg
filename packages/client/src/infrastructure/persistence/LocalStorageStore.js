@@ -6,7 +6,9 @@
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { StoreError } from "./KeyValueStore.contract.js";
 
-/** @implements {import("./KeyValueStore.contract.js").KeyValueStore} */
+/** @typedef {import("./KeyValueStore.contract.js").KeyValueStore} KeyValueStore */
+
+/** @implements {KeyValueStore} */
 export class LocalStorageStore {
   #storage;
 

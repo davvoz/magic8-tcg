@@ -23,6 +23,8 @@ export const LifecyclePhase = Object.freeze({
   ABORTED: "ABORTED",
 });
 
+/** @typedef {typeof LifecyclePhase[keyof typeof LifecyclePhase]} Phase */
+
 /** Kinds allowed in each phase and the phase they lead to. */
 const TRANSITIONS = Object.freeze({
   [LifecyclePhase.EMPTY]: { [EventKind.GAME_CREATED]: LifecyclePhase.JOINING },
@@ -41,6 +43,7 @@ const TRANSITIONS = Object.freeze({
 });
 
 export class Lifecycle {
+  /** @type {Phase} */
   #phase = LifecyclePhase.EMPTY;
   /** @type {Set<string>} */
   #joined = new Set();

@@ -406,7 +406,13 @@ export class GameService {
       return null;
     }
     const secret = bytesToHex(this.#secrets.open(game.sealedSecret, secretContext(gameId)));
-    const entropies = Object.fromEntries(game.players.filter((player) => player.entropy !== null).map((player) => [player.seat, player.entropy]));
+    /** @type {Record<string, string>} */
+    const entropies = {};
+    for (const player of game.players) {
+      if (player.entropy !== null) {
+        entropies[player.seat] = player.entropy;
+      }
+    }
     const recorder = new GameRecorder({ gameId, secret, decks: game.players.map((player) => player.deck), head: game.chainHead, nextSeq: game.lastEventSeq + 1, entropies, version: game.protocolVersion });
     const actor = this.#newActor(game, recorder, version.content);
     actor.replay(await this.#repository.listEvents(gameId));

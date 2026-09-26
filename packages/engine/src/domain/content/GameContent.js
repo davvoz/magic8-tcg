@@ -47,8 +47,11 @@ export const ContentResource = Object.freeze({
 export function buildGameContent(raw, effects) {
   const deckRules = validateDeckRules(raw.deckRules);
   const gameRules = validateGameRules(raw.gameRules);
-  if (!deckRules.ok || !gameRules.ok) {
-    return invalid("rules", deckRules.ok ? gameRules : deckRules);
+  if (!deckRules.ok) {
+    return invalid("rules", deckRules);
+  }
+  if (!gameRules.ok) {
+    return invalid("rules", gameRules);
   }
   const catalog = buildCatalog(raw.cardSets, { factions: deckRules.value.factions, effects });
   if (!catalog.ok) {

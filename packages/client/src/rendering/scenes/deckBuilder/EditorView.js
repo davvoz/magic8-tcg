@@ -179,7 +179,7 @@ export class EditorView {
 
   /**
    * @param {ScrollList} list
-   * @param {{ card: import("../../cards/CardDetail.js").CardLike, count: number, canAdd: boolean }} row
+   * @param {ReturnType<import("../../../application/decks/DeckBuildingService.js").DeckBuildingService["browse"]>[number]} row
    * @param {number} y
    */
   #buildCatalogRow(list, { card, count, limit, canAdd }, y) {

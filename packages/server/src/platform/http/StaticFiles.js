@@ -32,10 +32,13 @@ const INLINE_BLOCK = /<(script|style)\b[^>]*>([\s\S]*?)<\/\1>/g;
  *   not every browser counts ws:/wss: as 'self')
  */
 export function pageCsp(html, connectSources = []) {
+  /** @type {{ script: string[], style: string[] }} */
   const hashes = { script: [], style: [] };
   for (const [, tag, content] of html.matchAll(INLINE_BLOCK)) {
     if (content.trim().length > 0) {
-      hashes[/** @type {"script" | "style"} */ (tag)].push(`'sha256-${createHash("sha256").update(content).digest("base64")}'`);
+      // Browsers hash the parsed text, where CRLF and lone CR are already LF (a Windows checkout has CRLF).
+      const parsed = content.replaceAll(/\r\n?/g, "\n");
+      hashes[/** @type {"script" | "style"} */ (tag)].push(`'sha256-${createHash("sha256").update(parsed).digest("base64")}'`);
     }
   }
   return [

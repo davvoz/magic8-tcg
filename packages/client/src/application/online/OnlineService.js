@@ -370,7 +370,7 @@ export class OnlineService {
     this.#set({ status: OnlineStatus.MATCHED, opponent: found.opponent.account, session, error: null });
     // Our entropy, drawn only now that the server is committed to its secret.
     this.#sendEntropy(found.gameId);
-    if (found.protocol >= 2) {
+    if ((found.protocol ?? 1) >= 2) {
       this.#authorizeSession(found.gameId);
     }
   }

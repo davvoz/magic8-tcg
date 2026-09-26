@@ -62,6 +62,11 @@ function requireNonNegativeInteger(value, what) {
  */
 function parseAuthority(raw, what) {
   const authority = requireObject(raw, what);
+  /**
+   * @param {unknown} list
+   * @param {string} name
+   * @returns {[string, number][]}
+   */
   const pairs = (list, name) => {
     if (!Array.isArray(list) || list.length > MAX_AUTHORITY_ENTRIES) {
       throw new ChainDataError(`${what}.${name}: expected a bounded array`);
@@ -70,7 +75,9 @@ function parseAuthority(raw, what) {
       if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== "string") {
         throw new ChainDataError(`${what}.${name}[${index}]: expected [string, weight]`);
       }
-      return [pair[0], requireNonNegativeInteger(pair[1], `${what}.${name}[${index}] weight`)];
+      /** @type {[string, number]} */
+      const entry = [pair[0], requireNonNegativeInteger(pair[1], `${what}.${name}[${index}] weight`)];
+      return entry;
     });
   };
   const keys = pairs(authority.key_auths, "key_auths").filter(([key]) => decodePublicKey(key) !== null);

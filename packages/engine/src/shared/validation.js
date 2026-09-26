@@ -69,14 +69,16 @@ export class Issues {
   }
 
   /**
+   * With no problems recorded every check passed, so `value` (built from the
+   * checks' results) holds no `undefined` left by a failed check.
    * @template T
    * @param {T} value
    * @param {string} [code]
-   * @returns {import("./Result.js").Ok<T> | import("./Result.js").Fail}
+   * @returns {import("./Result.js").Ok<Exclude<T, undefined>> | import("./Result.js").Fail}
    */
   toResult(value, code = VALIDATION_ERROR) {
     if (this.isEmpty) {
-      return ok(value);
+      return ok(/** @type {Exclude<T, undefined>} */ (value));
     }
     return fail(code, `${this.#problems.length} validation problem(s): ${this.#problems[0]}`, {
       problems: this.list(),
@@ -141,7 +143,7 @@ export function checkString(issues, value, path, options = {}) {
  */
 export function checkInteger(issues, value, path, options = {}) {
   const { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = options;
-  if (!Number.isInteger(value)) {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
     return issues.add(path, "expected an integer");
   }
   if (value < min || value > max) {
@@ -216,6 +218,17 @@ export function checkArrayOf(issues, value, path, options) {
   }
   const items = array.map((item, index) => options.item(item, `${path}[${index}]`));
   return items.every((item) => item !== undefined) ? /** @type {T[]} */ (items) : undefined;
+}
+
+/**
+ * Gathers the results of several checks: `fields` itself when every check
+ * passed, `undefined` when any of them failed (returned `undefined`).
+ * @template {Record<string, unknown>} T
+ * @param {T} fields
+ * @returns {{ [K in keyof T]: Exclude<T[K], undefined> } | undefined}
+ */
+export function allDefined(fields) {
+  return Object.values(fields).includes(undefined) ? undefined : /** @type {{ [K in keyof T]: Exclude<T[K], undefined> }} */ (fields);
 }
 
 /**

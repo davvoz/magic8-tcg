@@ -82,7 +82,7 @@ export class MainMenuScene extends Scene {
           height: BUTTON_HEIGHT,
           text: entry.text,
           variant: /** @type {import("../ui/Button.js").ButtonVariant} */ (entry.variant),
-          onActivate: entry.onActivate ?? (() => navigate(entry.scene)),
+          onActivate: entry.onActivate ?? (() => navigate(/** @type {string} entries without onActivate have a scene */ (entry.scene))),
         }),
       );
       button.enabled = entry.scene === null || hasScene(entry.scene);

@@ -10,7 +10,7 @@ export class CommandRegistry {
    * @returns {this}
    */
   register(handler) {
-    if (!COMMAND_TYPES.includes(handler?.type)) {
+    if (!/** @type {readonly string[]} */ (COMMAND_TYPES).includes(handler?.type)) {
       throw new TypeError(`CommandRegistry: unknown command type "${handler?.type}"`);
     }
     if (typeof handler.validate !== "function" || typeof handler.execute !== "function" || typeof handler.requiresPriority !== "boolean") {

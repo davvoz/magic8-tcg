@@ -18,6 +18,7 @@ export const Targeting = Object.freeze({
   NONE: "none",
 });
 
+/** @type {readonly string[]} */
 const TARGETING_VALUES = Object.freeze(Object.values(Targeting));
 
 /**

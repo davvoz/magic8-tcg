@@ -49,7 +49,9 @@ function toGame(row, players) {
   });
 }
 
-/** @implements {import("../application/ports.js").GameRepository} */
+/** @typedef {import("../application/ports.js").GameRepository} GameRepository */
+
+/** @implements {GameRepository} */
 export class PgGameRepository {
   #db;
 

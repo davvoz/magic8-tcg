@@ -7,7 +7,7 @@
  * @typedef {Readonly<{ position: number, productId: string, quantity: number, unitAmount: number }>} OrderItem
  * @typedef {Readonly<{
  *   id: string, userId: string, status: string, network: string, asset: string,
- *   totalAmount: number, receiver: string, memo: string, expiresAt: number,
+ *   totalAmount: number, receiver: string, payer: string, memo: string, expiresAt: number,
  *   idempotencyKey: string, requestHash: string, paymentId: string | null,
  *   rngEpochId: number | null, failureReason: string | null, version: number,
  *   createdAt: number, updatedAt: number, items: readonly OrderItem[],
@@ -37,7 +37,10 @@ export const ORDER_TRANSITIONS = Object.freeze({
   [OrderStatus.CANCELLED]: Object.freeze([]),
 });
 
-/** States in which a payment can still be accepted for the order. */
+/**
+ * States in which a payment can still be accepted for the order.
+ * @type {readonly string[]}
+ */
 export const AWAITING_PAYMENT = Object.freeze([OrderStatus.CREATED, OrderStatus.PAYMENT_PENDING]);
 /** States that count as "open" for the per-user limit. */
 export const OPEN_STATUSES = Object.freeze([OrderStatus.CREATED, OrderStatus.PAYMENT_PENDING, OrderStatus.PAYMENT_DETECTED, OrderStatus.PAYMENT_VERIFIED]);

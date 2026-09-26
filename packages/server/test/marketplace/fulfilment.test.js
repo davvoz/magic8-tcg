@@ -99,7 +99,7 @@ describe("fulfilment", () => {
   });
 
   it("mints bought decks and saves them to the account, and prints foil singles", async () => {
-    const deckOrder = await buyAndPay(bobClient, "deck_arcane_conclave");
+    const deckOrder = await buyAndPay(bobClient, "deck_precon_arcane");
     const foilOrder = await buyAndPay(bobClient, "single_pyre_drake_foil");
     assert.equal(await setup.app.fulfilment.fulfilVerified(), 2);
     const deck = (await orderOf(bobClient, deckOrder.id)).fulfilment;
@@ -145,7 +145,7 @@ describe("fulfilment", () => {
   });
 
   it("splits a big order's receipt into operations of at most 8 KB", async () => {
-    const order = await buyAndPay(bobClient, "core_booster_box", 2);
+    const order = await buyAndPay(bobClient, "core_booster", 20);
     assert.equal(await setup.app.fulfilment.fulfilVerified(), 1);
     const parts = await receipts(order.id);
     assert.ok(parts.length > 1, `${parts.length} parts`);
@@ -153,8 +153,8 @@ describe("fulfilment", () => {
       assert.ok(utf8Length(part.payload) <= 8192);
       return parseCanonical(part.payload).cards;
     });
-    assert.equal(cards.length, 120);
-    assert.equal((await orderOf(bobClient, order.id)).fulfilment.packs.length, 24);
+    assert.equal(cards.length, 100);
+    assert.equal((await orderOf(bobClient, order.id)).fulfilment.packs.length, 20);
   });
 
   it("lets a player recompute every pack from public data once the epoch is revealed", async () => {

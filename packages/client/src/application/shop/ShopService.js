@@ -18,8 +18,14 @@ import { OrderStatus } from "../ports/MarketApi.contract.js";
 
 export const ShopStatus = Object.freeze({ IDLE: "idle", LOADING: "loading", READY: "ready", FAILED: "failed" });
 export const PurchaseStage = Object.freeze({ NONE: "none", ORDERING: "ordering", SIGNING: "signing", CONFIRMING: "confirming", DONE: "done", FAILED: "failed" });
+/**
+ * Stages while a purchase is in flight.
+ * @type {readonly string[]}
+ */
+export const BUSY_STAGES = Object.freeze([PurchaseStage.ORDERING, PurchaseStage.SIGNING, PurchaseStage.CONFIRMING]);
 export const ShopError = Object.freeze({ BUSY: "BUSY", SIGNED_OUT: "SIGNED_OUT", NOT_READY: "SHOP_NOT_READY", STILL_WAITING: "STILL_WAITING", ORDER_CLOSED: "ORDER_CLOSED" });
 
+/** @type {readonly string[]} */
 const TERMINAL = Object.freeze([OrderStatus.FAILED, OrderStatus.EXPIRED, OrderStatus.CANCELLED]);
 
 /**
@@ -181,7 +187,7 @@ export class ShopService {
   }
 
   #busy() {
-    return [PurchaseStage.ORDERING, PurchaseStage.SIGNING, PurchaseStage.CONFIRMING].includes(this.#state.purchase.stage);
+    return BUSY_STAGES.includes(this.#state.purchase.stage);
   }
 
   /** @returns {import("@magic8/engine/shared/Result.js").Fail | null} */

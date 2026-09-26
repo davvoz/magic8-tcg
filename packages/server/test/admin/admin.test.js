@@ -10,7 +10,7 @@ import { after, before, describe, it } from "node:test";
 import { buildTestApp, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
 
-const SHOP = "luciojolly";
+const SHOP = "verdu.green";
 const operatorKeys = keyPair(7);
 const aliceKeys = keyPair(1);
 

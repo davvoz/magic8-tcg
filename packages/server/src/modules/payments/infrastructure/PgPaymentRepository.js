@@ -51,7 +51,9 @@ function toRefund(row) {
   });
 }
 
-/** @implements {import("../application/ports.js").PaymentRepository} */
+/** @typedef {import("../application/ports.js").PaymentRepository} PaymentRepository */
+
+/** @implements {PaymentRepository} */
 export class PgPaymentRepository {
   #db;
 
@@ -102,6 +104,12 @@ export class PgPaymentRepository {
     return Object.freeze(rows.map(toPayment));
   }
 
+  /**
+   * @param {string} id
+   * @param {string} from
+   * @param {string} to
+   * @param {{ problem?: string | null, orderId?: string | null, blockNum?: number, irreversibleAt?: number }} [changes]
+   */
   async transition(id, from, to, { problem, orderId, blockNum, irreversibleAt } = {}) {
     const row = await this.#db.maybeOne(
       `UPDATE payments

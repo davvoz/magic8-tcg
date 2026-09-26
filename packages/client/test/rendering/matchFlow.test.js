@@ -40,7 +40,7 @@ function appContext() {
     deckSelection: new DeckSelectionService({ content, repository, logger }),
     deckBuilding: new DeckBuildingService({ content, repository }),
     matchSetup: new MatchSetupService({ content, effects, scheduler: immediateScheduler, logger }),
-    createSeed: () => 42,
+    createSeed: () => "9f".repeat(32),
     logger,
     environment: { version: "test", storage: "memory" },
   };

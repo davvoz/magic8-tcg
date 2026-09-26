@@ -133,7 +133,7 @@ export class DeckSelectionScene extends Scene {
     }
     const seed = this.#app.createSeed();
     const others = options.filter((option) => option.deck.id !== selected.deck.id);
-    const rival = others.length === 0 ? selected : others[Math.abs(seed) % others.length];
+    const rival = others.length === 0 ? selected : others[seedIndex(seed, others.length)];
     const created = this.#app.matchSetup.createMatch({
       seats: [
         { ...HUMAN_SEAT, deckList: selected.deck, controller: humanController },
@@ -154,6 +154,17 @@ export class DeckSelectionScene extends Scene {
     this.#app.logger.info("match started", { deck: selected.deck.id, rival: rival.deck.id, seed });
     this.services.navigate(SceneId.MATCH, { session: created.value });
   }
+}
+
+/**
+ * Picks an index in `[0, length)` from the match seed: the hex key's first
+ * 32 bits, or the integer itself when a test or tool passes a number.
+ * @param {string | number} seed
+ * @param {number} length
+ */
+function seedIndex(seed, length) {
+  const value = typeof seed === "number" ? Math.abs(Math.trunc(seed)) : Number.parseInt(seed.slice(0, 8), 16);
+  return Number.isFinite(value) ? value % length : 0;
 }
 
 /**

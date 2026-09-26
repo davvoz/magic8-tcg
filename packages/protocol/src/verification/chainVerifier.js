@@ -241,6 +241,7 @@ async function checkSessions({ history, reader, recoverSigner }) {
       postingKeys.set(grant.account, typeof reader.postingKeys === "function" ? await reader.postingKeys(grant.account) : null);
     }
     const known = postingKeys.get(grant.account) ?? null;
+    /** @type {typeof SessionStatus[keyof typeof SessionStatus]} */
     let status = SessionStatus.UNCHECKED;
     if (signer === null) {
       status = SessionStatus.FORGED;

@@ -228,10 +228,10 @@ export class GameActor {
         return fail(GameError.INVALID_ENTROPY, "entropy must be 16 bytes as lowercase hex");
       }
       if (this.#status !== GameStatus.CREATED || this.#entropies.has(seat)) {
-        return { ok: true };
+        return /** @type {const} */ ({ ok: true });
       }
       await this.#join(seat, entropy, EntropySource.CLIENT);
-      return { ok: true };
+      return /** @type {const} */ ({ ok: true });
     });
   }
 
@@ -484,7 +484,7 @@ export class GameActor {
     const accepted = { ...withoutPlayer, playerId: seat };
     const chained = [forcedWhy === null ? this.#recorder.move({ seat, command: accepted, clock, signed }) : this.#recorder.forcedMove({ seat, command: accepted, reason: forcedWhy, clock })];
     if (after.isOver) {
-      chained.push(this.#recorder.finished({ winner: after.winnerId, reason: after.endReason, engineVersion: engine.version, digest: engine.getStateDigest(), clock }));
+      chained.push(this.#recorder.finished({ winner: after.winnerId, reason: /** @type {string} a finished game has a reason */ (after.endReason), engineVersion: engine.version, digest: engine.getStateDigest(), clock }));
     } else if (after.turnNumber !== before.turnNumber) {
       chained.push(this.#recorder.checkpoint({ engineVersion: engine.version, digest: engine.getStateDigest(), clock }));
     }

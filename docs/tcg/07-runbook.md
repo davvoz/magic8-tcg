@@ -18,8 +18,8 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 | `M8_DATA_KEY` | sì (https) | 64 caratteri esadecimali (`openssl rand -hex 32`): cifra i segreti di partita e delle epoche |
 | `M8_DATA_KEY_ID`, `M8_DATA_KEYS_OLD` | per la rotazione | vedi §4.1 |
 | `M8_TRUST_PROXY` | `true` dietro **un** proxy | usa l'ultimo indirizzo di `X-Forwarded-For` (quello scritto dal proxy); con `false` l'header è ignorato |
-| `M8_SHOP_ACCOUNT` | default `luciojolly` | riceve i pagamenti |
-| `M8_ROOT_ACCOUNT` | default `luciojolly` | pubblica i manifest (consigliato un account dedicato, vedi 06) |
+| `M8_SHOP_ACCOUNT` | default `verdu.green` | riceve i pagamenti |
+| `M8_ROOT_ACCOUNT` | default `verdu.green` | pubblica i manifest (consigliato un account dedicato, vedi 06) |
 | `M8_BROADCASTER_KEYS` | per pubblicare | `account:WIF_posting,…`, **solo chiavi posting** |
 | `M8_SIGNED_MOVES` | no | `true` (default): partite nuove nel protocollo v2, mosse firmate dai giocatori (12). `false` solo per strumenti o client vecchi. Il browser firma solo in https o su `localhost` |
 | `M8_ACK_KEY` | sì (https) | chiave WIF dedicata che firma gli ack ai giocatori (11); mai la chiave di un account o di un broadcaster |

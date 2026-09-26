@@ -12,7 +12,9 @@ const encoder = new globalThis.TextEncoder();
 /** @param {ArrayBuffer} buffer */
 const toHex = (buffer) => Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
 
-/** @implements {import("../../application/ports/SessionKeys.contract.js").SessionKeys} */
+/** @typedef {import("../../application/ports/SessionKeys.contract.js").SessionKeys} SessionKeys */
+
+/** @implements {SessionKeys} */
 export class WebCryptoSessionKeys {
   #subtle;
   /** @type {Map<string, CryptoKey>} game → private key */

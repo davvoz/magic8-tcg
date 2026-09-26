@@ -20,7 +20,9 @@ export const FetchError = Object.freeze({
  *   Resource name → one path (object resources) or a list of paths (array resources).
  */
 
-/** @implements {import("../../application/ports/ContentSource.contract.js").ContentSource} */
+/** @typedef {import("../../application/ports/ContentSource.contract.js").ContentSource} ContentSource */
+
+/** @implements {ContentSource} */
 export class FetchContentSource {
   #manifest;
   #fetch;

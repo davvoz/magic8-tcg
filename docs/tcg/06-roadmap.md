@@ -30,9 +30,9 @@
 
 ## Decisioni prese (2026-09-24)
 
-1. **Nome e account on-chain: `luciojolly`** (provvisorio). L'account esiste (creato 2023-11-04). È l'account **root** (firma il manifest dei broadcaster con la chiave active, via Keychain) e l'account **shop** (riceve i `transfer`). Le sue chiavi non vanno mai sul server: i rimborsi li firma l'operatore con Keychain. È anche la prima riga del messaggio di login (`M8_APP_NAME`).
+1. **Nome e account on-chain: `verdu.green`** (provvisorio). È l'account **root** (firma il manifest dei broadcaster con la chiave active, via Keychain) e l'account **shop** (riceve i `transfer`). Le sue chiavi non vanno mai sul server: i rimborsi li firma l'operatore con Keychain. È anche la prima riga del messaggio di login (`M8_APP_NAME`).
    - Gli id `custom_json` restano `m8tcg_game`, `m8tcg_receipt`, `m8tcg_manifest`: nominano il **protocollo**, non il marchio. Cambiarli dopo il lancio spezzerebbe la storia on-chain in due; così un eventuale cambio di nome non tocca i dati già pubblicati.
-   - **Account broadcaster separati**, autorizzati dal manifest, con **solo** la chiave posting sul server (`M8_BROADCASTER_KEYS`). Se il server fosse compromesso, l'attaccante potrebbe al massimo pubblicare `custom_json` a nome di quegli account, mai muovere fondi né parlare a nome di `luciojolly`. Attenzione al nome: `luciojolly.b1` **non è valido** su STEEM (ogni parte separata da punti deve avere almeno 3 caratteri); vanno bene per esempio `luciojolly-b1` o `luciojolly.bot`.
+   - **Account broadcaster separati**, autorizzati dal manifest, con **solo** la chiave posting sul server (`M8_BROADCASTER_KEYS`). Se il server fosse compromesso, l'attaccante potrebbe al massimo pubblicare `custom_json` a nome di quegli account, mai muovere fondi né parlare a nome di `verdu.green`. Attenzione al nome: `verdu.green.b1` **non è valido** su STEEM (ogni parte separata da punti deve avere almeno 3 caratteri); vanno bene per esempio `verdu.green-b1` o `verdu.green.bot`.
 2. **Solo STEEM.** SBD non è accettato: un transfer in SBD all'account shop non paga nessun ordine e finisce nella coda rimborsi.
 3. **Starter deck gratuito: il giocatore ne sceglie uno fra tre** (`data/economy/starter-offer.json`). La scelta è stata misurata con `npm run simulate`, IA contro IA, 1000 partite per ogni scontro diretto con i posti alternati:
 
@@ -48,7 +48,7 @@
 6. **PostgreSQL:** in sviluppo e nei test gira **PGlite** (PostgreSQL compilato in WebAssembly, dentro il processo Node, dati in una cartella locale): niente da installare. In produzione il server si collega a un PostgreSQL vero con `M8_DATABASE_URL`. La scelta fra servizio gestito (Neon, Supabase, AWS RDS… con backup e aggiornamenti inclusi) e installazione propria su una VPS si fa al momento del deploy (M6) e non cambia il codice.
 
 7. **Rarità provvisorie** (`data/economy/rarities.json`): assegnate per costo (1–2 comune, 3–4 non comune, 5 rara, 6 epica, 7 leggendaria: 36/29/8/5/5 carte). Vanno riviste dal game designer prima della vendita; cambiarle cambia l'hash della drop table, quindi va fatto a epoca chiusa.
-8. **Listino iniziale** (`data/economy/products/`): booster 1 STEEM, box da 12 a 10 STEEM, mazzi completi 5–6 STEEM, singola rara 0,5 STEEM (foil 2,5). Prezzi segnaposto da decidere. Un prodotto non si cancella mai dai dati: si ritira con `"active": false`, così gli ordini già pagati restano evadibili.
+8. **Listino** (`data/economy/pricing.json`, 2026-09-25): un solo file per tutti i prezzi. Ne derivano tre scaffali: **singole** (ogni carta del catalogo, prezzo per rarità: comune 0,05 · non comune 0,15 · rara 0,5 · epica 1,5 · leggendaria 4 STEEM; foil ×5), **pacchetti** di carte ignote a prezzo fisso (Core Booster da 5 a 1 STEEM, Core Mini Booster da 3 a 0,5 STEEM) e **mazzi completi**, che costano la somma delle loro carte come singole (4,95–15,40 STEEM). Prezzi segnaposto da decidere. `data/economy/products/` resta per offerte speciali e prodotti ritirati: un prodotto non si cancella mai dai dati, si ritira con `"active": false`, così gli ordini già pagati restano evadibili (per questo box da 12 e i vecchi mazzi a prezzo fisso ci sono ancora, ritirati).
 9. **Chi inizia si decide a sorte** (2026-09-24). Il primo giocatore è derivato dal seed della partita (`firstSeatFor(K)`), che nasce dal commit-reveal: segreto del server impegnato prima, entropia di entrambi i giocatori dopo. Nessuno dei due, e nemmeno il server, può scegliere chi comincia. Il vantaggio di chi inizia resta dentro la singola partita (67–70% nelle simulazioni IA contro IA) ma è equo in media; il motore non viene modificato. Da rivalutare con i dati delle partite reali.
 
 10. **Epoche dei pacchetti pubblicate dai broadcaster** (`m8tcg_epoch`), non dal root come prevedeva la prima versione della specifica: con il root andava firmato a mano un manifest a ogni epoca, e un impegno dimenticato non vale niente. La fiducia passa comunque dal root, che autorizza i broadcaster.
@@ -58,7 +58,7 @@
 
 1. Creare 1–4 account broadcaster (nomi validi, vedi punto 1) e delegare loro Steem Power da un account freddo (servono Resource Credits, non STEEM).
 2. Pubblicare il manifest da `/manifest.html` con la chiave active del root, **prima** di avviare il server con le chiavi.
-3. Avviare il server con `M8_BROADCASTER_KEYS="account:WIF_posting,…"` (e `M8_ROOT_ACCOUNT` se il root non è `luciojolly`). Il server controlla da solo che le chiavi siano solo posting.
+3. Avviare il server con `M8_BROADCASTER_KEYS="account:WIF_posting,…"` (e `M8_ROOT_ACCOUNT` se il root non è `verdu.green`). Il server controlla da solo che le chiavi siano solo posting.
 4. Giocare una partita e verificarla con `node tools/verify-game.js <id> --server https://…` e da `/verify.html`.
 5. Misurare il consumo di Resource Credits per record (`rc_api.find_rc_accounts` prima e dopo) e controllare che i nodi scelti rispondano a `rc_api` (se un nodo non lo supporta, il monitor lo segnala nel log e il broadcaster lavora normalmente).
 
@@ -72,7 +72,7 @@
 ## Problemi aperti emersi
 
 - **Vantaggio del primo giocatore: 67–70%** nelle simulazioni IA contro IA (9000 partite). Deciso (punto 9): si decide a sorte chi inizia. Se i dati delle partite reali confermassero lo squilibrio, la correzione resta nel motore (una carta o una risorsa in più al secondo giocatore) e si rimisura con `npm run simulate`.
-- **Account root e shop coincidono** (`luciojolly`). Un verificatore legge tutto lo storico del root per trovare i manifest, e l'account shop riceve ogni pagamento: col tempo la verifica rallenta (1000 operazioni per pagina). Conviene un account root dedicato e poco usato, solo per i manifest (`M8_ROOT_ACCOUNT`). Da decidere prima del lancio: cambiarlo dopo vuol dire ripubblicare i manifest e comunicare ai verificatori il nuovo root.
+- **Account root e shop coincidono** (`verdu.green`). Un verificatore legge tutto lo storico del root per trovare i manifest, e l'account shop riceve ogni pagamento: col tempo la verifica rallenta (1000 operazioni per pagina). Conviene un account root dedicato e poco usato, solo per i manifest (`M8_ROOT_ACCOUNT`). Da decidere prima del lancio: cambiarlo dopo vuol dire ripubblicare i manifest e comunicare ai verificatori il nuovo root.
 - **Più processi server:** vedi sopra; il test di carico (08) dà circa 800 partite contemporanee per processo, quindi il lease serve solo oltre quella soglia.
 - **Carico su PostgreSQL vero:** misurato solo con PGlite nello stesso processo; va ripetuto al deploy con `M8_LOAD_DATABASE_URL`.
 - **Pagina di verifica servita dal server del gioco:** un server disonesto potrebbe servire una pagina falsa. Chi vuole una verifica indipendente usa la CLI o una copia salvata della pagina; la pagina lo dice.

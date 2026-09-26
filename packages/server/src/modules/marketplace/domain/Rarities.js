@@ -23,7 +23,10 @@ export function validateRarities(raw, catalog) {
     return issues.toResult(undefined);
   }
   checkInteger(issues, file.schemaVersion, "rarities.schemaVersion", { min: 1, max: 1 });
-  const order = (checkArray(issues, file.rarities, "rarities.rarities", { minLength: 1, maxLength: 12 }) ?? []).filter((rarity, index) => checkString(issues, rarity, `rarities.rarities[${index}]`, { pattern: RARITY_PATTERN }) !== undefined);
+  const order = (checkArray(issues, file.rarities, "rarities.rarities", { minLength: 1, maxLength: 12 }) ?? []).flatMap((rarity, index) => {
+    const checked = checkString(issues, rarity, `rarities.rarities[${index}]`, { pattern: RARITY_PATTERN });
+    return checked === undefined ? [] : [checked];
+  });
   if (new Set(order).size !== order.length) {
     issues.add("rarities.rarities", "duplicate rarity");
   }

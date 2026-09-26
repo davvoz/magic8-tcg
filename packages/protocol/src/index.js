@@ -1,6 +1,16 @@
 /**
  * Public API of @magic8/protocol. Other packages import from here only.
  */
+
+/**
+ * Types of the public API.
+ * @typedef {import("./game/OperationDecoder.js").ChainOperation} ChainOperation
+ * @typedef {import("./game/EventChain.js").ProtocolEvent} ProtocolEvent
+ * @typedef {import("./game/EventChain.js").ChainedEvent} ChainedEvent
+ * @typedef {import("./game/records.js").SealedRecord} SealedRecord
+ * @typedef {import("./game/engineSetup.js").GameContent} GameContent
+ * @typedef {import("./packs/packs.js").DropTable} DropTable
+ */
 export { CanonicalJsonError, CanonicalJsonErrorCode, canonicalize, parseCanonical, utf8Length } from "./canonical/CanonicalJson.js";
 export { HashTag, bytesToHex, hexToBytes, isHash, sha256Hex, taggedHash, taggedHashHex, utf8 } from "./crypto/hash.js";
 export { FINISH_CODES, RECEIPT_VERSION, buildReceipts } from "./receipts/receipts.js";

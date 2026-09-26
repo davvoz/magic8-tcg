@@ -7,7 +7,7 @@
  * @property {import("./decks/DeckSelectionService.js").DeckSelectionService} deckSelection
  * @property {import("./decks/DeckBuildingService.js").DeckBuildingService} deckBuilding
  * @property {import("./match/MatchSetupService.js").MatchSetupService} matchSetup
- * @property {() => number} createSeed
+ * @property {() => string} createSeed
  * @property {import("./ports/Logger.contract.js").Logger} logger
  * @property {Readonly<{ version: string, storage: "local" | "memory" }>} environment
  * @property {import("./identity/IdentityService.js").IdentityService} [identity] absent when the client runs without a game server (tools, previews)
