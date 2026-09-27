@@ -23,9 +23,12 @@ function season(value) {
 
 /** @param {any} value */
 function entry(value) {
-  const counts = ["rank", "games", "wins", "losses", "draws"].every((key) => isCount(value?.[key]));
-  return counts && isAccount(value.account) && Number.isSafeInteger(value.rating)
-    ? Object.freeze({ rank: value.rank, account: value.account, rating: value.rating, games: value.games, wins: value.wins, losses: value.losses, draws: value.draws })
+  const counts = ["games", "wins", "losses", "draws"].every((key) => isCount(value?.[key]));
+  // Provisional ratings are listed without a rank; an older server sends only ranked ones and no flag.
+  const provisional = value?.provisional ?? false;
+  const rankOk = provisional === true ? value.rank === null : provisional === false && isCount(value?.rank);
+  return counts && rankOk && isAccount(value.account) && Number.isSafeInteger(value.rating)
+    ? Object.freeze({ rank: value.rank, provisional, account: value.account, rating: value.rating, games: value.games, wins: value.wins, losses: value.losses, draws: value.draws })
     : null;
 }
 

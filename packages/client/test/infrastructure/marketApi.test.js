@@ -59,12 +59,12 @@ describe("HttpMarketApi", () => {
 
   it("creates orders with the Idempotency-Key and never sends a price", async () => {
     const { api, requests } = apiWith(() => json(201, { order: ORDER }));
-    const created = await api.createOrder({ productId: "core_booster", quantity: 1, asset: "STEEM" }, "key-0000000000001");
+    const created = await api.createOrder({ items: [{ productId: "core_booster", quantity: 1 }, { productId: "single_pyre_drake", quantity: 2 }], asset: "STEEM" }, "key-0000000000001");
     assert.equal(created.value.payment.memo, "m8tcg-x");
     assert.equal(requests[0].url, "/api/orders");
     assert.equal(requests[0].init.headers["Idempotency-Key"], "key-0000000000001");
     assert.equal(requests[0].init.headers["X-M8-Request"], "1");
-    assert.equal(requests[0].init.body, JSON.stringify({ productId: "core_booster", quantity: 1, asset: "STEEM" }));
+    assert.equal(requests[0].init.body, JSON.stringify({ items: [{ productId: "core_booster", quantity: 1 }, { productId: "single_pyre_drake", quantity: 2 }], asset: "STEEM" }));
   });
 
   it("reads, cancels and hints orders by id, never with a non-UUID in the path", async () => {
@@ -90,7 +90,7 @@ describe("HttpMarketApi", () => {
       assert.equal((await apiWith(() => json(200, { order })).api.getOrder(ORDER_ID)).error.code, "BAD_RESPONSE", JSON.stringify(order));
     }
     assert.equal((await apiWith(() => json(200, { products: [{ id: 1 }], dropTables: [] })).api.listing()).error.code, "BAD_RESPONSE");
-    const conflict = await apiWith(() => json(409, { error: { code: "LIMIT_REACHED", message: "too many" } })).api.createOrder({ productId: "x", quantity: 1, asset: "STEEM" }, "key-0000000000002");
+    const conflict = await apiWith(() => json(409, { error: { code: "LIMIT_REACHED", message: "too many" } })).api.createOrder({ items: [{ productId: "x", quantity: 1 }], asset: "STEEM" }, "key-0000000000002");
     assert.equal(conflict.error.code, "LIMIT_REACHED");
   });
 });

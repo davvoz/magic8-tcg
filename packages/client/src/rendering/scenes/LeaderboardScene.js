@@ -1,7 +1,7 @@
 /**
- * The ranked leaderboard of the current season: the best settled ratings
- * (a provisional rating is not ranked yet), with the player's own line
- * highlighted and their standing underneath.
+ * The ranked leaderboard of the current season: settled ratings ranked
+ * first, then provisional ones (listed with no rank yet), with the
+ * player's own line highlighted and their standing above.
  */
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -75,7 +75,7 @@ export class LeaderboardScene extends Scene {
   #fill(list, state) {
     const entries = state.leaderboard?.entries ?? [];
     if (entries.length === 0) {
-      const text = state.loading ? "Loading…" : "Nobody is ranked yet this season: a rating is ranked once it has settled over a few games.";
+      const text = state.loading ? "Loading…" : "Nobody has played ranked yet this season.";
       list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * ROW.height, text, size: "small", colorKey: "textMuted" }));
       list.contentHeight = 2 * ROW.height;
       return;
@@ -85,13 +85,13 @@ export class LeaderboardScene extends Scene {
       const draws = entry.draws > 0 ? `–${entry.draws}` : "";
       list.add(
         new OptionRow({
-          id: `leaderboard.row.${entry.rank}`,
+          id: `leaderboard.row.${index + 1}`,
           x: 0,
           y: rowY(index),
           width: list.rowWidth,
           height: ROW.height,
-          text: `#${entry.rank}  @${entry.account}`,
-          subtitle: `rating ${entry.rating} · ${entry.wins}–${entry.losses}${draws} in ${entry.games} game(s)`,
+          text: entry.rank === null ? `—  @${entry.account}` : `#${entry.rank}  @${entry.account}`,
+          subtitle: `rating ${entry.rating}${entry.rank === null ? " (provisional)" : ""} · ${entry.wins}–${entry.losses}${draws} in ${entry.games} game(s)`,
           selected: entry.account === me,
           onActivate: () => undefined,
         }),

@@ -343,7 +343,7 @@ sequenceDiagram
   participant S as Server
   participant W as PaymentWatcher
   participant C as STEEM
-  B->>S: POST /api/orders {productId, quantity, asset} + Idempotency-Key
+  B->>S: POST /api/orders {items: [{productId, quantity}], asset} + Idempotency-Key
   S->>S: prezzo dal listino server, ordine PAYMENT_PENDING, memo opaco
   S-->>B: {orderId, pay: {to, amount, asset, memo, expiresAt}}
   B->>K: requestTransfer(account, to, amount, memo, asset)

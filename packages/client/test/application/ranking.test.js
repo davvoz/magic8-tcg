@@ -22,7 +22,14 @@ const content = await loadBundledContent();
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const SEASON = Object.freeze({ id: "2026-s1", name: "Season 1" });
 const STANDING = Object.freeze({ season: SEASON, rating: 1612, deviation: 90, provisional: false, rank: 4, games: 12, wins: 8, losses: 4, draws: 0, eligible: true, casualGamesNeeded: 0 });
-const BOARD = Object.freeze({ season: SEASON, entries: [{ rank: 1, account: "carol", rating: 1801, games: 30, wins: 22, losses: 8, draws: 0 }, { rank: 2, account: "alice", rating: 1650, games: 20, wins: 13, losses: 6, draws: 1 }] });
+const BOARD = Object.freeze({
+  season: SEASON,
+  entries: [
+    { rank: 1, provisional: false, account: "carol", rating: 1801, games: 30, wins: 22, losses: 8, draws: 0 },
+    { rank: 2, provisional: false, account: "alice", rating: 1650, games: 20, wins: 13, losses: 6, draws: 1 },
+    { rank: null, provisional: true, account: "dave", rating: 1582, games: 3, wins: 2, losses: 1, draws: 0 },
+  ],
+});
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -36,6 +43,10 @@ describe("HttpRankingApi", () => {
     answers["/api/ranking/leaderboard"] = { season: SEASON, entries: [{ ...BOARD.entries[0], account: "<script>" }] };
     assert.equal((await api.standing()).error.code, "BAD_RESPONSE");
     assert.equal((await api.leaderboard()).error.code, "BAD_RESPONSE");
+    answers["/api/ranking/leaderboard"] = { season: SEASON, entries: [{ ...BOARD.entries[0], rank: null }] };
+    assert.equal((await api.leaderboard()).error.code, "BAD_RESPONSE", "a settled entry needs a rank");
+    answers["/api/ranking/leaderboard"] = { season: SEASON, entries: [{ ...BOARD.entries[0], provisional: undefined }] };
+    assert.equal((await api.leaderboard()).value.entries[0].provisional, false, "an older server sends ranked entries only");
     answers["/api/ranking/leaderboard"] = { season: null, entries: [] };
     assert.deepEqual((await api.leaderboard()).value, { season: null, entries: [] }, "no season running");
   });
@@ -58,7 +69,7 @@ describe("RankingService (client)", () => {
     const seen = [];
     ranking.subscribe((state) => seen.push(state.loading));
     await ranking.refresh();
-    assert.deepEqual([ranking.state.standing.rating, ranking.state.leaderboard.entries.length, ranking.state.error], [1612, 2, null]);
+    assert.deepEqual([ranking.state.standing.rating, ranking.state.leaderboard.entries.length, ranking.state.error], [1612, 3, null]);
     assert.deepEqual(seen, [true, false]);
 
     const flaky = new RankingService({ api: fakeApi(null) });
@@ -135,6 +146,7 @@ describe("ranked screens", () => {
     assert.ok(context.texts.includes("Leaderboard — Season 1"));
     assert.equal(scene.root.findById("leaderboard.row.2").selected, true, "alice is highlighted");
     assert.equal(scene.root.findById("leaderboard.row.1").selected, false);
+    assert.equal(scene.root.findById("leaderboard.row.3").text, "—  @dave", "a provisional player is listed with no rank");
     assert.equal(scene.root.findById("leaderboard.standing").text, "Season 1: rating 1612 (#4), 8–4 in 12 game(s).");
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });
     assert.equal(navigated.at(-1), SceneId.ONLINE);

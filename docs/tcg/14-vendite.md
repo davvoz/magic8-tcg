@@ -87,7 +87,7 @@ Nessuna commissione: il venditore riceve tutto il prezzo. Una commissione richie
 | `POST /api/purchases/:id/payment-hint` | `{ "txId" }`: fa guardare prima; l'id non vale come prova di niente |
 | `POST /api/purchases/:id/release` | Rinuncia a un acquisto non pagato |
 
-WebSocket: `sale.updated { listingId }` al venditore e al compratore a ogni cambiamento.
+WebSocket: a ogni cambiamento di un'offerta (messa in vendita, prenotata, venduta, ritirata, scaduta), dopo il commit, `SalesService` manda un `NOTIFY` sul canale `m8_sales` con l'offerta e i giocatori coinvolti; il `BoardRelay` di ogni processo manda `sales.board { listingId }` a tutti i giocatori connessi (chi ha il Market aperto rilegge la bacheca, una sola lettura per raffica) e `sale.updated { listingId }` al venditore e al compratore. Se il relay perde la connessione di ascolto, alla riconnessione manda `sales.board { listingId: null }` a tutti. Chi guarda la bacheca senza essere collegato non ha la connessione WebSocket e la vede aggiornata alla prossima lettura.
 
 ## Da fare
 

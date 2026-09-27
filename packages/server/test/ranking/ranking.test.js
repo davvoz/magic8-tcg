@@ -182,7 +182,7 @@ describe("ranked play", () => {
     assert.equal((await setup.app.ranking.ratingOf(alice.user.id)).rating, before.rating);
   });
 
-  it("publishes a leaderboard of settled ratings", async () => {
+  it("publishes a leaderboard: settled ratings ranked, provisional ones listed after them", async () => {
     const { setup, player } = await world();
     const alice = await player("alice");
     const bob = await player("bob");
@@ -194,7 +194,11 @@ describe("ranked play", () => {
     try {
       const board = (await new ApiClient(server.base).get("/api/ranking/leaderboard")).json;
       assert.equal(board.season.id, SEASON);
-      assert.deepEqual(board.entries.map((entry) => [entry.rank, entry.account, entry.rating]), [[1, "alice", 1720], [2, "bob", 1610]], "a provisional rating is not ranked yet");
+      assert.deepEqual(
+        board.entries.map((entry) => [entry.rank, entry.provisional, entry.account, entry.rating]),
+        [[1, false, "alice", 1720], [2, false, "bob", 1610], [null, true, "carol", 1900]],
+        "a provisional rating is listed, after the settled ones and with no rank yet",
+      );
       assert.equal((await new ApiClient(server.base).get("/api/ranking/leaderboard?season=bad%20id")).status, 400);
       assert.equal((await new ApiClient(server.base).get("/api/ranking/me")).status, 401);
     } finally {

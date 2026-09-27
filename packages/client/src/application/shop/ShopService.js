@@ -1,6 +1,13 @@
 /**
- * The shop, as a use case the screen drives: the listing, and one purchase
- * at a time from order to cards.
+ * The shop, as a use case the screen drives: the listing, the cart, and one
+ * purchase at a time from order to cards.
+ *
+ * A purchase is either one product bought at once (`buy`) or the whole cart
+ * (`checkout`): the cart becomes one order, paid with one transfer. What was
+ * ordered leaves the cart only once the wallet has sent the payment; an order
+ * refused, abandoned or cancelled leaves the cart as it was. The cart belongs
+ * to whoever is signed in: it empties when they sign out or someone else
+ * signs in (a cart filled before signing in is kept).
  *
  *   ordering    the server prices the order and issues payment instructions
  *   signing     the wallet asks the player to approve exactly that transfer
@@ -23,17 +30,22 @@ export const PurchaseStage = Object.freeze({ NONE: "none", ORDERING: "ordering",
  * @type {readonly string[]}
  */
 export const BUSY_STAGES = Object.freeze([PurchaseStage.ORDERING, PurchaseStage.SIGNING, PurchaseStage.CONFIRMING]);
-export const ShopError = Object.freeze({ BUSY: "BUSY", SIGNED_OUT: "SIGNED_OUT", NOT_READY: "SHOP_NOT_READY", STILL_WAITING: "STILL_WAITING", ORDER_CLOSED: "ORDER_CLOSED" });
+export const ShopError = Object.freeze({ BUSY: "BUSY", SIGNED_OUT: "SIGNED_OUT", NOT_READY: "SHOP_NOT_READY", STILL_WAITING: "STILL_WAITING", ORDER_CLOSED: "ORDER_CLOSED", CART: "CART" });
+/** Most different products in the cart (the server's lines per order). */
+export const MAX_CART_LINES = 20;
 
 /** @type {readonly string[]} */
 const TERMINAL = Object.freeze([OrderStatus.FAILED, OrderStatus.EXPIRED, OrderStatus.CANCELLED]);
 
 /**
- * @typedef {Readonly<{ stage: string, order: import("../ports/MarketApi.contract.js").Order | null, txId: string | null, error: Readonly<{ code: string, message: string }> | null }>} Purchase
- * @typedef {Readonly<{ status: string, listing: import("../ports/MarketApi.contract.js").Listing | null, error: Readonly<{ code: string, message: string }> | null, purchase: Purchase }>} ShopState
+ * @typedef {Readonly<{ productId: string, quantity: number }>} CartLine
+ * @typedef {Readonly<{ stage: string, order: import("../ports/MarketApi.contract.js").Order | null, txId: string | null, error: Readonly<{ code: string, message: string }> | null, cart: readonly CartLine[] | null }>} Purchase `cart`: the lines, when the purchase is the cart's
+ * @typedef {Readonly<{ status: string, listing: import("../ports/MarketApi.contract.js").Listing | null, error: Readonly<{ code: string, message: string }> | null, purchase: Purchase, cart: readonly CartLine[] }>} ShopState
  */
 
-const NO_PURCHASE = Object.freeze({ stage: PurchaseStage.NONE, order: null, txId: null, error: null });
+const NO_PURCHASE = Object.freeze({ stage: PurchaseStage.NONE, order: null, txId: null, error: null, cart: null });
+/** @type {readonly CartLine[]} */
+const EMPTY_CART = Object.freeze([]);
 
 export class ShopService {
   #api;
@@ -44,7 +56,7 @@ export class ShopService {
   #pollIntervalMs;
   #maxPolls;
   /** @type {ShopState} */
-  #state = Object.freeze({ status: ShopStatus.IDLE, listing: null, error: null, purchase: NO_PURCHASE });
+  #state = Object.freeze({ status: ShopStatus.IDLE, listing: null, error: null, purchase: NO_PURCHASE, cart: EMPTY_CART });
   /** @type {Set<(state: ShopState) => void>} */
   #listeners = new Set();
   /** Increases when the purchase is reset, so a poll for a dismissed purchase stops. */
@@ -54,7 +66,7 @@ export class ShopService {
    * @param {{
    *   api: import("../ports/MarketApi.contract.js").MarketApi,
    *   wallet: import("../ports/WalletConnector.contract.js").WalletConnector,
-   *   account: { state: { account: string | null }, refresh: () => Promise<unknown> },
+   *   account: { state: { account: string | null }, refresh: () => Promise<unknown>, subscribe?: (listener: (state: { account: string | null }) => void) => () => void },
    *   scheduler: import("../ports/Scheduler.contract.js").Scheduler,
    *   newKey: () => string,
    *   pollIntervalMs?: number,
@@ -69,6 +81,13 @@ export class ShopService {
     this.#newKey = newKey;
     this.#pollIntervalMs = pollIntervalMs;
     this.#maxPolls = maxPolls;
+    let owner = account.state.account;
+    account.subscribe?.((state) => {
+      if (owner !== null && state.account !== owner) {
+        this.clearCart();
+      }
+      owner = state.account;
+    });
   }
 
   get state() {
@@ -97,15 +116,82 @@ export class ShopService {
   }
 
   /**
+   * Buys one product now, without the cart.
    * @param {{ productId: string, quantity: number, asset: string }} request
    */
-  async buy(request) {
+  async buy({ productId, quantity, asset }) {
     const refused = this.#refuseToStart();
     if (refused !== null) {
       return refused;
     }
-    this.#setPurchase({ stage: PurchaseStage.ORDERING, order: null, txId: null, error: null });
-    const created = await this.#api.createOrder(request, this.#newKey());
+    this.#setPurchase({ stage: PurchaseStage.ORDERING });
+    const created = await this.#api.createOrder({ items: [{ productId, quantity }], asset }, this.#newKey());
+    if (!created.ok) {
+      this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.FAILED, error: created.error });
+      return created;
+    }
+    return this.#payOrder(created.value);
+  }
+
+  /**
+   * Puts copies of a product in the cart (added to those already there), up
+   * to the product's per-order limit.
+   * @param {string} productId
+   * @param {number} quantity
+   */
+  addToCart(productId, quantity) {
+    const product = this.#product(productId);
+    if (product === undefined) {
+      return fail(ShopError.CART, "this product is not on sale");
+    }
+    const line = this.#state.cart.find((candidate) => candidate.productId === productId);
+    if (line === undefined && this.#state.cart.length >= MAX_CART_LINES) {
+      return fail(ShopError.CART, `the cart holds at most ${MAX_CART_LINES} different products: pay for it first`);
+    }
+    const wanted = (line?.quantity ?? 0) + quantity;
+    this.#setCartQuantity(productId, Math.min(wanted, product.perOrder));
+    return wanted > product.perOrder ? fail(ShopError.CART, `at most ${product.perOrder} of ${product.name} per order: the cart has ${product.perOrder}`) : ok(undefined);
+  }
+
+  /**
+   * Changes how many copies of a product the cart holds; 0 takes it out.
+   * @param {string} productId
+   * @param {number} quantity
+   */
+  setCartQuantity(productId, quantity) {
+    if (!this.#state.cart.some((line) => line.productId === productId)) {
+      return;
+    }
+    const limit = this.#product(productId)?.perOrder ?? quantity;
+    this.#setCartQuantity(productId, Math.max(0, Math.min(quantity, limit)));
+  }
+
+  /** @param {string} productId */
+  removeFromCart(productId) {
+    this.setCartQuantity(productId, 0);
+  }
+
+  clearCart() {
+    if (this.#state.cart.length > 0) {
+      this.#set({ cart: EMPTY_CART });
+    }
+  }
+
+  /**
+   * Buys the whole cart: one order, one transfer.
+   * @param {string} asset the asset the cart is priced in
+   */
+  async checkout(asset) {
+    const refused = this.#refuseToStart();
+    if (refused !== null) {
+      return refused;
+    }
+    const cart = this.#state.cart;
+    if (cart.length === 0) {
+      return fail(ShopError.CART, "the cart is empty");
+    }
+    this.#setPurchase({ stage: PurchaseStage.ORDERING, cart });
+    const created = await this.#api.createOrder({ items: cart, asset }, this.#newKey());
     if (!created.ok) {
       this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.FAILED, error: created.error });
       return created;
@@ -144,13 +230,14 @@ export class ShopService {
   /** @param {import("../ports/MarketApi.contract.js").Order} order */
   async #payOrder(order) {
     const instructions = /** @type {import("../ports/MarketApi.contract.js").PaymentInstructions} */ (order.payment);
-    this.#setPurchase({ stage: PurchaseStage.SIGNING, order, txId: null, error: null });
+    this.#setPurchase({ stage: PurchaseStage.SIGNING, order, cart: this.#state.purchase.cart });
     const paid = await this.#wallet.requestTransfer({ from: instructions.from, to: instructions.to, amount: instructions.amount, asset: instructions.asset, memo: instructions.memo });
     if (!paid.ok) {
       this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.FAILED, error: paid.error });
       return paid;
     }
     this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.CONFIRMING, txId: paid.value });
+    this.#takeFromCart(this.#state.purchase.cart ?? []);
     const hinted = await this.#api.paymentHint(order.id, paid.value);
     if (hinted.ok) {
       this.#setPurchase({ ...this.#state.purchase, order: hinted.value });
@@ -188,6 +275,43 @@ export class ShopService {
 
   #busy() {
     return BUSY_STAGES.includes(this.#state.purchase.stage);
+  }
+
+  /** @param {string} productId */
+  #product(productId) {
+    return this.#state.listing?.products.find((product) => product.id === productId);
+  }
+
+  /**
+   * Takes paid lines out of the cart; what was added or raised meanwhile stays.
+   * @param {readonly CartLine[]} paid
+   */
+  #takeFromCart(paid) {
+    for (const { productId, quantity } of paid) {
+      const line = this.#state.cart.find((candidate) => candidate.productId === productId);
+      if (line !== undefined) {
+        this.#setCartQuantity(productId, Math.max(0, line.quantity - quantity));
+      }
+    }
+  }
+
+  /**
+   * @param {string} productId
+   * @param {number} quantity 0 removes the line
+   */
+  #setCartQuantity(productId, quantity) {
+    const cart = this.#state.cart;
+    const line = Object.freeze({ productId, quantity });
+    /** @type {CartLine[]} */
+    let next;
+    if (quantity === 0) {
+      next = cart.filter((candidate) => candidate.productId !== productId);
+    } else if (cart.some((candidate) => candidate.productId === productId)) {
+      next = cart.map((candidate) => (candidate.productId === productId ? line : candidate));
+    } else {
+      next = [...cart, line];
+    }
+    this.#set({ cart: Object.freeze(next) });
   }
 
   /** @returns {import("@magic8/engine/shared/Result.js").Fail | null} */

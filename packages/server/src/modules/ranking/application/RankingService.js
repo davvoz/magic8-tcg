@@ -206,7 +206,7 @@ export class RankingService {
   }
 
   /**
-   * The season's best settled players (a provisional rating is not ranked yet).
+   * The season's players: settled ratings ranked first, then provisional ones (listed, but with no rank yet).
    * @param {string | null} [seasonId] default: the current season
    */
   async leaderboard(seasonId = null) {
@@ -217,7 +217,12 @@ export class RankingService {
     const rows = await this.#repository.leaderboard({ season: season.id, maxRd: PROVISIONAL_RD, limit: LEADERBOARD_SIZE });
     return Object.freeze({
       season: Object.freeze({ id: season.id, name: season.name }),
-      entries: Object.freeze(rows.map((row, index) => Object.freeze({ rank: index + 1, account: row.account, rating: Math.round(row.rating), games: row.games, wins: row.wins, losses: row.losses, draws: row.draws }))),
+      entries: Object.freeze(
+        rows.map((row, index) => {
+          const provisional = row.rd > PROVISIONAL_RD;
+          return Object.freeze({ rank: provisional ? null : index + 1, provisional, account: row.account, rating: Math.round(row.rating), games: row.games, wins: row.wins, losses: row.losses, draws: row.draws });
+        }),
+      ),
     });
   }
 

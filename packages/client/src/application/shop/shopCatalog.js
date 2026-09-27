@@ -94,6 +94,38 @@ export function deckBreakdown(entries, singles) {
 }
 
 /**
+ * @typedef {Readonly<{ productId: string, quantity: number, product: Product | null, amount: string | null }>} CartSummaryLine `product` null when it is no longer on sale
+ * @typedef {Readonly<{ lines: readonly CartSummaryLine[], asset: string | null, total: string, quantity: number, cards: number, payable: boolean }>} CartSummary
+ */
+
+/**
+ * The cart as the listing prices it, for display: each line and the total,
+ * in the first asset every line can be paid in (the order's price is the
+ * server's). Not payable when it is empty, when a product is no longer on
+ * sale, or when no single asset pays for everything.
+ * @param {readonly Readonly<{ productId: string, quantity: number }>[]} cart
+ * @param {readonly Product[]} products the listing's
+ * @returns {CartSummary}
+ */
+export function cartSummary(cart, products) {
+  const found = cart.map(({ productId, quantity }) => ({ productId, quantity, product: products.find((candidate) => candidate.id === productId) ?? null }));
+  const onSale = found.flatMap((line) => (line.product === null ? [] : [line.product]));
+  const asset = onSale[0]?.prices.map((price) => price.asset).find((candidate) => onSale.every((product) => product.prices.some((price) => price.asset === candidate))) ?? null;
+  const lines = found.map((line) => {
+    const unit = line.product?.prices.find((price) => price.asset === asset)?.amount;
+    return Object.freeze({ ...line, amount: unit === undefined ? null : multiplyAmount(unit, line.quantity) });
+  });
+  return Object.freeze({
+    lines: Object.freeze(lines),
+    asset,
+    total: lines.reduce((sum, line) => (line.amount === null ? sum : addAmounts(sum, line.amount)), "0"),
+    quantity: cart.reduce((sum, line) => sum + line.quantity, 0),
+    cards: lines.reduce((sum, line) => sum + (line.product?.cards ?? 0) * line.quantity, 0),
+    payable: lines.length > 0 && lines.every((line) => line.amount !== null),
+  });
+}
+
+/**
  * Exact decimal arithmetic on amount strings, for display: "1.000" × 3 → "3.000".
  * @param {string} amount
  * @param {number} times

@@ -96,6 +96,8 @@ async function main() {
   app.realtime.attach(server);
   // Notifications committed by any process reach the players connected to this one.
   const stopRelay = await app.notificationRelay.start();
+  // So do the board's changes, to everyone looking at it.
+  const stopBoardRelay = await app.boardRelay.start();
   const jobs = [
     setInterval(() => app.keyAuditor.run().catch((error) => logger.error("session key audit failed", { error })), KEY_AUDIT_INTERVAL_MS),
     setInterval(() => app.challenges.purgeExpired(systemClock.now()).catch((error) => logger.error("challenge purge failed", { error })), CHALLENGE_PURGE_INTERVAL_MS),
@@ -136,6 +138,7 @@ async function main() {
     logger.info("shutting down", { signal });
     jobs.forEach(clearInterval);
     stopRelay().catch((error) => logger.warn("notification relay did not stop cleanly", { error }));
+    stopBoardRelay().catch((error) => logger.warn("board relay did not stop cleanly", { error }));
     app.realtime.close();
     setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS).unref();
     server.close(() => {

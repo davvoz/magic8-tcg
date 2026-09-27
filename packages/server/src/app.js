@@ -27,7 +27,7 @@ import { GameService, PgGameRepository, registerGameMessages, registerGameRoutes
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
-import { PgSalesRepository, SaleSettlement, SalesService, registerSalesRoutes } from "./modules/sales/index.js";
+import { BoardRelay, PgSalesRepository, SaleSettlement, SalesService, registerSalesRoutes } from "./modules/sales/index.js";
 import { NotificationRelay, NotificationService, PgNotificationRepository, registerNotificationRoutes } from "./modules/notifications/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
 import { WebSocketGateway } from "./platform/realtime/WebSocketGateway.js";
@@ -131,7 +131,7 @@ export async function createServerApp(deps) {
   const trading = new TradeService({ repository: new PgTradeRepository(database), inventory, findUser: (network, account) => users.findByAccount(network, account), isKnownCard: (id) => currentContent().catalog.has(id), outbox, notifier: hub, notifications, audit, clock, random, unitOfWork, logger, network: defaultNetwork });
   // Sales between players: paid straight to the seller, watched with the shop's payment providers.
   const salesRepository = new PgSalesRepository(database);
-  const sales = new SalesService({ repository: salesRepository, inventory, assets: () => economy.acceptedAssets(), providers: paymentProviders, notifier: hub, notifications, audit, clock, random, unitOfWork, logger, policy: salesPolicy });
+  const sales = new SalesService({ repository: salesRepository, inventory, assets: () => economy.acceptedAssets(), providers: paymentProviders, publish: (channel, payload) => database.query("SELECT pg_notify($1, $2)", [channel, payload]), notifications, audit, clock, random, unitOfWork, logger, policy: salesPolicy });
   const saleSettlement = new SaleSettlement({ repository: salesRepository, sales, inventory, providers: paymentProviders, outbox, notifications, audit, clock, unitOfWork, logger });
   const rankedSettings = validateRankedSettings(content.ranked);
   if (!rankedSettings.ok) {
@@ -142,6 +142,7 @@ export async function createServerApp(deps) {
   const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger, ranking });
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, notifications, formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)), clock, unitOfWork, logger });
   const notificationRelay = new NotificationRelay({ notifications, listen: (channel, onPayload, options) => database.listen(channel, onPayload, options), hub, logger });
+  const boardRelay = new BoardRelay({ listen: (channel, onPayload, options) => database.listen(channel, onPayload, options), hub, logger });
 
 
   const verification = new GameVerification({ repository: chainRepository, reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash), clock, verifyMoveSignature, recoverSigner });
@@ -207,7 +208,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, ranking, trading, sales, saleSettlement, notifications, notificationRelay, hub, games, gameRepository, secrets, matchmaking, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, ranking, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, hub, games, gameRepository, secrets, matchmaking, realtime });
 }
 
 /** Anchoring states that prove a payload is on chain. */

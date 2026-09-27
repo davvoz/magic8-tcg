@@ -257,7 +257,7 @@ async function boot() {
   // Trades move copies between collections: the account reloads after each one.
   const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), scheduler: browserScheduler, onCollectionChanged: () => account.refresh() });
   // The player market: payments go from the buyer's wallet straight to the seller; the collection reloads when a card moves.
-  const sales = new SalesService({ api: new HttpSalesApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID(), onCollectionChanged: () => account.refresh() });
+  const sales = new SalesService({ api: new HttpSalesApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID(), onCollectionChanged: () => account.refresh(), connection: realtime });
   // A purchase, a connection and a standing belong to the account that started them.
   // What happened to the player's orders, trades and sales: read at sign-in, pushed while here.
   const notifications = new NotificationService({ api: new HttpNotificationsApi({ fetch: httpFetch }), connection: realtime, logger });

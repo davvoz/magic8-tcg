@@ -32,9 +32,8 @@ const TERMINAL = Object.freeze([SalePurchaseStatus.EXPIRED, SalePurchaseStatus.C
  * @typedef {import("../ports/SalesApi.contract.js").Purchase} Purchase
  * @typedef {Readonly<{ code: string, message: string }>} SalesFailure
  * @typedef {Readonly<{ stage: string, purchase: Purchase | null, error: SalesFailure | null }>} Buying
- * @typedef {Readonly<{ card: string | null, cards: readonly string[] | null, sort: "newest" | "cheapest", offset: number }>} BoardFilter
- *   `card`: one card only ("other offers for this card"); else `cards`: the cards
- *   a filter by faction, rarity or type lets through (null: every card)
+ * @typedef {Readonly<{ cards: readonly string[] | null, sort: "newest" | "cheapest", offset: number }>} BoardFilter
+ *   `cards`: the cards a filter by faction, rarity or type lets through (null: every card)
  * @typedef {Readonly<{
  *   loading: boolean, listings: readonly Listing[], total: number, pageSize: number, filter: BoardFilter,
  *   mine: Readonly<{ listings: readonly Listing[], purchases: readonly Purchase[] }>,
@@ -48,7 +47,7 @@ const INITIAL = Object.freeze({
   listings: Object.freeze([]),
   total: 0,
   pageSize: 50,
-  filter: Object.freeze({ card: null, cards: null, sort: /** @type {const} */ ("newest"), offset: 0 }),
+  filter: Object.freeze({ cards: null, sort: /** @type {const} */ ("newest"), offset: 0 }),
   mine: Object.freeze({ listings: Object.freeze([]), purchases: Object.freeze([]) }),
   busy: false,
   error: null,
@@ -64,6 +63,9 @@ export const PROBLEM_TEXT = Object.freeze({
   WRONG_RECEIVER: "a transfer with this purchase's reference went to another account",
   LATE: "a transfer with this purchase's reference arrived after the reservation ended",
 });
+
+/** A burst of board changes is read once, this long after the first. */
+const BOARD_RELOAD_DELAY_MS = 300;
 
 export class SalesService {
   #api;
@@ -83,6 +85,13 @@ export class SalesService {
   #generation = 0;
   /** Bumped by every board load, so only the latest one is kept. */
   #boardLoads = 0;
+  /** Screens showing the board (watchBoard). */
+  #watchers = 0;
+  /** A reload for the server's announcements is waiting or running. */
+  #reloading = false;
+  /** An announcement is not read yet; `#mineStale`: one about the player's own listing or purchase. */
+  #boardStale = false;
+  #mineStale = false;
 
   /**
    * @param {{
@@ -93,11 +102,12 @@ export class SalesService {
    *   newKey: () => string,
    *   asset?: string,
    *   onCollectionChanged?: () => void,
+   *   connection?: Pick<import("../ports/Realtime.contract.js").RealtimeConnection, "subscribe" | "onStatus">,
    *   pollIntervalMs?: number,
    *   maxPolls?: number,
-   * }} deps `asset`: what prices are asked in
+   * }} deps `asset`: what prices are asked in; `connection`: the server's announcements that the board changed
    */
-  constructor({ api, wallet, account, scheduler, newKey, asset = "STEEM", onCollectionChanged = () => undefined, pollIntervalMs = 3000, maxPolls = 120 }) {
+  constructor({ api, wallet, account, scheduler, newKey, asset = "STEEM", onCollectionChanged = () => undefined, connection, pollIntervalMs = 3000, maxPolls = 120 }) {
     this.#api = api;
     this.#wallet = wallet;
     this.#account = account;
@@ -107,6 +117,34 @@ export class SalesService {
     this.#onCollectionChanged = onCollectionChanged;
     this.#pollIntervalMs = pollIntervalMs;
     this.#maxPolls = maxPolls;
+    connection?.subscribe(({ t }) => {
+      if (t === "sales.board" || t === "sale.updated") {
+        this.#reloadSoon(t === "sale.updated");
+      }
+    });
+    // Announcements made while the connection was down are lost: read the board again when it is back.
+    connection?.onStatus((status) => {
+      if (status === "open") {
+        this.#reloadSoon(true);
+      }
+    });
+  }
+
+  /**
+   * A screen shows the board: until the returned stop, the server's
+   * announcements reload it (and the player's own listings and purchases
+   * when one of theirs changed), so what others list, buy or withdraw shows up.
+   * @returns {() => void} stop
+   */
+  watchBoard() {
+    this.#watchers += 1;
+    let watching = true;
+    return () => {
+      if (watching) {
+        watching = false;
+        this.#watchers -= 1;
+      }
+    };
   }
 
   get state() {
@@ -134,7 +172,7 @@ export class SalesService {
   async loadBoard(filter = {}) {
     const load = (this.#boardLoads += 1);
     const next = Object.freeze({ ...this.#state.filter, ...filter });
-    const cards = next.card === null ? next.cards : [next.card];
+    const { cards } = next;
     if (cards !== null && cards.length === 0) {
       this.#set({ loading: false, filter: next, listings: Object.freeze([]), total: 0, error: null });
       return;
@@ -145,6 +183,35 @@ export class SalesService {
       return;
     }
     this.#set(page.ok ? { loading: false, listings: page.value.listings, total: page.value.total, pageSize: page.value.pageSize, error: null } : { loading: false, error: page.error.message });
+  }
+
+  /**
+   * Reloads the board for an announcement, if a screen shows it; a burst of
+   * announcements costs one read (plus one for those that came during it).
+   * @param {boolean} mine whether the player's own activity may have changed too
+   */
+  async #reloadSoon(mine) {
+    if (this.#watchers === 0) {
+      return;
+    }
+    this.#mineStale ||= mine;
+    this.#boardStale = true;
+    if (this.#reloading) {
+      return;
+    }
+    this.#reloading = true;
+    try {
+      while (this.#boardStale && this.#watchers > 0) {
+        await this.#scheduler.delay(BOARD_RELOAD_DELAY_MS);
+        // The read below covers every announcement so far; one arriving during it asks for another.
+        this.#boardStale = false;
+        const withMine = this.#mineStale;
+        this.#mineStale = false;
+        await (withMine ? this.refresh() : this.loadBoard());
+      }
+    } finally {
+      this.#reloading = false;
+    }
   }
 
   /** The player's own listings and purchases (signed in). */

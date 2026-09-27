@@ -10,7 +10,7 @@
   - una volatilità (si parte da 0,06).
 - **Ogni partita è un periodo di rating.** I due giocatori vengono aggiornati insieme, a partire dai valori che avevano prima della partita. L'implementazione è verificata con l'esempio del paper (1464,06 / 151,52 / 0,05999).
 - **Un giocatore nuovo si muove in fretta; uno con molte partite si muove poco.** Battere chi ha un rating molto più alto vale di più.
-- **Rating provvisorio:** con deviazione sopra 110 il rating è provvisorio e non compare in classifica. Diventa "assestato" dopo alcune partite.
+- **Rating provvisorio:** con deviazione sopra 110 il rating è provvisorio: compare in classifica dopo i rating assestati, senza posizione. Diventa "assestato" (e riceve una posizione) dopo alcune partite.
 - **Stagioni:** i rating ripartono da capo a ogni stagione (`seasons` nel file dei dati). Una partita conta nella stagione in cui è finita.
 - **Ricalcolabile:** i risultati delle partite sono pubblicati sulla catena (`GAME_CREATED.mode = "ranked"`, `GAME_FINISHED.win`), quindi chiunque può ricalcolare i rating. Il ricalcolo coincide a meno di arrotondamenti, perché le funzioni matematiche possono differire di un bit fra motori JavaScript diversi.
 
@@ -41,7 +41,7 @@
 
 | Richiesta | Cosa |
 |---|---|
-| `GET /api/ranking/leaderboard[?season=id]` | i 100 migliori rating assestati della stagione (pubblica, in cache 30 s) |
+| `GET /api/ranking/leaderboard[?season=id]` | i primi 100 rating della stagione: prima gli assestati con posizione (`rank`), poi i provvisori con `rank: null` e `provisional: true` (pubblica, in cache 30 s) |
 | `GET /api/ranking/me` | rating, deviazione, provvisorio, posizione, partite vinte e perse, se si può giocare in classificata |
 | `queue.join` con `mode: "ranked"` | coda classificata (WebSocket) |
 

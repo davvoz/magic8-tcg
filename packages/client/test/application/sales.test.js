@@ -102,18 +102,31 @@ function fakeWallet(answers = [ok(TX_ID)]) {
   return { requests, name: "Steem Keychain", isAvailable: () => true, signMessage: async () => fail("X", "x"), requestTransfer: async (request) => (requests.push(request), answers.shift() ?? ok(TX_ID)) };
 }
 
+/** A realtime connection the test speaks for: `push` a server message, `status` a change of state. */
+function fakeConnection() {
+  const listeners = new Set();
+  const watchers = new Set();
+  return {
+    subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+    onStatus: (listener) => (watchers.add(listener), () => watchers.delete(listener)),
+    push: (t, d = {}) => listeners.forEach((listener) => listener({ t, d })),
+    status: (status) => watchers.forEach((listener) => listener(status, { code: null })),
+  };
+}
+
 function market({ account = "bob", wallet = fakeWallet() } = {}) {
   const api = fakeApi();
+  const connection = fakeConnection();
   let reloads = 0;
   const copy = (id, serial, tradeable, status = "active") => ({ id: uuid(id), edition: "core-1", serial, finish: "standard", status, tradeable });
   const accountService = { state: { account }, collection: { state: { cards: [{ definitionId: "iron_watcher", copies: [copy(31, 1, true), copy(32, 2, false), copy(33, 3, true, "locked")] }] } } };
-  const sales = new SalesService({ api, wallet, account: accountService, scheduler: immediateScheduler, newKey: () => "list-key-000000000001", onCollectionChanged: () => (reloads += 1) });
+  const sales = new SalesService({ api, wallet, account: accountService, scheduler: immediateScheduler, newKey: () => "list-key-000000000001", onCollectionChanged: () => (reloads += 1), connection });
   const viewport = new Viewport(theme.layout);
   viewport.resize({ cssWidth: 1600, cssHeight: 900 });
   const navigated = [];
   const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, params) => navigated.push([id, params]), hasScene: () => true };
   const scene = new MarketScene(services, { content, account: accountService, sales }, () => NOW);
-  return { api, wallet, sales, scene, navigated, reloads: () => reloads };
+  return { api, wallet, sales, scene, navigated, connection, reloads: () => reloads };
 }
 
 const byId = (scene, id) => scene.root.findById(id);
@@ -178,6 +191,39 @@ describe("MarketScene", () => {
     assert.equal(byId(scene, "market.withdraw").enabled, false, "not while a buyer is paying");
     scene.onCancel();
     assert.deepEqual(navigated.at(-1), ["shop", undefined], "back to the shop it came from");
+  });
+
+  it("reloads the board on screen when the server says it changed, once per burst", async () => {
+    const { scene, api, connection } = market();
+    const reads = (name) => api.calls.filter(([call]) => call === name).length;
+    connection.push("sales.board", { listingId: LISTING.id });
+    await flush();
+    assert.equal(reads("board"), 0, "nobody is looking at the board");
+
+    scene.enter({});
+    await flush();
+    const opened = reads("board");
+    connection.push("sales.board", { listingId: LISTING.id });
+    connection.push("sales.board", { listingId: uuid(3) });
+    connection.push("sales.board", { listingId: uuid(4) });
+    await flush();
+    await flush();
+    assert.equal(reads("board"), opened + 1, "three changes, one read");
+    assert.equal(reads("mine"), 1, "only on entering");
+
+    connection.push("sale.updated", { listingId: LISTING.id });
+    await flush();
+    await flush();
+    assert.deepEqual([reads("board"), reads("mine")], [opened + 2, 2], "one of the player's own changed: their activity too");
+    connection.status("open");
+    await flush();
+    await flush();
+    assert.deepEqual([reads("board"), reads("mine")], [opened + 3, 3], "back from a drop: what was missed is read again");
+
+    scene.exit();
+    connection.push("sales.board", { listingId: LISTING.id });
+    await flush();
+    assert.equal(reads("board"), opened + 3, "not once the market is closed");
   });
 
   it("lists a tradeable, free copy for a price", async () => {

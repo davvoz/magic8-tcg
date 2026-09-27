@@ -127,7 +127,13 @@ export class MarketScene extends Scene {
   enter(params = {}) {
     this.#from = params.from !== undefined && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
     const sales = this.#sales();
-    this.#unsubscribe = sales.subscribe(() => this.#rebuild());
+    const unsubscribe = sales.subscribe(() => this.#rebuild());
+    // What other players list, buy or withdraw shows up while the board is on screen.
+    const unwatch = sales.watchBoard();
+    this.#unsubscribe = () => {
+      unsubscribe();
+      unwatch();
+    };
     sales.loadBoard({ cards: cardIdsMatching(this.#boardFilter, this.#app) });
     sales.refreshMine();
     this.#rebuild();
@@ -217,16 +223,11 @@ export class MarketScene extends Scene {
     ].forEach(({ sort, text }, index) => {
       panel.add(new Button({ id: `market.sort.${sort}`, x: INSET + index * (sortWidth + SORTS.gap), y: SORTS.top, width: sortWidth, height: SORTS.height, text, textSize: "small", variant: filter.sort === sort ? "primary" : "secondary", onActivate: () => sales.loadBoard({ sort, offset: 0 }) }));
     });
-    if (filter.card !== null) {
-      const x = INSET + 2 * (sortWidth + SORTS.gap);
-      panel.add(new Button({ id: "market.card.clear", x, y: SORTS.top, width: INSET + width - x, height: SORTS.height, text: `Only ${this.#cardName(filter.card)} · show all`, textSize: "small", onActivate: () => sales.loadBoard({ card: null, offset: 0 }) }));
-    }
     buildCardFilterBar(panel, { id: "market.filter", x: INSET, y: FILTER_TOP, width, filter: this.#boardFilter, options: cardFilterOptions(this.#app), onChange: (next) => this.#changeBoardFilter(next) });
     const pages = total > pageSize;
     const list = panel.add(new ScrollList({ id: "market.board", x: INSET, y: LIST_TOP, width, height: COLUMNS.height - LIST_TOP - INSET - (pages ? PAGER_HEIGHT + 8 : 0) }));
     if (listings.length === 0) {
-      const empty = this.#emptyBoardText(filter.card !== null);
-      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * ROW.height, text: loading ? "Loading…" : empty, size: "small", colorKey: "textMuted" }));
+      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * ROW.height, text: loading ? "Loading…" : this.#emptyBoardText(), size: "small", colorKey: "textMuted" }));
       list.contentHeight = 2 * ROW.height;
     } else {
       const stripWidth = list.rowWidth - PRICE_WIDTH - META_WIDTH - 2 * ACTION.gap;
@@ -248,11 +249,7 @@ export class MarketScene extends Scene {
     }
   }
 
-  /** @param {boolean} oneCard */
-  #emptyBoardText(oneCard) {
-    if (oneCard) {
-      return "Nobody sells this card right now.";
-    }
+  #emptyBoardText() {
     return isFiltering(this.#boardFilter) ? `No ${describeCardFilter(this.#boardFilter)} cards on sale right now.` : "Nothing on sale yet. Sell one of your cards: other players will see it here.";
   }
 
@@ -353,8 +350,7 @@ export class MarketScene extends Scene {
       { text: `${listing.price.amount} ${listing.price.asset}`, bold: true, colorKey: "accent" },
       { text: listingSubtitle(listing, now), colorKey: "textMuted" },
     ];
-    const { x, width } = this.#cardWithLines(panel, listing.card.definitionId, lines);
-    panel.add(new Button({ id: "market.sameCard", x, y: INSET + lines.length * LINE + 16, width, height: 44, text: "Other offers for this card", textSize: "small", onActivate: () => this.#showCard(listing.card.definitionId) }));
+    this.#cardWithLines(panel, listing.card.definitionId, lines);
     const y = COLUMNS.height - INSET - BUTTON_HEIGHT;
     const fullWidth = COLUMNS.right.width - 2 * INSET;
     if (listing.status !== "ACTIVE") {
@@ -526,7 +522,7 @@ export class MarketScene extends Scene {
   /** @param {import("../../application/content/CardFilter.js").CardFilter} next */
   #changeBoardFilter(next) {
     this.#boardFilter = next;
-    this.#sales().loadBoard({ card: null, cards: cardIdsMatching(next, this.#app), offset: 0 });
+    this.#sales().loadBoard({ cards: cardIdsMatching(next, this.#app), offset: 0 });
   }
 
   /** @param {import("../../application/content/CardFilter.js").CardFilter} next */
@@ -559,12 +555,6 @@ export class MarketScene extends Scene {
     this.#selected = { kind, id };
     this.#selling = false;
     this.#rebuild();
-  }
-
-  /** @param {string} definitionId */
-  #showCard(definitionId) {
-    this.#tab = Tab.BOARD;
-    this.#sales().loadBoard({ card: definitionId, offset: 0 });
   }
 
   #selectedListing() {

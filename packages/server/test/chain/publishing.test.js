@@ -486,7 +486,7 @@ describe("ChainBroadcaster and ChainTracker", () => {
 
   it("sells packs only once the pack epoch's commitment is on chain", async () => {
     const w = await world({ signers: [B1] });
-    const order = (key) => w.setup.app.marketplace.createOrder({ buyer: { id: w.alice.id, account: "alice", network: "steem" }, productId: "core_booster", quantity: 1, asset: "STEEM", idempotencyKey: `gate-key-${key}-0000000000`, ip: "127.0.0.1" });
+    const order = (key) => w.setup.app.marketplace.createOrder({ buyer: { id: w.alice.id, account: "alice", network: "steem" }, items: [{ productId: "core_booster", quantity: 1 }], asset: "STEEM", idempotencyKey: `gate-key-${key}-0000000000`, ip: "127.0.0.1" });
     await assert.rejects(() => order(1), (error) => error.code === "CHAIN_UNAVAILABLE", "the commitment was just queued");
     assert.equal(await w.chain.broadcaster.runOnce(), 1, "the commitment goes out first");
     await assert.rejects(() => order(2), (error) => error.code === "CHAIN_UNAVAILABLE", "sent is not enough: it must be in a block");
@@ -512,7 +512,7 @@ describe("ChainBroadcaster and ChainTracker", () => {
     await rounds(1);
     await w.setup.app.settlement.runOnce(); // the payment watcher starts after the shop's current history
     const buyer = { id: w.alice.id, account: "alice", network: "steem" };
-    const placed = await w.setup.app.marketplace.createOrder({ buyer, productId: "core_booster", quantity: 2, asset: "STEEM", idempotencyKey: "pack-proof-key-0000000001", ip: "127.0.0.1" });
+    const placed = await w.setup.app.marketplace.createOrder({ buyer, items: [{ productId: "core_booster", quantity: 2 }], asset: "STEEM", idempotencyKey: "pack-proof-key-0000000001", ip: "127.0.0.1" });
     const { payment } = placed.order;
     w.ledger.time = w.setup.clock.now();
     const paid = w.ledger.transfer({ from: payment.from, to: payment.to, amount: `${payment.amount} ${payment.asset}`, memo: payment.memo, time: w.setup.clock.now() });

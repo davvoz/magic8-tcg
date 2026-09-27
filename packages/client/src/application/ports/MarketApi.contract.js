@@ -22,7 +22,7 @@
  * @typedef {import("@magic8/engine/shared/Result.js").Fail} Fail
  * @typedef {object} MarketApi
  * @property {() => Promise<import("@magic8/engine/shared/Result.js").Ok<Listing> | Fail>} listing
- * @property {(request: { productId: string, quantity: number, asset: string }, idempotencyKey: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<Order> | Fail>} createOrder
+ * @property {(request: { items: readonly Readonly<{ productId: string, quantity: number }>[], asset: string }, idempotencyKey: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<Order> | Fail>} createOrder one order (one payment) for all its lines
  * @property {(orderId: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<Order> | Fail>} getOrder
  * @property {() => Promise<import("@magic8/engine/shared/Result.js").Ok<readonly Order[]> | Fail>} listOrders
  * @property {(orderId: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<Order> | Fail>} cancelOrder

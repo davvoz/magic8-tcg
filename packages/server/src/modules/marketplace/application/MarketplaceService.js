@@ -2,8 +2,10 @@
  * MarketplaceService: the product listing and the orders' life before
  * payment (docs/tcg/02-protocollo-multiplayer.md §2, Marketplace).
  *
- * - The client names a product, a quantity and an asset; the price comes
- *   from the server's price list and is frozen into the order (T3).
+ * - The client names its lines (a product and a quantity each: one line for
+ *   "buy now", several for a cart) and an asset; the prices come from the
+ *   server's price list and are frozen into the order (T3). One order is
+ *   one payment, whatever the number of lines.
  * - Creating an order needs an Idempotency-Key: the same key with the same
  *   request returns the same order, with a different request it is refused;
  *   UNIQUE (user_id, idempotency_key) holds even for concurrent requests (T4).
@@ -20,6 +22,7 @@ import { canonicalize, sha256Hex, utf8 } from "@magic8/protocol";
 import { AppError } from "../../../kernel/AppError.js";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { isUuid, uuidV4 } from "../../../kernel/random.js";
+import { safeAdd } from "../../economy/index.js";
 import { AWAITING_PAYMENT, OrderStatus, memoFrom } from "../domain/Order.js";
 import { ContentType, MAX_CARDS_PER_ORDER, expandProduct } from "../domain/Product.js";
 import { MARKETPLACE_REPOSITORY_METHODS } from "./ports.js";
@@ -27,6 +30,8 @@ import { MARKETPLACE_REPOSITORY_METHODS } from "./ports.js";
 export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const MEMO_RANDOM_BYTES = 17;
 const ORDER_HISTORY_LIMIT = 50;
+/** Most lines (different products) in one order. */
+export const MAX_ORDER_LINES = 20;
 const EXPIRY_BATCH = 100;
 
 /**
@@ -133,23 +138,28 @@ export class MarketplaceService {
   }
 
   /**
-   * @param {{ buyer: Buyer, productId: unknown, quantity: unknown, asset: unknown, idempotencyKey: string | null, ip: string }} request
+   * @param {{ buyer: Buyer, items: readonly Readonly<{ productId: unknown, quantity: unknown }>[], asset: unknown, idempotencyKey: string | null, ip: string }} request
    */
-  async createOrder({ buyer, productId, quantity, asset, idempotencyKey, ip }) {
+  async createOrder({ buyer, items, asset, idempotencyKey, ip }) {
     if (idempotencyKey === null || !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
       throw new AppError("PRECONDITION_REQUIRED", "send an Idempotency-Key header (16 to 64 letters, digits, - or _)");
     }
-    const requestHash = sha256Hex(utf8(canonicalize({ productId: String(productId), quantity: Number.isSafeInteger(quantity) ? quantity : String(quantity), asset: String(asset) })));
+    if (!Array.isArray(items) || items.length === 0 || items.length > MAX_ORDER_LINES) {
+      throw new AppError("VALIDATION", `an order has 1..${MAX_ORDER_LINES} lines`);
+    }
+    const requestHash = sha256Hex(
+      utf8(canonicalize({ items: items.map(({ productId, quantity }) => ({ productId: String(productId), quantity: Number.isSafeInteger(quantity) ? quantity : String(quantity) })), asset: String(asset) })),
+    );
     const previous = await this.#repository.findByIdempotencyKey(buyer.id, idempotencyKey);
     if (previous !== null) {
       return this.#replay(previous, requestHash);
     }
-    const { product, count, quote } = this.#priceRequest({ productId, quantity, asset, buyer });
+    const { lines, quote } = this.#priceRequest({ items, asset, buyer });
     if ((await this.#repository.countOpen(buyer.id)) >= this.#policy.maxOpenOrders) {
       throw new AppError("LIMIT_REACHED", `at most ${this.#policy.maxOpenOrders} unpaid orders at a time: pay or cancel one first`);
     }
-    const expansion = expandProduct(product, count, this.#catalog.products);
-    const epoch = expansion.packs.length > 0 ? await this.#sellableEpoch() : null;
+    const hasPacks = lines.some(({ product, count }) => expandProduct(product, count, this.#catalog.products).packs.length > 0);
+    const epoch = hasPacks ? await this.#sellableEpoch() : null;
     const now = this.#clock.now();
     /** @type {import("../domain/Order.js").Order} */
     const order = Object.freeze({
@@ -171,13 +181,13 @@ export class MarketplaceService {
       version: 1,
       createdAt: now,
       updatedAt: now,
-      items: Object.freeze([Object.freeze({ position: 0, productId: product.id, quantity: count, unitAmount: quote.unitAmount })]),
+      items: Object.freeze(lines.map(({ product, count, unitAmount }, position) => Object.freeze({ position, productId: product.id, quantity: count, unitAmount }))),
     });
     const inserted = await this.#unitOfWork(async () => {
       if (!(await this.#repository.insertOrder(order))) {
         return false;
       }
-      await this.#audit.record({ actorKind: "user", actorUserId: buyer.id, action: "marketplace.order_created", targetKind: "order", targetId: order.id, ip, details: { product: product.id, quantity: count, asset: quote.asset, total: quote.totalAmount, epoch: order.rngEpochId } });
+      await this.#audit.record({ actorKind: "user", actorUserId: buyer.id, action: "marketplace.order_created", targetKind: "order", targetId: order.id, ip, details: { items: lines.map(({ product, count }) => ({ product: product.id, quantity: count })), asset: quote.asset, total: quote.totalAmount, epoch: order.rngEpochId } });
       return true;
     });
     if (!inserted) {
@@ -259,10 +269,33 @@ export class MarketplaceService {
   }
 
   /**
-   * Validates what the client asked for and prices it from the server's list.
-   * @param {{ productId: unknown, quantity: unknown, asset: unknown, buyer: Buyer }} request
+   * Validates the lines the client asked for and prices them from the server's list.
+   * @param {{ items: readonly Readonly<{ productId: unknown, quantity: unknown }>[], asset: unknown, buyer: Buyer }} request
+   * @returns {{ lines: { product: import("../domain/Product.js").Product, count: number, unitAmount: number }[], quote: { network: string, asset: string, totalAmount: number } }}
    */
-  #priceRequest({ productId, quantity, asset, buyer }) {
+  #priceRequest({ items, asset, buyer }) {
+    if (new Set(items.map((item) => item.productId)).size !== items.length) {
+      throw new AppError("VALIDATION", "each product may appear once in an order: add up its quantities");
+    }
+    if (typeof asset !== "string") {
+      throw new AppError("VALIDATION", "asset must be a string");
+    }
+    const lines = items.map(({ productId, quantity }) => this.#priceLine({ productId, quantity, asset, buyer }));
+    if (lines.reduce((sum, { product, count }) => sum + product.cardsPerUnit * count, 0) > MAX_CARDS_PER_ORDER) {
+      throw new AppError("VALIDATION", `at most ${MAX_CARDS_PER_ORDER} cards per order`);
+    }
+    const totalAmount = lines.reduce((/** @type {number | null} */ sum, line) => (sum === null ? null : safeAdd(sum, line.totalAmount)), 0);
+    if (totalAmount === null) {
+      throw new AppError("VALIDATION", "order total too large");
+    }
+    return { lines, quote: { network: lines[0].network, asset, totalAmount } };
+  }
+
+  /**
+   * One line of an order, priced.
+   * @param {{ productId: unknown, quantity: unknown, asset: string, buyer: Buyer }} request
+   */
+  #priceLine({ productId, quantity, asset, buyer }) {
     const product = typeof productId === "string" ? this.#catalog.products.get(productId) : undefined;
     if (product === undefined) {
       throw new AppError("NOT_FOUND", "no such product");
@@ -274,17 +307,11 @@ export class MarketplaceService {
       throw new AppError("VALIDATION", `quantity must be 1..${product.limits.perOrder}`);
     }
     const count = /** @type {number} */ (quantity);
-    if (product.cardsPerUnit * count > MAX_CARDS_PER_ORDER) {
-      throw new AppError("VALIDATION", `at most ${MAX_CARDS_PER_ORDER} cards per order`);
-    }
-    if (typeof asset !== "string") {
-      throw new AppError("VALIDATION", "asset must be a string");
-    }
     const quote = this.#economy.quote(product, count, asset);
     if (quote.network !== buyer.network) {
       throw new AppError("VALIDATION", `${asset} is paid on ${quote.network}; you are signed in on ${buyer.network}`);
     }
-    return { product, count, quote };
+    return { product, count, network: quote.network, unitAmount: quote.unitAmount, totalAmount: quote.totalAmount };
   }
 
   /**

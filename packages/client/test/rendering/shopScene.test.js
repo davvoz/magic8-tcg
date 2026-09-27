@@ -136,7 +136,7 @@ describe("ShopScene", () => {
     assert.equal(byId(scene, "shop.buy").text, "Buy for 10.000 STEEM");
     click(byId(scene, "shop.buy"));
     await settle();
-    assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { productId: "single_pyre_drake_foil", quantity: 2, asset: "STEEM" });
+    assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { items: [{ productId: "single_pyre_drake_foil", quantity: 2 }], asset: "STEEM" });
   });
 
   it("shows other offers on their own shelf", async () => {
@@ -185,6 +185,101 @@ describe("ShopScene", () => {
     click(byId(scene, "reveal.collection"));
     assert.deepEqual(navigated.at(-1), { id: SceneId.COLLECTION, params: undefined });
     assert.equal(shop.state.purchase.stage, PurchaseStage.NONE);
+  });
+
+  it("reveals the cards of a second purchase made without leaving the shop", async () => {
+    const { scene, shop } = await harness();
+    click(byId(scene, "shop.buy"));
+    await settle();
+    assert.ok(scene.modal, "the first reveal opens");
+    click(byId(scene, "reveal.close"));
+    assert.equal(scene.modal, null);
+    assert.equal(shop.state.purchase.stage, PurchaseStage.NONE);
+    click(byId(scene, "shop.buy"));
+    await settle();
+    assert.ok(scene.modal, "the second reveal opens too");
+    assert.ok(rendered(scene).some((text) => text.startsWith("You received")));
+  });
+
+  it("collects products from several shelves in the cart and pays for them with one transfer", async () => {
+    const { scene, shop, market, transfers } = await harness();
+    assert.equal(byId(scene, "shop.cart").text, "Cart");
+    click(byId(scene, "shop.product.core_booster"));
+    click(byId(scene, "shop.more"));
+    click(byId(scene, "shop.addToCart"));
+    assert.equal(byId(scene, "shop.status").text, "Added 2 × Core Booster to your cart.");
+    assert.equal(byId(scene, "shop.quantity").text, "1", "ready for the next choice");
+    assert.equal(byId(scene, "shop.cart").text, "Cart (2)");
+    click(byId(scene, "shop.tab.singles"));
+    click(byId(scene, "shop.card.pyre_drake"));
+    click(byId(scene, "shop.addToCart"));
+    assert.equal(byId(scene, "shop.cart").text, "Cart (3)");
+    assert.equal(market.calls.filter((call) => call.name === "createOrder").length, 0, "nothing is ordered while shopping");
+
+    click(byId(scene, "shop.cart"));
+    const cart = (id) => scene.modal.findById(id);
+    assert.equal(scene.modal.id, "cart");
+    assert.equal(cart("cart.name.core_booster").text, "Core Booster");
+    assert.equal(cart("cart.amount.single_pyre_drake").text, "2.500 STEEM");
+    assert.equal(cart("cart.total").text, "Total: 4.500 STEEM");
+    assert.equal(cart("cart.count").text, "3 items · 11 cards");
+    const booster = cart("cart.visual.core_booster");
+    assert.deepEqual([booster.cards.length, booster.backs, booster.badge], [0, 3, "×2"], "a pack shows card backs: its cards are unknown until opened");
+    const drake = cart("cart.visual.single_pyre_drake");
+    assert.deepEqual([drake.cards.map((face) => face.card.id), drake.foil, drake.badge], [["pyre_drake"], false, "×1"], "a single shows its card");
+    assert.ok(rendered(scene).includes("×2"));
+    scene.focus(cart("cart.more.core_booster"));
+    click(cart("cart.more.core_booster"));
+    assert.equal(scene.modal?.id, "cart", "the cart stays open while it changes");
+    assert.equal(cart("cart.quantity.core_booster").text, "3");
+    assert.equal(scene.focusedNode.id, "cart.more.core_booster", "focus stays where it was");
+    click(cart("cart.more.single_pyre_drake"));
+    click(cart("cart.remove.single_pyre_drake"));
+    assert.equal(cart("cart.name.single_pyre_drake"), null);
+    click(cart("cart.close"));
+    assert.equal(scene.modal, null, "back to shopping");
+    click(byId(scene, "shop.card.pyre_drake"));
+    click(byId(scene, "shop.finish.foil"));
+    click(byId(scene, "shop.addToCart"));
+    click(byId(scene, "shop.cart"));
+    assert.equal(cart("cart.total").text, "Total: 8.000 STEEM");
+    assert.equal(cart("cart.visual.single_pyre_drake_foil").foil, true);
+    assert.equal(cart("cart.pay").text, "Pay 8.000 STEEM");
+
+    click(cart("cart.pay"));
+    await settle();
+    const orders = market.calls.filter((call) => call.name === "createOrder");
+    assert.equal(orders.length, 1, "one order for the whole cart");
+    assert.deepEqual(orders[0].args[0], { items: [{ productId: "core_booster", quantity: 3 }, { productId: "single_pyre_drake_foil", quantity: 1 }], asset: "STEEM" });
+    assert.equal(transfers.length, 1, "one payment");
+    assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
+    assert.equal(scene.modal?.id, "reveal", "the cards of the whole cart are revealed");
+    click(byId(scene, "reveal.close"));
+    assert.equal(byId(scene, "shop.cart").text, "Cart");
+    click(byId(scene, "shop.cart"));
+    assert.ok(cart("cart.empty"));
+    assert.equal(cart("cart.pay").isEffectivelyEnabled, false);
+    click(cart("cart.close"));
+    assert.equal(scene.modal, null);
+  });
+
+  it("lets anyone fill a cart, and asks to sign in to pay for it", async () => {
+    const { scene, shop } = await harness({ signedIn: false });
+    click(byId(scene, "shop.addToCart"));
+    click(byId(scene, "shop.tab.decks"));
+    click(byId(scene, "shop.addToCart"));
+    click(byId(scene, "shop.cart"));
+    const deck = scene.modal.findById("cart.visual.deck_precon_arcane");
+    const rank = (face) => ["common", "uncommon", "rare", "epic", "legendary"].indexOf(face.rarity);
+    assert.equal(deck.cards.length, 3, "a deck shows three of its cards");
+    assert.equal(rank(deck.cards[2]), Math.max(...deck.cards.map(rank)), "its rarest card on top");
+    assert.ok(rendered(scene).length > 0);
+    assert.equal(scene.modal.findById("cart.status").text, "Sign in to pay.");
+    assert.equal(scene.modal.findById("cart.pay").isEffectivelyEnabled, false);
+    click(scene.modal.findById("cart.clear"));
+    assert.deepEqual(shop.state.cart, []);
+    scene.onKey({ type: "keydown", key: "Escape", repeat: false });
+    assert.equal(scene.modal, null);
   });
 
   it("offers to pay again or cancel when the wallet refuses", async () => {

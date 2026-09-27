@@ -51,3 +51,13 @@ export function safeMultiply(a, b) {
   const product = a * b;
   return Number.isSafeInteger(product) ? product : null;
 }
+
+/**
+ * `a + b` when the result is a safe integer, null otherwise.
+ * @param {number} a
+ * @param {number} b
+ */
+export function safeAdd(a, b) {
+  const sum = a + b;
+  return Number.isSafeInteger(sum) ? sum : null;
+}

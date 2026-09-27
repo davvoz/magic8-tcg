@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { addAmounts, deckBreakdown, mainOfferOf, multiplyAmount, shelvesOf } from "../../src/application/shop/shopCatalog.js";
+import { addAmounts, cartSummary, deckBreakdown, mainOfferOf, multiplyAmount, shelvesOf } from "../../src/application/shop/shopCatalog.js";
 import { LISTING } from "./fakeMarketApi.js";
 
 describe("shop shelves", () => {
@@ -40,6 +40,15 @@ describe("shop shelves", () => {
     ]);
     assert.equal(breakdown.total, "6.500");
     assert.equal(deckBreakdown([...entries, { cardId: "ghost", count: 1 }], singles).total, null);
+  });
+
+  it("prices a cart from the listing, and cannot pay for what is no longer on sale", () => {
+    const summary = cartSummary([{ productId: "core_booster", quantity: 3 }, { productId: "single_pyre_drake", quantity: 2 }], LISTING.products);
+    assert.deepEqual(summary.lines.map((line) => [line.productId, line.amount]), [["core_booster", "3.000"], ["single_pyre_drake", "5.000"]]);
+    assert.deepEqual([summary.asset, summary.total, summary.quantity, summary.cards, summary.payable], ["STEEM", "8.000", 5, 17, true]);
+    const retired = cartSummary([{ productId: "core_booster", quantity: 1 }, { productId: "gone", quantity: 1 }], LISTING.products);
+    assert.deepEqual([retired.lines[1].product, retired.lines[1].amount, retired.total, retired.payable], [null, null, "1.000", false]);
+    assert.deepEqual([cartSummary([], LISTING.products).payable, cartSummary([], LISTING.products).asset], [false, null]);
   });
 
   it("does exact decimal arithmetic", () => {

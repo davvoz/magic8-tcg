@@ -13,6 +13,8 @@
  *   watches the seller's history and hands the copy over once the transfer
  *   is irreversible.
  * - Cancel (seller, nobody paying) and expiry give the copy back.
+ * - Every change to a listing is announced once committed (BoardRelay), so
+ *   the board refreshes for everyone looking at it.
  */
 import { canonicalize, sha256Hex, utf8 } from "@magic8/protocol";
 import { AppError } from "../../../kernel/AppError.js";
@@ -20,6 +22,7 @@ import { isUuid, uuidV4 } from "../../../kernel/random.js";
 import { formatAmount, parseAmount } from "../../economy/index.js";
 import { NotificationKind } from "../../notifications/index.js";
 import { BoardSort, ListingStatus, PurchaseStatus, saleMemoFrom } from "../domain/Listing.js";
+import { SALES_CHANNEL } from "./BoardRelay.js";
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const ACCOUNT_PATTERN = /^[a-z][a-z0-9.-]{2,15}$/;
@@ -64,7 +67,7 @@ export class SalesService {
   #inventory;
   #assets;
   #providers;
-  #notifier;
+  #publish;
   #notifications;
   #audit;
   #clock;
@@ -79,7 +82,7 @@ export class SalesService {
    *   inventory: import("../../collection/index.js").InventoryService,
    *   assets: () => readonly Readonly<{ network: string, asset: string, precision: number }>[],
    *   providers: ReadonlyMap<string, import("../../payments/application/ports.js").PaymentProvider>,
-   *   notifier: { send: (userId: string, type: string, data: unknown) => void },
+   *   publish: (channel: string, payload: string) => Promise<unknown>,
    *   notifications: { notify: (userId: string, kind: string, data: Record<string, unknown>) => Promise<unknown> },
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
    *   clock: import("../../../kernel/time.js").Clock,
@@ -87,14 +90,14 @@ export class SalesService {
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   logger: import("../../../kernel/logger.js").Logger,
    *   policy?: Partial<SalesPolicy>,
-   * }} deps `assets`: what may be asked as a price (the accepted assets)
+   * }} deps `assets`: what may be asked as a price (the accepted assets); `publish`: a NOTIFY to every server process
    */
-  constructor({ repository, inventory, assets, providers, notifier, notifications, audit, clock, random, unitOfWork, logger, policy = {} }) {
+  constructor({ repository, inventory, assets, providers, publish, notifications, audit, clock, random, unitOfWork, logger, policy = {} }) {
     this.#repository = repository;
     this.#inventory = inventory;
     this.#assets = assets;
     this.#providers = providers;
-    this.#notifier = notifier;
+    this.#publish = publish;
     this.#notifications = notifications;
     this.#audit = audit;
     this.#clock = clock;
@@ -161,6 +164,7 @@ export class SalesService {
       return this.#replay(/** @type {import("../domain/Listing.js").Listing} */ (await this.#repository.findListingByIdempotencyKey(seller.id, idempotencyKey)), requestHash);
     }
     this.#logger.info("card listed", { listing: listing.id });
+    this.tell(listing.id, [seller.id]);
     return Object.freeze({ created: true, listing: await this.listingView(listing.id) });
   }
 
@@ -346,14 +350,16 @@ export class SalesService {
   }
 
   /**
-   * The players concerned learn that a listing changed (they re-read it).
+   * Announces a committed change to a listing: everyone looking at the board
+   * re-reads it, the players concerned re-read their own (BoardRelay).
    * @param {string} listingId
    * @param {readonly string[]} userIds
    */
   tell(listingId, userIds) {
-    for (const userId of new Set(userIds)) {
-      this.#notifier.send(userId, "sale.updated", { listingId });
-    }
+    this.#publish(SALES_CHANNEL, JSON.stringify({ listingId, userIds: [...new Set(userIds)] })).catch((error) => {
+      // The board is the record: players see the change when they next read it.
+      this.#logger.warn("could not announce a board change", { listing: listingId, error: error instanceof Error ? error.message : String(error) });
+    });
   }
 
   /**

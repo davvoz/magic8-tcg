@@ -4,4 +4,4 @@
  */
 export { EconomyService } from "./application/EconomyService.js";
 export { AssetRegistry, validateAssets } from "./domain/AssetRegistry.js";
-export { MAX_UNITS, formatAmount, parseAmount, safeMultiply } from "./domain/Money.js";
+export { MAX_UNITS, formatAmount, parseAmount, safeAdd, safeMultiply } from "./domain/Money.js";

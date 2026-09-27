@@ -45,7 +45,7 @@
 |---|---|---|---|
 | GET | `/api/products` | — | Pubblico. `{ products, dropTables, rarities }`: prodotti in vendita con prezzi (stringhe decimali esatte) e contenuti; drop table risolte con hash, probabilità per slot, probabilità foil e pool di carte |
 | GET | `/api/pack-epochs` | — | Pubblico. Epoche dei pacchetti: impegno (`commit`), apertura, chiusura e, solo quando tutti gli ordini dell'epoca sono chiusi, il segreto rivelato |
-| POST | `/api/orders` | `{ "productId", "quantity", "asset" }` + `Idempotency-Key` | Il prezzo **non** si invia: lo calcola il server dal listino. Risposta con istruzioni di pagamento `{ to, amount, asset, memo, expiresAt }` |
+| POST | `/api/orders` | `{ "items": [{ "productId", "quantity" }], "asset" }` (carrello, 1–20 righe, ogni prodotto una volta) oppure `{ "productId", "quantity", "asset" }` (una riga) + `Idempotency-Key` | Il prezzo **non** si invia: lo calcola il server dal listino, riga per riga. Un ordine = un pagamento, qualunque sia il numero di righe; al massimo 1000 carte in tutto. Risposta con istruzioni di pagamento `{ to, amount, asset, memo, expiresAt }` |
 | GET | `/api/orders/{id}` | — | Solo il proprietario |
 | POST | `/api/orders/{id}/payment-hint` | `{ "txId" }` | 202 `{ order }`. Fa solo leggere prima lo storico dell'account shop (al massimo una volta ogni 3 s); il txId non viene mai creduto |
 | POST | `/api/orders/{id}/cancel` | — | Solo da `CREATED`/`PAYMENT_PENDING` |

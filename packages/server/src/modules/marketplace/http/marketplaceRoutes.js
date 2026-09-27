@@ -3,11 +3,14 @@
  * The listing and the pack epochs are public (anyone may check odds and
  * commitments); orders belong to their buyer.
  */
-import { checkInteger, checkString } from "@magic8/engine/shared/validation.js";
+import { checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 import { Auth } from "../../../platform/http/Router.js";
 import { validated } from "../../../platform/http/validateBody.js";
+import { MAX_ORDER_LINES } from "../application/MarketplaceService.js";
 
-const ORDER_KEYS = Object.freeze(["productId", "quantity", "asset"]);
+/** An order is `{ items: [{ productId, quantity }, ...], asset }` (a cart), or one line as `{ productId, quantity, asset }`. */
+const ORDER_KEYS = Object.freeze(["items", "productId", "quantity", "asset"]);
+const LINE_KEYS = Object.freeze(["productId", "quantity"]);
 const HINT_KEYS = Object.freeze(["txId"]);
 const PUBLIC_RATE = Object.freeze({ name: "market-read", capacity: 60, refillPerSecond: 1, by: /** @type {const} */ ("ip") });
 const ORDER_READ_RATE = Object.freeze({ name: "orders-read", capacity: 120, refillPerSecond: 2, by: /** @type {const} */ ("user") });
@@ -47,15 +50,20 @@ export function registerMarketplaceRoutes({ router, marketplace, epochs, settlem
     rateLimit: ORDER_WRITE_RATE,
     handler: async (context) => {
       const body = validated(await context.readJson(), ORDER_KEYS, (issues, object) => {
-        checkString(issues, object.productId, "body.productId", { minLength: 1, maxLength: 40 });
-        checkInteger(issues, object.quantity, "body.quantity", { min: 1, max: 100 });
+        if (object.items === undefined) {
+          checkLine(issues, object, "body");
+        } else if (object.productId !== undefined || object.quantity !== undefined) {
+          issues.add("body", "send either items or productId and quantity");
+        } else {
+          checkArrayOf(issues, object.items, "body.items", { minLength: 1, maxLength: MAX_ORDER_LINES, item: (line, path) => (checkObject(issues, line, path, LINE_KEYS) === undefined ? undefined : checkLine(issues, /** @type {Record<string, unknown>} */ (line), path)) });
+        }
         checkString(issues, object.asset, "body.asset", { minLength: 1, maxLength: 10 });
       });
       const { user } = context.principal;
+      const items = /** @type {{ productId: string, quantity: number }[]} */ (body.items ?? [{ productId: body.productId, quantity: body.quantity }]);
       const result = await marketplace.createOrder({
         buyer: { id: user.id, account: user.account, network: user.network },
-        productId: body.productId,
-        quantity: body.quantity,
+        items,
         asset: body.asset,
         idempotencyKey: context.header("idempotency-key"),
         ip: context.ip,
@@ -101,4 +109,15 @@ export function registerMarketplaceRoutes({ router, marketplace, epochs, settlem
     rateLimit: ORDER_CANCEL_RATE,
     handler: async (context) => ({ status: 200, body: { order: await marketplace.cancel({ userId: context.principal.user.id, orderId: context.params.id, ip: context.ip }) } }),
   });
+}
+
+/**
+ * @param {import("@magic8/engine/shared/validation.js").Issues} issues
+ * @param {Record<string, unknown>} line
+ * @param {string} path
+ */
+function checkLine(issues, line, path) {
+  const productId = checkString(issues, line.productId, `${path}.productId`, { minLength: 1, maxLength: 40 });
+  const quantity = checkInteger(issues, line.quantity, `${path}.quantity`, { min: 1, max: 100 });
+  return productId === undefined || quantity === undefined ? undefined : { productId, quantity };
 }

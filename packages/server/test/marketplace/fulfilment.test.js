@@ -104,6 +104,24 @@ describe("fulfilment", () => {
     assert.deepEqual(audit.map((row) => row.action), ["marketplace.order_created", "marketplace.payment_verified", "marketplace.order_fulfilled"]);
   });
 
+  it("fulfils a cart: every line's cards, its packs numbered across the order, one receipt", async () => {
+    const created = await aliceClient.post("/api/orders", { items: [{ productId: "core_mini_booster", quantity: 1 }, { productId: "single_pyre_drake_foil", quantity: 2 }, { productId: "core_booster", quantity: 1 }], asset: "STEEM" }, { "Idempotency-Key": newKey() });
+    assert.equal(created.status, 201, created.text);
+    const { order } = created.json;
+    setup.ledger.transfer({ from: order.payment.from, to: order.payment.to, amount: `${order.payment.amount} STEEM`, memo: order.payment.memo, time: setup.clock.now() });
+    setup.ledger.finalize();
+    await setup.app.settlement.runOnce();
+    assert.equal(await setup.app.fulfilment.fulfilVerified(), 1);
+    const { fulfilment, status } = await orderOf(aliceClient, order.id);
+    assert.equal(status, "FULFILLED");
+    assert.deepEqual(fulfilment.cards.map((card) => [card.definitionId, card.finish]), [["pyre_drake", "foil"], ["pyre_drake", "foil"]]);
+    assert.deepEqual(fulfilment.packs.map((pack) => [pack.index, pack.cards.length]), [[0, 3], [1, 5]], "the mini booster, then the booster");
+    const [receipt] = await receipts(order.id);
+    assert.deepEqual(parseCanonical(receipt.payload).items, [{ p: "core_mini_booster", q: 1 }, { p: "single_pyre_drake_foil", q: 2 }, { p: "core_booster", q: 1 }]);
+    const [told] = (await aliceClient.get("/api/notifications")).json.notifications;
+    assert.deepEqual([told.data.orderId, told.data.total, told.data.items.length], [order.id, 10, 3]);
+  });
+
   it("mints bought decks and saves them to the account, and prints foil singles", async () => {
     const deckOrder = await buyAndPay(bobClient, "deck_precon_arcane");
     const foilOrder = await buyAndPay(bobClient, "single_pyre_drake_foil");

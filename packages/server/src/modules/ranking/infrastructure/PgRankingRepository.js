@@ -109,11 +109,11 @@ export class PgRankingRepository {
   }
 
   /**
-   * The best settled ratings of a season.
+   * The best ratings of a season: settled ones (rd <= maxRd) first, then provisional ones.
    * @param {{ season: string, maxRd: number, limit: number }} query
    */
   async leaderboard({ season, maxRd, limit }) {
-    const rows = await this.#db.rows("SELECT * FROM ratings WHERE season = $1 AND rd <= $2 ORDER BY rating DESC, games DESC, user_id LIMIT $3", [season, maxRd, limit]);
+    const rows = await this.#db.rows("SELECT * FROM ratings WHERE season = $1 ORDER BY rd > $2, rating DESC, games DESC, user_id LIMIT $3", [season, maxRd, limit]);
     return Object.freeze(rows.map(toRating));
   }
 

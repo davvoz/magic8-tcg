@@ -159,11 +159,12 @@ export class HttpMarketApi {
   }
 
   /**
-   * @param {{ productId: string, quantity: number, asset: string }} request
+   * @param {{ items: readonly Readonly<{ productId: string, quantity: number }>[], asset: string }} request
    * @param {string} idempotencyKey
    */
-  async createOrder({ productId, quantity, asset }, idempotencyKey) {
-    const response = await this.#transport.request("POST", "/api/orders", { body: { productId, quantity, asset }, headers: { "Idempotency-Key": idempotencyKey } });
+  async createOrder({ items, asset }, idempotencyKey) {
+    const body = { items: items.map(({ productId, quantity }) => ({ productId, quantity })), asset };
+    const response = await this.#transport.request("POST", "/api/orders", { body, headers: { "Idempotency-Key": idempotencyKey } });
     return response.ok ? shaped(order(/** @type {any} */ (response.value)?.order)) : response;
   }
 

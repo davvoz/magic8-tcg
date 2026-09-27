@@ -17,6 +17,8 @@ import { ApiClient } from "../support/apiClient.js";
 const PRINTING = Object.freeze({ edition: "core-1", finish: "standard" });
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
+/** Lets the in-process NOTIFY reach the board relay. */
+const announced = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 async function world(salesPolicy = {}) {
   const setup = await buildTestApp({ salesPolicy });
@@ -38,7 +40,8 @@ async function world(salesPolicy = {}) {
   const settle = () => app.saleSettlement.runOnce();
   const copyOf = async (id) => (await setup.database.rows("SELECT owner_id, status FROM card_instances WHERE id = $1", [id])).map((row) => [row.owner_id, row.status])[0];
   const purchase = (buyer, id) => app.sales.purchaseView(buyer.id, id);
-  return { setup, app, player, owned, list, reserve, pay, settle, copyOf, purchase, inbox };
+  const stopRelay = await app.boardRelay.start();
+  return { setup, app, player, owned, list, reserve, pay, settle, copyOf, purchase, inbox, stopRelay };
 }
 
 describe("sales between players", () => {
@@ -137,6 +140,34 @@ describe("sales between players", () => {
     assert.deepEqual(await w.settle(), { detected: 1, completed: 1, expired: 0 }, "the right transfer still pays");
   });
 
+  it("tells everyone connected when the board changes, and the players concerned what changed for them", async () => {
+    const w = await world();
+    try {
+      const alice = await w.player("alice");
+      const bob = await w.player("bob");
+      const carol = await w.player("carol");
+      const board = (user) => w.inbox.get(user.id).filter((message) => message.t === "sales.board").map((message) => message.d.listingId);
+      const updated = (user) => w.inbox.get(user.id).filter((message) => message.t === "sale.updated").map((message) => message.d.listingId);
+      const listed = (await w.list(alice, await w.owned(alice))).listing;
+      await announced();
+      assert.deepEqual(board(carol), [listed.id], "a new listing reaches whoever looks at the board");
+      assert.deepEqual([updated(alice), updated(carol)], [[listed.id], []], "only the seller is concerned");
+
+      await w.app.sales.cancelListing({ userId: alice.id, listingId: listed.id, ip: "x" });
+      await announced();
+      assert.deepEqual(board(carol), [listed.id, listed.id], "a withdrawn listing too");
+      assert.deepEqual(board(bob), [listed.id, listed.id]);
+
+      const second = (await w.list(alice, await w.owned(alice))).listing;
+      await w.reserve(bob, second);
+      await announced();
+      assert.deepEqual(board(carol).slice(-2), [second.id, second.id], "and a reserved one");
+      assert.deepEqual(updated(bob), [second.id], "the buyer is concerned");
+    } finally {
+      await w.stopRelay();
+    }
+  });
+
   it("frees the listing when the reservation runs out or is released, never while a payment is seen", async () => {
     const w = await world();
     const alice = await w.player("alice");
@@ -151,6 +182,7 @@ describe("sales between players", () => {
     w.setup.clock.advance(2 * MINUTE);
     assert.equal((await w.settle()).expired, 1);
     assert.equal((await w.purchase(bob, first.id)).status, "EXPIRED");
+    await announced();
     assert.ok(w.inbox.get(alice.id).some((message) => message.t === "sale.updated"), "the seller is told");
 
     const second = await w.reserve(carol, listing);
@@ -220,5 +252,33 @@ describe("sales between players", () => {
     assert.equal((await w.app.sales.board({})).total, 0, "nothing past its time is shown");
     await w.settle();
     assert.equal(await w.app.sales.expireDue(), 1);
+  });
+});
+
+describe("BoardRelay", () => {
+  it("tells everyone to re-read the board when its channel came back, and ignores malformed signals", async () => {
+    const { BoardRelay } = await import("../../src/modules/sales/index.js");
+    /** @type {() => void} */
+    let reconnect = () => undefined;
+    /** @type {(payload: string) => void} */
+    let deliver = () => undefined;
+    const messages = [];
+    const warnings = [];
+    const hub = { isConnected: () => true, connectedUsers: () => ["user-1"], send: (userId, t, d) => messages.push({ userId, t, d }) };
+    const relay = new BoardRelay({
+      listen: async (_channel, onPayload, { onReconnect }) => {
+        deliver = onPayload;
+        reconnect = onReconnect;
+        return async () => undefined;
+      },
+      hub,
+      logger: { warn: (message) => warnings.push(message) },
+    });
+    await relay.start();
+    reconnect();
+    deliver("not json");
+    deliver(JSON.stringify({ listingId: 7, userIds: [] }));
+    assert.deepEqual(messages, [{ userId: "user-1", t: "sales.board", d: { listingId: null } }]);
+    assert.equal(warnings.length, 2);
   });
 });

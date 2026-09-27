@@ -217,6 +217,36 @@ describe("marketplace orders over HTTP", () => {
     assert.ok(!Buffer.from(sealed[0].secret_encrypted).toString("hex").includes(revealed.secret), "stored encrypted");
     await bobClient.post(`/api/orders/${next.json.order.id}/cancel`, {});
   });
+
+  it("prices a cart as one order with one payment", async () => {
+    const created = await order(aliceClient, { items: [{ productId: "core_booster", quantity: 2 }, { productId: "single_pyre_drake", quantity: 1 }, { productId: "single_pyre_drake_foil", quantity: 1 }], asset: "STEEM" });
+    assert.equal(created.status, 201, created.text);
+    const { order: placed } = created.json;
+    assert.deepEqual(
+      placed.items.map((item) => [item.productId, item.quantity, item.unitAmount]),
+      [["core_booster", 2, "1.000"], ["single_pyre_drake", 1, "2.500"], ["single_pyre_drake_foil", 1, "5.000"]],
+    );
+    assert.deepEqual(placed.total, { asset: "STEEM", amount: "9.500" });
+    assert.equal(placed.payment.amount, "9.500", "one transfer pays the whole cart");
+    assert.notEqual(placed.rngEpochId, null, "a cart with packs is bound to the open epoch");
+    await aliceClient.post(`/api/orders/${placed.id}/cancel`, {});
+  });
+
+  it("refuses malformed carts", async () => {
+    const line = { productId: "core_booster", quantity: 1 };
+    assert.equal((await order(aliceClient, { items: [], asset: "STEEM" })).status, 400, "no lines");
+    assert.equal((await order(aliceClient, { items: [line, line], asset: "STEEM" })).status, 400, "a product appears once");
+    assert.equal((await order(aliceClient, { items: [line], productId: "core_booster", quantity: 1, asset: "STEEM" })).status, 400, "items or a single line, not both");
+    assert.equal((await order(aliceClient, { items: [{ ...line, price: "0.001" }], asset: "STEEM" })).status, 400, "unknown fields in a line");
+    assert.equal((await order(aliceClient, { items: [line, { productId: "core_booster_box", quantity: 1 }], asset: "STEEM" })).status, 409, "every line must be on sale");
+    assert.equal((await order(aliceClient, { items: [line, { productId: "core_mini_booster", quantity: 21 }], asset: "STEEM" })).status, 400, "each line within its product's limit");
+    const tooMany = Array.from({ length: 21 }, (_, index) => ({ productId: `product_${index}`, quantity: 1 }));
+    assert.equal((await order(aliceClient, { items: tooMany, asset: "STEEM" })).status, 400, "at most 20 lines");
+    const listing = (await new ApiClient(server.base).get("/api/products")).json;
+    const singles = listing.products.filter((product) => product.kind === "single").slice(0, 20);
+    const bulky = await order(aliceClient, { items: singles.map((product) => ({ productId: product.id, quantity: 100 })), asset: "STEEM" });
+    assert.equal(bulky.status, 400, "at most 1000 cards across the lines");
+  });
 });
 
 describe("SecretBox", () => {

@@ -79,12 +79,13 @@ export function fakeMarketApi({ progression = ["PAYMENT_DETECTED", "PAYMENT_VERI
   const state = new Map();
   const view = (entry) => {
     const status = entry.statuses[Math.min(entry.step, entry.statuses.length - 1)];
+    const quantity = entry.items.reduce((sum, item) => sum + item.quantity, 0);
     return Object.freeze({
       id: entry.id,
       status,
-      items: [{ productId: entry.productId, name: entry.productId, quantity: entry.quantity, unitAmount: "1.000" }],
-      total: { asset: "STEEM", amount: `${entry.quantity}.000` },
-      payment: status === "PAYMENT_PENDING" ? { network: "steem", from: "alice", to: "verdu.green", asset: "STEEM", amount: `${entry.quantity}.000`, memo: `m8tcg-${"a".repeat(26)}`, expiresAt: 1 } : null,
+      items: entry.items.map((item) => ({ productId: item.productId, name: item.productId, quantity: item.quantity, unitAmount: "1.000" })),
+      total: { asset: "STEEM", amount: `${quantity}.000` },
+      payment: status === "PAYMENT_PENDING" ? { network: "steem", from: "alice", to: "verdu.green", asset: "STEEM", amount: `${quantity}.000`, memo: `m8tcg-${"a".repeat(26)}`, expiresAt: 1 } : null,
       failureReason: null,
       createdAt: 0,
       fulfilment: status === "FULFILLED" ? { txId: "cd".repeat(20), cards: [], packs: [{ index: 0, cards: PACK_CARDS }] } : null,
@@ -101,9 +102,9 @@ export function fakeMarketApi({ progression = ["PAYMENT_DETECTED", "PAYMENT_VERI
   };
   const api = {
     listing: method("listing", () => ok(LISTING)),
-    createOrder: method("createOrder", ({ productId, quantity }) => {
+    createOrder: method("createOrder", ({ items }) => {
       orders += 1;
-      const entry = { id: `00000000-0000-4000-8000-${String(orders).padStart(12, "0")}`, productId, quantity, statuses: ["PAYMENT_PENDING"], step: 0 };
+      const entry = { id: `00000000-0000-4000-8000-${String(orders).padStart(12, "0")}`, items: items.map((item) => ({ ...item })), statuses: ["PAYMENT_PENDING"], step: 0 };
       state.set(entry.id, entry);
       return ok(view(entry));
     }),

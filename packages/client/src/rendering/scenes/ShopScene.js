@@ -9,15 +9,18 @@
  * (plus Offers, only when the server sells something else). On the right,
  * the selected item: a pack's odds, a deck's card-by-card price, a card at
  * full size with its finishes and the price list by rarity; then the
- * quantity and Buy. Paying goes through the wallet (Keychain shows the exact
- * transfer); when the order is fulfilled the cards received are revealed,
- * pack by pack. Every price shown is the server's.
+ * quantity, Buy and Add to cart. The cart (header) lists what was added from
+ * any shelf, lets the player change or remove it, and pays for all of it
+ * with one transfer. Paying goes through the wallet (Keychain shows the
+ * exact transfer); when the order is fulfilled the cards received are
+ * revealed, pack by pack. Every price shown is the server's.
  */
 import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
-import { ShopCategory, deckBreakdown, mainOfferOf, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
+import { ShopCategory, cartSummary, deckBreakdown, mainOfferOf, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
 import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
+import { CardFan } from "../cards/CardFan.js";
 import { CardStrip } from "../cards/CardStrip.js";
 import { CardThumb } from "../cards/CardThumb.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
@@ -48,6 +51,10 @@ const SINGLE = Object.freeze({ card: Object.freeze({ width: 300, height: 442 }),
 /** A deck's cards as thumbnails: the card, "copies × price each", its rarity. */
 const DECK_THUMB = Object.freeze({ width: 84, gap: 12, rarity: 20 });
 const REVEAL = Object.freeze({ width: 1100, height: 780, row: 44, gap: 6, packGap: 16 });
+/** The cart: a grid of tiles, each the product's cards over its name, price and quantity. */
+/** `step`: the − and + buttons (wide enough for their sign past the button's padding). */
+const CART = Object.freeze({ width: 1100, height: 860, footer: 56, perRow: 3, gap: 16, tile: 300, fan: 170, step: Object.freeze({ width: 56, height: 44 }), remove: 48 });
+const CART_LIST_ID = "cart.lines";
 const DETAIL_WIDTH = COLUMNS.right.width - 2 * INSET;
 /** Where the purchase controls start in the detail panel; everything else fits above. */
 const PURCHASE_TOP = COLUMNS.height - INSET - 2 * LINE - 8 - BUY.height - INSET - QUANTITY.height;
@@ -94,6 +101,10 @@ export class ShopScene extends Scene {
   #scrollToTop = false;
   /** The reveal of the last fulfilled order was closed. */
   #revealClosed = false;
+  /** The cart is open (it stays open across rebuilds, behind a reveal). */
+  #cartShown = false;
+  /** What the last Add to cart did, until the next choice. @type {{ text: string, colorKey: string } | null} */
+  #notice = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -138,6 +149,8 @@ export class ShopScene extends Scene {
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     const scrollY = this.#takeScroll();
+    const cartList = this.modal?.findById(CART_LIST_ID);
+    const cartScrollY = cartList instanceof ScrollList ? cartList.scrollY : 0;
     this.closeModal();
     this.root.clear();
     const shelves = this.#shelves();
@@ -146,8 +159,8 @@ export class ShopScene extends Scene {
     const firstControl = this.#buildShelfControls(listPanel, shelves);
     const firstRow = this.#buildList(listPanel, shelves, scrollY);
     const buy = this.#buildDetail(shelves);
-    const reveal = this.#openRevealIfDone();
-    this.focus(reveal ?? this.root.findById(focusedId) ?? buy ?? firstRow ?? firstControl ?? back);
+    const modalFocus = this.#openRevealIfDone() ?? this.#openCartIfShown(focusedId, cartScrollY);
+    this.focus(modalFocus ?? this.root.findById(focusedId) ?? buy ?? firstRow ?? firstControl ?? back);
     this.services.requestRender();
   }
 
@@ -194,7 +207,21 @@ export class ShopScene extends Scene {
     this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 200, height: HEADER.height, text: "Shop", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const note = account === null ? "Sign in with Keychain to buy. Prices are paid in STEEM, straight from your wallet." : `Buying as @${account}. Payments go straight from your wallet; nothing is stored in the game.`;
     const market = this.services.hasScene(SceneId.MARKET);
-    this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y, width: viewport.logicalWidth - 2 * HEADER.sideMargin - 200 - (market ? 2 : 1) * (HEADER.backWidth + 16), height: HEADER.height, text: note, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    const buttons = market ? 3 : 2;
+    this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y, width: viewport.logicalWidth - 2 * HEADER.sideMargin - 200 - buttons * (HEADER.backWidth + 16), height: HEADER.height, text: note, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    const inCart = this.#shop().state.cart.reduce((sum, line) => sum + line.quantity, 0);
+    this.root.add(
+      new Button({
+        id: "shop.cart",
+        x: viewport.logicalWidth - HEADER.sideMargin - buttons * HEADER.backWidth - (buttons - 1) * 16,
+        y: HEADER.y + 4,
+        width: HEADER.backWidth,
+        height: HEADER.height - 8,
+        text: inCart === 0 ? "Cart" : `Cart (${inCart})`,
+        variant: inCart === 0 ? "secondary" : "primary",
+        onActivate: () => this.#showCart(true),
+      }),
+    );
     if (market) {
       this.root.add(new Button({ id: "shop.market", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
     }
@@ -503,16 +530,22 @@ export class ShopScene extends Scene {
         text: `Buy for ${multiplyAmount(price.amount, this.#quantity)} ${price.asset}`,
         variant: "primary",
         enabled: this.#canBuy(),
-        onActivate: () => shop.buy({ productId: product.id, quantity: this.#quantity, asset: price.asset }),
+        onActivate: () => {
+          this.#notice = null;
+          shop.buy({ productId: product.id, quantity: this.#quantity, asset: price.asset });
+        },
       }),
     );
     const status = this.#statusLine(purchase);
     panel.add(new TextBlock({ id: "shop.status", x: INSET, y: buyY + BUY.height + 8, width: DETAIL_WIDTH, height: 2 * LINE, text: status.text, size: "small", colorKey: status.colorKey }));
+    const x = INSET + BUY.width + INSET;
+    const side = COLUMNS.right.width - x - INSET;
     if (purchase.stage === PurchaseStage.FAILED && purchase.order?.payment) {
-      const x = INSET + BUY.width + INSET;
-      const half = (COLUMNS.right.width - x - INSET - ACTION.gap) / 2;
+      const half = (side - ACTION.gap) / 2;
       panel.add(new Button({ id: "shop.payAgain", x, y: buyY, width: half, height: BUY.height, text: "Pay again", onActivate: () => shop.payAgain() }));
       panel.add(new Button({ id: "shop.cancel", x: x + half + ACTION.gap, y: buyY, width: half, height: BUY.height, text: "Cancel order", variant: "danger", textSize: "small", onActivate: () => shop.cancel() }));
+    } else {
+      panel.add(new Button({ id: "shop.addToCart", x, y: buyY, width: side, height: BUY.height, text: "Add to cart", enabled: shop.state.status === ShopStatus.READY, onActivate: () => this.#addToCart(product) }));
     }
     return buy;
   }
@@ -534,6 +567,9 @@ export class ShopScene extends Scene {
     const text = STAGE_TEXT[/** @type {keyof typeof STAGE_TEXT} */ (purchase.stage)];
     if (text !== undefined) {
       return { text: text(purchase), colorKey: purchase.stage === PurchaseStage.DONE ? "success" : "accent" };
+    }
+    if (this.#notice !== null) {
+      return this.#notice;
     }
     return (this.#app.account?.state.account ?? null) === null ? { text: "Sign in to buy.", colorKey: "textMuted" } : { text: "Keychain will show the exact transfer before anything is paid.", colorKey: "textMuted" };
   }
@@ -585,7 +621,12 @@ export class ShopScene extends Scene {
   #openRevealIfDone() {
     const { purchase } = this.#shop().state;
     const fulfilment = purchase.order?.fulfilment;
-    if (purchase.stage !== PurchaseStage.DONE || fulfilment === null || fulfilment === undefined || this.#revealClosed) {
+    if (purchase.stage !== PurchaseStage.DONE) {
+      // The fulfilled order is behind us (closing the reveal dismisses it): the next purchase reveals its own cards.
+      this.#revealClosed = false;
+      return null;
+    }
+    if (fulfilment === null || fulfilment === undefined || this.#revealClosed) {
       return null;
     }
     const { viewport } = this.services;
@@ -620,6 +661,194 @@ export class ShopScene extends Scene {
     panel.add(new Button({ id: "reveal.close", x: INSET + buttonWidth + ACTION.gap, y: buttonsY, width: buttonWidth, height: 56, text: "Keep shopping", onActivate: close }));
     this.openModal(modal);
     return view;
+  }
+
+  /**
+   * The cart, when it is open: each line with its quantity, amount and
+   * Remove; the total; Empty cart, Keep shopping and Pay.
+   * @param {string} focusedId the node focused before the rebuild, kept when it is in the cart
+   * @param {number} scrollY where the list of lines was scrolled
+   * @returns {import("../ui/UiNode.js").UiNode | null} the node to focus in the cart
+   */
+  #openCartIfShown(focusedId, scrollY) {
+    if (!this.#cartShown) {
+      return null;
+    }
+    const shop = this.#shop();
+    const summary = cartSummary(shop.state.cart, shop.state.listing?.products ?? []);
+    const { viewport } = this.services;
+    const modal = new Modal({ id: "cart", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: CART.width, panelHeight: CART.height, onDismiss: () => this.#showCart(false) });
+    const { panel } = modal;
+    const width = CART.width - 2 * INSET;
+    panel.add(new Label({ x: INSET, y: INSET, width: width / 2, height: 44, text: "Your cart", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    panel.add(new Label({ id: "cart.count", x: INSET + width / 2, y: INSET, width: width / 2, height: 44, text: cartCountText(summary), size: "small", align: "right", colorKey: "textMuted" }));
+    const footerY = CART.height - INSET - CART.footer;
+    const totalY = footerY - INSET - 2 * LINE;
+    this.#buildCartLines(panel.add(new ScrollList({ id: CART_LIST_ID, x: INSET, y: INSET + 60, width, height: totalY - INSET - 60 - INSET })), summary, scrollY);
+    panel.add(new Label({ id: "cart.total", x: INSET, y: totalY, width, height: LINE, text: summary.asset === null ? "" : `Total: ${summary.total} ${summary.asset}`, size: "body", weight: "bold", align: "right", colorKey: "accentLight" }));
+    const hint = this.#cartHint(summary);
+    panel.add(new Label({ id: "cart.status", x: INSET, y: totalY + LINE, width, height: LINE, text: hint.text, size: "small", align: "right", colorKey: hint.colorKey, fit: true }));
+    const buttons = this.#buildCartButtons(panel, summary, footerY);
+    this.openModal(modal);
+    const kept = modal.findById(focusedId);
+    return [kept, ...buttons].find((node) => node?.isEffectivelyEnabled) ?? null;
+  }
+
+  /**
+   * The cart's tiles, three to a row, or what to do when it is empty.
+   * @param {ScrollList} list
+   * @param {import("../../application/shop/shopCatalog.js").CartSummary} summary
+   * @param {number} scrollY
+   */
+  #buildCartLines(list, summary, scrollY) {
+    if (summary.lines.length === 0) {
+      list.add(new TextBlock({ id: "cart.empty", x: 0, y: 0, width: list.rowWidth, height: 2 * LINE, text: "Your cart is empty. Choose packs, decks or cards on any shelf and press Add to cart: you pay for all of them at once.", size: "body", colorKey: "textMuted" }));
+      list.contentHeight = 2 * LINE;
+      return;
+    }
+    const width = Math.floor((list.rowWidth - (CART.perRow - 1) * CART.gap) / CART.perRow);
+    summary.lines.forEach((line, index) => {
+      const column = index % CART.perRow;
+      const row = Math.floor(index / CART.perRow);
+      this.#buildCartTile(list, line, { x: column * (width + CART.gap), y: row * (CART.tile + CART.gap), width });
+    });
+    const rows = Math.ceil(summary.lines.length / CART.perRow);
+    list.contentHeight = rows * (CART.tile + CART.gap) - CART.gap;
+    list.scrollTo(scrollY);
+  }
+
+  /**
+   * One product in the cart: its cards fanned out with the quantity, ✕ to
+   * remove it; its name, price each, − quantity + and its amount.
+   * @param {ScrollList} list
+   * @param {import("../../application/shop/shopCatalog.js").CartSummaryLine} line
+   * @param {{ x: number, y: number, width: number }} tile
+   */
+  #buildCartTile(list, line, { x, y, width }) {
+    const shop = this.#shop();
+    const { productId, quantity, product } = line;
+    const inner = width - 2 * 10;
+    list.add(new Panel({ id: `cart.line.${productId}`, x, y, width, height: CART.tile }));
+    list.add(new CardFan({ id: `cart.visual.${productId}`, x: x + 10, y: y + 10, width: inner, height: CART.fan, ...this.#fanOf(product, productId), badge: `×${quantity}` }));
+    list.add(new Button({ id: `cart.remove.${productId}`, x: x + width - 8 - CART.remove, y: y + 8, width: CART.remove, height: CART.remove, text: "×", variant: "danger", onActivate: () => shop.removeFromCart(productId) }));
+    list.add(new Label({ id: `cart.name.${productId}`, x: x + 10, y: y + CART.fan + 16, width: inner, height: 26, text: product?.name ?? productId, weight: "bold", colorKey: product === null ? "danger" : "text", fit: true }));
+    const each = product === null ? "No longer on sale: remove it" : `${priceText(product)} each · ${cardsText(product.cards)}`;
+    list.add(new Label({ x: x + 10, y: y + CART.fan + 42, width: inner, height: 22, text: each, size: "small", colorKey: product === null ? "danger" : "textMuted", fit: true }));
+    const controlsY = y + CART.tile - 12 - CART.step.height;
+    const step = { width: CART.step.width, height: CART.step.height };
+    const limit = product?.perOrder ?? quantity;
+    list.add(new Button({ id: `cart.less.${productId}`, x: x + 10, y: controlsY, ...step, text: "−", enabled: quantity > 1, onActivate: () => shop.setCartQuantity(productId, quantity - 1) }));
+    list.add(new Label({ id: `cart.quantity.${productId}`, x: x + 10 + step.width, y: controlsY, ...step, text: String(quantity), weight: "bold" }));
+    list.add(new Button({ id: `cart.more.${productId}`, x: x + 10 + 2 * step.width, y: controlsY, ...step, text: "+", enabled: quantity < limit, onActivate: () => shop.setCartQuantity(productId, quantity + 1) }));
+    const amountX = x + 10 + 3 * step.width + 8;
+    const amount = line.amount === null ? "—" : `${line.amount} ${priceOf(/** @type {Product} */ (product)).asset}`;
+    list.add(new Label({ id: `cart.amount.${productId}`, x: amountX, y: controlsY, width: x + width - 10 - amountX, height: step.height, text: amount, weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
+  }
+
+  /**
+   * What a product's tile shows: the card of a single, the rarest cards of a
+   * deck or of an offer, card backs for packs (unknown until opened).
+   * @param {Product | null} product
+   * @param {string} productId
+   * @returns {{ cards: import("../cards/CardFan.js").FanCard[], backs: number, foil: boolean }}
+   */
+  #fanOf(product, productId) {
+    if (product === null) {
+      return { cards: [{ card: { ...unknownCard(productId), text: "" }, rarity: null }], backs: 0, foil: false };
+    }
+    const cardIds = product.contents.flatMap((item) => {
+      if (item.type === "card") {
+        return [item.ref];
+      }
+      const deck = item.type === "deck" ? this.#app.content.preconDecks.find((candidate) => candidate.id === item.ref) : undefined;
+      return deck?.entries.map((entry) => entry.cardId) ?? [];
+    });
+    const rarities = this.#shop().state.listing?.rarities ?? [];
+    const rank = (cardId) => rarities.indexOf(rarityOf(this.#app, cardId) ?? "");
+    const cards = [...new Set(cardIds)]
+      .sort((left, right) => rank(right) - rank(left))
+      .slice(0, 3)
+      .reverse()
+      .map((cardId) => ({ card: this.#app.content.catalog.get(cardId) ?? { ...unknownCard(cardId), text: "" }, rarity: rarityOf(this.#app, cardId) }));
+    const foil = product.contents.length > 0 && product.contents.every((item) => item.type === "card" && item.finish === "foil");
+    return { cards, backs: cards.length === 0 ? 3 : 0, foil };
+  }
+
+  /**
+   * Empty cart, Keep shopping and Pay.
+   * @param {Panel} panel
+   * @param {import("../../application/shop/shopCatalog.js").CartSummary} summary
+   * @param {number} y
+   * @returns {Button[]} the buttons to focus first, in order of preference
+   */
+  #buildCartButtons(panel, summary, y) {
+    const shop = this.#shop();
+    const third = (CART.width - 2 * INSET - 2 * ACTION.gap) / 3;
+    const clear = panel.add(new Button({ id: "cart.clear", x: INSET, y, width: third, height: CART.footer, text: "Empty cart", variant: "danger", enabled: summary.lines.length > 0, onActivate: () => shop.clearCart() }));
+    const keep = panel.add(new Button({ id: "cart.close", x: INSET + third + ACTION.gap, y, width: third, height: CART.footer, text: "Keep shopping", onActivate: () => this.#showCart(false) }));
+    const pay = panel.add(
+      new Button({
+        id: "cart.pay",
+        x: INSET + 2 * (third + ACTION.gap),
+        y,
+        width: third,
+        height: CART.footer,
+        text: summary.payable ? `Pay ${summary.total} ${summary.asset}` : "Pay",
+        variant: "primary",
+        enabled: summary.payable && this.#canBuy(),
+        onActivate: () => this.#checkout(/** @type {string} */ (summary.asset)),
+      }),
+    );
+    return [pay, clear, keep];
+  }
+
+  /**
+   * What stands between the cart and paying, if anything.
+   * @param {import("../../application/shop/shopCatalog.js").CartSummary} summary
+   * @returns {{ text: string, colorKey: string }}
+   */
+  #cartHint(summary) {
+    const shop = this.#shop();
+    if (summary.lines.length === 0) {
+      return { text: "", colorKey: "textMuted" };
+    }
+    if (!summary.payable) {
+      return { text: summary.lines.some((line) => line.product === null) ? "Remove what is no longer on sale to pay." : "These products cannot be paid in one asset: buy them separately.", colorKey: "danger" };
+    }
+    if ((this.#app.account?.state.account ?? null) === null) {
+      return { text: "Sign in to pay.", colorKey: "textMuted" };
+    }
+    if (BUSY_STAGES.includes(shop.state.purchase.stage)) {
+      return { text: "A purchase is in progress: pay for the cart when it is over.", colorKey: "accent" };
+    }
+    return { text: "One payment for everything: Keychain shows the exact transfer before anything is paid.", colorKey: "textMuted" };
+  }
+
+  /** @param {boolean} shown */
+  #showCart(shown) {
+    this.#cartShown = shown;
+    this.#rebuild();
+  }
+
+  /**
+   * Pays for the cart; the purchase's progress shows under Buy, the cards in the reveal.
+   * @param {string} asset
+   */
+  #checkout(asset) {
+    this.#cartShown = false;
+    this.#notice = null;
+    this.#shop().checkout(asset);
+  }
+
+  /**
+   * Adds the chosen quantity of a product to the cart, and says so.
+   * @param {Product} product
+   */
+  #addToCart(product) {
+    const added = this.#shop().addToCart(product.id, this.#quantity);
+    this.#notice = added.ok ? { text: `Added ${this.#quantity} × ${product.name} to your cart.`, colorKey: "success" } : { text: added.error.message, colorKey: "danger" };
+    this.#quantity = 1;
+    this.#rebuild();
   }
 
   /**
@@ -726,6 +955,7 @@ export class ShopScene extends Scene {
   #resetChoice() {
     this.#foil = false;
     this.#quantity = 1;
+    this.#notice = null;
   }
 
   /**
@@ -743,6 +973,17 @@ export class ShopScene extends Scene {
     }
     return this.#app.shop;
   }
+}
+
+/**
+ * "3 items · 11 cards", or nothing for an empty cart.
+ * @param {import("../../application/shop/shopCatalog.js").CartSummary} summary
+ */
+function cartCountText({ lines, quantity, cards }) {
+  if (lines.length === 0) {
+    return "";
+  }
+  return `${quantity} item${quantity === 1 ? "" : "s"} · ${cardsText(cards)}`;
 }
 
 /**
