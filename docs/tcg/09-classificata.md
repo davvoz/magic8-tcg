@@ -20,7 +20,9 @@
 - **Abbinamento:**
   - il biglietto in coda porta il rating del giocatore;
   - il biglietto più vecchio viene abbinato al rating più vicino dentro una finestra di `baseWindow + windowPerSecond × secondi di attesa`, fino a `maxWindow` (default 100 + 10/s, massimo 800);
-  - due giocatori non vengono abbinati se hanno già giocato fra loro il numero massimo di partite contate del giorno.
+  - finché esiste un'alternativa, due giocatori non vengono abbinati se hanno già giocato fra loro il numero massimo di partite contate del giorno;
+  - **la finestra è una preferenza, non un muro:** dopo `relaxAfterSeconds` di attesa (default 20) il biglietto prende l'avversario col rating più vicino fra quelli in coda, per quanto lontano sia, e come ultima risorsa anche uno già affrontato oltre il limite giornaliero — quella partita viene registrata ma non conta (vedi fair play). Con pochi giocatori online si gioca comunque, invece di cercare all'infinito;
+  - rientrare in coda (altro mazzo, altro tentativo) non azzera l'attesa: la finestra continua ad allargarsi dal primo ingresso.
 
 ## Fair play (T24)
 

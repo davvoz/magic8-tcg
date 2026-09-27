@@ -55,7 +55,9 @@ const MAX_FACTIONS = 16;
  *   fonts: Readonly<{ family: string, displayFamily: string, sizes: Readonly<Record<FontSize, number>> }>,
  *   spacing: Readonly<{ unit: number, radius: number }>,
  *   animation: Readonly<Record<string, number>>,
- * }>} Theme
+ *   illustrations?: import("../cards/CardIllustrations.js").IllustrationSource,
+ * }>} Theme `illustrations` is not read from theme.json: the composition root attaches the
+ *   painted card art, and without it every card is drawn procedurally
  */
 
 /**

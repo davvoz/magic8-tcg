@@ -60,6 +60,11 @@ export class MatchSession {
     return this.#engine.version;
   }
 
+  /** No decision clock offline: practice and hot-seat matches are untimed. */
+  get clock() {
+    return null;
+  }
+
   /** Ids of seats driven by humans, in seating order. */
   get humanPlayerIds() {
     return Object.freeze([...this.#controllers].filter(([, controller]) => controller.kind === ControllerKind.HUMAN).map(([id]) => id));

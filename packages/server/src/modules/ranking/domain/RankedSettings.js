@@ -1,7 +1,8 @@
 /**
  * Ranked settings from data/ranked/ranked.json, validated when the server
  * starts: seasons (ratings start over with each one), who may play ranked,
- * how wide the rating window of the queue is, and the fair-play limits.
+ * how wide the rating window of the queue is (and when it stops being a
+ * barrier), and the fair-play limits.
  */
 import { Issues, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
@@ -15,7 +16,7 @@ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
  * @typedef {Readonly<{
  *   seasons: readonly Season[],
  *   eligibility: Readonly<{ minFinishedCasualGames: number }>,
- *   matchmaking: Readonly<{ baseWindow: number, windowPerSecond: number, maxWindow: number }>,
+ *   matchmaking: Readonly<{ baseWindow: number, windowPerSecond: number, maxWindow: number, relaxAfterSeconds: number }>,
  *   fairPlay: Readonly<{ maxRatedGamesPerPairPerDay: number, earlyConcedeTurn: number, earlyConcedesToFlag: number, earlyConcedeWindowDays: number }>,
  * }>} RankedSettings
  */
@@ -65,7 +66,7 @@ export function validateRankedSettings(raw) {
     },
   });
   const eligibility = integers(issues, top.eligibility, "ranked.eligibility", ["minFinishedCasualGames"]);
-  const matchmaking = integers(issues, top.matchmaking, "ranked.matchmaking", ["baseWindow", "windowPerSecond", "maxWindow"]);
+  const matchmaking = integers(issues, top.matchmaking, "ranked.matchmaking", ["baseWindow", "windowPerSecond", "maxWindow", "relaxAfterSeconds"]);
   const fairPlay = integers(issues, top.fairPlay, "ranked.fairPlay", ["maxRatedGamesPerPairPerDay", "earlyConcedeTurn", "earlyConcedesToFlag", "earlyConcedeWindowDays"]);
   const ordered = (seasons ?? []).every((season, index, all) => index === 0 || season.startsAt > all[index - 1].startsAt);
   if (!ordered) {

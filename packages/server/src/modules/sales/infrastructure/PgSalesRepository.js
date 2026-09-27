@@ -141,13 +141,13 @@ export class PgSalesRepository {
 
   /**
    * The public board: active listings not past their time, filtered and sorted, one page and the total.
-   * @param {{ definitionId: string | null, seller: string | null, sort: string, offset: number, limit: number, now: number }} query
+   * @param {{ definitionIds: readonly string[] | null, seller: string | null, sort: string, offset: number, limit: number, now: number }} query
    * @returns {Promise<Readonly<{ rows: readonly ListingRow[], total: number }>>}
    */
-  async board({ definitionId, seller, sort, offset, limit, now }) {
-    const where = "l.status = 'ACTIVE' AND l.expires_at > $1 AND ($2::text IS NULL OR l.definition_id = $2) AND ($3::text IS NULL OR s.account = $3)";
+  async board({ definitionIds, seller, sort, offset, limit, now }) {
+    const where = "l.status = 'ACTIVE' AND l.expires_at > $1 AND ($2::text[] IS NULL OR l.definition_id = ANY($2::text[])) AND ($3::text IS NULL OR s.account = $3)";
     const order = sort === BoardSort.CHEAPEST ? "l.price ASC, l.created_at DESC, l.id" : "l.created_at DESC, l.id";
-    const params = [toTimestamp(now), definitionId, seller];
+    const params = [toTimestamp(now), definitionIds === null ? null : [...definitionIds], seller];
     const rows = await this.#db.rows(`${LISTING_DETAILS} WHERE ${where} ORDER BY ${order} LIMIT $4 OFFSET $5`, [...params, limit, offset]);
     const count = await this.#db.maybeOne(`SELECT count(*)::integer AS total FROM listings l JOIN users s ON s.id = l.seller_id WHERE ${where}`, params);
     return Object.freeze({ rows: Object.freeze(rows.map(toListingRow)), total: count?.total ?? 0 });

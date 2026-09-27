@@ -4,7 +4,7 @@
  *   Packs    boosters of cards you do not know in advance, at a fixed price
  *   Decks    complete preconstructed decks, priced at the sum of their cards
  *   Singles  every card, priced by its rarity, standard or foil; filterable
- *            by rarity
+ *            by faction, rarity and type
  *
  * (plus Offers, only when the server sells something else). On the right,
  * the selected item: a pack's odds, a deck's card-by-card price, a card at
@@ -13,8 +13,10 @@
  * transfer); when the order is fulfilled the cards received are revealed,
  * pack by pack. Every price shown is the server's.
  */
+import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
 import { ShopCategory, deckBreakdown, mainOfferOf, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
+import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardStrip } from "../cards/CardStrip.js";
 import { CardThumb } from "../cards/CardThumb.js";
@@ -35,11 +37,10 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "shop.list";
-const ALL = "all";
 const LINE = 28;
 const TABS = Object.freeze({ top: 14, height: 46, gap: 8 });
-const FILTER = Object.freeze({ top: 70, height: 38, gap: 6 });
-const LIST_TOP = Object.freeze({ plain: 76, filtered: 122 });
+const FILTER_TOP = 72;
+const LIST_TOP = Object.freeze({ plain: 76, filtered: FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12 });
 const PRICE_WIDTH = 170;
 const QUANTITY = Object.freeze({ height: 52, width: 80 });
 const BUY = Object.freeze({ height: 60, width: 420 });
@@ -82,8 +83,8 @@ export class ShopScene extends Scene {
   #unsubscribe = null;
   /** The shelf shown (a ShopCategory). @type {string} */
   #category = ShopCategory.PACKS;
-  /** Rarity shown among singles, or "all". @type {string} */
-  #rarity = ALL;
+  /** Singles shown. @type {import("../../application/content/CardFilter.js").CardFilter} */
+  #filter = NO_CARD_FILTER;
   /** The selected entry of each shelf: a product id, or a card id among singles. @type {Record<string, string | null>} */
   #selected = { [ShopCategory.PACKS]: null, [ShopCategory.DECKS]: null, [ShopCategory.SINGLES]: null, [ShopCategory.OFFERS]: null };
   /** The foil finish is chosen for the selected single. */
@@ -169,15 +170,21 @@ export class ShopScene extends Scene {
   }
 
   /**
-   * The tabs, and the rarity filter on the Singles shelf.
+   * The tabs, and the card filter on the Singles shelf.
    * @param {Panel} panel
    * @param {Shelves} shelves
    * @returns {Button | null} the first filter, else the first tab
    */
   #buildShelfControls(panel, shelves) {
     const firstTab = this.#buildTabs(panel, shelves);
+    if (this.#category !== ShopCategory.SINGLES) {
+      return firstTab;
+    }
+    // Singles are priced by the server's rarities: offer those when the listing names them.
+    const options = cardFilterOptions(this.#app);
     const rarities = this.#shop().state.listing?.rarities ?? [];
-    return this.#category === ShopCategory.SINGLES ? this.#buildRarityFilter(panel, rarities) : firstTab;
+    const shelfOptions = rarities.length === 0 ? options : Object.freeze({ ...options, rarity: Object.freeze([ANY, ...rarities]) });
+    return buildCardFilterBar(panel, { id: "shop.filter", x: INSET, y: FILTER_TOP, width: COLUMNS.left.width - 2 * INSET, filter: this.#filter, options: shelfOptions, onChange: (filter) => this.#changeFilter(filter) });
   }
 
   /** @returns {Button} */
@@ -225,36 +232,6 @@ export class ShopScene extends Scene {
   }
 
   /**
-   * @param {Panel} panel
-   * @param {readonly string[]} rarities
-   * @returns {Button | null} the first filter
-   */
-  #buildRarityFilter(panel, rarities) {
-    const options = [ALL, ...rarities];
-    const inner = COLUMNS.left.width - 2 * INSET;
-    const width = (inner - (options.length - 1) * FILTER.gap) / options.length;
-    /** @type {Button | null} */
-    let first = null;
-    options.forEach((rarity, index) => {
-      const button = panel.add(
-        new Button({
-          id: `shop.rarity.${rarity}`,
-          x: INSET + index * (width + FILTER.gap),
-          y: FILTER.top,
-          width,
-          height: FILTER.height,
-          text: rarity,
-          variant: rarity === this.#rarity ? "primary" : "secondary",
-          textSize: "small",
-          onActivate: () => this.#filter(rarity),
-        }),
-      );
-      first ??= button;
-    });
-    return first;
-  }
-
-  /**
    * The shelf's entries, keeping (or making) a selection among them.
    * @param {Panel} panel
    * @param {Shelves} shelves
@@ -271,7 +248,7 @@ export class ShopScene extends Scene {
     }
     if (keys.length === 0) {
       const { status, error } = this.#shop().state;
-      const text = { [ShopStatus.FAILED]: `The shop could not be loaded: ${error?.message ?? "unknown error"}`, [ShopStatus.READY]: "Nothing on sale here right now." }[status] ?? "Loading the shop…";
+      const text = { [ShopStatus.FAILED]: `The shop could not be loaded: ${error?.message ?? "unknown error"}`, [ShopStatus.READY]: this.#emptyShelfText() }[status] ?? "Loading the shop…";
       list.add(new Label({ id: "shop.empty", x: 0, y: 0, width: list.rowWidth, height: ROW.height, text, colorKey: status === ShopStatus.FAILED ? "danger" : "textMuted", fit: true }));
       list.contentHeight = ROW.height;
       return null;
@@ -280,6 +257,10 @@ export class ShopScene extends Scene {
     list.contentHeight = rowsHeight(keys.length);
     list.scrollTo(scrollY);
     return rows[0] ?? null;
+  }
+
+  #emptyShelfText() {
+    return this.#category === ShopCategory.SINGLES && isFiltering(this.#filter) ? `No ${describeCardFilter(this.#filter)} cards on sale.` : "Nothing on sale here right now.";
   }
 
   /**
@@ -680,7 +661,7 @@ export class ShopScene extends Scene {
 
   /** @param {Shelves} shelves */
   #visibleSingles(shelves) {
-    return shelves.singles.filter((offer) => this.#rarity === ALL || offer.rarity === this.#rarity);
+    return shelves.singles.filter((offer) => matchesCardFilter(this.#filter, this.#app.content.catalog.get(offer.cardId), offer.rarity ?? rarityOf(this.#app, offer.cardId)));
   }
 
   /**
@@ -721,9 +702,9 @@ export class ShopScene extends Scene {
     this.#rebuild();
   }
 
-  /** @param {string} rarity */
-  #filter(rarity) {
-    this.#rarity = rarity;
+  /** @param {import("../../application/content/CardFilter.js").CardFilter} filter */
+  #changeFilter(filter) {
+    this.#filter = filter;
     this.#scrollToTop = true;
     this.#rebuild();
   }

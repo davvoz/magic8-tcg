@@ -16,6 +16,14 @@
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
+/**
+ * The decision clock the server sends with every view (docs/tcg/02 §3.7):
+ * who is being timed and by when. `deadline` is a server timestamp
+ * (milliseconds since epoch), comparable with the client's own clock only
+ * loosely — it is shown, never enforced, here.
+ * @typedef {Readonly<{ activeSeat: string | null, deadline: number | null, reserveMs: Readonly<Record<string, number>> }>} MatchClock
+ */
+
 export class RemoteMatchSession {
   #gameId;
   #seat;
@@ -28,6 +36,8 @@ export class RemoteMatchSession {
   #protocol = 1;
   /** @type {any} */
   #snapshot = null;
+  /** The decision clock, as the server last sent it. @type {MatchClock | null} */
+  #clock = null;
   #version = 0;
   #stopped = false;
   /** @type {any} */
@@ -90,6 +100,11 @@ export class RemoteMatchSession {
     return this.#result;
   }
 
+  /** Who is on the clock and by when, as the server last sent it (null before the first view). */
+  get clock() {
+    return this.#clock;
+  }
+
   /** @param {(update: { events: readonly any[], version: number, playerId: string | null }) => void} listener */
   subscribe(listener) {
     this.#listeners.add(listener);
@@ -98,7 +113,7 @@ export class RemoteMatchSession {
 
   /**
    * A state (and the events that led to it) from the server.
-   * @param {{ version: number, snapshot: any, events?: readonly any[], protocol?: number }} update
+   * @param {{ version: number, snapshot: any, events?: readonly any[], protocol?: number, clock?: MatchClock }} update
    */
   apply(update) {
     if (update.snapshot === null || update.snapshot === undefined || update.version < this.#version) {
@@ -107,6 +122,7 @@ export class RemoteMatchSession {
     this.#snapshot = update.snapshot;
     this.#version = update.version;
     this.#protocol = typeof update.protocol === "number" ? update.protocol : this.#protocol;
+    this.#clock = update.clock ?? this.#clock;
     const published = Object.freeze({ events: update.events ?? [], version: update.version, playerId: null });
     for (const listener of this.#listeners) {
       listener(published);

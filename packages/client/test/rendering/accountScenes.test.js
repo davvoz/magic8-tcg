@@ -192,17 +192,27 @@ describe("CollectionScene", () => {
     assert.ok(rendered(scene).some((text) => /^#\d+ · core-1 · standard$/.test(text)));
   });
 
-  it("filters by faction", async () => {
+  it("filters by faction and type", async () => {
     const { scene } = await collectionScene();
-    click(byId(scene, "collection.filter.shadow"));
-    assert.equal(byId(scene, "collection.filter.shadow").variant, "primary");
-    assert.ok(rendered(scene).includes("No shadow cards yet."));
-    click(byId(scene, "collection.filter.iron"));
-    const shown = nodes(scene).filter((node) => node.id?.startsWith("collection.view."));
-    assert.ok(shown.length > 0);
-    for (const node of shown) {
-      assert.equal(content.catalog.get(node.id.slice("collection.view.".length)).faction, "iron");
+    click(byId(scene, "collection.filter.faction.shadow"));
+    assert.equal(byId(scene, "collection.filter.faction.shadow").variant, "primary");
+    assert.ok(rendered(scene).includes("No shadow cards."));
+    click(byId(scene, "collection.filter.faction.iron"));
+    const shownIds = () => nodes(scene).filter((node) => node.id?.startsWith("collection.view.")).map((node) => node.id.slice("collection.view.".length));
+    assert.ok(shownIds().length > 0);
+    for (const id of shownIds()) {
+      assert.equal(content.catalog.get(id).faction, "iron");
     }
+    const ironCards = shownIds().length;
+    click(byId(scene, "collection.filter.type.creature"));
+    assert.equal(byId(scene, "collection.filter.faction.iron").variant, "primary", "the filters combine");
+    assert.ok(shownIds().length > 0 && shownIds().length < ironCards);
+    for (const id of shownIds()) {
+      assert.deepEqual([content.catalog.get(id).faction, content.catalog.get(id).type], ["iron", "creature"]);
+    }
+    click(byId(scene, "collection.filter.faction.all"));
+    click(byId(scene, "collection.filter.type.all"));
+    assert.ok(shownIds().length > ironCards);
   });
 
   it("points a new player to the starter deck", async () => {

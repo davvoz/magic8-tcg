@@ -69,6 +69,8 @@ describe("sales between players", () => {
       assert.equal(board.status, 200, "the board is public");
       assert.deepEqual([board.json.total, board.json.listings[0].id], [1, listing.id]);
       assert.equal((await new ApiClient(server.base).get("/api/listings?card=iron_watcher")).json.total, 0, "filtered by card");
+      assert.equal((await new ApiClient(server.base).get("/api/listings?card=iron_watcher,ember_imp")).json.total, 1, "or by several cards");
+      assert.equal((await new ApiClient(server.base).get("/api/listings?card=ember_imp,Not-A-Card")).status, 400, "every card id is checked");
 
       assert.equal((await aliceClient.post(`/api/listings/${listing.id}/buy`, {})).status, 400, "nobody buys their own card");
       const bought = await bobClient.post(`/api/listings/${listing.id}/buy`, {});

@@ -131,6 +131,14 @@ describe("TradesScene", () => {
     await flush();
     assert.deepEqual(api.calls.at(-1), ["tradeableOf", "carol"]);
     assert.equal(byId(scene, "trades.ask.arcane_apprentice"), null, "only cards carol has");
+    byId(scene, "trades.filter.faction.iron").activate();
+    assert.deepEqual([byId(scene, "trades.ask.ember_imp"), byId(scene, `trades.give.${uuid(31)}`)], [null, null], "one filter for both lists");
+    assert.ok(byId(scene, "trades.ask.iron_watcher"));
+    byId(scene, "trades.filter.type.spell").activate();
+    assert.match(byId(scene, "trades.ask.message").text, /has no iron spell cards/);
+    byId(scene, "trades.filter.faction.all").activate();
+    byId(scene, "trades.filter.type.all").activate();
+    assert.equal(byId(scene, `trades.give.${uuid(31)}`).selected, true, "a hidden choice stays chosen");
     assert.equal(byId(scene, "trades.ask.iron_watcher").subtitle, "has 2");
     for (let tap = 0; tap < 3; tap += 1) {
       byId(scene, "trades.ask.iron_watcher").activate();

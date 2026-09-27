@@ -15,6 +15,9 @@ export const CARD_SIZE = Object.freeze({
 const GAP = 12;
 const SIDE_WIDTH = 200;
 const MARGIN = 16;
+/** The ribbon's notched ends leave this fraction of the banner unused on each side (BoardNode draws the ribbon itself); the clock docks there. */
+export const BANNER_INSET_FRACTION = 0.18;
+const CLOCK_SIZE = 48;
 
 /**
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
@@ -28,9 +31,9 @@ const MARGIN = 16;
  * @typedef {Readonly<{
  *   width: number, height: number,
  *   me: SeatLayout, opponent: SeatLayout,
- *   banner: Rect, sidebar: Rect, log: Rect,
+ *   banner: Rect, clock: Rect, sidebar: Rect, log: Rect,
  *   cards: Readonly<Record<string, Rect>>,
- * }>} BoardLayout
+ * }>} BoardLayout `clock`: where the decision clock docks, in the banner's unused right margin
  */
 
 /**
@@ -49,6 +52,8 @@ export function computeBoardLayout(snapshot, perspectiveId, { logicalWidth: widt
   const opponentHand = rect(centerX, MARGIN, centerWidth, CARD_SIZE.back.height + GAP);
   const opponentField = rect(centerX, opponentHand.y + opponentHand.height + GAP, centerWidth, CARD_SIZE.battlefield.height + 2 * GAP);
   const banner = rect(centerX, opponentField.y + opponentField.height + 6, centerWidth, 40);
+  const bannerInset = banner.width * BANNER_INSET_FRACTION;
+  const clock = rect(Math.round(banner.x + banner.width - bannerInset / 2 - CLOCK_SIZE / 2), Math.round(banner.y + banner.height / 2 - CLOCK_SIZE / 2), CLOCK_SIZE, CLOCK_SIZE);
   const myField = rect(centerX, banner.y + banner.height + 6, centerWidth, CARD_SIZE.battlefield.height + 2 * GAP);
   const myHand = rect(centerX, myField.y + myField.height + GAP, centerWidth, height - (myField.y + myField.height + GAP) - MARGIN);
 
@@ -67,6 +72,7 @@ export function computeBoardLayout(snapshot, perspectiveId, { logicalWidth: widt
     opponent: Object.freeze({ id: opponent.id, hud: rect(MARGIN, MARGIN, SIDE_WIDTH, hudHeight), hand: opponentHand, battlefield: opponentField, handSlots: Object.freeze(backs) }),
     me: Object.freeze({ id: me.id, hud: rect(MARGIN, height - MARGIN - hudHeight, SIDE_WIDTH, hudHeight), hand: myHand, battlefield: myField, handSlots: Object.freeze(myBacks) }),
     banner,
+    clock,
     sidebar: rect(width - MARGIN - SIDE_WIDTH, MARGIN, SIDE_WIDTH, 470),
     log: rect(width - MARGIN - SIDE_WIDTH, MARGIN + 470 + GAP, SIDE_WIDTH, height - 2 * MARGIN - 470 - GAP),
     cards: Object.freeze(cards),

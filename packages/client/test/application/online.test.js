@@ -153,6 +153,25 @@ describe("OnlineService", () => {
     assert.deepEqual(updates[0].events, [{ type: "CARD_DRAWN" }]);
   });
 
+  it("carries the decision clock from each view, keeping the last one a stale or clock-less update cannot overwrite", async () => {
+    const { online, server } = service();
+    online.start();
+    await flush();
+    server.push("match.found", { gameId: VIEW().gameId, seat: "s0", opponent: { account: "bob" }, seedCommit: "ef".repeat(32) });
+    server.push("game.events", VIEW({ clock: { activeSeat: "s0", deadline: 12_345, reserveMs: { s0: 90_000, s1: 90_000 } } }));
+    const session = online.state.session;
+    assert.deepEqual(session.clock, { activeSeat: "s0", deadline: 12_345, reserveMs: { s0: 90_000, s1: 90_000 } });
+
+    session.apply(VIEW({ version: 5, clock: { activeSeat: "s1", deadline: 1, reserveMs: {} } }));
+    assert.equal(session.clock.deadline, 12_345, "an older state's clock never replaces a newer one either");
+
+    session.apply(VIEW({ version: 8, clock: undefined }));
+    assert.equal(session.clock.deadline, 12_345, "a fresh view that omits the clock keeps the last one shown");
+
+    session.apply(VIEW({ version: 9, clock: { activeSeat: null, deadline: null, reserveMs: {} } }));
+    assert.equal(session.clock.deadline, null, "nobody awaited: no deadline");
+  });
+
   it("plays through the session: the command carries the version and never a player id", async () => {
     const { online, server } = service();
     online.start();

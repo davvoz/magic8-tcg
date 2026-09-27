@@ -2,8 +2,11 @@
  * Trades (docs/tcg/13-scambi.md): the offers the player made and received,
  * with what they can do about each, and a composer for a new offer: the
  * other player's account, some of the player's tradeable copies, and cards
- * of that player's asked in return (only what they have). The server holds the offered copies in escrow.
+ * of that player's asked in return (only what they have), both lists
+ * filtered by faction, rarity and type. The server holds the offered copies in escrow.
  */
+import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
+import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
 import { CardThumb } from "../cards/CardThumb.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
 import { rarityLabel } from "../theme/rarity.js";
@@ -25,6 +28,8 @@ const MAX_ASK = 3;
 const THUMB = Object.freeze({ width: 92, gap: 10 });
 const DAY = 24 * 60 * 60 * 1000;
 const ACCOUNT_PATTERN = /^[a-z][a-z0-9.-]{2,15}$/;
+/** The composer, top to bottom: recipient, card filter, list titles, the two lists. */
+const COMPOSER = Object.freeze({ filterTop: 80, titlesTop: 80 + CARD_FILTER_BAR_HEIGHT + 10, listsTop: 80 + CARD_FILTER_BAR_HEIGHT + 42 });
 
 /**
  * One line about a trade for the list.
@@ -54,6 +59,8 @@ export class TradesScene extends Scene {
   #give = new Set();
   /** @type {Map<string, number>} definition → copies asked */
   #ask = new Map();
+  /** Cards shown in both lists of the composer. @type {import("../../application/content/CardFilter.js").CardFilter} */
+  #filter = NO_CARD_FILTER;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -248,21 +255,23 @@ export class TradesScene extends Scene {
     const panel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
     const width = COLUMNS.right.width - 2 * INSET;
     panel.add(new TextField({ id: "trades.to", x: INSET, y: 16, width, height: 52, value: this.#to, placeholder: "Player account", maxLength: 16, onChange: (value) => this.#changeRecipient(value) }));
+    buildCardFilterBar(panel, { id: "trades.filter", x: INSET, y: COMPOSER.filterTop, width, filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (filter) => this.#changeFilter(filter) });
     const half = (width - 16) / 2;
-    panel.add(new Label({ x: INSET, y: 78, width: half, height: 28, text: `You give (${this.#give.size}/${MAX_CARDS})`, size: "small", weight: "bold", colorKey: "accent", align: "left" }));
-    panel.add(new Label({ x: INSET + half + 16, y: 78, width: half, height: 28, text: "You ask for (tap to add)", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
-    const listHeight = COLUMNS.height - 110 - 52 - 2 * INSET;
-    this.#buildGiveList(panel.add(new ScrollList({ id: "trades.give", x: INSET, y: 110, width: half, height: listHeight })));
-    this.#buildAskList(panel.add(new ScrollList({ id: "trades.ask", x: INSET + half + 16, y: 110, width: half, height: listHeight })));
+    panel.add(new Label({ x: INSET, y: COMPOSER.titlesTop, width: half, height: 28, text: `You give (${this.#give.size}/${MAX_CARDS})`, size: "small", weight: "bold", colorKey: "accent", align: "left" }));
+    panel.add(new Label({ x: INSET + half + 16, y: COMPOSER.titlesTop, width: half, height: 28, text: "You ask for (tap to add)", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
+    const listHeight = COLUMNS.height - COMPOSER.listsTop - 52 - 2 * INSET;
+    this.#buildGiveList(panel.add(new ScrollList({ id: "trades.give", x: INSET, y: COMPOSER.listsTop, width: half, height: listHeight })));
+    this.#buildAskList(panel.add(new ScrollList({ id: "trades.ask", x: INSET + half + 16, y: COMPOSER.listsTop, width: half, height: listHeight })));
     const ready = ACCOUNT_PATTERN.test(this.#to) && this.#give.size > 0 && !this.#trading().state.busy;
     panel.add(new Button({ id: "trades.send", x: INSET, y: COLUMNS.height - INSET - 52, width, height: 52, text: "Send offer", variant: "primary", enabled: ready, onActivate: () => this.#send() }));
   }
 
   /** @param {ScrollList} list */
   #buildGiveList(list) {
-    const copies = this.#tradeableCopies();
+    const copies = this.#tradeableCopies().filter((copy) => this.#passes(copy.definitionId));
     if (copies.length === 0) {
-      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: "No tradeable cards: cards already offered in another trade cannot be offered again.", size: "small", colorKey: "textMuted" }));
+      const text = isFiltering(this.#filter) ? `No ${describeCardFilter(this.#filter)} cards to give.` : "No tradeable cards: cards already offered in another trade cannot be offered again.";
+      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text, size: "small", colorKey: "textMuted" }));
       list.contentHeight = 3 * ROW.height;
       return;
     }
@@ -286,6 +295,7 @@ export class TradesScene extends Scene {
       return;
     }
     const cards = /** @type {NonNullable<typeof askable>} */ (askable).cards
+      .filter(({ definitionId }) => this.#passes(definitionId))
       .map(({ definitionId, count }) => ({ definitionId, has: count, name: this.#cardName(definitionId) }))
       .sort((left, right) => left.name.localeCompare(right.name));
     const rowWidth = list.rowWidth - ACTION.small - ACTION.gap;
@@ -296,7 +306,25 @@ export class TradesScene extends Scene {
       list.add(new OptionRow({ id: `trades.ask.${definitionId}`, x: 0, y: rowY(index), width: rowWidth, height: ROW.height, text: name, subtitle: rarity.length === 0 ? asked : `${rarity} · ${asked}`, selected: count > 0, onActivate: () => this.#cycleAsk(definitionId, has) }));
       this.#infoButton(list, { id: `trades.ask.info.${definitionId}`, x: rowWidth + ACTION.gap, y: rowY(index), definitionId, lines: [`@${this.#to} has ${has}`] });
     });
-    list.contentHeight = rowsHeight(cards.length);
+    if (cards.length === 0) {
+      list.add(new TextBlock({ id: "trades.ask.message", x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: `@${this.#to} has no ${describeCardFilter(this.#filter)} cards to trade.`, size: "small", colorKey: "textMuted" }));
+    }
+    list.contentHeight = cards.length === 0 ? 3 * ROW.height : rowsHeight(cards.length);
+  }
+
+  /** @param {string} definitionId */
+  #passes(definitionId) {
+    return matchesCardFilter(this.#filter, this.#app.content.catalog.get(definitionId), rarityOf(this.#app, definitionId));
+  }
+
+  /**
+   * Chosen copies and asks stay chosen when the filter hides them: the
+   * filter only changes what is shown.
+   * @param {import("../../application/content/CardFilter.js").CardFilter} filter
+   */
+  #changeFilter(filter) {
+    this.#filter = filter;
+    this.#rebuild();
   }
 
   /**

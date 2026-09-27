@@ -14,9 +14,9 @@
 
 export const DEFAULT_TIME_POLICY = Object.freeze({
   entropyMs: 15_000,
-  turnMs: 75_000,
-  blockMs: 20_000,
-  reserveMs: 60_000,
+  turnMs: 90_000,
+  blockMs: 30_000,
+  reserveMs: 90_000,
   disconnectGraceMs: 60_000,
   abandonMs: 180_000,
   maxForcedTurns: 3,

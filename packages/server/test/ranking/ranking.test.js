@@ -140,6 +140,48 @@ describe("ranked play", () => {
     assert.deepEqual((await admin.rankingFlags()).length, 2, "operators see them");
   });
 
+  it("pairs whoever is left once the window stops being a wall", async () => {
+    const { setup, player } = await world();
+    const strong = await player("strong");
+    const weak = await player("weak");
+    await setRating(setup, strong, 2400);
+    await setRating(setup, weak, 1100);
+    await setup.app.matchmaking.join({ user: strong.user, mode: "ranked", deckId: strong.deckId });
+    setup.clock.advance(1000);
+    await setup.app.matchmaking.join({ user: weak.user, mode: "ranked", deckId: weak.deckId });
+    assert.equal(last(strong.inbox, "match.found"), undefined, "1300 points apart: not straight away");
+
+    setup.clock.advance(10 * 1000);
+    const rejoined = await setup.app.matchmaking.join({ user: weak.user, mode: "ranked", deckId: weak.deckId });
+    assert.equal(rejoined.since, setup.clock.now() - 10 * 1000, "searching again does not restart the wait");
+    assert.equal(last(strong.inbox, "match.found"), undefined, "11s in, still inside the window");
+
+    setup.clock.advance(10 * 1000);
+    assert.equal(await setup.app.matchmaking.pair(), 1, "past relaxAfterSeconds the queue takes the closest opponent there is");
+    assert.equal(last(weak.inbox, "match.found").gameId, last(strong.inbox, "match.found").gameId);
+  });
+
+  it("pairs two players again past the daily limit rather than leaving them alone", async () => {
+    const { setup, player } = await world({ fairPlay: { maxRatedGamesPerPairPerDay: 1 } });
+    const alice = await player("alice");
+    const bob = await player("bob");
+    await rankedGame(setup, alice, bob, bob);
+    await setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId });
+    setup.clock.advance(1000);
+    await setup.app.matchmaking.join({ user: bob.user, mode: "ranked", deckId: bob.deckId });
+    assert.equal((await setup.app.matchmaking.status(bob.user.id)).state, "searching", "someone else is preferred first");
+
+    setup.clock.advance(20 * 1000);
+    assert.equal(await setup.app.matchmaking.pair(), 1, "nobody else showed up: they play again");
+    const rematch = last(bob.inbox, "match.found");
+    assert.equal(last(alice.inbox, "match.found").gameId, rematch.gameId);
+    const before = await setup.app.ranking.ratingOf(alice.user.id);
+    await playAndConcede(setup, rematch.gameId, [alice, bob], bob);
+    const [change] = await setup.database.rows("SELECT counted, reason FROM rating_changes WHERE game_id = $1 AND user_id = $2", [rematch.gameId, alice.user.id]);
+    assert.deepEqual([change.counted, change.reason], [false, "repeat_pair"], "played, recorded, but not rated");
+    assert.equal((await setup.app.ranking.ratingOf(alice.user.id)).rating, before.rating);
+  });
+
   it("publishes a leaderboard of settled ratings", async () => {
     const { setup, player } = await world();
     const alice = await player("alice");

@@ -1,5 +1,8 @@
 /**
- * Procedural card illustrations. There are no image assets: each faction
+ * Card illustrations. A card with a painted illustration (Theme.illustrations,
+ * once its image has loaded) shows it cropped to the art window. Every other
+ * card, and every card while its image is still on its way, is drawn
+ * procedurally: each faction
  * has a painter that fills the art window with its motif (fire, steel,
  * graveyard, grove, arcane spire, wilderness), and a type emblem (a sigil for creatures, a rune circle for
  * spells) sits on top. Every variable choice (angles, counts, offsets)
@@ -7,7 +10,8 @@
  * looks the same and different cards look different.
  *
  * Painters are a strategy table keyed by faction; unknown factions get the
- * neutral motif, so new content never breaks rendering.
+ * neutral motif, so new content never breaks rendering. Both kinds of art
+ * get the same vignette, so painted and procedural cards sit together.
  */
 import { hashString, unitSequence } from "@magic8/engine/shared/hash.js";
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";
@@ -18,6 +22,8 @@ import { polygonPath, starPath } from "../ui/shapes.js";
 
 /** How many seeded values a painter may draw on. */
 const VARIATION_COUNT = 16;
+/** How dark the vignette gets at the edges: a painting needs less than the procedural motifs. */
+const VIGNETTE_EDGE = Object.freeze({ procedural: 0.7, painted: 0.45 });
 
 /**
  * @typedef {Readonly<{ name: string, type: string, faction: string, definitionId?: string, id?: string }>} ArtModel
@@ -41,14 +47,63 @@ export function paintCardArt(context, theme, model, area) {
     return;
   }
   const tones = factionTones(theme, model.faction);
-  const scope = { context, area, tones, variation: unitSequence(hashString(artSeedOf(model)), VARIATION_COUNT) };
+  const illustration = illustrationOf(theme, model);
   context.save();
   roundedRectPath(context, area, 3);
   context.clip();
-  (MOTIF_PAINTERS[model.faction] ?? paintWildernessMotif)(scope);
-  paintEmblem(scope, model.type);
-  paintVignette(scope);
+  if (illustration === null) {
+    const scope = { context, area, tones, variation: unitSequence(hashString(artSeedOf(model)), VARIATION_COUNT) };
+    (MOTIF_PAINTERS[model.faction] ?? paintWildernessMotif)(scope);
+    paintEmblem(scope, model.type);
+    paintVignette({ context, area, tones }, VIGNETTE_EDGE.procedural);
+  } else {
+    paintIllustration(context, illustration, area);
+    paintVignette({ context, area, tones }, VIGNETTE_EDGE.painted);
+  }
   context.restore();
+}
+
+/**
+ * The card's painted illustration if it has one and it has loaded.
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {ArtModel} model
+ */
+function illustrationOf(theme, model) {
+  const cardId = model.definitionId ?? model.id;
+  return cardId === undefined ? null : theme.illustrations?.imageFor(cardId) ?? null;
+}
+
+/**
+ * The part of an image that covers `area` without distortion: as much of
+ * the image as the area's proportions allow, centred on `focus` and slid
+ * back inside the image where the focus is near an edge.
+ * @param {{ width: number, height: number }} image
+ * @param {{ width: number, height: number }} area
+ * @param {readonly [number, number]} focus
+ * @returns {{ x: number, y: number, width: number, height: number }} in image pixels
+ */
+export function coverCrop(image, area, [focusX, focusY]) {
+  const scale = Math.max(area.width / image.width, area.height / image.height);
+  const width = Math.min(image.width, area.width / scale);
+  const height = Math.min(image.height, area.height / scale);
+  return {
+    x: Math.min(Math.max(focusX * image.width - width / 2, 0), image.width - width),
+    y: Math.min(Math.max(focusY * image.height - height / 2, 0), image.height - height),
+    width,
+    height,
+  };
+}
+
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("./CardIllustrations.js").Illustration} illustration
+ * @param {import("@magic8/engine/shared/geometry.js").Rect} area
+ */
+function paintIllustration(context, { image, focus }, area) {
+  const crop = coverCrop(image, area, focus);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image.source, crop.x, crop.y, crop.width, crop.height, area.x, area.y, area.width, area.height);
 }
 
 /**
@@ -433,10 +488,14 @@ export function paintRuneCircle(context, center, radius, { rays, color }) {
   context.fill();
 }
 
-/** Darkens the edges so the emblem and motif sit inside the frame. */
-function paintVignette({ context, area, tones }) {
+/**
+ * Darkens the edges so the art sits inside the frame.
+ * @param {Pick<ArtScope, "context" | "area" | "tones">} scope
+ * @param {number} edgeAlpha
+ */
+function paintVignette({ context, area, tones }, edgeAlpha) {
   const center = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
-  context.fillStyle = radialGradient(context, center, Math.max(area.width, area.height) * 0.7, [[0, withAlpha(tones.dark, 0)], [0.7, withAlpha(tones.dark, 0.15)], [1, withAlpha(tones.dark, 0.7)]]);
+  context.fillStyle = radialGradient(context, center, Math.max(area.width, area.height) * 0.7, [[0, withAlpha(tones.dark, 0)], [0.7, withAlpha(tones.dark, 0.15)], [1, withAlpha(tones.dark, edgeAlpha)]]);
   context.fillRect(area.x, area.y, area.width, area.height);
 }
 

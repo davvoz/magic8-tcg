@@ -135,7 +135,8 @@ Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN
 
 ### 3.7 Timer
 
-- Timer di turno (es. 75 s) più riserva per giocatore (es. 60 s per partita), timer di risposta per i blocchi (20 s). Configurazione per modalità.
+- Timer di turno (es. 90 s) più riserva per giocatore (es. 90 s per partita), timer di risposta per i blocchi (30 s). Configurazione per modalità.
+- Il client mostra un orologio col tempo restante della decisione corrente (`clock.deadline` in `game.state`/`game.events`), colorato più urgente sotto i 20/10 s; nessun timer nelle partite locali (in pratica, senza server).
 - Allo scadere, il server esegue la mossa forzata minima (`END_PHASE`, blocchi vuoti) registrata come `FORCED_MOVE` con `why: "timeout"`.
 - I timer vivono nel `GameActor` (orologio iniettato → testabili con orologio finto).
 

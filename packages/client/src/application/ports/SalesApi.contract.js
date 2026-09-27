@@ -18,7 +18,7 @@
  *   payment: PaymentInstructions | null, txId: string | null, problem: string | null, createdAt: number, expiresAt: number, closedAt: number | null,
  * }>} Purchase `payment`: only while it can be paid; `problem`: why a transfer with its memo did not pay it
  * @typedef {Readonly<{ listings: readonly Listing[], purchases: readonly Purchase[] }>} Activity
- * @typedef {Readonly<{ card?: string, seller?: string, sort?: "newest" | "cheapest", offset?: number }>} BoardQuery
+ * @typedef {Readonly<{ card?: string, seller?: string, sort?: "newest" | "cheapest", offset?: number }>} BoardQuery `card`: one card id, or several comma-separated
  *
  * @typedef {import("@magic8/engine/shared/Result.js").Fail} Fail
  * @typedef {import("@magic8/engine/shared/Result.js").Ok<Listing> | Fail} ListingResult

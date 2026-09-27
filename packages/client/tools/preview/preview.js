@@ -12,10 +12,15 @@
  *   /tools/preview/?scene=match&turns=6      a match after N auto-played turns (seeded)
  *   /tools/preview/?scene=match&deck=precon_shadow   playing that deck (default: the first playable one)
  *   /tools/preview/?scene=match&inspect=1    plus the inspect overlay on a hand card
+ *   ...&art=procedural                       every card with its procedural art, ignoring data/art/
+ *
+ * Illustrations are all loaded before the first frame, so a screenshot never
+ * catches a card still procedural because its image was on its way.
  *
  * Nothing here is imported by src/.
  */
 import { ContentResource } from "../../src/application/ports/ContentSource.contract.js";
+import { NO_ILLUSTRATIONS, buildIllustrationManifest } from "../../src/application/content/IllustrationManifest.js";
 import { loadContent } from "../../src/application/content/ContentService.js";
 import { DeckBuildingService } from "../../src/application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
@@ -28,11 +33,13 @@ import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/register
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
 import { FetchContentSource } from "../../src/infrastructure/config/FetchContentSource.js";
 import { ConsoleLogger } from "../../src/infrastructure/logging/ConsoleLogger.js";
+import { loadBrowserImage } from "../../src/infrastructure/images/loadBrowserImage.js";
 import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStore.js";
 import { StoredDeckRepository } from "../../src/infrastructure/persistence/StoredDeckRepository.js";
 import { immediateScheduler } from "../../src/infrastructure/time/ImmediateScheduler.js";
 import { InputManager } from "../../src/input/InputManager.js";
 import { CardNode } from "../../src/rendering/board/CardNode.js";
+import { CardIllustrations } from "../../src/rendering/cards/CardIllustrations.js";
 import { CanvasHost } from "../../src/rendering/canvas/CanvasHost.js";
 import { GameLoop } from "../../src/rendering/canvas/GameLoop.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
@@ -58,6 +65,7 @@ const MANIFEST = Object.freeze({
   [ContentResource.GAME_RULES]: "/data/rules/game-rules.json",
   [ContentResource.DECK_RULES]: "/data/rules/deck-rules.json",
   theme: "/data/ui/theme.json",
+  illustrations: "/data/art/illustrations.json",
 });
 const SEED = 20260921;
 const MAX_STEPS_PER_TURN = 40;
@@ -243,9 +251,10 @@ async function boot() {
     turns: Number.parseInt(query.get("turns") ?? "6", 10) || 0,
     inspect: query.get("inspect") === "1",
     deckId: query.get("deck"),
+    procedural: query.get("art") === "procedural",
   };
   const source = new FetchContentSource(MANIFEST, (url, init) => fetch(url, init));
-  const [rawTheme, content] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry())]);
+  const [rawTheme, content, rawIllustrations] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("illustrations")]);
   if (!content.ok) {
     throw new Error(content.error.message);
   }
@@ -254,10 +263,31 @@ async function boot() {
     throw new Error(theme.error.message);
   }
   const app = buildApp(content.value);
-  const sceneManager = buildPresentation(theme.value);
+  const illustrations = await loadIllustrations(request.procedural || !rawIllustrations.ok ? null : rawIllustrations.value, content.value.catalog);
+  const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations }));
   registerScenes(sceneManager, app);
   await show(sceneManager, app, request);
   document.title = `Magic8 preview: ${request.scene}`;
+}
+
+/**
+ * Every illustration, already downloaded; none when `raw` is null.
+ * @param {unknown} raw the illustrations file
+ * @param {{ has: (cardId: string) => boolean }} catalog
+ */
+async function loadIllustrations(raw, catalog) {
+  const built = raw === null ? null : buildIllustrationManifest(raw, catalog);
+  if (built !== null && !built.ok) {
+    logger.warn("card illustrations unavailable", built.message);
+  }
+  const illustrations = new CardIllustrations({
+    manifest: built?.ok ? built.value : NO_ILLUSTRATIONS,
+    urlFor: (file) => `/data/art/${file}`,
+    loadImage: loadBrowserImage,
+    logger,
+  });
+  await illustrations.preload(illustrations.cardIds);
+  return illustrations;
 }
 
 boot().catch((error) => {

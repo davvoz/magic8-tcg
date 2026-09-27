@@ -1,10 +1,13 @@
 /**
  * Deck builder, editor view: the draft on the left (name field, size and
- * rule report, entries with −/+), the browsable catalog on the right.
+ * rule report, entries with −/+), the browsable catalog on the right,
+ * filterable by faction, rarity and type.
  * Every change goes through DeckBuildingService; the view then rebuilds
  * from the service's draft and report, so what is shown is always what
  * would be saved.
  */
+import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, matchesCardFilter } from "../../../application/content/CardFilter.js";
+import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../../cards/cardFilterBar.js";
 import { CardStrip } from "../../cards/CardStrip.js";
 import { rarityOf } from "../../cards/cardInfo.js";
 import { unknownCard } from "../../cards/unknownCard.js";
@@ -21,6 +24,8 @@ const NAME_HEIGHT = 52;
 const META_TOP = 84;
 const LIST_TOP = 144;
 const FOOTER_HEIGHT = 52;
+const CATALOG_FILTER_TOP = 60;
+const CATALOG_LIST_TOP = CATALOG_FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12;
 /** Room above the footer for the notice line. */
 const NOTICE_HEIGHT = 30;
 
@@ -34,6 +39,10 @@ export class EditorView {
   #notice = null;
   /** A save is on its way to storage (the server, when signed in). */
   #saving = false;
+  /** Cards the catalog shows. @type {import("../../../application/content/CardFilter.js").CardFilter} */
+  #filter = NO_CARD_FILTER;
+  /** The catalog starts from the top on the next build (the filter changed). */
+  #catalogToTop = false;
 
   /** @param {import("./layout.js").BuilderHost} host */
   constructor(host) {
@@ -171,11 +180,17 @@ export class EditorView {
     const width = COLUMNS.right.width - 2 * INSET;
     const scope = catalogScope(rules, draft.faction);
     panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: `Cards · ${scope}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    const list = panel.add(new ScrollList({ id: CATALOG_LIST_ID, x: INSET, y: 60, width, height: COLUMNS.height - 60 - INSET }));
-    const rows = builder.browse();
+    const app = this.#host.app;
+    buildCardFilterBar(panel, { id: "catalog.filter", x: INSET, y: CATALOG_FILTER_TOP, width, filter: this.#filter, options: cardFilterOptions(app), onChange: (filter) => this.#changeFilter(filter) });
+    const list = panel.add(new ScrollList({ id: CATALOG_LIST_ID, x: INSET, y: CATALOG_LIST_TOP, width, height: COLUMNS.height - CATALOG_LIST_TOP - INSET }));
+    const rows = builder.browse().filter((row) => matchesCardFilter(this.#filter, row.card, rarityOf(app, row.card.id)));
+    if (rows.length === 0) {
+      list.add(new Label({ x: 0, y: 0, width: list.rowWidth, height: ROW.height, text: `No ${describeCardFilter(this.#filter)} cards for this deck.`, colorKey: "textMuted", fit: true }));
+    }
     rows.forEach((row, index) => this.#buildCatalogRow(list, row, rowY(index)));
-    list.contentHeight = rowsHeight(rows.length);
-    list.scrollTo(this.#host.scroll[CATALOG_LIST_ID] ?? 0);
+    list.contentHeight = rows.length === 0 ? ROW.height : rowsHeight(rows.length);
+    list.scrollTo(this.#catalogToTop ? 0 : (this.#host.scroll[CATALOG_LIST_ID] ?? 0));
+    this.#catalogToTop = false;
   }
 
   /**
@@ -189,6 +204,13 @@ export class EditorView {
     list.add(new CardStrip({ x: 0, y, width: labelWidth, height: ROW.height, card, count, muted: count === 0, rarity: rarityOf(this.#host.app, card.id) }));
     list.add(new Button({ id: `catalog.info.${card.id}`, x: labelWidth + ACTION.gap, y, width: ACTION.width, height: ROW.height, text: "Info", onActivate: () => this.#host.inspect(card.id) }));
     list.add(new Button({ id: `catalog.add.${card.id}`, x: labelWidth + ACTION.width + 2 * ACTION.gap, y, width: addWidth, height: ROW.height, text: `+ (${count}/${limit})`, enabled: canAdd, onActivate: () => this.#apply(this.#host.app.deckBuilding.addCard(card.id)) }));
+  }
+
+  /** @param {import("../../../application/content/CardFilter.js").CardFilter} filter */
+  #changeFilter(filter) {
+    this.#filter = filter;
+    this.#catalogToTop = true;
+    this.#host.rebuild();
   }
 
   /** @param {string} value */

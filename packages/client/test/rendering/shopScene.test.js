@@ -54,6 +54,13 @@ async function harness({ signedIn = true } = {}) {
 }
 
 const byId = (scene, id) => scene.root.findById(id);
+/** Every node of the scene, depth first. */
+const nodes = (scene) => {
+  const found = [];
+  const visit = (node) => (found.push(node), node.children.forEach(visit));
+  visit(scene.root);
+  return found;
+};
 const click = (node) => {
   assert.ok(node, "node exists");
   assert.equal(node.isEffectivelyEnabled, true, `${node.id} is enabled`);
@@ -106,8 +113,16 @@ describe("ShopScene", () => {
     const { scene, market } = await harness();
     click(byId(scene, "shop.tab.singles"));
     assert.equal(byId(scene, "shop.card.archmage_of_the_spire").variant, "primary", "a legendary comes first");
-    click(byId(scene, "shop.rarity.rare"));
+    click(byId(scene, "shop.filter.rarity.rare"));
     assert.equal(byId(scene, "shop.card.arcane_apprentice"), null, "commons are filtered out");
+    click(byId(scene, "shop.filter.type.spell"));
+    click(byId(scene, "shop.filter.faction.ember"));
+    const singles = () => nodes(scene).filter((node) => node.id?.startsWith("shop.card.")).map((node) => content.catalog.get(node.id.slice("shop.card.".length)));
+    for (const card of singles()) {
+      assert.deepEqual([card.faction, card.type], ["ember", "spell"], "faction, rarity and type combine");
+    }
+    click(byId(scene, "shop.filter.type.creature"));
+    assert.ok(singles().some((card) => card.id === "pyre_drake"));
     click(byId(scene, "shop.card.pyre_drake"));
     assert.equal(byId(scene, "shop.card.pyre_drake").text, "2.500 STEEM");
     assert.equal(byId(scene, "shop.rarity").text, "Rare");

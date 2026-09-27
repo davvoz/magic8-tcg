@@ -149,6 +149,10 @@ export class FakeContext2D {
     this.#record("scale", args);
   }
 
+  drawImage(...args) {
+    this.#record("drawImage", args);
+  }
+
   measureText(text) {
     return { width: text.length * 8 };
   }

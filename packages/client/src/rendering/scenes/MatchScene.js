@@ -19,6 +19,7 @@ import { KeyMap, isKey } from "../../input/KeyMap.js";
 import { Highlight, InteractionMode, MatchInteraction } from "../../input/interaction/MatchInteraction.js";
 import { BoardNode } from "../board/BoardNode.js";
 import { CardNode } from "../board/CardNode.js";
+import { ClockNode } from "../board/ClockNode.js";
 import { EffectsNode } from "../board/EffectsNode.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
@@ -47,7 +48,7 @@ const INSPECT = Object.freeze({ width: 440, height: 640, card: Object.freeze({ w
 export class MatchScene extends Scene {
   /** @type {(cardId: string) => string | null} */
   #rarityOf;
-  /** @type {import("../../application/match/MatchSession.js").MatchSession | null} */
+  /** @type {import("../../application/match/MatchSession.js").MatchSession | import("../../application/online/RemoteMatchSession.js").RemoteMatchSession | null} */
   #session = null;
   /** Where "Play again" leads: deck selection for practice, the lobby for online games. */
   /** @type {string} */
@@ -66,15 +67,19 @@ export class MatchScene extends Scene {
   /** @type {string[]} */
   #log = [];
   #gameOverShown = false;
+  #now;
+  /** The clock's last displayed whole second, so ticking asks for a redraw only when the number on screen would change. @type {number | null} */
+  #clockSecondShown = null;
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
    * @param {import("./Scene.js").SceneServices} services
-   * @param {{ rarityOf?: (cardId: string) => string | null }} [cards] how rare a card is, for the inspect view
+   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock
    */
-  constructor(services, { rarityOf = () => null } = {}) {
+  constructor(services, { rarityOf = () => null, now = () => Date.now() } = {}) {
     super(services);
     this.#rarityOf = rarityOf;
+    this.#now = now;
     this.#presenter = new MatchPresenter(services.theme.animation);
   }
 
@@ -105,9 +110,29 @@ export class MatchScene extends Scene {
   /** @param {number} dtMs */
   update(dtMs) {
     const inputChanged = super.update(dtMs);
-    const changed = this.#presenter.update(dtMs) || inputChanged;
+    const changed = this.#presenter.update(dtMs) || inputChanged || this.#tickClock();
     this.#maybeShowGameOver();
     return changed;
+  }
+
+  /**
+   * Whether the clock's displayed second changed since the last frame, so
+   * the ticking dial redraws roughly once a second instead of every frame.
+   */
+  #tickClock() {
+    const deadline = this.#clockView()?.deadline ?? null;
+    const second = deadline === null ? null : Math.ceil(Math.max(0, deadline - this.#now()) / 1000);
+    const changed = second !== this.#clockSecondShown;
+    this.#clockSecondShown = second;
+    return changed;
+  }
+
+  /** The decision clock to show, or null when there is none (offline play, or the match is over). */
+  #clockView() {
+    if (this.#snapshot === null || this.#snapshot.isOver) {
+      return null;
+    }
+    return this.#session?.clock ?? null;
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -237,6 +262,7 @@ export class MatchScene extends Scene {
     this.closeModal();
     this.root.clear();
     this.root.add(new BoardNode({ layout, banner: bannerFor(snapshot, this.#viewer()), activePlayerId: activeSeatFor(snapshot) }));
+    this.root.add(new ClockNode({ x: layout.clock.x, y: layout.clock.y, size: layout.clock.width, clock: () => this.#clockView(), now: this.#now }));
     this.#buildPlayers(snapshot, layout, interaction);
     this.#buildCards(snapshot, layout, interaction);
     this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction) }));

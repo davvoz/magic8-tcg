@@ -112,6 +112,24 @@ describe("DeckBuilderScene — editor", () => {
     assert.equal(byId(scene, "editor.save").enabled, true, "work in progress can be saved");
   });
 
+  it("filters the catalog by faction and type, from the top", () => {
+    const { scene } = harness();
+    click(byId(scene, "library.new"));
+    byId(scene, "editor.catalog").scrollTo(byId(scene, "editor.catalog").maxScrollY);
+    const offered = () => byId(scene, "editor.catalog").content.children.filter((node) => node.id?.startsWith("catalog.add.")).map((node) => content.catalog.get(node.id.slice("catalog.add.".length)));
+    click(byId(scene, "catalog.filter.faction.arcane"));
+    click(byId(scene, "catalog.filter.type.spell"));
+    assert.equal(byId(scene, "catalog.filter.type.spell").variant, "primary");
+    assert.ok(offered().length > 0);
+    for (const card of offered()) {
+      assert.deepEqual([card.faction, card.type], ["arcane", "spell"]);
+    }
+    assert.equal(byId(scene, "editor.catalog").scrollY, 0, "a new filter shows its first cards");
+    click(byId(scene, "catalog.filter.type.all"));
+    click(byId(scene, "catalog.filter.faction.all"));
+    assert.equal(offered().length, content.catalog.size);
+  });
+
   it("keeps the scroll offset and focus across rebuilds", () => {
     const { scene } = harness();
     click(byId(scene, "library.new"));

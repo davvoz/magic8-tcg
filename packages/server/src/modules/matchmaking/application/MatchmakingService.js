@@ -12,8 +12,13 @@
  *   pair the same ticket twice. The match is announced only after commit.
  * - Ranked (docs/tcg/09-classificata.md): only eligible players; a ticket
  *   carries the player's rating; the oldest ticket is paired with the
- *   closest rating inside a window that widens while it waits, never with
- *   someone it already played too often today.
+ *   closest rating inside a window that widens while it waits, preferring
+ *   someone it has not already played too often today.
+ * - The window is a preference, not a wall: a ticket that waited longer
+ *   than `relaxAfterSeconds` takes the closest opponent in the queue at any
+ *   distance, and, failing that, one it already played today (that game is
+ *   recorded but does not count towards ratings, T24). A small player base
+ *   always finds a game instead of searching forever.
  */
 import { AppError } from "../../../kernel/AppError.js";
 import { uuidV4 } from "../../../kernel/random.js";
@@ -81,8 +86,11 @@ export class MatchmakingService {
     const rating = mode === QueueMode.RANKED ? Math.round((await this.#ranking.ratingOf(user.id)).rating) : DEFAULT_RATING;
     const deck = await this.#decks.playableDeckList(user.id, deckId);
     const now = this.#clock.now();
+    // Re-joining the same queue (another deck, another try) keeps the moment the
+    // search started: the rating window goes on widening instead of starting over.
+    const waiting = await this.#repository.findWaiting(user.id);
+    const since = waiting !== null && waiting.mode === mode ? waiting.createdAt : now;
     await this.#unitOfWork(async () => {
-      // A new ticket replaces a waiting one (another deck, another try).
       await this.#repository.cancelWaiting(user.id, now);
       await this.#repository.insertTicket({
         id: uuidV4(this.#random),
@@ -92,12 +100,12 @@ export class MatchmakingService {
         deckId: /** @type {string} */ (deckId),
         deck: deck.entries.map((entry) => [entry.cardId, entry.count]),
         rating,
-        at: now,
+        at: since,
       });
     });
-    this.#notifier.send(user.id, "queue.status", { state: "searching", mode, since: now });
+    this.#notifier.send(user.id, "queue.status", { state: "searching", mode, since });
     await this.pair();
-    return Object.freeze({ state: "searching", since: now });
+    return Object.freeze({ state: "searching", since });
   }
 
   /** @param {string} userId */
@@ -152,22 +160,59 @@ export class MatchmakingService {
 
   /**
    * The oldest ranked ticket that has an acceptable opponent, with the closest one.
+   *
+   * Two passes over the waiting tickets, oldest first. The strict pass keeps
+   * the rating window and the daily limit between the same two players. The
+   * relaxed pass only looks at tickets that waited longer than
+   * `relaxAfterSeconds`: for those the window is dropped (the closest
+   * opponent in the queue wins, however far) and, as a last resort, so is the
+   * daily limit, because a game that does not count beats no game at all.
    * @returns {Promise<readonly any[] | null>}
    */
   async #rankedPair() {
     const tickets = await this.#repository.lockWaiting(QueueMode.RANKED, RANKED_CANDIDATES);
-    const { baseWindow, windowPerSecond, maxWindow } = this.#ranking.settings.matchmaking;
+    if (tickets.length < 2) {
+      return null;
+    }
+    const { baseWindow, windowPerSecond, maxWindow, relaxAfterSeconds } = this.#ranking.settings.matchmaking;
     const now = this.#clock.now();
-    for (const anchor of tickets) {
-      const window = Math.min(maxWindow, baseWindow + (windowPerSecond * (now - anchor.createdAt)) / 1000);
-      const candidates = tickets
-        .filter((other) => other.userId !== anchor.userId && Math.abs(other.rating - anchor.rating) <= window)
-        .sort((left, right) => Math.abs(left.rating - anchor.rating) - Math.abs(right.rating - anchor.rating));
-      for (const candidate of candidates) {
-        if (await this.#ranking.pairAllowed(anchor.userId, candidate.userId)) {
-          return [anchor, candidate];
+    for (const relaxed of [false, true]) {
+      for (const anchor of tickets) {
+        const waited = (now - anchor.createdAt) / 1000;
+        if (relaxed && waited < relaxAfterSeconds) {
+          continue;
+        }
+        const window = relaxed ? Number.POSITIVE_INFINITY : Math.min(maxWindow, baseWindow + windowPerSecond * waited);
+        const opponent = await this.#opponentFor(anchor, tickets, window, relaxed);
+        if (opponent !== null) {
+          return [anchor, opponent];
         }
       }
+    }
+    return null;
+  }
+
+  /**
+   * The closest rating to `anchor` inside `window` that may still play a
+   * counted game against it, or, when `orElseAnyone`, simply the closest one.
+   * @param {any} anchor
+   * @param {readonly any[]} tickets
+   * @param {number} window
+   * @param {boolean} orElseAnyone
+   * @returns {Promise<any | null>}
+   */
+  async #opponentFor(anchor, tickets, window, orElseAnyone) {
+    const candidates = tickets
+      .filter((other) => other.userId !== anchor.userId && Math.abs(other.rating - anchor.rating) <= window)
+      .sort((left, right) => Math.abs(left.rating - anchor.rating) - Math.abs(right.rating - anchor.rating));
+    for (const candidate of candidates) {
+      if (await this.#ranking.pairAllowed(anchor.userId, candidate.userId)) {
+        return candidate;
+      }
+    }
+    if (orElseAnyone && candidates.length > 0) {
+      this.#logger.info("ranked pair over the daily limit", { anchor: anchor.userId, opponent: candidates[0].userId });
+      return candidates[0];
     }
     return null;
   }

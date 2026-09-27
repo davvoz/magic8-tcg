@@ -11,6 +11,7 @@ import { AccountService, AccountStatus } from "./application/account/AccountServ
 import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
 import { buildCardRarities } from "./application/content/CardRarities.js";
+import { NO_ILLUSTRATIONS, buildIllustrationManifest } from "./application/content/IllustrationManifest.js";
 import { COLLECTION_CHANGING_KINDS, describeNotification } from "./application/notifications/describeNotification.js";
 import { NotificationService } from "./application/notifications/NotificationService.js";
 import { AccountDeckRepository, DeckStorage } from "./application/decks/AccountDeckRepository.js";
@@ -38,6 +39,7 @@ import { HttpNotificationsApi } from "./infrastructure/api/HttpNotificationsApi.
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
+import { loadBrowserImage } from "./infrastructure/images/loadBrowserImage.js";
 import { ConsoleLogger } from "./infrastructure/logging/ConsoleLogger.js";
 import { InMemoryStore } from "./infrastructure/persistence/InMemoryStore.js";
 import { LocalStorageStore } from "./infrastructure/persistence/LocalStorageStore.js";
@@ -53,6 +55,7 @@ import { ErrorScene } from "./rendering/scenes/ErrorScene.js";
 import { SceneManager } from "./rendering/scenes/SceneManager.js";
 import { registerScenes } from "./rendering/scenes/registerScenes.js";
 import { SceneId } from "./rendering/scenes/sceneIds.js";
+import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 
@@ -77,7 +80,10 @@ const CONTENT_MANIFEST = Object.freeze({
   [ContentResource.DECK_RULES]: "data/rules/deck-rules.json",
   theme: "data/ui/theme.json",
   rarities: "data/economy/rarities.json",
+  illustrations: "data/art/illustrations.json",
 });
+/** Where the illustration files named in data/art/illustrations.json live. */
+const ART_DIRECTORY = "data/art/";
 
 /** Theme used only to render the error screen when the real theme cannot be loaded. */
 const FALLBACK_THEME_RAW = Object.freeze({
@@ -186,7 +192,7 @@ async function boot() {
     timers: { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
   });
   const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet });
-  const [rawTheme, content, rawRarities] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("rarities"), identity.restore()]);
+  const [rawTheme, content, rawRarities, rawIllustrations] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("rarities"), source.load("illustrations"), identity.restore()]);
   if (!content.ok) {
     showFatal("Content failed to load", content.error.message);
     return;
@@ -203,6 +209,9 @@ async function boot() {
     logger.warn("card rarities unavailable", builtRarities.message);
   }
   const rarities = builtRarities.ok ? { rarities: builtRarities.value } : {};
+
+  // Painted card art: cards without it (or whose image fails) keep their procedural art.
+  const illustrations = buildIllustrations(rawIllustrations, content.value.catalog);
 
   const localStore = new LocalStorageStore(globalThis.localStorage);
   const storageAvailable = localStore.isAvailable();
@@ -287,7 +296,7 @@ async function boot() {
     ...rarities,
   });
 
-  const { sceneManager, loop } = buildPresentation(theme.value);
+  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations }));
   registerScenes(sceneManager, app);
   // A notification that arrives shows as a toast on any screen; a click opens the feed.
   const toasts = new ToastLayer({ viewport: theme.value.layout, onOpen: () => sceneManager.navigate(SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
@@ -299,6 +308,28 @@ async function boot() {
     }
   });
   sceneManager.navigate(SceneId.MAIN_MENU);
+  // Fetched in the background so cards rarely appear procedural first; each one redraws as it arrives.
+  void illustrations.preload(illustrations.cardIds);
+}
+
+/**
+ * @param {import("@magic8/engine/shared/Result.js").Ok<unknown> | import("@magic8/engine/shared/Result.js").Fail} raw the illustrations file
+ * @param {{ has: (cardId: string) => boolean }} catalog
+ */
+function buildIllustrations(raw, catalog) {
+  const built = raw.ok ? buildIllustrationManifest(raw.value, catalog) : { ok: /** @type {const} */ (false), message: raw.error.message };
+  if (!built.ok) {
+    logger.warn("card illustrations unavailable", built.message);
+  } else if (built.value.unknownCards.length > 0) {
+    logger.warn("card illustrations for unknown cards ignored", built.value.unknownCards);
+  }
+  return new CardIllustrations({
+    manifest: built.ok ? built.value : NO_ILLUSTRATIONS,
+    urlFor: (file) => `${ART_DIRECTORY}${file}`,
+    loadImage: loadBrowserImage,
+    onLoaded: () => presentation?.loop.requestRender(),
+    logger,
+  });
 }
 
 window.addEventListener("error", (event) => showFatal("Unexpected error", describeError(event.error ?? event.message)));

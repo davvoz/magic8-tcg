@@ -155,6 +155,10 @@ describe("static client files", () => {
     await writeFile(join(root, "client", "index.html"), html);
     await writeFile(join(root, "client", "main.js"), "export {};");
     await writeFile(join(root, "data", "cards.json"), "{}");
+    await mkdir(join(root, "data", "art"));
+    for (const name of ["a.webp", "b.png", "c.jpg", "d.jpeg"]) {
+      await writeFile(join(root, "data", "art", name), "img");
+    }
     await writeFile(join(root, "secret.txt"), "do not serve");
     const setup = await buildTestApp();
     const app = await createServerApp({
@@ -183,6 +187,12 @@ describe("static client files", () => {
       const multiline = "<style>\n  body { margin: 0; }\n</style>";
       assert.equal(pageCsp(multiline.replaceAll("\n", "\r\n")), pageCsp(multiline));
       assert.equal((await fetch(`${server.base}/data/cards.json`)).status, 200);
+      // Card illustrations (data/art/) in every format the manifest accepts.
+      for (const [name, type] of [["a.webp", "image/webp"], ["b.png", "image/png"], ["c.jpg", "image/jpeg"], ["d.jpeg", "image/jpeg"]]) {
+        const image = await fetch(`${server.base}/data/art/${name}`);
+        assert.equal(image.status, 200, name);
+        assert.equal(image.headers.get("content-type"), type, name);
+      }
       for (const path of ["/../secret.txt", "/%2e%2e/secret.txt", "/data/..%2f..%2fsecret.txt", "/missing.js", "/main.exe"]) {
         assert.equal((await fetch(`${server.base}${path}`)).status, 404, path);
       }

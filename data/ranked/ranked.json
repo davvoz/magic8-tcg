@@ -4,6 +4,6 @@
     { "id": "2026-s1", "name": "Season 1", "startsAt": "2026-09-01T00:00:00Z" }
   ],
   "eligibility": { "minFinishedCasualGames": 3 },
-  "matchmaking": { "baseWindow": 100, "windowPerSecond": 10, "maxWindow": 800 },
+  "matchmaking": { "baseWindow": 100, "windowPerSecond": 10, "maxWindow": 800, "relaxAfterSeconds": 20 },
   "fairPlay": { "maxRatedGamesPerPairPerDay": 3, "earlyConcedeTurn": 2, "earlyConcedesToFlag": 2, "earlyConcedeWindowDays": 7 }
 }

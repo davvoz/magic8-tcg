@@ -140,6 +140,68 @@ describe("BoardLayout", () => {
     assert.equal(layout.opponent.handSlots.length, opponent.handSize, "one back per hidden card");
     assert.ok(layout.me.hud.y + layout.me.hud.height <= SIZE.logicalHeight);
     assert.ok(layout.log.y + layout.log.height <= SIZE.logicalHeight);
+    assert.ok(layout.clock.x >= layout.banner.x && layout.clock.x + layout.clock.width <= layout.banner.x + layout.banner.width, "the clock docks within the banner row");
+  });
+});
+
+describe("Decision clock (MatchScene)", () => {
+  /** A session-shaped double whose `clock` can be changed between frames, unlike a real MatchSession (always untimed). */
+  function fakeTimedSession(snapshot, clock) {
+    return {
+      humanPlayerIds: [P1],
+      clock,
+      subscribe: () => () => undefined,
+      snapshotFor: () => snapshot,
+      eventsFor: () => [],
+      submit: () => ({ ok: true, value: undefined }),
+      stop: () => undefined,
+    };
+  }
+
+  it("shows nothing offline: a real MatchSession is untimed", async () => {
+    const { scene } = await sceneFor({ p1: {}, p2: {} });
+    assert.equal(scene.update(1000), false, "no deadline, nothing to tick");
+    assert.ok(!rendered(scene).some((text) => /^\d:\d\d$/.test(text)), "no clock text drawn");
+  });
+
+  it("counts down to the server's deadline, one redraw per second, and disappears once nobody is on the clock", () => {
+    const { session } = sessionFromScenario({ p1: {}, p2: {} });
+    session.start();
+    const snapshot = session.snapshotFor(P1);
+    let now = 0;
+    const fake = fakeTimedSession(snapshot, { activeSeat: P1, deadline: 5_000, reserveMs: {} });
+    const scene = new MatchScene(services(), { now: () => now });
+    scene.enter({ session: fake });
+    assert.equal(scene.update(0), true, "the first frame draws the clock");
+    assert.ok(rendered(scene).includes("0:05"));
+
+    now = 500;
+    assert.equal(scene.update(500), false, "still 4.5s left: ceils to the same 0:05");
+    now = 1_200;
+    assert.equal(scene.update(700), true, "crossed into the next second");
+    assert.ok(rendered(scene).includes("0:04"));
+
+    now = 4_600;
+    scene.update(3400);
+    assert.ok(rendered(scene).includes("0:01"));
+
+    now = 6_000;
+    scene.update(1400);
+    assert.ok(rendered(scene).includes("0:00"), "never negative");
+
+    fake.clock = null;
+    assert.equal(scene.update(1000), true, "the clock just disappeared: redraw once more");
+    assert.ok(!rendered(scene).some((text) => /^\d:\d\d$/.test(text)), "gone once nobody is on the clock");
+  });
+
+  it("hides once the match is over, even with a deadline still on the wire", () => {
+    const { session } = sessionFromScenario({ p1: {}, p2: {} });
+    session.start();
+    const over = { ...session.snapshotFor(P1), isOver: true };
+    const fake = fakeTimedSession(over, { activeSeat: P1, deadline: 5_000, reserveMs: {} });
+    const scene = new MatchScene(services(), { now: () => 0 });
+    scene.enter({ session: fake });
+    assert.ok(!rendered(scene).some((text) => /^\d:\d\d$/.test(text)));
   });
 });
 

@@ -197,6 +197,28 @@ describe("MarketScene", () => {
     assert.equal(byId(scene, "market.list"), null, "back to the player's sales");
   });
 
+  it("filters the board by faction, rarity and type through the server, and the copies to sell on the spot", async () => {
+    const { scene, api } = market();
+    scene.enter({});
+    await flush();
+    assert.equal(api.calls.find((call) => call[0] === "board")[1].card, undefined, "every card at first");
+    byId(scene, "market.filter.faction.iron").activate();
+    byId(scene, "market.filter.type.creature").activate();
+    await flush();
+    const asked = api.calls.filter((call) => call[0] === "board").at(-1)[1];
+    const ironCreatures = content.catalog.all().filter((card) => card.faction === "iron" && card.type === "creature").map((card) => card.id);
+    assert.deepEqual([asked.card.split(",").sort(), asked.offset], [ironCreatures.sort(), 0], "the cards the filter lets through, from the first page");
+    assert.equal(byId(scene, "market.filter.faction.iron").variant, "primary");
+
+    byId(scene, "market.sell").activate();
+    assert.ok(byId(scene, `market.copy.${uuid(31)}`), "the composer has a filter of its own");
+    byId(scene, `market.copy.${uuid(31)}`).activate();
+    byId(scene, "market.sellFilter.faction.ember").activate();
+    assert.equal(byId(scene, `market.copy.${uuid(31)}`), null, "an iron copy is not an ember card");
+    assert.ok(rendered(scene).includes("No ember cards to sell."));
+    assert.equal(byId(scene, "market.list").enabled, false, "a hidden copy is no longer chosen");
+  });
+
   it("describes listings, and goes back where the player came from", () => {
     assert.equal(listingSubtitle(LISTING, NOW), "#4 · foil · @alice · 3 day(s) left");
     assert.equal(listingSubtitle({ ...LISTING, status: "SOLD", buyer: "bob" }, NOW), "#4 · foil · sold to @bob");

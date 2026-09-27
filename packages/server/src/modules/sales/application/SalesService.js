@@ -26,6 +26,8 @@ const ACCOUNT_PATTERN = /^[a-z][a-z0-9.-]{2,15}$/;
 const CARD_ID_PATTERN = /^[a-z0-9_]{1,64}$/;
 const MEMO_RANDOM_BYTES = 17;
 const MAX_BOARD_OFFSET = 10_000;
+/** Card ids one board query may ask for (a filter by faction, rarity or type). */
+const MAX_BOARD_CARDS = 200;
 
 export const DEFAULT_SALES_POLICY = Object.freeze({
   /** How long a copy stays on the board. */
@@ -209,11 +211,12 @@ export class SalesService {
   }
 
   /**
-   * The public board: what is on sale now, one page at a time.
+   * The public board: what is on sale now, one page at a time. `card` is
+   * one card id or several, comma-separated (the client's card filter).
    * @param {{ card?: unknown, seller?: unknown, sort?: unknown, offset?: unknown }} query
    */
   async board({ card, seller, sort, offset }) {
-    const definitionId = optional(card, CARD_ID_PATTERN, "card");
+    const definitionIds = cardIds(card);
     const account = optional(seller, ACCOUNT_PATTERN, "seller");
     const order = sort === undefined ? BoardSort.NEWEST : sort;
     if (order !== BoardSort.NEWEST && order !== BoardSort.CHEAPEST) {
@@ -223,7 +226,7 @@ export class SalesService {
     if (!Number.isSafeInteger(start) || start < 0 || start > MAX_BOARD_OFFSET) {
       throw new AppError("VALIDATION", `offset: 0..${MAX_BOARD_OFFSET}`);
     }
-    const { rows, total } = await this.#repository.board({ definitionId, seller: account, sort: order, offset: start, limit: this.#policy.pageSize, now: this.#clock.now() });
+    const { rows, total } = await this.#repository.board({ definitionIds, seller: account, sort: order, offset: start, limit: this.#policy.pageSize, now: this.#clock.now() });
     return Object.freeze({ listings: Object.freeze(rows.map((row) => this.#listingViewOf(row))), total, offset: start, pageSize: this.#policy.pageSize });
   }
 
@@ -470,6 +473,22 @@ export const refOf = (listingId) => `sale:${listingId}`;
  * @param {string} name
  * @returns {string | null}
  */
+/**
+ * "a,b,c" → the distinct card ids, or null when the filter is not set.
+ * @param {unknown} value
+ * @returns {string[] | null}
+ */
+function cardIds(value) {
+  if (value === undefined || value === "") {
+    return null;
+  }
+  const ids = typeof value === "string" ? [...new Set(value.split(","))] : [];
+  if (ids.length === 0 || ids.length > MAX_BOARD_CARDS || !ids.every((id) => CARD_ID_PATTERN.test(id))) {
+    throw new AppError("VALIDATION", `card: 1..${MAX_BOARD_CARDS} card ids, comma-separated`);
+  }
+  return ids;
+}
+
 function optional(value, pattern, name) {
   if (value === undefined || value === "") {
     return null;

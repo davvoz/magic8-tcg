@@ -242,14 +242,14 @@ describe("GameService", () => {
     const w = await started();
     const view = await w.games.view(w.alice.user.id, w.gameId);
     const slow = view.snapshot.awaitingPlayerId;
-    w.setup.clock.advance(136 * SECOND);
+    w.setup.clock.advance(181 * SECOND);
     await w.games.tick();
     const forced = await w.setup.database.rows("SELECT actor, payload FROM game_events WHERE game_id = $1 AND kind = 'FORCED_MOVE' ORDER BY seq", [w.gameId]);
     assert.ok(forced.length >= 1);
     assert.ok(forced.every((row) => row.actor === slow && row.payload.why === "timeout"));
     const after = await w.games.view(w.alice.user.id, w.gameId);
     assert.notEqual(after.snapshot.activePlayerId, slow, "the turn passed to the opponent");
-    assert.equal(after.clock.reserveMs[slow], 60000, "a forced move does not charge the reserve");
+    assert.equal(after.clock.reserveMs[slow], 90000, "a forced move does not charge the reserve");
 
     // The opponent keeps passing; the slow player keeps timing out.
     for (let turn = 0; turn < 3 && (await w.games.view(w.alice.user.id, w.gameId)).status === "ACTIVE"; turn += 1) {
@@ -257,7 +257,7 @@ describe("GameService", () => {
       if (current.snapshot.awaitingPlayerId !== slow) {
         await passTurn(w, seatUser(w, current.snapshot.awaitingPlayerId), `pass:${turn}`);
       }
-      w.setup.clock.advance(200 * SECOND);
+      w.setup.clock.advance(245 * SECOND);
       await w.games.tick();
     }
     const over = last(seatUser(w, slow).inbox, "game.over");

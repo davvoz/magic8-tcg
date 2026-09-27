@@ -29,6 +29,8 @@ const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
 const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
 const GAME_TICK_INTERVAL_MS = 1000;
 const RECORD_SEAL_INTERVAL_MS = 5000;
+/** The rating window widens while a ticket waits, so the queue is re-run often. */
+const MATCHMAKING_INTERVAL_MS = 5000;
 /** One broadcast round per block. */
 const BROADCAST_INTERVAL_MS = 3000;
 const TRACKER_INTERVAL_MS = 6000;
@@ -114,10 +116,8 @@ async function main() {
     every(GAME_TICK_INTERVAL_MS, "game timers", () => app.games.tick(), logger),
     every(RECORD_SEAL_INTERVAL_MS, "record sealing", () => app.games.sealStale(), logger),
     every(NOTIFICATION_PURGE_INTERVAL_MS, "notification retention", () => app.notifications.purge(), logger),
-    every(ORDER_EXPIRY_INTERVAL_MS, "matchmaking", async () => {
-      await app.matchmaking.expireStale();
-      await app.matchmaking.pair();
-    }, logger),
+    every(MATCHMAKING_INTERVAL_MS, "matchmaking", () => app.matchmaking.pair(), logger),
+    every(ORDER_EXPIRY_INTERVAL_MS, "queue expiry", () => app.matchmaking.expireStale(), logger),
   ];
   const chainModule = app.chain;
   if (chainModule !== null) {

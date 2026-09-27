@@ -9,6 +9,7 @@ import { shade, withAlpha } from "../theme/color.js";
 import { fontFor } from "../theme/Theme.js";
 import { drawOutlinedText, fillRoundedRect, glowRoundedRect, insetShadow, verticalGradient } from "../ui/drawing.js";
 import { UiNode } from "../ui/UiNode.js";
+import { BANNER_INSET_FRACTION } from "./BoardLayout.js";
 
 const ZONE_RADIUS = 14;
 const ZONE_DEPTH = 10;
@@ -77,7 +78,7 @@ export class BoardNode extends UiNode {
   #paintBanner(context, theme) {
     const { banner } = this.#layout;
     const { colors } = theme;
-    const inset = banner.width * 0.18;
+    const inset = banner.width * BANNER_INSET_FRACTION;
     const ribbon = { x: banner.x + inset, y: banner.y, width: banner.width - 2 * inset, height: banner.height };
     context.save();
     context.beginPath();

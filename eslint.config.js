@@ -5,6 +5,7 @@ const browserGlobals = {
   window: "readonly",
   document: "readonly",
   HTMLCanvasElement: "readonly",
+  Image: "readonly",
   CanvasRenderingContext2D: "readonly",
   requestAnimationFrame: "readonly",
   cancelAnimationFrame: "readonly",

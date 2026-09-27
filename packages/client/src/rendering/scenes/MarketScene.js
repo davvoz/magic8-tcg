@@ -2,8 +2,8 @@
  * The player market (docs/tcg/14-vendite.md): a board everyone sees, where
  * players sell copies of their cards for STEEM.
  *
- * On the left, the board (newest or cheapest first, optionally one card
- * only, page by page) or, signed in, the player's own listings and
+ * On the left, the board (newest or cheapest first, filtered by faction,
+ * rarity and type or one card only, page by page) or, signed in, the player's own listings and
  * purchases. On the right, the selected listing at full size with Buy (or
  * Withdraw, for one's own), the purchase in progress, or the composer of a
  * new listing: one of the player's tradeable copies and a price.
@@ -12,7 +12,9 @@
  * seller's own account); the card arrives once the chain makes it final.
  * Every price and status shown is the server's.
  */
+import { NO_CARD_FILTER, cardFilterOptions, cardIdsMatching, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_BUY_STAGES, BuyStage, PROBLEM_TEXT } from "../../application/sales/SalesService.js";
+import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardStrip } from "../cards/CardStrip.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
@@ -35,7 +37,10 @@ const MINUTE = 60 * 1000;
 const LINE = 30;
 const TABS = Object.freeze({ top: 14, height: 46, gap: 8 });
 const SORTS = Object.freeze({ top: 70, height: 38, gap: 6 });
-const LIST_TOP = 118;
+const FILTER_TOP = SORTS.top + SORTS.height + 10;
+const LIST_TOP = FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12;
+/** The composer's list of copies, below its title and filter. */
+const COPIES_TOP = 48 + CARD_FILTER_BAR_HEIGHT + 12;
 const PAGER_HEIGHT = 44;
 const PRICE_WIDTH = 170;
 const META_WIDTH = 140;
@@ -100,6 +105,10 @@ export class MarketScene extends Scene {
   /** @type {string | null} */
   #copy = null;
   #price = "";
+  /** Cards on the board. @type {import("../../application/content/CardFilter.js").CardFilter} */
+  #boardFilter = NO_CARD_FILTER;
+  /** Copies offered for sale. @type {import("../../application/content/CardFilter.js").CardFilter} */
+  #sellFilter = NO_CARD_FILTER;
   /** Where Back leads: the scene the player came from. @type {string} */
   #from = SceneId.MAIN_MENU;
 
@@ -119,7 +128,8 @@ export class MarketScene extends Scene {
     this.#from = params.from !== undefined && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
     const sales = this.#sales();
     this.#unsubscribe = sales.subscribe(() => this.#rebuild());
-    sales.refresh();
+    sales.loadBoard({ cards: cardIdsMatching(this.#boardFilter, this.#app) });
+    sales.refreshMine();
     this.#rebuild();
   }
 
@@ -209,12 +219,13 @@ export class MarketScene extends Scene {
     });
     if (filter.card !== null) {
       const x = INSET + 2 * (sortWidth + SORTS.gap);
-      panel.add(new Button({ id: "market.filter.clear", x, y: SORTS.top, width: INSET + width - x, height: SORTS.height, text: `Only ${this.#cardName(filter.card)} · show all`, textSize: "small", onActivate: () => sales.loadBoard({ card: null, offset: 0 }) }));
+      panel.add(new Button({ id: "market.card.clear", x, y: SORTS.top, width: INSET + width - x, height: SORTS.height, text: `Only ${this.#cardName(filter.card)} · show all`, textSize: "small", onActivate: () => sales.loadBoard({ card: null, offset: 0 }) }));
     }
+    buildCardFilterBar(panel, { id: "market.filter", x: INSET, y: FILTER_TOP, width, filter: this.#boardFilter, options: cardFilterOptions(this.#app), onChange: (next) => this.#changeBoardFilter(next) });
     const pages = total > pageSize;
     const list = panel.add(new ScrollList({ id: "market.board", x: INSET, y: LIST_TOP, width, height: COLUMNS.height - LIST_TOP - INSET - (pages ? PAGER_HEIGHT + 8 : 0) }));
     if (listings.length === 0) {
-      const empty = filter.card === null ? "Nothing on sale yet. Sell one of your cards: other players will see it here." : "Nobody sells this card right now.";
+      const empty = this.#emptyBoardText(filter.card !== null);
       list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * ROW.height, text: loading ? "Loading…" : empty, size: "small", colorKey: "textMuted" }));
       list.contentHeight = 2 * ROW.height;
     } else {
@@ -235,6 +246,14 @@ export class MarketScene extends Scene {
     if (pages) {
       this.#buildPager(panel, width);
     }
+  }
+
+  /** @param {boolean} oneCard */
+  #emptyBoardText(oneCard) {
+    if (oneCard) {
+      return "Nobody sells this card right now.";
+    }
+    return isFiltering(this.#boardFilter) ? `No ${describeCardFilter(this.#boardFilter)} cards on sale right now.` : "Nothing on sale yet. Sell one of your cards: other players will see it here.";
   }
 
   /**
@@ -435,10 +454,15 @@ export class MarketScene extends Scene {
     const width = COLUMNS.right.width - 2 * INSET;
     panel.add(new Label({ x: INSET, y: 14, width, height: 28, text: "Pick the copy to sell", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
     const bottom = COLUMNS.height - INSET - BUTTON_HEIGHT - 12 - 52 - 12;
-    const list = panel.add(new ScrollList({ id: "market.copies", x: INSET, y: 48, width, height: bottom - 48 }));
-    const copies = this.#sellableCopies();
+    buildCardFilterBar(panel, { id: "market.sellFilter", x: INSET, y: 48, width, filter: this.#sellFilter, options: cardFilterOptions(this.#app), onChange: (next) => this.#changeSellFilter(next) });
+    const list = panel.add(new ScrollList({ id: "market.copies", x: INSET, y: COPIES_TOP, width, height: bottom - COPIES_TOP }));
+    const copies = this.#sellableCopies().filter((copy) => matchesCardFilter(this.#sellFilter, this.#app.content.catalog.get(copy.definitionId), rarityOf(this.#app, copy.definitionId)));
+    if (!copies.some((copy) => copy.id === this.#copy)) {
+      this.#copy = null;
+    }
     if (copies.length === 0) {
-      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: "No card to sell: cards already on the board or in a trade cannot be listed again.", size: "small", colorKey: "textMuted" }));
+      const text = isFiltering(this.#sellFilter) ? `No ${describeCardFilter(this.#sellFilter)} cards to sell.` : "No card to sell: cards already on the board or in a trade cannot be listed again.";
+      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text, size: "small", colorKey: "textMuted" }));
       list.contentHeight = 3 * ROW.height;
     } else {
       const rowWidth = list.rowWidth - ACTION.width - ACTION.gap;
@@ -497,6 +521,18 @@ export class MarketScene extends Scene {
       this.#selected = null;
       this.#rebuild();
     }
+  }
+
+  /** @param {import("../../application/content/CardFilter.js").CardFilter} next */
+  #changeBoardFilter(next) {
+    this.#boardFilter = next;
+    this.#sales().loadBoard({ card: null, cards: cardIdsMatching(next, this.#app), offset: 0 });
+  }
+
+  /** @param {import("../../application/content/CardFilter.js").CardFilter} next */
+  #changeSellFilter(next) {
+    this.#sellFilter = next;
+    this.#rebuild();
   }
 
   #toggleSelling() {

@@ -1,10 +1,12 @@
 /**
  * The signed-in player's cards, as the server says: every owned card with
- * its number of copies (filterable by faction) on the left, the selected
+ * its number of copies (filterable by faction, rarity and type) on the left, the selected
  * card at full size with each copy's serial, edition, finish and status on
  * the right. Read-only: no card is created, moved or destroyed here.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
+import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
+import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardStrip } from "../cards/CardStrip.js";
 import { rarityOf } from "../cards/cardInfo.js";
@@ -21,9 +23,8 @@ import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "collection.cards";
 const COPIES_ID = "collection.copies";
-const ALL = "all";
-const FILTER = Object.freeze({ top: 60, height: 40, gap: 6 });
-const LIST_TOP = 120;
+const FILTER_TOP = 60;
+const LIST_TOP = FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12;
 const DETAIL = Object.freeze({ width: 380, height: 560 });
 const COPY_ROW = 30;
 /** Where the status line starts, right of the title. */
@@ -37,8 +38,8 @@ export class CollectionScene extends Scene {
   #app;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
-  /** Faction shown, or "all". */
-  #faction = ALL;
+  /** @type {import("../../application/content/CardFilter.js").CardFilter} */
+  #filter = NO_CARD_FILTER;
   /** @type {string | null} */
   #selectedId = null;
   /** Shown once under the title (e.g. after taking the starter deck). @type {string | null} */
@@ -57,7 +58,7 @@ export class CollectionScene extends Scene {
   /** @param {Readonly<Record<string, unknown>>} params `{ notice?: string }` */
   enter(params = {}) {
     this.#notice = typeof params.notice === "string" ? params.notice : null;
-    this.#faction = ALL;
+    this.#filter = NO_CARD_FILTER;
     this.#selectedId = null;
     this.#scrollY = 0;
     this.#unsubscribe = this.#requireAccount().subscribe(() => this.#rebuild());
@@ -86,7 +87,7 @@ export class CollectionScene extends Scene {
     const catalog = this.#app.content.catalog;
     return this.#requireAccount()
       .collection.state.cards.map((entry) => Object.freeze({ definitionId: entry.definitionId, card: catalog.get(entry.definitionId), copies: entry.copies }))
-      .filter((owned) => this.#faction === ALL || owned.card?.faction === this.#faction)
+      .filter((owned) => matchesCardFilter(this.#filter, owned.card, rarityOf(this.#app, owned.definitionId)))
       .sort((left, right) => (left.card?.cost ?? 0) - (right.card?.cost ?? 0) || (left.card?.name ?? left.definitionId).localeCompare(right.card?.name ?? right.definitionId));
   }
 
@@ -150,29 +151,9 @@ export class CollectionScene extends Scene {
    * @returns {Button | null} the first filter button
    */
   #buildFilters(panel) {
-    const options = [ALL, ...this.#app.content.deckRules.factions];
     const inner = COLUMNS.left.width - 2 * INSET;
-    const width = (inner - (options.length - 1) * FILTER.gap) / options.length;
     panel.add(new Label({ x: INSET, y: 14, width: inner, height: 36, text: "Your cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
-    /** @type {Button | null} */
-    let first = null;
-    options.forEach((faction, index) => {
-      const button = panel.add(
-        new Button({
-          id: `collection.filter.${faction}`,
-          x: INSET + index * (width + FILTER.gap),
-          y: FILTER.top,
-          width,
-          height: FILTER.height,
-          text: faction,
-          variant: faction === this.#faction ? "primary" : "secondary",
-          textSize: "small",
-          onActivate: () => this.#filter(faction),
-        }),
-      );
-      first ??= button;
-    });
-    return first;
+    return buildCardFilterBar(panel, { id: "collection.filter", x: INSET, y: FILTER_TOP, width: inner, filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (filter) => this.#changeFilter(filter) });
   }
 
   /**
@@ -207,7 +188,7 @@ export class CollectionScene extends Scene {
     if (this.#requireAccount().state.status !== AccountStatus.READY) {
       return "";
     }
-    return this.#faction === ALL ? "No cards yet." : `No ${this.#faction} cards yet.`;
+    return isFiltering(this.#filter) ? `No ${describeCardFilter(this.#filter)} cards.` : "No cards yet.";
   }
 
   /** @param {ScrollList} list */
@@ -245,9 +226,9 @@ export class CollectionScene extends Scene {
     list.contentHeight = copies.length * COPY_ROW;
   }
 
-  /** @param {string} faction */
-  #filter(faction) {
-    this.#faction = faction;
+  /** @param {import("../../application/content/CardFilter.js").CardFilter} filter */
+  #changeFilter(filter) {
+    this.#filter = filter;
     const list = this.root.findById(LIST_ID);
     if (list instanceof ScrollList) {
       list.scrollTo(0);

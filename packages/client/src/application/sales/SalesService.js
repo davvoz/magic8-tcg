@@ -32,7 +32,9 @@ const TERMINAL = Object.freeze([SalePurchaseStatus.EXPIRED, SalePurchaseStatus.C
  * @typedef {import("../ports/SalesApi.contract.js").Purchase} Purchase
  * @typedef {Readonly<{ code: string, message: string }>} SalesFailure
  * @typedef {Readonly<{ stage: string, purchase: Purchase | null, error: SalesFailure | null }>} Buying
- * @typedef {Readonly<{ card: string | null, sort: "newest" | "cheapest", offset: number }>} BoardFilter
+ * @typedef {Readonly<{ card: string | null, cards: readonly string[] | null, sort: "newest" | "cheapest", offset: number }>} BoardFilter
+ *   `card`: one card only ("other offers for this card"); else `cards`: the cards
+ *   a filter by faction, rarity or type lets through (null: every card)
  * @typedef {Readonly<{
  *   loading: boolean, listings: readonly Listing[], total: number, pageSize: number, filter: BoardFilter,
  *   mine: Readonly<{ listings: readonly Listing[], purchases: readonly Purchase[] }>,
@@ -46,7 +48,7 @@ const INITIAL = Object.freeze({
   listings: Object.freeze([]),
   total: 0,
   pageSize: 50,
-  filter: Object.freeze({ card: null, sort: /** @type {const} */ ("newest"), offset: 0 }),
+  filter: Object.freeze({ card: null, cards: null, sort: /** @type {const} */ ("newest"), offset: 0 }),
   mine: Object.freeze({ listings: Object.freeze([]), purchases: Object.freeze([]) }),
   busy: false,
   error: null,
@@ -132,8 +134,13 @@ export class SalesService {
   async loadBoard(filter = {}) {
     const load = (this.#boardLoads += 1);
     const next = Object.freeze({ ...this.#state.filter, ...filter });
+    const cards = next.card === null ? next.cards : [next.card];
+    if (cards !== null && cards.length === 0) {
+      this.#set({ loading: false, filter: next, listings: Object.freeze([]), total: 0, error: null });
+      return;
+    }
     this.#set({ loading: true, filter: next });
-    const page = await this.#api.board({ card: next.card ?? undefined, sort: next.sort, offset: next.offset });
+    const page = await this.#api.board({ card: cards === null ? undefined : cards.join(","), sort: next.sort, offset: next.offset });
     if (load !== this.#boardLoads) {
       return;
     }

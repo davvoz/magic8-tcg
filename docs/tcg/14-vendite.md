@@ -78,7 +78,7 @@ Nessuna commissione: il venditore riceve tutto il prezzo. Una commissione richie
 
 | Richiesta | Cosa |
 |---|---|
-| `GET /api/listings?card=&seller=&sort=newest\|cheapest&offset=` | **Pubblica.** `{ listings, total, offset, pageSize }` |
+| `GET /api/listings?card=&seller=&sort=newest\|cheapest&offset=` | **Pubblica.** `{ listings, total, offset, pageSize }`; `card` è un id o più id separati da virgola (fino a 200: il filtro per fazione, rarità e tipo del client) |
 | `GET /api/listings/mine` | `{ listings, purchases }` del giocatore |
 | `POST /api/listings` + `Idempotency-Key` | `{ "copy", "price": "1.5", "asset": "STEEM" }` |
 | `POST /api/listings/:id/cancel` | Il venditore ritira l'annuncio (se nessuno sta pagando) |
