@@ -32,7 +32,7 @@ const ELLIPSIS = "…";
  * @typedef {Readonly<{
  *   id: string,
  *   nameRatio: number, textRatio: number, typeRatio: number, statRatio: number, costRatio: number,
- *   lineGapRatio: number, artRatio: number, keywordsLine: boolean,
+ *   lineGapRatio: number, keywordsLine: boolean,
  * }>} CardFaceProfile ratios are fractions of the frame height (cost: of the width)
  *
  * @typedef {Readonly<{
@@ -46,12 +46,14 @@ const ELLIPSIS = "…";
 
 /** @type {Readonly<Record<"COMPACT" | "FULL", CardFaceProfile>>} */
 export const CardFaceProfile = Object.freeze({
-  COMPACT: Object.freeze({ id: "compact", nameRatio: 0.07, textRatio: 0.06, typeRatio: 0.048, statRatio: 0.07, costRatio: 0.095, lineGapRatio: 0.009, artRatio: 0.25, keywordsLine: false }),
-  FULL: Object.freeze({ id: "full", nameRatio: 0.058, textRatio: 0.036, typeRatio: 0.03, statRatio: 0.055, costRatio: 0.075, lineGapRatio: 0.009, artRatio: 0.42, keywordsLine: true }),
+  COMPACT: Object.freeze({ id: "compact", nameRatio: 0.066, textRatio: 0.05, typeRatio: 0.046, statRatio: 0.07, costRatio: 0.095, lineGapRatio: 0.005, keywordsLine: false }),
+  FULL: Object.freeze({ id: "full", nameRatio: 0.058, textRatio: 0.036, typeRatio: 0.03, statRatio: 0.055, costRatio: 0.075, lineGapRatio: 0.009, keywordsLine: true }),
 });
 
 /** Vertical proportions shared by both profiles. */
-const BAND = Object.freeze({ headerTop: 0.035, headerHeight: 0.1, artTop: 0.155, gap: 0.012, typeHeight: 0.06, creatureTextBottom: 0.85, spellTextBottom: 0.95, statsY: 0.925 });
+const BAND = Object.freeze({ headerTop: 0.03, headerHeight: 0.09, artTop: 0.13, gap: 0.008, typeHeight: 0.055, creatureTextBottom: 0.85, spellTextBottom: 0.95, statsY: 0.925 });
+/** Width over height of the painted illustrations (1344×768): the art window keeps it, so nothing is cropped. */
+const ART_ASPECT = 7 / 4;
 const SIDE_INSET = 0.06;
 const STAT_X = Object.freeze({ attack: 0.17, health: 0.83 });
 const STATUS_TEXT = Object.freeze({ summoningSick: "Summoning sick", exhausted: "Exhausted" });
@@ -68,7 +70,7 @@ export function cardFaceLayout(frame, profile, type) {
   const { x, y, width, height } = frame;
   const costRadius = width * profile.costRatio;
   const artTop = y + height * BAND.artTop;
-  const art = { x: x + width * SIDE_INSET, y: artTop, width: width * (1 - 2 * SIDE_INSET), height: height * profile.artRatio };
+  const art = { x: x + width * SIDE_INSET, y: artTop, width: width * (1 - 2 * SIDE_INSET), height: (width * (1 - 2 * SIDE_INSET)) / ART_ASPECT };
   const typeLine = { x: art.x, y: art.y + art.height + height * BAND.gap, width: art.width, height: height * BAND.typeHeight };
   const textTop = typeLine.y + typeLine.height + height * BAND.gap;
   const textBottom = y + height * (type === CardType.CREATURE ? BAND.creatureTextBottom : BAND.spellTextBottom);

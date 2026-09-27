@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 
 import { hashString, unitSequence } from "@magic8/engine/shared/hash.js";
 import { CardNode } from "../../src/rendering/board/CardNode.js";
+import { CARD_SIZE } from "../../src/rendering/board/BoardLayout.js";
 import { CastReveal } from "../../src/rendering/board/CastReveal.js";
 import { EffectsNode } from "../../src/rendering/board/EffectsNode.js";
 import { PlayerNode } from "../../src/rendering/board/PlayerNode.js";
@@ -280,7 +281,7 @@ describe("cast reveal", () => {
 describe("CardNode lift", () => {
   it("draws a tappable card larger around its centre while hovered or focused, never while leaving", () => {
     const card = { ...content.catalog.all().find((definition) => definition.isCreature), instanceId: "c1", damage: 0, summoningSick: false, exhausted: false };
-    const slot = { x: 100, y: 100, width: 130, height: 182 };
+    const slot = { x: 100, y: 100, ...CARD_SIZE.battlefield };
     const visual = new CardVisual("c1", { ...slot, alpha: 1 });
     const node = new CardNode({ card, visual, slot, highlight: "playable", enabled: true, onTap: () => undefined });
     const scaleOf = (context) => context.calls.find((call) => call.method === "scale").args[0];

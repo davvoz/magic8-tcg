@@ -1,5 +1,5 @@
 /**
- * Board cards: the shared card face (CardFace) drawn in a base 130×182
+ * Board cards: the shared card face (CardFace) drawn in a base 150×210
  * coordinate system and scaled uniformly to the requested rectangle, so
  * hand cards, battlefield cards and shrinking "dying" cards share one code
  * path, plus the glowing ring that shows interaction state. Also the card

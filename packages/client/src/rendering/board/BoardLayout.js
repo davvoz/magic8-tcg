@@ -7,8 +7,8 @@
 import { rect } from "@magic8/engine/shared/geometry.js";
 
 export const CARD_SIZE = Object.freeze({
-  battlefield: Object.freeze({ width: 130, height: 182 }),
-  hand: Object.freeze({ width: 160, height: 224 }),
+  battlefield: Object.freeze({ width: 150, height: 210 }),
+  hand: Object.freeze({ width: 170, height: 238 }),
   back: Object.freeze({ width: 48, height: 68 }),
 });
 
