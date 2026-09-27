@@ -1,19 +1,19 @@
 # 12 — Mosse firmate (protocollo di gioco v2)
 
-**Stato:** M7.4, 2026-09-25.
-- **Formato e verifica:** `@magic8/protocol` (`sessions.js`, schema v2).
-- **Verifica P-256:** `@magic8/steem` (`verifySessionSignature`) per browser e verificatori; il server usa quella nativa di Node, con lo stesso risultato.
+**Stato:** M7.4, 2026-09-25; dal 2026-09-27 le partite non si pubblicano più sulla catena (03) e la verifica pubblica delle firme è stata tolta. Il server continua a pretendere e registrare le firme.
+- **Formato:** `@magic8/protocol` (`sessions.js`, schema v2).
+- **Verifica P-256:** `@magic8/steem` (`verifySessionSignature`).
 - **Server:** modulo gameplay.
 - **Client:** `WebCryptoSessionKeys`, `OnlineService`.
 - **Configurazione:** attivo per le partite nuove; `M8_SIGNED_MOVES=false` torna a v1.
 
 ## Cosa cambia
 
-- **In v1** il giocatore doveva fidarsi del server per una cosa: che le mosse pubblicate a suo nome fossero davvero sue.
+- **In v1** il giocatore doveva fidarsi del server per una cosa: che le mosse registrate a suo nome fossero davvero sue.
   - Gli ack firmati (11) provano cosa il server ha **accettato**, non chi l'ha **deciso**.
 - **In v2** ogni mossa di un giocatore porta la firma di una chiave che solo il suo browser possiede, autorizzata dal suo account STEEM.
   - Il server può ancora rifiutare una mossa, o fare le mosse forzate previste dal protocollo (tempo scaduto, abbandono), e le segna come sue (`FORCED_MOVE`).
-  - Non può pubblicare una mossa a nome del giocatore che il giocatore non ha firmato: il verificatore la rifiuta (`BAD_MOVE_SIGNATURE` o `UNSIGNED_MOVE`), e la partita è `INVALID` anche se hash e replay tornano.
+  - Non può accettare una mossa a nome del giocatore che il giocatore non ha firmato: la firma è registrata con la mossa, nel DB.
 
 ## Come funziona
 
@@ -44,28 +44,16 @@
 
 ## Formato (differenze da v1)
 
-- **Versioni:** `v` del record vale 2 per tutta la partita (il verificatore rifiuta record di versioni diverse nella stessa partita). L'envelope resta `v: 1` e può portare record di partite v1 e v2.
+- **Versioni:** il protocollo di gioco vale 2 per tutta la partita (`games.protocol_version`) ed entra nell'hash di ogni evento.
 - **`SESSION`** (nuovo, attore = posto): `{ "key": "04…" (punto P-256 non compresso, 130 hex), "auth": "<firma Keychain, 130 hex>" }`. Ammesso in qualsiasi momento prima della fine.
 - **`MOVE`** (v2): `{ "cid": "<uuid>", "cmd": <comando>, "ev": <int>, "sig": "<r‖s, 128 hex>" }`.
 - `PLAYER_JOINED`, `FORCED_MOVE` e gli altri eventi non cambiano.
-
-## Verifica
-
-`verifyGame` e `verifyGameOnChain` controllano per le partite v2:
-
-| Controllo | Esito |
-|---|---|
-| Ogni `MOVE` è firmata dalla chiave che il posto aveva in quel momento | `signatures.status`: `VALID`, `UNSIGNED_MOVE`, `BAD_MOVE_SIGNATURE` (gli ultimi due rendono la partita `INVALID`) |
-| Chi ha autorizzato ogni chiave | `sessions[].status`: `AUTHORIZED` (una chiave posting dell'account, oggi), `KEY_NOT_CURRENT` (una chiave che l'account oggi non usa: cambiata dopo la partita, oppure mai sua), `FORGED` (non è una firma: partita `INVALID`), `UNCHECKED` (il lettore della catena non sa leggere gli account) |
-
-- `KEY_NOT_CURRENT` non basta per dire che la partita è falsa: un giocatore può aver cambiato la chiave posting dopo. Per deciderlo va letta la storia delle autorità dell'account (`account_update`). **Da fare.**
-- `/verify.html` mostra "Signed moves" e "Session keys"; `tools/verify-game.js` stampa una riga per le mosse e una per sessione.
 
 ## Costi
 
 - **Keychain:** una richiesta in più per partita, all'inizio, e una per ogni ricarica della pagina. Keychain permette di non chiedere di nuovo per il sito.
 - **Server:** una verifica P-256 per comando (0,09 ms con Node) più la firma dell'ack (0,8 ms). Nel test di carico si passa da circa 170 a circa 130 comandi al secondo per processo (08).
-- **Catena:** una `MOVE` v2 pesa circa 200 byte in più (id, versione e firma), un `SESSION` circa 300: circa un terzo in più di byte per partita.
+- **Database:** una `MOVE` v2 pesa circa 200 byte in più (id, versione e firma), un `SESSION` circa 300: circa un terzo in più di byte per partita.
 - **Browser:** WebCrypto esiste solo in un contesto sicuro, cioè https oppure `localhost`. Chi apre il gioco in http da un altro indirizzo della rete locale non può firmare: in sviluppo usare `localhost` o `M8_SIGNED_MOVES=false`.
 
 ## Scelte diverse dal progetto iniziale (03 §18)

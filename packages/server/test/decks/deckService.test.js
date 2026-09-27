@@ -8,7 +8,7 @@ import { AppError } from "../../src/kernel/AppError.js";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { buildTestApp, deterministicRandom } from "../helpers.js";
 
-const PRINTING = Object.freeze({ edition: "core-1", finish: "standard" });
+const PRINTING = Object.freeze({ edition: "core-1" });
 
 async function userIn(setup, account) {
   return setup.users.findOrCreate({ network: "steem", account }, setup.clock.now(), uuidV4(deterministicRandom(`user:${account}`)));

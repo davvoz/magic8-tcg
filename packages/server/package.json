@@ -17,7 +17,7 @@
     "ws": "8.21.3"
   },
   "scripts": {
-    "start": "node src/main.js",
+    "start": "node --env-file-if-exists=../../.env src/main.js",
     "test": "node --test \"test/**/*.test.js\"",
     "test:coverage": "node --test \"test/**/*.test.js\" --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info"
   }

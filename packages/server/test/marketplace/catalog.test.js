@@ -72,7 +72,7 @@ describe("market catalog", () => {
     assert.equal(products.get("core_booster_box").cardsPerUnit, 60);
     assert.equal(products.get("deck_precon_arcane").cardsPerUnit, 30);
     assert.equal(products.get("core_booster").prices.get("STEEM"), 1000);
-    assert.equal(products.get("single_pyre_drake_foil").contents[0].finish, "foil");
+    assert.deepEqual(products.get("single_pyre_drake").contents, [{ type: "card", ref: "pyre_drake", count: 1 }]);
   });
 
   it("generates singles by rarity, fixed-price packs and decks at the sum of their cards", () => {
@@ -80,9 +80,7 @@ describe("market catalog", () => {
     const onSale = [...products.values()].filter((product) => product.active);
     assert.equal(priceList.asset, "STEEM");
     for (const [cardId, rarity] of rarities.of) {
-      const { standard, foil } = priceList.singles.get(rarity);
-      assert.equal(products.get(`single_${cardId}`).prices.get("STEEM"), standard, cardId);
-      assert.equal(products.get(`single_${cardId}_foil`).prices.get("STEEM"), foil, cardId);
+      assert.equal(products.get(`single_${cardId}`).prices.get("STEEM"), priceList.singles.get(rarity), cardId);
     }
     assert.equal(products.get("single_pyre_drake").prices.get("STEEM"), 2500, "a rare");
     assert.deepEqual(
@@ -90,20 +88,18 @@ describe("market catalog", () => {
       [["core_booster", 5, 1000], ["core_mini_booster", 3, 500]],
     );
     for (const deck of decks.values()) {
-      const sum = deck.entries.reduce((total, entry) => total + entry.count * priceList.singles.get(rarities.of.get(entry.cardId)).standard, 0);
+      const sum = deck.entries.reduce((total, entry) => total + entry.count * priceList.singles.get(rarities.of.get(entry.cardId)), 0);
       assert.equal(products.get(`deck_${deck.id}`).prices.get("STEEM"), sum, deck.id);
     }
-    assert.equal(onSale.length, 2 + decks.size + 2 * rarities.of.size);
+    assert.equal(onSale.length, 2 + decks.size + rarities.of.size);
     assert.equal(products.get("deck_arcane_conclave").active, false, "retired products stay, so paid orders can be fulfilled");
   });
 
-  it("follows the price list when prices change, and sells no foil for a rarity without a foil price", () => {
+  it("follows the price list when prices change", () => {
     const data = market();
-    pricingOf(data).singles.prices.common = { standard: "0.100" };
+    pricingOf(data).singles.prices.common = "0.100";
     const { products, rarities, decks } = buildMarketCatalog(data, content, assets.value).value;
     assert.equal(products.get("single_ember_imp").prices.get("STEEM"), 100);
-    assert.equal(products.has("single_ember_imp_foil"), false);
-    assert.equal(products.has("single_pyre_drake_foil"), true);
     const commons = decks
       .get("precon_arcane")
       .entries.filter((entry) => rarities.of.get(entry.cardId) === "common")
@@ -114,9 +110,10 @@ describe("market catalog", () => {
   it("refuses a broken price list", () => {
     const broken = {
       "rarity without price": (data) => delete pricingOf(data).singles.prices.epic,
-      "price for an unknown rarity": (data) => (pricingOf(data).singles.prices.mythic = { standard: "9.000" }),
-      "zero price": (data) => (pricingOf(data).singles.prices.common.standard = "0.000"),
-      "too many decimals": (data) => (pricingOf(data).singles.prices.rare.foil = "2.5001"),
+      "price for an unknown rarity": (data) => (pricingOf(data).singles.prices.mythic = "9.000"),
+      "zero price": (data) => (pricingOf(data).singles.prices.common = "0.000"),
+      "too many decimals": (data) => (pricingOf(data).singles.prices.rare = "2.5001"),
+      "price as an object": (data) => (pricingOf(data).singles.prices.rare = { standard: "2.5", foil: "5" }),
       "unaccepted asset": (data) => (pricingOf(data).asset = "SBD"),
       "unknown drop table": (data) => (pricingOf(data).packs[0].dropTable = "nope"),
       "bad pack id": (data) => (pricingOf(data).packs[0].id = "Core Booster"),
@@ -137,10 +134,10 @@ describe("market catalog", () => {
     const box = expandProduct(products.get("core_booster_box"), 2, products);
     assert.equal(box.packs.length, 24);
     assert.deepEqual(box.cards, []);
-    const foil = expandProduct(products.get("single_pyre_drake_foil"), 1, products);
-    assert.deepEqual(foil.cards, [{ definitionId: "pyre_drake", count: 1, finish: "foil" }]);
+    const single = expandProduct(products.get("single_pyre_drake"), 3, products);
+    assert.deepEqual(single.cards, [{ definitionId: "pyre_drake", count: 3 }]);
     const deck = expandProduct(products.get("deck_precon_arcane"), 2, products);
-    assert.deepEqual(deck.decks, [{ deckId: "precon_arcane", finish: "standard" }, { deckId: "precon_arcane", finish: "standard" }]);
+    assert.deepEqual(deck.decks, ["precon_arcane", "precon_arcane"]);
   });
 
   it("refuses a card without rarity and a rarity for an unknown card", () => {
@@ -165,7 +162,7 @@ describe("market catalog", () => {
       "zero price": (data) => (productNamed(data, "core_booster_box").prices[0].amount = "0.000"),
       "float price": (data) => (productNamed(data, "core_booster_box").prices[0].amount = 1),
       "too many decimals": (data) => (productNamed(data, "core_booster_box").prices[0].amount = "1.0001"),
-      "finish on a pack": (data) => (productNamed(data, "core_booster_box").contents[0] = { type: "pack", ref: "core_booster", count: 1, finish: "foil" }),
+      "finish on a card": (data) => (productNamed(data, "deck_arcane_conclave").contents[0] = { type: "card", ref: "pyre_drake", count: 1, finish: "foil" }),
       "unknown field": (data) => (productNamed(data, "core_booster_box").price = "free"),
       "cycle": (data) => productNamed(data, "deck_arcane_conclave").contents.push({ type: "product", ref: "deck_arcane_conclave", count: 1 }),
       "too many cards": (data) => (productNamed(data, "core_booster_box").contents[0].count = 1000),

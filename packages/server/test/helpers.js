@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { resolve as resolvePath } from "node:path";
 
-import { SteemWalletProvider, base58Encode, publicKeyOf, recoverSigner, signMessage } from "@magic8/steem";
+import { SteemWalletProvider, base58Encode, publicKeyOf, signMessage } from "@magic8/steem";
 import { verifySessionSignature } from "../src/kernel/crypto/sessionSignatures.js";
 import { createServerApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
@@ -109,7 +109,7 @@ const signedMovesSetting = (options) => String(options.signedMoves === true);
  * @param {{ policy?: object, env?: Record<string, string>, database?: import("../src/platform/db/Database.js").Database, clock?: ManualClock, chain?: FakeChain, random?: ReturnType<typeof deterministicRandom> }} [options]
  */
 export async function buildTestApp(options = {}) {
-  const { policy = {}, marketplacePolicy = {}, timePolicy = {}, sealingPolicy = {}, publishing = null, chainPolicies = {}, env = {}, database, content } = options;
+  const { policy = {}, marketplacePolicy = {}, timePolicy = {}, publishing = null, chainPolicies = {}, env = {}, database, content } = options;
   const { clock, chain, random, ledger } = testDoubles(options);
   const paymentProviders = new Map([["steem", ledger.paymentProvider()]]);
   const db = database ?? (await freshDatabase());
@@ -130,12 +130,10 @@ export async function buildTestApp(options = {}) {
     marketplacePolicy,
     salesPolicy: options.salesPolicy,
     timePolicy,
-    sealingPolicy,
     publishing,
     chainPolicies,
     ackSigner: options.ackSigner === undefined ? testAckSigner : options.ackSigner,
     verifyMoveSignature: verifySessionSignature,
-    recoverSigner,
   });
   return { app, clock, chain, ledger, users: app.users, sessions: app.sessions, challenges: app.challenges, logger, config, database: db };
 }

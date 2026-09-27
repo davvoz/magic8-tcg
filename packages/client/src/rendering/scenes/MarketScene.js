@@ -64,7 +64,7 @@ const STAGE_TEXT = Object.freeze({
  * @param {number} now
  */
 export function listingSubtitle(listing, now) {
-  const copy = listing.card.finish === "foil" ? `#${listing.card.serial} · foil` : `#${listing.card.serial}`;
+  const copy = `#${listing.card.serial}`;
   switch (listing.status) {
     case "SOLD":
       return listing.buyer === null ? `${copy} · sold` : `${copy} · sold to @${listing.buyer}`;
@@ -236,9 +236,9 @@ export class MarketScene extends Scene {
         const selected = this.#selected?.kind === "listing" && this.#selected.id === listing.id;
         list.add(new CardStrip({ x: 0, y: rowY(index), width: stripWidth, height: ROW.height, card: card ?? unknownCard(listing.card.definitionId), broken: card === undefined, muted: !selected, rarity: rarityOf(this.#app, listing.card.definitionId) }));
         const metaX = stripWidth + ACTION.gap;
-        const copy = listing.card.finish === "foil" ? `#${listing.card.serial} · foil` : `#${listing.card.serial}`;
+        const copy = `#${listing.card.serial}`;
         list.add(new Label({ x: metaX, y: rowY(index) + 4, width: META_WIDTH, height: ROW.height / 2 - 4, text: `@${listing.seller}`, size: "small", colorKey: "text", align: "left", fit: true }));
-        list.add(new Label({ x: metaX, y: rowY(index) + ROW.height / 2, width: META_WIDTH, height: ROW.height / 2 - 4, text: copy, size: "tiny", colorKey: listing.card.finish === "foil" ? "accentLight" : "textMuted", align: "left", fit: true }));
+        list.add(new Label({ x: metaX, y: rowY(index) + ROW.height / 2, width: META_WIDTH, height: ROW.height / 2 - 4, text: copy, size: "tiny", colorKey: "textMuted", align: "left", fit: true }));
         const text = listing.reserved ? "reserved" : `${listing.price.amount} ${listing.price.asset}`;
         list.add(new Button({ id: `market.listing.${listing.id}`, x: metaX + META_WIDTH + ACTION.gap, y: rowY(index), width: PRICE_WIDTH, height: ROW.height, text, textSize: "small", variant: selected ? "primary" : "secondary", onActivate: () => this.#select("listing", listing.id) }));
       });
@@ -345,7 +345,7 @@ export class MarketScene extends Scene {
     const now = this.#now();
     const lines = [
       { text: this.#cardName(listing.card.definitionId), bold: true, colorKey: "accentLight" },
-      { text: `Copy #${listing.card.serial} · ${listing.card.finish} · ${listing.card.edition}` },
+      { text: `Copy #${listing.card.serial} · ${listing.card.edition}` },
       { text: `Sold by @${listing.seller}` },
       { text: `${listing.price.amount} ${listing.price.asset}`, bold: true, colorKey: "accent" },
       { text: listingSubtitle(listing, now), colorKey: "textMuted" },
@@ -375,7 +375,7 @@ export class MarketScene extends Scene {
   #buildPurchase(panel, purchase) {
     const lines = [
       { text: this.#cardName(purchase.card.definitionId), bold: true, colorKey: "accentLight" },
-      { text: `Copy #${purchase.card.serial} · ${purchase.card.finish}` },
+      { text: `Copy #${purchase.card.serial}` },
       { text: `From @${purchase.seller} for ${purchase.price.amount} ${purchase.price.asset}` },
       { text: `Status: ${purchase.status.toLowerCase()}`, bold: true },
       ...(purchase.txId === null ? [] : [{ text: `Payment ${purchase.txId.slice(0, 12)}…`, colorKey: "textMuted" }]),
@@ -414,7 +414,7 @@ export class MarketScene extends Scene {
     /** @type {{ text: string, colorKey?: string, bold?: boolean }[]} */
     const lines = [
       { text: this.#cardName(purchase.card.definitionId), bold: true, colorKey: "accentLight" },
-      { text: `Copy #${purchase.card.serial} · ${purchase.card.finish}` },
+      { text: `Copy #${purchase.card.serial}` },
       { text: `From @${purchase.seller}` },
       { text: `${purchase.price.amount} ${purchase.price.asset}`, bold: true, colorKey: "accent" },
     ];
@@ -464,9 +464,9 @@ export class MarketScene extends Scene {
       const rowWidth = list.rowWidth - ACTION.width - ACTION.gap;
       copies.forEach((copy, index) => {
         const rarity = rarityOf(this.#app, copy.definitionId);
-        const subtitle = [rarityLabel(rarity), `#${copy.serial}`, copy.finish].filter((part) => part.length > 0).join(" · ");
+        const subtitle = [rarityLabel(rarity), `#${copy.serial}`].filter((part) => part.length > 0).join(" · ");
         list.add(new OptionRow({ id: `market.copy.${copy.id}`, x: 0, y: rowY(index), width: rowWidth, height: ROW.height, text: this.#cardName(copy.definitionId), subtitle, selected: copy.id === this.#copy, onActivate: () => this.#pickCopy(copy.id) }));
-        list.add(new Button({ id: `market.copy.info.${copy.id}`, x: rowWidth + ACTION.gap, y: rowY(index), width: ACTION.width, height: ROW.height, text: "Info", textSize: "small", enabled: this.#app.content.catalog.has(copy.definitionId), onActivate: () => this.#showCardInfo(copy.definitionId, [`Copy #${copy.serial} · ${copy.finish}`]) }));
+        list.add(new Button({ id: `market.copy.info.${copy.id}`, x: rowWidth + ACTION.gap, y: rowY(index), width: ACTION.width, height: ROW.height, text: "Info", textSize: "small", enabled: this.#app.content.catalog.has(copy.definitionId), onActivate: () => this.#showCardInfo(copy.definitionId, [`Copy #${copy.serial}`]) }));
       });
       list.contentHeight = rowsHeight(copies.length);
     }

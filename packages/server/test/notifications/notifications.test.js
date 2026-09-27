@@ -13,7 +13,7 @@ import { uuidV4 } from "../../src/kernel/random.js";
 import { NotificationKind } from "../../src/modules/notifications/index.js";
 import { buildTestApp, deterministicRandom } from "../helpers.js";
 
-const PRINTING = Object.freeze({ edition: "core-1", finish: "standard" });
+const PRINTING = Object.freeze({ edition: "core-1" });
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 

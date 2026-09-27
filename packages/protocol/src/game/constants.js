@@ -24,7 +24,6 @@ export const LATEST_GAME_PROTOCOL = GameProtocol.V2;
 
 /** `custom_json` ids (at most 32 characters on STEEM). */
 export const OperationId = Object.freeze({
-  GAME: "m8tcg_game",
   RECEIPT: "m8tcg_receipt",
   MANIFEST: "m8tcg_manifest",
   /** Pack epoch commitments and reveals, published by the broadcaster pool. */
@@ -33,6 +32,8 @@ export const OperationId = Object.freeze({
   TRADE: "m8tcg_trade",
   /** Copies sold between players for a direct payment (docs/tcg/14). */
   SALE: "m8tcg_sale",
+  /** The result of a finished game, committing to its whole history (docs/tcg/03 §9). */
+  RESULT: "m8tcg_result",
 });
 
 export const EventKind = Object.freeze({
@@ -66,8 +67,6 @@ export const FORCED_COMMAND_TYPES = Object.freeze(["END_PHASE", "END_TURN", "CON
 export const LIMITS = Object.freeze({
   /** STEEM_CUSTOM_OP_DATA_MAX_LENGTH */
   MAX_OPERATION_BYTES: 8192,
-  MAX_RECORDS_PER_ENVELOPE: 16,
-  MAX_EVENTS_PER_RECORD: 256,
   MAX_TURN: 10000,
   /** ~115 days in milliseconds: a game never lasts this long. */
   MAX_ELAPSED_MS: 10_000_000_000,

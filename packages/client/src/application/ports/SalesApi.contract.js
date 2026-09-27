@@ -6,7 +6,7 @@
  * wallet straight to the seller's account.
  *
  * @typedef {Readonly<{ asset: string, amount: string }>} Price amount as a decimal string ("1.500")
- * @typedef {Readonly<{ id: string, definitionId: string, edition: string, serial: number, finish: string }>} ListedCard
+ * @typedef {Readonly<{ id: string, definitionId: string, edition: string, serial: number }>} ListedCard
  * @typedef {Readonly<{
  *   id: string, status: "ACTIVE" | "SOLD" | "CANCELLED" | "EXPIRED", seller: string, card: ListedCard, price: Price,
  *   reserved: boolean, buyer: string | null, createdAt: number, expiresAt: number, closedAt: number | null,

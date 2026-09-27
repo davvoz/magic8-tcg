@@ -68,7 +68,7 @@ export class PgMarketplaceRepository {
     const ids = products.map((product) => product.id);
     const prices = products.flatMap((product) => [...product.prices].map(([asset, amount]) => ({ id: product.id, asset, amount })));
     const items = products.flatMap((product) => product.contents.map((content, position) => ({ id: product.id, position, ...content })));
-    // One statement per table, whatever the number of products (the price list makes one per card and finish).
+    // One statement per table, whatever the number of products (the price list makes one per card).
     await this.#db.transaction(async () => {
       await this.#db.query("UPDATE products SET active = false, updated_at = $2 WHERE active AND NOT (id = ANY($1::text[]))", [ids, toTimestamp(at)]);
       await this.#db.query(
@@ -81,13 +81,12 @@ export class PgMarketplaceRepository {
       await this.#db.query("DELETE FROM product_prices WHERE product_id = ANY($1::text[])", [ids]);
       await this.#db.query("INSERT INTO product_prices (product_id, asset, amount) SELECT * FROM unnest($1::text[], $2::text[], $3::bigint[])", [prices.map((price) => price.id), prices.map((price) => price.asset), prices.map((price) => price.amount)]);
       await this.#db.query("DELETE FROM product_items WHERE product_id = ANY($1::text[])", [ids]);
-      await this.#db.query("INSERT INTO product_items (product_id, position, item_type, ref, count, finish) SELECT * FROM unnest($1::text[], $2::integer[], $3::text[], $4::text[], $5::integer[], $6::text[])", [
+      await this.#db.query("INSERT INTO product_items (product_id, position, item_type, ref, count) SELECT * FROM unnest($1::text[], $2::integer[], $3::text[], $4::text[], $5::integer[])", [
         items.map((item) => item.id),
         items.map((item) => item.position),
         items.map((item) => item.type),
         items.map((item) => item.ref),
         items.map((item) => item.count),
-        items.map((item) => item.finish),
       ]);
     });
   }

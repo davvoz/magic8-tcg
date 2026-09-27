@@ -12,17 +12,12 @@
 - **Un giocatore nuovo si muove in fretta; uno con molte partite si muove poco.** Battere chi ha un rating molto più alto vale di più.
 - **Rating provvisorio:** con deviazione sopra 110 il rating è provvisorio: compare in classifica dopo i rating assestati, senza posizione. Diventa "assestato" (e riceve una posizione) dopo alcune partite.
 - **Stagioni:** i rating ripartono da capo a ogni stagione (`seasons` nel file dei dati). Una partita conta nella stagione in cui è finita.
-- **Ricalcolabile:** i risultati delle partite sono pubblicati sulla catena (`GAME_CREATED.mode = "ranked"`, `GAME_FINISHED.win`), quindi chiunque può ricalcolare i rating. Il ricalcolo coincide a meno di arrotondamenti, perché le funzioni matematiche possono differire di un bit fra motori JavaScript diversi.
+- **Ricalcolabile:** ogni partita finita pubblica il suo risultato sulla catena (`m8tcg_result`: account, `m = "ranked"`, vincitore; 03 §9), quindi chiunque può ricalcolare i rating. Il ricalcolo coincide a meno di arrotondamenti, perché le funzioni matematiche possono differire di un bit fra motori JavaScript diversi.
 
 ## Coda classificata
 
 - **Requisiti per entrare:** serve una stagione in corso e un numero minimo di partite casual finite (`eligibility.minFinishedCasualGames`, default 3). Frena gli account nuovi creati solo per gonfiare il rating.
-- **Abbinamento:**
-  - il biglietto in coda porta il rating del giocatore;
-  - il biglietto più vecchio viene abbinato al rating più vicino dentro una finestra di `baseWindow + windowPerSecond × secondi di attesa`, fino a `maxWindow` (default 100 + 10/s, massimo 800);
-  - finché esiste un'alternativa, due giocatori non vengono abbinati se hanno già giocato fra loro il numero massimo di partite contate del giorno;
-  - **la finestra è una preferenza, non un muro:** dopo `relaxAfterSeconds` di attesa (default 20) il biglietto prende l'avversario col rating più vicino fra quelli in coda, per quanto lontano sia, e come ultima risorsa anche uno già affrontato oltre il limite giornaliero — quella partita viene registrata ma non conta (vedi fair play). Con pochi giocatori online si gioca comunque, invece di cercare all'infinito;
-  - rientrare in coda (altro mazzo, altro tentativo) non azzera l'attesa: la finestra continua ad allargarsi dal primo ingresso.
+- **Abbinamento:** nessuna regola, tutti contro tutti. Come in casual, i due biglietti più vecchi in coda si affrontano subito, qualunque sia il loro rating e anche se si sono già incontrati oltre il limite giornaliero (quella partita viene registrata ma non conta, vedi fair play). Nessuna attesa forzata.
 
 ## Fair play (T24)
 

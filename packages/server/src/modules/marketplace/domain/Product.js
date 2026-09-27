@@ -8,7 +8,7 @@
  * product is usually just a new file (docs/tcg/01-architettura.md §7.2).
  *
  * @typedef {"card" | "pack" | "deck" | "product"} ContentType
- * @typedef {Readonly<{ type: ContentType, ref: string, count: number, finish: string | null }>} ProductContent
+ * @typedef {Readonly<{ type: ContentType, ref: string, count: number }>} ProductContent
  * @typedef {Readonly<{ perOrder: number, availableFrom: number | null, availableUntil: number | null }>} ProductLimits
  * @typedef {Readonly<{
  *   id: string, kind: string, name: string, description: string, edition: string,
@@ -16,16 +16,14 @@
  *   limits: ProductLimits, active: boolean, cardsPerUnit: number,
  * }>} Product
  * @typedef {Readonly<{
- *   cards: readonly Readonly<{ definitionId: string, count: number, finish: string }>[],
+ *   cards: readonly Readonly<{ definitionId: string, count: number }>[],
  *   packs: readonly string[],
- *   decks: readonly Readonly<{ deckId: string, finish: string }>[],
- * }>} Expansion what one order line gives: cards to mint, packs to open (drop table ids, one per pack), decks to mint and save
+ *   decks: readonly string[],
+ * }>} Expansion what one order line gives: cards to mint, packs to open (drop table ids, one per pack), decks to mint and save (deck ids, one per deck)
  */
 import { Issues, checkArrayOf, checkBoolean, checkEnum, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 
 export const ContentType = Object.freeze({ CARD: "card", PACK: "pack", DECK: "deck", PRODUCT: "product" });
-export const FINISHES = Object.freeze(["standard", "foil"]);
-export const DEFAULT_FINISH = "standard";
 /** Most cards one order may mint: keeps a single fulfilment transaction bounded. */
 export const MAX_CARDS_PER_ORDER = 1000;
 export const MAX_QUANTITY = 100;
@@ -34,7 +32,7 @@ const PRODUCT_KEYS = Object.freeze(["schemaVersion", "id", "kind", "name", "desc
 /** The printing a product's cards and decks are minted in; packs mint in their drop table's edition. */
 const EDITION_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const PRICE_KEYS = Object.freeze(["asset", "amount"]);
-const CONTENT_KEYS = Object.freeze(["type", "ref", "count", "finish"]);
+const CONTENT_KEYS = Object.freeze(["type", "ref", "count"]);
 const LIMIT_KEYS = Object.freeze(["perOrder", "availableFrom", "availableUntil"]);
 const ID_PATTERN = /^[a-z0-9_]{1,40}$/;
 const KIND_PATTERN = /^[a-z][a-z0-9_]{0,23}$/;
@@ -170,12 +168,8 @@ function parseContent(issues, raw, path, context) {
   const type = checkEnum(issues, content.type, `${path}.type`, Object.values(ContentType));
   const ref = checkString(issues, content.ref, `${path}.ref`, { pattern: ID_PATTERN });
   const count = checkInteger(issues, content.count, `${path}.count`, { min: 1, max: MAX_CARDS_PER_ORDER });
-  const finish = content.finish === undefined ? null : checkEnum(issues, content.finish, `${path}.finish`, FINISHES);
-  if (type === undefined || ref === undefined || count === undefined || finish === undefined) {
+  if (type === undefined || ref === undefined || count === undefined) {
     return undefined;
-  }
-  if (finish !== null && type !== ContentType.CARD && type !== ContentType.DECK) {
-    return issues.add(`${path}.finish`, "only cards and decks have a finish; packs draw theirs");
   }
   const known = {
     [ContentType.CARD]: () => context.catalog.has(ref),
@@ -186,7 +180,7 @@ function parseContent(issues, raw, path, context) {
   if (!known) {
     return issues.add(`${path}.ref`, `unknown ${type} "${ref}"`);
   }
-  return Object.freeze({ type, ref, count, finish });
+  return Object.freeze({ type, ref, count });
 }
 
 /**
@@ -291,25 +285,23 @@ function cardsOfContent(content, trail, { products, context, issues }) {
  * @returns {Expansion}
  */
 export function expandProduct(product, quantity, products) {
-  /** @type {Map<string, { definitionId: string, count: number, finish: string }>} */
+  /** @type {Map<string, { definitionId: string, count: number }>} */
   const cards = new Map();
   /** @type {string[]} */
   const packs = [];
-  /** @type {{ deckId: string, finish: string }[]} */
+  /** @type {string[]} */
   const decks = [];
   const visit = (current, times) => {
     for (const content of current.contents) {
       const count = content.count * times;
       if (content.type === ContentType.CARD) {
-        const finish = content.finish ?? DEFAULT_FINISH;
-        const key = `${content.ref}|${finish}`;
-        const entry = cards.get(key) ?? { definitionId: content.ref, count: 0, finish };
+        const entry = cards.get(content.ref) ?? { definitionId: content.ref, count: 0 };
         entry.count += count;
-        cards.set(key, entry);
+        cards.set(content.ref, entry);
       } else if (content.type === ContentType.PACK) {
         packs.push(...Array.from({ length: count }, () => content.ref));
       } else if (content.type === ContentType.DECK) {
-        decks.push(...Array.from({ length: count }, () => Object.freeze({ deckId: content.ref, finish: content.finish ?? DEFAULT_FINISH })));
+        decks.push(...Array.from({ length: count }, () => content.ref));
       } else {
         visit(/** @type {Product} */ (products.get(content.ref)), count);
       }

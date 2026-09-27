@@ -6,7 +6,7 @@
  *   1. reads the head (and the last irreversible block) first;
  *   2. reads the account's history from a persistent cursor: each of our
  *      operations must be a transaction the database knows, carrying
- *      exactly the records it says (MATCH → INCLUDED). An operation signed by
+ *      exactly the record it says (MATCH → INCLUDED). An operation signed by
  *      our broadcaster that the database does not know means a leaked key or
  *      a bug (UNKNOWN_ON_CHAIN); a record whose bytes differ from ours is a
  *      CONFLICT. Both raise an alert;
@@ -18,7 +18,7 @@
  *      again, byte for byte (MISSING_ON_CHAIN). Too many attempts raise an
  *      alert.
  */
-import { OperationId, decodeGameOperation } from "@magic8/protocol";
+import { OperationId } from "@magic8/protocol";
 import { operationJson } from "./ChainBroadcaster.js";
 
 export const DEFAULT_TRACKER_POLICY = Object.freeze({
@@ -29,7 +29,7 @@ export const DEFAULT_TRACKER_POLICY = Object.freeze({
 });
 
 /** @type {ReadonlySet<string>} */
-const OUR_OPERATIONS = Object.freeze(new Set([OperationId.GAME, OperationId.RECEIPT, OperationId.EPOCH, OperationId.TRADE, OperationId.SALE]));
+const OUR_OPERATIONS = Object.freeze(new Set([OperationId.RECEIPT, OperationId.EPOCH, OperationId.TRADE, OperationId.SALE, OperationId.RESULT]));
 
 export const AlertKind = Object.freeze({
   UNKNOWN_ON_CHAIN: "UNKNOWN_ON_CHAIN",
@@ -120,45 +120,16 @@ export class ChainTracker {
   /** @param {import("@magic8/protocol").ChainOperation} operation */
   async #observe(operation) {
     const where = { txId: operation.txId, blockNum: operation.blockNum, id: operation.id };
-    if (operation.id === OperationId.GAME) {
-      await this.#checkRecords(operation, where);
-    }
     const transaction = await this.#repository.findTransaction(this.#network, operation.txId);
     if (transaction === null) {
       await this.#alert(AlertKind.UNKNOWN_ON_CHAIN, `${operation.txId}:${operation.opIndex}`, where);
       return;
     }
-    const rows = await this.#repository.rowsOf(transaction.id);
-    const kind = rows[0]?.kind ?? "";
-    if (operationJson(kind, rows) !== operation.json) {
+    if (operationJson(await this.#repository.rowsOf(transaction.id)) !== operation.json) {
       await this.#alert(AlertKind.CONFLICT, `${operation.txId}:${operation.opIndex}`, { ...where, reason: "the operation does not carry the records of its transaction" });
       return;
     }
     await this.#repository.markIncluded(transaction.id, operation.blockNum, this.#clock.now());
-  }
-
-  /**
-   * Every game record on chain must be byte-identical to ours.
-   * @param {import("@magic8/protocol").ChainOperation} operation
-   * @param {Readonly<Record<string, unknown>>} where
-   */
-  async #checkRecords(operation, where) {
-    const decoded = decodeGameOperation(operation, () => true);
-    if (!decoded.ok) {
-      await this.#alert(AlertKind.CONFLICT, `${operation.txId}:${operation.opIndex}`, { ...where, reason: decoded.message });
-      return;
-    }
-    for (const { record, json } of decoded.records) {
-      const gameId = /** @type {string} */ (record.g);
-      const seq = /** @type {number} */ (record.s);
-      const ours = await this.#repository.gameRecordPayload(gameId, seq);
-      if (ours === null) {
-        await this.#alert(AlertKind.UNKNOWN_ON_CHAIN, `${gameId}:${seq}`, { ...where, gameId, recordSeq: seq });
-      } else if (ours !== json) {
-        await this.#repository.markConflict(gameId, seq);
-        await this.#alert(AlertKind.CONFLICT, `${gameId}:${seq}`, { ...where, gameId, recordSeq: seq });
-      }
-    }
   }
 
   /**
@@ -196,7 +167,7 @@ export class ChainTracker {
       const released = await this.#unitOfWork(() => this.#repository.markExpired(transaction.id, this.#clock.now()));
       this.#logger.warn("a transaction expired without being included; its records will be sent again", { signer, txId: transaction.txId, records: released.length });
       for (const row of released.filter((candidate) => candidate.attempts >= this.#policy.maxAttempts)) {
-        await this.#alert(AlertKind.REPEATED_REBROADCAST, String(row.id), { signer, row: row.id, attempts: row.attempts, gameId: row.gameId, recordSeq: row.recordSeq, orderId: row.orderId });
+        await this.#alert(AlertKind.REPEATED_REBROADCAST, String(row.id), { signer, row: row.id, attempts: row.attempts, kind: row.kind, orderId: row.orderId, gameId: row.gameId });
       }
     }
   }

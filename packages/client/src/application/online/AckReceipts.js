@@ -1,11 +1,10 @@
 /**
  * The signed acks a player keeps (docs/tcg/11-ack-firmati.md): the server's
- * signature on every move it accepted, which the verifier page later holds
- * against the published game. Each ack is checked as it arrives: one that
+ * signature on every move it accepted: proof of what the server accepted,
+ * should a game ever be disputed. Each ack is checked as it arrives: one that
  * does not verify proves nothing, so the player is told at once.
  *
- * Stored per game in the browser (the most recent 20 games), under keys the
- * verifier page reads too.
+ * Stored per game in the browser (the most recent 20 games).
  */
 export const RECEIPTS_INDEX_KEY = "m8.acks.index";
 /** @param {string} gameId */

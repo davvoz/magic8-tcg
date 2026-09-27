@@ -22,7 +22,6 @@ import { ulid } from "../../../kernel/ulid.js";
 import { DEFAULT_TIME_POLICY } from "../domain/TurnClock.js";
 import { GameActor, GameError, GameStatus } from "./GameActor.js";
 import { GAME_REPOSITORY_METHODS } from "./ports.js";
-import { RecordSealer } from "./RecordSealer.js";
 
 const SECRET_BYTES = 32;
 
@@ -44,7 +43,7 @@ export class GameService {
   #logger;
   #timePolicy;
   #network;
-  #sealer;
+  #results;
   #ackSigner;
   #signatures;
   #gameProtocol;
@@ -71,15 +70,14 @@ export class GameService {
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
    *   logger: import("../../../kernel/logger.js").Logger,
    *   network: string,
-   *   outbox: import("./ports.js").RecordOutbox,
+   *   results?: import("./ports.js").ResultOutbox | null,
    *   timePolicy?: Partial<import("../domain/TurnClock.js").TimePolicy>,
-   *   sealingPolicy?: Partial<typeof import("./RecordSealer.js").DEFAULT_SEALING_POLICY>,
    *   ackSigner?: import("./ports.js").AckSigner | null,
    *   signatures?: import("./ports.js").MoveSignatures | null,
    *   gameProtocol?: number,
    * }} deps `gameProtocol`: the version new games are created with (2: signed moves, which needs `signatures`)
    */
-  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, outbox, timePolicy = {}, sealingPolicy = {}, ackSigner = null, signatures = null, gameProtocol = LATEST_GAME_PROTOCOL }) {
+  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, results = null, timePolicy = {}, ackSigner = null, signatures = null, gameProtocol = LATEST_GAME_PROTOCOL }) {
     assertImplements(repository, GAME_REPOSITORY_METHODS, "GameRepository");
     this.#repository = repository;
     this.#currentContent = currentContent;
@@ -93,12 +91,11 @@ export class GameService {
     this.#audit = audit;
     this.#logger = logger;
     this.#network = network;
+    this.#results = results;
     this.#ackSigner = ackSigner;
     this.#signatures = signatures;
     this.#gameProtocol = gameProtocol;
-    this.#timePolicy = Object.freeze({ ...DEFAULT_TIME_POLICY, ...timePolicy });
-    this.#sealer = new RecordSealer({ store: /** @type {any} */ (repository), outbox, clock, unitOfWork, logger, policy: sealingPolicy });
-  }
+    this.#timePolicy = Object.freeze({ ...DEFAULT_TIME_POLICY, ...timePolicy });  }
 
   /**
    * Called after a game ends and is committed (ranking, statistics). A listener that fails is logged; the game is over anyway.
@@ -122,11 +119,6 @@ export class GameService {
    */
   countFinished(userId, mode) {
     return this.#repository.countFinished(userId, mode);
-  }
-
-  /** Seals the records of games whose pending events waited too long (periodic job). */
-  sealStale() {
-    return this.#sealer.sealStale();
   }
 
   get timePolicy() {
@@ -447,9 +439,9 @@ export class GameService {
         this.#logger.error("game actor failed to persist; it will be rebuilt from the database", { game: gameId });
         this.#actors.delete(gameId);
       },
-      sealer: this.#sealer,
       signAck: (fields) => this.#signAck(fields),
       signatures: this.#signatures,
+      results: this.#results,
       onFinished: (summary) => {
         for (const listener of this.#finishedListeners) {
           listener(summary).catch((error) => this.#logger.error("a finished-game listener failed", { game: summary.gameId, error: error instanceof Error ? error.message : String(error) }));

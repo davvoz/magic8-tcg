@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { addAmounts, cartSummary, deckBreakdown, mainOfferOf, multiplyAmount, shelvesOf } from "../../src/application/shop/shopCatalog.js";
+import { addAmounts, cartSummary, deckBreakdown, multiplyAmount, shelvesOf } from "../../src/application/shop/shopCatalog.js";
 import { LISTING } from "./fakeMarketApi.js";
 
 describe("shop shelves", () => {
@@ -16,18 +16,10 @@ describe("shop shelves", () => {
     assert.deepEqual(shelves.offers.map((offer) => offer.id), ["core_booster_box"]);
     const drake = shelves.singles.find((offer) => offer.cardId === "pyre_drake");
     assert.equal(drake.rarity, "rare");
-    assert.equal(drake.standard.id, "single_pyre_drake");
-    assert.equal(drake.foil.id, "single_pyre_drake_foil");
+    assert.equal(drake.product.id, "single_pyre_drake");
     assert.equal(new Set(shelves.singles.map((offer) => offer.cardId)).size, shelves.singles.length, "one entry per card");
     const ranks = shelves.singles.map((offer) => LISTING.rarities.indexOf(offer.rarity));
     assert.deepEqual(ranks, [...ranks].sort((left, right) => right - left), "rarest first");
-  });
-
-  it("offers the foil when the standard is not sold", () => {
-    const foilOnly = { ...LISTING, products: LISTING.products.filter((product) => product.id !== "single_pyre_drake") };
-    const offer = shelvesOf(foilOnly).singles.find((candidate) => candidate.cardId === "pyre_drake");
-    assert.equal(offer.standard, null);
-    assert.equal(mainOfferOf(offer).id, "single_pyre_drake_foil");
   });
 
   it("prices a deck card by card, and gives no total when a card is not sold alone", () => {

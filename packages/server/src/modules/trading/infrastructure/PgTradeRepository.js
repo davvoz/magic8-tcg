@@ -122,7 +122,7 @@ export class PgTradeRepository {
       [userId, limit],
     );
     const items = await this.#db.rows(
-      `SELECT i.trade_id, i.side, ci.id, ci.definition_id, ci.serial, ci.finish
+      `SELECT i.trade_id, i.side, ci.id, ci.definition_id, ci.serial
          FROM trade_items i JOIN card_instances ci ON ci.id = i.card_instance_id
         WHERE i.trade_id = ANY($1::uuid[])
         ORDER BY ci.definition_id, ci.serial`,
@@ -134,7 +134,7 @@ export class PgTradeRepository {
           trade: toTrade(row),
           proposerAccount: row.proposer_account,
           counterpartyAccount: row.counterparty_account,
-          items: Object.freeze(items.filter((item) => item.trade_id === row.id).map((item) => Object.freeze({ side: item.side, id: item.id, definitionId: item.definition_id, serial: item.serial, finish: item.finish }))),
+          items: Object.freeze(items.filter((item) => item.trade_id === row.id).map((item) => Object.freeze({ side: item.side, id: item.id, definitionId: item.definition_id, serial: item.serial }))),
         }),
       ),
     );

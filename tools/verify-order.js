@@ -22,7 +22,10 @@ import { parseArgs } from "node:util";
 
 import { PackVerdict, verifyOrderOnChain } from "@magic8/protocol";
 import { SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient } from "@magic8/steem";
-import { DEFAULT_NODES, DEFAULT_ROOT } from "./verify-game.js";
+
+/** The root account whose manifests authorise the broadcasters, and the STEEM nodes read by default. */
+export const DEFAULT_ROOT = "verdu.green";
+export const DEFAULT_NODES = Object.freeze(["https://api.moecki.online", "https://api.justyy.com", "https://api.steemit.com"]);
 
 const USAGE = "usage: node tools/verify-order.js <orderId> --server origin [--root account] [--payment-block n] [--nodes urls]";
 const ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

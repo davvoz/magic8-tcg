@@ -32,7 +32,6 @@ const TABLE = Object.freeze({
     { count: 1, weights: { uncommon: 1 } },
     { count: 1, weights: { rare: 88, epic: 10, legendary: 2 } },
   ],
-  foil: { numerator: 1, denominator: 20 },
   pools: { common: ["c1", "c2", "c3", "c4"], uncommon: ["u1", "u2"], rare: ["r1", "r2"], epic: ["e1"], legendary: ["l1"] },
 });
 const HASH = dropTableHash(TABLE);
@@ -52,7 +51,7 @@ function op(id, json, blockNum, signer = B1) {
 /** The receipt parts of an order of two packs, with the cards the seeds draw (or `cards` if given). */
 function receipt({ cards, maxBytes } = {}) {
   const drawn = [0, 1].flatMap((index) => drawPack(TABLE, packSeed({ secret: SECRET, orderId: ORDER, txId: TX, index })));
-  const minted = cards ?? drawn.map((card, index) => ({ id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, definitionId: card.cardId, serial: index + 1, finish: card.finish }));
+  const minted = cards ?? drawn.map((card, index) => ({ id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, definitionId: card.cardId, serial: index + 1 }));
   return buildReceipts(
     { orderId: ORDER, account: "alice", network: "steem", txId: TX, items: [{ productId: "core_booster", quantity: 2 }], packs: [0, 1].map((index) => ({ epoch: 1, index, table: HASH })), cards: minted },
     maxBytes === undefined ? {} : { maxBytes },
@@ -90,10 +89,10 @@ describe("verifyOrderPacks", () => {
     assert.match(verify([commit(45), ...receiptOps(), reveal()]).problem, /committed on chain only after/, "committed after the payment");
     assert.equal(verify([commit(), ...receiptOps()]).verdict, PackVerdict.NOT_REVEALED);
     assert.match(verify([commit(), ...receiptOps(), reveal("22".repeat(32))]).problem, /does not match its commitment/);
-    assert.match(verify([commit(), ...receiptOps(), reveal()], { tables: new Map([[HASH, { ...TABLE, foil: { numerator: 0, denominator: 20 } }]]) }).problem, /no drop table hashing/);
+    assert.match(verify([commit(), ...receiptOps(), reveal()], { tables: new Map([[HASH, { ...TABLE, edition: "core-2" }]]) }).problem, /no drop table hashing/);
     assert.match(verify([commit(), ...receiptOps(), reveal()], { tables: new Map([[HASH, { nonsense: true }]]) }).problem, /no drop table hashing/);
 
-    const swapped = receipt({ cards: [{ id: "00000000-0000-4000-8000-000000000001", definitionId: "l1", serial: 1, finish: "foil" }] });
+    const swapped = receipt({ cards: [{ id: "00000000-0000-4000-8000-000000000001", definitionId: "l1", serial: 1 }] });
     assert.match(verify([commit(), ...receiptOps(swapped), reveal()]).problem, /pack 0 is not what its seed draws/);
 
     const parts = receipt({ maxBytes: 700 });

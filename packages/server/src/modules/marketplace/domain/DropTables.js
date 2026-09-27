@@ -9,7 +9,7 @@ import { Issues, checkArray, checkInteger, checkObject, checkString } from "@mag
 import { deepFreeze } from "@magic8/engine/shared/deepFreeze.js";
 import { DROP_TABLE_VERSION, dropTableHash, dropTableOdds, validateDropTable } from "@magic8/protocol";
 
-const TABLE_KEYS = Object.freeze(["schemaVersion", "id", "edition", "slots", "foil"]);
+const TABLE_KEYS = Object.freeze(["schemaVersion", "id", "edition", "slots"]);
 
 /**
  * @typedef {Readonly<{ table: import("@magic8/protocol").DropTable, hash: string, size: number, odds: ReturnType<typeof dropTableOdds> }>} ResolvedDropTable
@@ -50,7 +50,7 @@ export function resolveDropTables(rawTables, rarities) {
           .sort(),
       ]),
     );
-    const table = deepFreeze({ v: DROP_TABLE_VERSION, id, edition: file.edition, slots: structuredClone(slots), foil: structuredClone(file.foil), pools });
+    const table = deepFreeze({ v: DROP_TABLE_VERSION, id, edition: file.edition, slots: structuredClone(slots), pools });
     try {
       const valid = validateDropTable(table);
       const size = valid.slots.reduce((total, slot) => total + slot.count, 0);

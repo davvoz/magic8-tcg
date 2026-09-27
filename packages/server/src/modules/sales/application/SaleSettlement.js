@@ -276,9 +276,9 @@ export class SaleSettlement {
       const [copy] = await this.#inventory.transfer({ fromId: locked.sellerId, toId: purchase.buyerId, instanceIds: [locked.cardInstanceId], ref: refOf(locked.id) });
       const paidBy = /** @type {import("../domain/Listing.js").PaidBy} */ (completed.paidBy);
       const price = `${this.#sales.formatPrice(purchase.amount, purchase.asset)} ${purchase.asset}`;
-      const payload = saleRecord({ listingId: locked.id, seller: purchase.receiver, buyer: purchase.payer, card: { id: copy.id, definitionId: copy.definitionId, serial: copy.serial, finish: copy.finish }, price, txId: paidBy.txId });
+      const payload = saleRecord({ listingId: locked.id, seller: purchase.receiver, buyer: purchase.payer, card: { id: copy.id, definitionId: copy.definitionId, serial: copy.serial }, price, txId: paidBy.txId });
       await this.#outbox.enqueueSale({ network: purchase.network, listingId: locked.id, payload });
-      const sold = { listingId: locked.id, card: { definitionId: copy.definitionId, serial: copy.serial, finish: copy.finish }, price: this.#sales.formatPrice(purchase.amount, purchase.asset), asset: purchase.asset };
+      const sold = { listingId: locked.id, card: { definitionId: copy.definitionId, serial: copy.serial }, price: this.#sales.formatPrice(purchase.amount, purchase.asset), asset: purchase.asset };
       await this.#notifications.notify(locked.sellerId, NotificationKind.SALE_SOLD, { ...sold, account: purchase.payer });
       await this.#notifications.notify(purchase.buyerId, NotificationKind.SALE_BOUGHT, { ...sold, account: purchase.receiver });
       await this.#audit.record({ actorKind: "system", action: "sales.completed", targetKind: "listing", targetId: locked.id, details: { purchase: purchase.id, copy: copy.id, from: purchase.receiver, to: purchase.payer, tx: paidBy.txId } });

@@ -1,8 +1,8 @@
 /**
  * The signed-in player's cards, as the server says: every owned card with
  * its number of copies (filterable by faction, rarity and type) on the left, the selected
- * card at full size with each copy's serial, edition, finish and status on
- * the right. Read-only: no card is created, moved or destroyed here.
+ * card at full size with each copy's serial, edition and status on the
+ * right. Read-only: no card is created, moved or destroyed here.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
@@ -221,7 +221,7 @@ export class CollectionScene extends Scene {
     const copies = [...owned.copies].sort((left, right) => left.edition.localeCompare(right.edition) || left.serial - right.serial);
     copies.forEach((copy, index) => {
       const status = copy.status === "active" ? "" : ` · ${copy.status}`;
-      list.add(new Label({ x: 0, y: index * COPY_ROW, width: list.rowWidth, height: COPY_ROW, text: `#${copy.serial} · ${copy.edition} · ${copy.finish}${status}`, size: "small", align: "left", colorKey: copy.status === "active" ? "text" : "disabledText", fit: true }));
+      list.add(new Label({ x: 0, y: index * COPY_ROW, width: list.rowWidth, height: COPY_ROW, text: `#${copy.serial} · ${copy.edition}${status}`, size: "small", align: "left", colorKey: copy.status === "active" ? "text" : "disabledText", fit: true }));
     });
     list.contentHeight = copies.length * COPY_ROW;
   }

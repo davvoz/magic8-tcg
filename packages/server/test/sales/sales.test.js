@@ -14,7 +14,7 @@ import { uuidV4 } from "../../src/kernel/random.js";
 import { buildTestApp, deterministicRandom, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
 
-const PRINTING = Object.freeze({ edition: "core-1", finish: "standard" });
+const PRINTING = Object.freeze({ edition: "core-1" });
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
 /** Lets the in-process NOTIFY reach the board relay. */

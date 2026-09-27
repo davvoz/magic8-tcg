@@ -2,21 +2,18 @@
  * The price list (data/economy/pricing.json): the one file where the shop's
  * prices are set. The standard catalog is generated from it:
  *
- *   singles  every card of the catalog, priced by its rarity; a foil copy
- *            too, for the rarities that have a foil price
+ *   singles  every card of the catalog, priced by its rarity
  *   packs    boosters of cards the buyer does not know in advance, drawn
  *            from a drop table, at a fixed price
  *   decks    every preconstructed deck, priced at the sum of its cards'
- *            standard single prices
+ *            single prices
  *
  * What it generates are ordinary product definitions, validated together
  * with the hand-written ones of data/economy/products/ (special offers and
  * retired products). Their ids are stable, so paid orders stay fulfillable
- * when prices change: single_<card>, single_<card>_foil, deck_<deck> and
- * each pack's own id.
+ * when prices change: single_<card>, deck_<deck> and each pack's own id.
  *
- * @typedef {Readonly<{ standard: number, foil: number | null }>} RarityPrice amounts in the price list asset's smallest unit
- * @typedef {Readonly<{ asset: string, singles: ReadonlyMap<string, RarityPrice> }>} PriceList
+ * @typedef {Readonly<{ asset: string, singles: ReadonlyMap<string, number> }>} PriceList singles: rarity → price in the asset's smallest unit
  * @typedef {{
  *   rarities: import("./Rarities.js").Rarities,
  *   catalog: { get: (id: string) => { name: string } | undefined },
@@ -31,7 +28,6 @@ export const ProductKind = Object.freeze({ SINGLE: "single", PACK: "pack", DECK:
 
 const FILE_KEYS = Object.freeze(["schemaVersion", "asset", "edition", "singles", "packs", "decks"]);
 const SINGLES_KEYS = Object.freeze(["perOrder", "prices"]);
-const RARITY_PRICE_KEYS = Object.freeze(["standard", "foil"]);
 const PACK_KEYS = Object.freeze(["id", "name", "description", "dropTable", "price", "perOrder"]);
 const DECKS_KEYS = Object.freeze(["perOrder"]);
 
@@ -101,21 +97,16 @@ function parseSingles(issues, raw, rarities, amount) {
   }
   const perOrder = checkInteger(issues, singles.perOrder, "pricing.singles.perOrder", { min: 1, max: MAX_QUANTITY });
   const table = checkObject(issues, singles.prices, "pricing.singles.prices", rarities.order) ?? {};
-  /** @type {Map<string, RarityPrice>} */
+  /** @type {Map<string, number>} */
   const prices = new Map();
   for (const rarity of rarities.order) {
     const path = `pricing.singles.prices.${rarity}`;
-    const price = table[rarity] === undefined ? issues.add(path, "missing: every rarity needs a price, so that every card is on sale") : checkObject(issues, table[rarity], path, RARITY_PRICE_KEYS);
-    if (price === undefined) {
-      continue;
-    }
-    const standard = amount(price.standard, `${path}.standard`);
-    const foil = price.foil === undefined ? null : amount(price.foil, `${path}.foil`);
-    if (standard !== undefined && foil !== undefined) {
-      prices.set(rarity, Object.freeze({ standard, foil }));
+    const price = table[rarity] === undefined ? issues.add(path, "missing: every rarity needs a price, so that every card is on sale") : amount(table[rarity], path);
+    if (price !== undefined) {
+      prices.set(rarity, price);
     }
   }
-  return perOrder === undefined ? undefined : Object.freeze({ perOrder, prices: /** @type {ReadonlyMap<string, RarityPrice>} */ (prices) });
+  return perOrder === undefined ? undefined : Object.freeze({ perOrder, prices: /** @type {ReadonlyMap<string, number>} */ (prices) });
 }
 
 /**
@@ -154,34 +145,30 @@ function productDefiner({ asset, edition, format }) {
 }
 
 /**
- * Every card, in standard and (when its rarity has a foil price) foil finish.
+ * Every card, one copy at its rarity's price.
  * @param {PriceListContext} context
- * @param {{ perOrder: number, prices: ReadonlyMap<string, RarityPrice> }} singles
+ * @param {{ perOrder: number, prices: ReadonlyMap<string, number> }} singles
  * @param {ReturnType<typeof productDefiner>} define
  */
 function singleProducts({ rarities, catalog }, singles, define) {
-  return [...rarities.of.keys()].sort().flatMap((cardId) => {
+  return [...rarities.of.keys()].sort().map((cardId) => {
     const rarity = /** @type {string} */ (rarities.of.get(cardId));
-    const price = /** @type {RarityPrice} */ (singles.prices.get(rarity));
+    const units = /** @type {number} */ (singles.prices.get(rarity));
     const name = catalog.get(cardId)?.name ?? cardId;
-    const standard = define({ id: `single_${cardId}`, kind: ProductKind.SINGLE, name, description: `One ${rarity} card.`, units: price.standard, content: { type: "card", ref: cardId, count: 1 }, perOrder: singles.perOrder });
-    if (price.foil === null) {
-      return [standard];
-    }
-    return [standard, define({ id: `single_${cardId}_foil`, kind: ProductKind.SINGLE, name: `${name} (foil)`, description: `One foil ${rarity} card.`, units: price.foil, content: { type: "card", ref: cardId, count: 1, finish: "foil" }, perOrder: singles.perOrder })];
+    return define({ id: `single_${cardId}`, kind: ProductKind.SINGLE, name, description: `One ${rarity} card.`, units, content: { type: "card", ref: cardId, count: 1 }, perOrder: singles.perOrder });
   });
 }
 
 /**
- * Every preconstructed deck, at the sum of its cards' standard prices.
+ * Every preconstructed deck, at the sum of its cards' single prices.
  * @param {PriceListContext} context
- * @param {ReadonlyMap<string, RarityPrice>} prices
+ * @param {ReadonlyMap<string, number>} prices
  * @param {number} perOrder
  * @param {ReturnType<typeof productDefiner>} define
  */
 function deckProducts({ rarities, decks }, prices, perOrder, define) {
   return [...decks.values()].map((deck) => {
-    const units = deck.entries.reduce((total, entry) => total + entry.count * /** @type {RarityPrice} */ (prices.get(/** @type {string} */ (rarities.of.get(entry.cardId)))).standard, 0);
+    const units = deck.entries.reduce((total, entry) => total + entry.count * /** @type {number} */ (prices.get(/** @type {string} */ (rarities.of.get(entry.cardId)))), 0);
     return define({
       id: `deck_${deck.id}`,
       kind: ProductKind.DECK,

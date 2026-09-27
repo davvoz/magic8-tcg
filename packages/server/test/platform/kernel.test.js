@@ -5,7 +5,7 @@ import { ConfigError, DEFAULT_DEVELOPMENT_DATABASE, loadConfig } from "../../src
 import { AUDIT_GENESIS, AuditTrail } from "../../src/kernel/audit/AuditTrail.js";
 import { PgAuditStore } from "../../src/platform/audit/PgAuditStore.js";
 import { DbErrorCode } from "../../src/platform/db/DbError.js";
-import { MemoryLogger, createJsonLogger, redact } from "../../src/kernel/logger.js";
+import { MemoryLogger, createConsoleLogger, createJsonLogger, redact } from "../../src/kernel/logger.js";
 import { isUuid, uuidV4 } from "../../src/kernel/random.js";
 import { ManualClock } from "../../src/kernel/time.js";
 import { parseCookies, serializeCookie } from "../../src/platform/http/cookies.js";
@@ -176,6 +176,20 @@ describe("logger", () => {
     const memory = new MemoryLogger();
     memory.warn("w", { password: "p" });
     assert.deepEqual(memory.entries[0].fields, { password: "[redacted]" });
+  });
+
+  it("writes short readable lines without hashes, transaction ids, keys or random ids", () => {
+    const lines = [];
+    const logger = createConsoleLogger({ write: (line) => lines.push(line), level: "info", now: () => Date.UTC(2026, 8, 27, 17, 38, 29) });
+    logger.debug("hidden");
+    logger.warn("a transaction expired without being included", { signer: "verdu.green", txId: "e4699566236298031d7813fbfa24bf010adfe97a", records: 5 });
+    logger.error("chain alert: CONFLICT", { fingerprint: "129", game: "01m3fmw88z4d8spbf3n8mapfjr", key: "STM5v57B5txEKu3pL6uyyCtvx1NZp32DeiwLjnuimRWkSuhzEuqKH", reason: "does not match", error: new Error("boom"), nested: { a: 1 } });
+    logger.info("content published", { hash: "ab".repeat(32) });
+    assert.deepEqual(lines, [
+      "17:38:29 WARN  a transaction expired without being included  (signer=verdu.green records=5)\n",
+      '17:38:29 ERROR chain alert: CONFLICT  (fingerprint=129 reason="does not match" error=boom)\n',
+      "17:38:29 info  content published\n",
+    ]);
   });
 });
 

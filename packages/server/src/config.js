@@ -35,7 +35,7 @@ export function loadConfig(env) {
     secure,
     trustProxy: parseBoolean(env.M8_TRUST_PROXY ?? "false", "M8_TRUST_PROXY"),
     appName: env.M8_APP_NAME ?? "verdu.green",
-    logLevel: parseEnum(env.M8_LOG_LEVEL ?? "info", ["debug", "info", "warn", "error"], "M8_LOG_LEVEL"),
+    ...parseLogSettings(env),
     steemNodes: Object.freeze(nodes),
     sessionCookieName: secure ? "__Host-m8_session" : "m8_session",
     maxBodyBytes: 16 * 1024,
@@ -48,6 +48,18 @@ export function loadConfig(env) {
     // Game protocol v2 (signed moves, docs/tcg/12) unless explicitly turned off.
     gameProtocol: gameProtocolOf(env.M8_SIGNED_MOVES),
   });
+}
+
+/**
+ * M8_LOG_LEVEL, and M8_LOG_FORMAT: "pretty" (short readable lines, without
+ * hashes and ids) or "json" (every field, one object per line, for log collectors).
+ * @param {Readonly<Record<string, string | undefined>>} env
+ */
+function parseLogSettings(env) {
+  return {
+    logLevel: parseEnum(env.M8_LOG_LEVEL ?? "info", ["debug", "info", "warn", "error"], "M8_LOG_LEVEL"),
+    logFormat: parseEnum(env.M8_LOG_FORMAT ?? "pretty", ["pretty", "json"], "M8_LOG_FORMAT"),
+  };
 }
 
 /** Development only: a fixed, public data key so local epochs survive restarts. Never accepted over https. */

@@ -5,23 +5,22 @@
  * cards were not created out of nothing and, once the pack epoch is
  * revealed, that every pack is what its seed draws.
  *
- *   {"cards":[[id, definitionId, serial, finish]…],"items":[{"p":productId,"q":quantity}…],
+ *   {"cards":[[id, definitionId, serial]…],"items":[{"p":productId,"q":quantity}…],
  *    "o":orderId,"packs":[{"epoch":n,"idx":i,"t":dropTableHash}…],"part":[n,total],
  *    "pay":{"net":network,"tx":txId},"u":account,"v":1}
  *
- * Finishes are abbreviated ("s" standard, "f" foil). A receipt larger than
- * one operation (8 KB) is split into parts: every part repeats the order,
- * payment, items and packs, and carries a slice of the cards.
+ * A receipt larger than one operation (8 KB) is split into parts: every
+ * part repeats the order, payment, items and packs, and carries a slice of
+ * the cards.
  */
 import { canonicalize, utf8Length } from "../canonical/CanonicalJson.js";
 import { LIMITS } from "../game/constants.js";
 import { ProtocolError } from "../game/ProtocolError.js";
 
 export const RECEIPT_VERSION = 1;
-export const FINISH_CODES = Object.freeze({ standard: "s", foil: "f" });
 
 /**
- * @typedef {Readonly<{ id: string, definitionId: string, serial: number, finish: string }>} ReceiptCard
+ * @typedef {Readonly<{ id: string, definitionId: string, serial: number }>} ReceiptCard
  * @typedef {Readonly<{ epoch: number, index: number, table: string }>} ReceiptPack
  * @typedef {Readonly<{
  *   orderId: string, account: string, network: string, txId: string,
@@ -36,13 +35,7 @@ export const FINISH_CODES = Object.freeze({ standard: "s", foil: "f" });
  * @returns {readonly string[]} the canonical JSON of each part, in order
  */
 export function buildReceipts(input, { maxBytes = LIMITS.MAX_OPERATION_BYTES } = {}) {
-  const cards = input.cards.map((card) => {
-    const finish = FINISH_CODES[/** @type {keyof typeof FINISH_CODES} */ (card.finish)];
-    if (finish === undefined) {
-      throw new ProtocolError(`receipt: unknown finish "${card.finish}"`);
-    }
-    return [card.id, card.definitionId, card.serial, finish];
-  });
+  const cards = input.cards.map((card) => [card.id, card.definitionId, card.serial]);
   const base = {
     items: input.items.map((item) => ({ p: item.productId, q: item.quantity })),
     o: input.orderId,

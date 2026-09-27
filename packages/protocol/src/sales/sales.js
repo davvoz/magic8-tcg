@@ -4,17 +4,16 @@
  * directly between them on chain. With receipts and trade records, it lets
  * anyone follow the owner of every copy from its mint.
  *
- *   {"b":buyer,"c":[id, definitionId, serial, finish],"p":"1.500 STEEM",
+ *   {"b":buyer,"c":[id, definitionId, serial],"p":"1.500 STEEM",
  *    "s":seller,"t":listingId,"v":1,"x":paymentTxId}
  *
  * `x` names the transfer from `b` to `s` that paid `p`: a verifier can find
  * it on chain and check that it says exactly that.
  */
-import { Issues, checkArrayOf, checkEnum, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
+import { Issues, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 import { CanonicalJsonError, canonicalize, parseCanonical, utf8Length } from "../canonical/CanonicalJson.js";
 import { ACCOUNT_PATTERN, CARD_ID_PATTERN, LIMITS } from "../game/constants.js";
 import { ProtocolError } from "../game/ProtocolError.js";
-import { FINISH_CODES } from "../receipts/receipts.js";
 
 export const SALE_VERSION = 1;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -23,7 +22,7 @@ const TX_ID = /^[0-9a-f]{40}$/;
 const PRICE = /^(0|[1-9]\d{0,14})\.\d{1,8} [A-Z]{3,10}$/;
 
 /**
- * @typedef {Readonly<{ id: string, definitionId: string, serial: number, finish: string }>} SoldCard
+ * @typedef {Readonly<{ id: string, definitionId: string, serial: number }>} SoldCard
  */
 
 /**
@@ -32,11 +31,7 @@ const PRICE = /^(0|[1-9]\d{0,14})\.\d{1,8} [A-Z]{3,10}$/;
  * @returns {string}
  */
 export function saleRecord({ listingId, seller, buyer, card, price, txId }) {
-  const finish = FINISH_CODES[/** @type {keyof typeof FINISH_CODES} */ (card.finish)];
-  if (finish === undefined) {
-    throw new ProtocolError(`sale: unknown finish "${card.finish}"`);
-  }
-  const json = canonicalize({ b: buyer, c: [card.id, card.definitionId, card.serial, finish], p: price, s: seller, t: listingId, v: SALE_VERSION, x: txId });
+  const json = canonicalize({ b: buyer, c: [card.id, card.definitionId, card.serial], p: price, s: seller, t: listingId, v: SALE_VERSION, x: txId });
   if (parseSaleRecord(json) === null || utf8Length(json) > LIMITS.MAX_OPERATION_BYTES) {
     throw new ProtocolError("sale: a record names a listing id, two different accounts, one copy, a price and the payment's transaction id");
   }
@@ -67,12 +62,11 @@ export function parseSaleRecord(json) {
     checkString(issues, record.p, "sale.p", { pattern: PRICE });
     const buyer = checkString(issues, record.b, "sale.b", { pattern: ACCOUNT_PATTERN });
     const seller = checkString(issues, record.s, "sale.s", { pattern: ACCOUNT_PATTERN });
-    const card = checkArrayOf(issues, record.c, "sale.c", { minLength: 4, maxLength: 4, item: (field) => field });
+    const card = checkArrayOf(issues, record.c, "sale.c", { minLength: 3, maxLength: 3, item: (field) => field });
     if (card !== undefined) {
       checkString(issues, card[0], "sale.c[0]", { pattern: UUID });
       checkString(issues, card[1], "sale.c[1]", { pattern: CARD_ID_PATTERN });
       checkInteger(issues, card[2], "sale.c[2]", { min: 1 });
-      checkEnum(issues, card[3], "sale.c[3]", Object.values(FINISH_CODES));
     }
     if (issues.isEmpty && buyer === seller) {
       issues.add("sale", "a player cannot buy from themselves");

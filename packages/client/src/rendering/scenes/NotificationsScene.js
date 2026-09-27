@@ -181,7 +181,6 @@ export class NotificationsScene extends Scene {
           width: THUMB.width,
           card: definition ?? { ...unknownCard(card.definitionId), text: "" },
           caption: card.caption ?? ((card.count ?? 1) > 1 ? `× ${card.count}` : ""),
-          highlight: card.finish === "foil",
           rarity: rarityOf(this.#app, card.definitionId),
           onActivate: definition === undefined ? null : () => this.#showCard(definition, card),
         }),
@@ -198,7 +197,7 @@ export class NotificationsScene extends Scene {
    * @param {import("../../application/notifications/describeNotification.js").NotificationCard} card
    */
   #showCard(definition, card) {
-    const lines = [card.serial === undefined ? "" : `Serial #${card.serial}`, card.finish === undefined ? "" : `Finish: ${card.finish}`, (card.count ?? 1) > 1 ? `Copies: ${card.count}` : ""].filter((line) => line.length > 0);
+    const lines = [card.serial === undefined ? "" : `Serial #${card.serial}`, (card.count ?? 1) > 1 ? `Copies: ${card.count}` : ""].filter((line) => line.length > 0);
     this.openModal(buildCardInfoModal({ viewport: this.services.viewport, card: definition, rarity: rarityOf(this.#app, definition.id), lines, onClose: () => this.closeModal() }));
   }
 

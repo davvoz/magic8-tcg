@@ -30,7 +30,6 @@ export function registerCollectionRoutes({ router, inventory }) {
         definitionId: instance.definitionId,
         edition: instance.edition,
         serial: instance.serial,
-        finish: instance.finish,
         status: instance.status,
         originKind: instance.originKind,
         mintedAt: instance.mintedAt,

@@ -150,7 +150,7 @@ export class FulfilmentService {
     const origins = [{ kind: ORIGIN_PURCHASE, ref: order.id }, ...packTables.map((_, index) => ({ kind: ORIGIN_PACK, ref: packRef(order.id, index) }))];
     const cards = await this.#inventory.mintedFor(order.userId, origins);
     const payment = order.paymentId === null ? null : await this.#payments.find(order.paymentId);
-    const view = (card) => Object.freeze({ id: card.id, definitionId: card.definitionId, edition: card.edition, serial: card.serial, finish: card.finish });
+    const view = (card) => Object.freeze({ id: card.id, definitionId: card.definitionId, edition: card.edition, serial: card.serial });
     return Object.freeze({
       txId: payment?.txId ?? null,
       cards: Object.freeze(cards.filter((card) => card.originKind === ORIGIN_PURCHASE).map(view)),
@@ -176,12 +176,12 @@ export class FulfilmentService {
       const product = this.#product(item.productId);
       const expansion = expandProduct(product, item.quantity, this.#catalog.products);
       const purchase = { kind: ORIGIN_PURCHASE, ref: order.id };
-      for (const [finish, items] of groupByFinish(expansion.cards)) {
-        cards.push(...(await this.#mint(order.userId, items, { edition: product.edition, finish, origin: purchase })));
+      if (expansion.cards.length > 0) {
+        cards.push(...(await this.#mint(order.userId, expansion.cards, { edition: product.edition, origin: purchase })));
       }
-      for (const { deckId, finish } of expansion.decks) {
+      for (const deckId of expansion.decks) {
         const deck = /** @type {import("@magic8/engine/domain/decks/DeckList.js").DeckList} */ (this.#catalog.decks.get(deckId));
-        cards.push(...(await this.#mint(order.userId, deck.entries.map((entry) => ({ definitionId: entry.cardId, count: entry.count })), { edition: product.edition, finish, origin: purchase })));
+        cards.push(...(await this.#mint(order.userId, deck.entries.map((entry) => ({ definitionId: entry.cardId, count: entry.count })), { edition: product.edition, origin: purchase })));
         decksSaved += (await this.#saveDeck(order.userId, deck)) ? 1 : 0;
       }
       for (const tableId of expansion.packs) {
@@ -202,25 +202,20 @@ export class FulfilmentService {
     }
     const resolved = /** @type {import("../domain/DropTables.js").ResolvedDropTable} */ (this.#catalog.dropTables.get(tableId));
     const drawn = drawPack(resolved.table, packSeed({ secret, orderId: order.id, txId, index }));
-    /** @type {CardInstance[]} */
-    const minted = [];
-    const origin = { kind: ORIGIN_PACK, ref: packRef(order.id, index) };
-    for (const [finish, items] of groupByFinish(drawn.map((card) => ({ definitionId: card.cardId, count: 1, finish: card.finish })))) {
-      minted.push(...(await this.#mint(order.userId, items, { edition: resolved.table.edition, finish, origin })));
-    }
+    const minted = await this.#mint(order.userId, tally(drawn.map((card) => card.cardId)), { edition: resolved.table.edition, origin: { kind: ORIGIN_PACK, ref: packRef(order.id, index) } });
     return Object.freeze({ index, epoch: order.rngEpochId, table: resolved.hash, cards: Object.freeze(minted) });
   }
 
   /**
    * @param {string} ownerId
    * @param {readonly { definitionId: string, count: number }[]} items
-   * @param {{ edition: string, finish: string, origin: { kind: string, ref: string } }} printing
+   * @param {{ edition: string, origin: { kind: string, ref: string } }} printing
    */
-  async #mint(ownerId, items, { edition, finish, origin }) {
+  async #mint(ownerId, items, { edition, origin }) {
     /** @type {CardInstance[]} */
     const minted = [];
     for (const chunk of chunks(items, MINT_CHUNK)) {
-      minted.push(...(await this.#inventory.mint({ ownerId, items: chunk, edition, finish, origin })));
+      minted.push(...(await this.#inventory.mint({ ownerId, items: chunk, edition, origin })));
     }
     return minted;
   }
@@ -267,18 +262,16 @@ export class FulfilmentService {
 const packRef = (orderId, index) => `${orderId}/${index}`;
 
 /**
- * @param {readonly { definitionId: string, count: number, finish: string }[]} items
- * @returns {Map<string, { definitionId: string, count: number }[]>} finish → items (identical cards merged)
+ * @param {readonly string[]} definitionIds
+ * @returns {{ definitionId: string, count: number }[]} identical cards merged
  */
-function groupByFinish(items) {
-  /** @type {Map<string, Map<string, number>>} */
-  const groups = new Map();
-  for (const { definitionId, count, finish } of items) {
-    const group = groups.get(finish) ?? new Map();
-    group.set(definitionId, (group.get(definitionId) ?? 0) + count);
-    groups.set(finish, group);
+function tally(definitionIds) {
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  for (const definitionId of definitionIds) {
+    counts.set(definitionId, (counts.get(definitionId) ?? 0) + 1);
   }
-  return new Map([...groups].map(([finish, counts]) => [finish, [...counts].map(([definitionId, count]) => ({ definitionId, count }))]));
+  return [...counts].map(([definitionId, count]) => ({ definitionId, count }));
 }
 
 /**

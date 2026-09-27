@@ -16,8 +16,13 @@
  * From game protocol v2 (docs/tcg/12-mosse-firmate.md) a player first
  * authorises a session key with their account (SESSION), then signs every
  * command with it; the server checks both and records the signature in the
- * MOVE, so it can never publish a move in a player's name that the player
+ * MOVE, so it can never record a move in a player's name that the player
  * did not sign. Forced moves stay the server's, and say so.
+ *
+ * A finished game's result — winner, reason, and the chain head after its
+ * last event — goes to the outbox in the same unit of work as that event, to
+ * be published once on chain (m8tcg_result, docs/tcg/03 §9): the server
+ * commits publicly to a history it keeps in its database.
  *
  * Spectators (docs/tcg/10-spettatori.md) get the table as the SPECTATOR
  * perspective: no hand, no drawn card. That is less than either player
@@ -26,7 +31,7 @@
  */
 import { SPECTATOR, redactEventsFor } from "@magic8/engine/domain/game/GameSnapshot.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
-import { EntropySource, EventKind, ForcedMoveReason, GameProtocol, LIMITS, MOVE_SIGNATURE_PATTERN, SEATS, SESSION_KEY_PATTERN, bytesToHex, canonicalize, commandOfMove, createGameEngine, moveMessage, sessionAuthorization, utf8Length } from "@magic8/protocol";
+import { EntropySource, EventKind, ForcedMoveReason, GameProtocol, LIMITS, MOVE_SIGNATURE_PATTERN, SEATS, SESSION_KEY_PATTERN, bytesToHex, canonicalize, commandOfMove, createGameEngine, gameResultRecord, moveMessage, sessionAuthorization, utf8Length } from "@magic8/protocol";
 import { CONCEDE_COMMAND, forcedCommandFor } from "../domain/forcedCommand.js";
 import { TurnClock } from "../domain/TurnClock.js";
 
@@ -79,7 +84,7 @@ export class GameActor {
   #onFinished;
   #signAck;
   #signatures;
-  #sealer;
+  #results;
   /** @type {Map<string, string>} seat → the session key it signs with now (v2) */
   #sessions = new Map();
   #turnClock;
@@ -110,12 +115,12 @@ export class GameActor {
    *   timePolicy: import("../domain/TurnClock.js").TimePolicy,
    *   onBroken: (gameId: string) => void,
    *   onFinished: (summary: import("./ports.js").FinishedGame) => void,
-   *   sealer: { afterAppend: (gameId: string, chained: readonly import("@magic8/protocol").ChainedEvent[]) => Promise<void> },
    *   signAck?: AckSignature,
    *   signatures?: import("./ports.js").MoveSignatures | null,
-   * }} deps `signatures` is required for v2 games
+   *   results?: import("./ports.js").ResultOutbox | null,
+   * }} deps `signatures` is required for v2 games; `results` receives finished games' results (none: not published)
    */
-  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, sealer, signAck = () => ({}), signatures = null }) {
+  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, signAck = () => ({}), signatures = null, results = null }) {
     if (recorder.version >= GameProtocol.V2 && signatures === null) {
       throw new Error(`game ${game.id}: a v2 game needs move signature checks`);
     }
@@ -132,7 +137,7 @@ export class GameActor {
     this.#onFinished = onFinished;
     this.#signAck = signAck;
     this.#signatures = signatures;
-    this.#sealer = sealer;
+    this.#results = results;
     this.#status = game.status;
     this.#lastSeq = game.lastEventSeq;
     this.#turnClock = new TurnClock(timePolicy, SEATS);
@@ -518,6 +523,7 @@ export class GameActor {
       }
       if (applied.over) {
         await this.#repository.setResults(this.id, resultsFor(applied.winner));
+        await this.#publishResult(applied);
       }
     });
     if (applied.over) {
@@ -535,6 +541,20 @@ export class GameActor {
         }),
       );
     }
+  }
+
+  /**
+   * Queues the finished game's result for the chain (inside the unit of work that records its end).
+   * @param {any} applied
+   */
+  async #publishResult(applied) {
+    if (this.#results === null) {
+      return;
+    }
+    const last = applied.chained[applied.chained.length - 1];
+    const accounts = SEATS.map((seat) => /** @type {{ account: string }} */ (this.#game.players.find((player) => player.seat === seat)).account);
+    const payload = gameResultRecord({ gameId: this.id, mode: this.#game.mode, accounts, seq: last.event.i, head: last.head, winner: applied.winner, reason: applied.reason });
+    await this.#results.enqueueResult({ network: this.#game.network, gameId: this.id, payload });
   }
 
   /** Tells both players what happened (each from their own perspective), and the result if the game ended. */
@@ -629,7 +649,6 @@ export class GameActor {
       throw error;
     }
     this.#lastSeq = chained[chained.length - 1].event.i;
-    await this.#sealer.afterAppend(this.id, chained);
   }
 
   #createEngine() {

@@ -1,12 +1,12 @@
 /**
  * A product's cards as a small fanned stack (the cart): up to three faces
  * (a single, a deck's rarest cards) or card backs (packs: unknown until
- * opened), with a count badge and a sheen on foil faces. Decorative.
+ * opened), with a count badge. Decorative.
  */
 import { CARD_SIZE } from "../board/BoardLayout.js";
 import { fontFor } from "../theme/Theme.js";
 import { withAlpha } from "../theme/color.js";
-import { drawTextInRect, fillRoundedRect, glowRoundedRect } from "../ui/drawing.js";
+import { drawTextInRect, fillRoundedRect } from "../ui/drawing.js";
 import { UiNode } from "../ui/UiNode.js";
 import { drawCard, drawCardBack } from "./CardRenderer.js";
 
@@ -24,18 +24,16 @@ export class CardFan extends UiNode {
   cards;
   /** Card backs drawn when there are no faces. */
   backs;
-  foil;
   /** e.g. "×3"; nothing when empty. */
   badge;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width: number, height: number, cards?: readonly FanCard[], backs?: number, foil?: boolean, badge?: string }} options
+   * @param {{ id?: string, x?: number, y?: number, width: number, height: number, cards?: readonly FanCard[], backs?: number, badge?: string }} options
    */
   constructor(options) {
     super(options);
     this.cards = Object.freeze((options.cards ?? []).slice(0, FAN.max));
     this.backs = Math.min(options.backs ?? 0, FAN.max);
-    this.foil = options.foil ?? false;
     this.badge = options.badge ?? "";
     this.passthrough = true;
   }
@@ -80,9 +78,6 @@ export class CardFan extends UiNode {
         drawCardBack(context, theme, card);
       } else {
         drawCard(context, theme, face.card, { ...card, alpha: context.globalAlpha, rarity: face.rarity });
-        if (this.foil) {
-          paintFoil(context, theme, card);
-        }
       }
       context.restore();
     }
@@ -101,21 +96,4 @@ export class CardFan extends UiNode {
     fillRoundedRect(context, badge, { fill: theme.colors.accent, stroke: theme.colors.accentLight, radius: BADGE.height / 2, lineWidth: 1.5 });
     drawTextInRect(context, this.badge, badge, { font, color: theme.colors.background });
   }
-}
-
-/**
- * A foil face: a golden rim and a diagonal band of light across the card.
- * @param {CanvasRenderingContext2D} context
- * @param {import("../theme/Theme.js").Theme} theme
- * @param {{ x: number, y: number, width: number, height: number }} card
- */
-function paintFoil(context, theme, card) {
-  const radius = card.width * 0.06;
-  glowRoundedRect(context, card, { color: withAlpha(theme.colors.accentLight, 0.9), radius, blur: 16, lineWidth: 2 });
-  const sheen = context.createLinearGradient(card.x, card.y, card.x + card.width, card.y + card.height);
-  sheen.addColorStop(0.25, withAlpha(theme.colors.accentLight, 0));
-  sheen.addColorStop(0.45, withAlpha(theme.colors.accentLight, 0.35));
-  sheen.addColorStop(0.55, withAlpha("#ffffff", 0.3));
-  sheen.addColorStop(0.75, withAlpha(theme.colors.accentLight, 0));
-  fillRoundedRect(context, card, { fill: sheen, radius });
 }

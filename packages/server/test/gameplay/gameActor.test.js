@@ -3,15 +3,15 @@
  * database, players simulated by reading what the ConnectionHub delivers.
  * Covers the lifecycle, first player by lot, perspectives, hostile
  * commands, idempotency and races, timers and forced moves, restore after a
- * restart — and that a finished game verifies VALID from its records alone.
+ * restart — and that a finished game keeps its whole history, hash-chained,
+ * and publishes only its result.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { ChaChaRandom } from "@magic8/engine/domain/random/ChaChaRandom.js";
-import { OperationId, Verdict, firstSeatFor, genesisHead, packEnvelopes, verifyGame } from "@magic8/protocol";
+import { firstSeatFor, genesisHead, nextHead, parseGameResultRecord } from "@magic8/protocol";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { GameService, PgGameRepository } from "../../src/modules/gameplay/index.js";
 import { buildTestApp, bundledContent, deterministicRandom } from "../helpers.js";
@@ -43,12 +43,6 @@ async function started(options) {
   await w.games.entropy(w.alice.user.id, w.gameId, ENTROPY.s0);
   await w.games.entropy(w.bob.user.id, w.gameId, ENTROPY.s1);
   return w;
-}
-
-/** The game's sealed records in the outbox, in record order. */
-async function outboxRecords(w) {
-  const rows = await w.setup.database.rows("SELECT record_seq, payload, status FROM blockchain_events WHERE kind = 'GAME_RECORD' AND game_id = $1 ORDER BY record_seq", [w.gameId]);
-  return rows.map((row) => ({ seq: row.record_seq, json: row.payload, record: JSON.parse(row.payload), status: row.status }));
 }
 
 const last = (inbox, type) => inbox.filter((message) => message.t === type).at(-1)?.d;
@@ -157,7 +151,7 @@ describe("GameService", () => {
     assert.deepEqual([...firsts].sort(), ["s0", "s1"]);
   });
 
-  it("plays a whole game and the result verifies VALID from its records alone", async () => {
+  it("plays a whole game and keeps its whole history, hash-chained, in the database", async () => {
     const w = await started();
     const commands = await playOut(w);
     assert.ok(commands > 10, `${commands} commands`);
@@ -169,20 +163,18 @@ describe("GameService", () => {
     const results = await w.setup.database.rows("SELECT seat, result FROM game_players WHERE game_id = $1 ORDER BY seat", [w.gameId]);
     assert.deepEqual(results.map((row) => row.result).sort(), over.winner === null ? ["draw", "draw"] : ["loss", "win"]);
 
-    // The records the server sealed into the outbox, packed as the chain would carry them.
-    const unsealed = await w.setup.database.rows("SELECT seq FROM game_events WHERE game_id = $1 AND record_seq IS NULL", [w.gameId]);
-    assert.equal(unsealed.length, 0, "every event is sealed once the game is over");
-    const operations = packEnvelopes(await outboxRecords(w)).map((envelope, index) =>
-      Object.freeze({ network: "steem", txId: index.toString(16).padStart(40, "0"), blockNum: 5000 + index, opIndex: 0, id: OperationId.GAME, requiredAuths: [], requiredPostingAuths: ["m8tcg.b1"], json: envelope.json }),
-    );
-    const current = w.setup.app.catalog.current();
-    const verdict = verifyGame({
-      gameId: w.gameId,
-      operations,
-      isAuthorizedBroadcaster: (account) => account === "m8tcg.b1",
-      resolveContent: (hash, version) => (hash === current.hash && version === current.engineVersion ? { rules: current.content.gameRules, catalog: current.content.catalog, effects: createCoreEffectRegistry(), createCommands: createCoreCommandRegistry } : null),
-    });
-    assert.equal(verdict.verdict, Verdict.VALID, JSON.stringify(verdict).slice(0, 400));
+    // The history stays in the database, each event chained to the one before it; nothing goes to the chain.
+    const [{ protocol_version: version }] = await w.setup.database.rows("SELECT protocol_version FROM games WHERE id = $1", [w.gameId]);
+    const events = await w.setup.database.rows("SELECT seq, kind, actor, turn, ms, payload, head FROM game_events WHERE game_id = $1 ORDER BY seq", [w.gameId]);
+    let head = genesisHead(w.gameId);
+    for (const row of events) {
+      head = nextHead(head, w.gameId, { i: row.seq, k: row.kind, a: row.actor, t: row.turn, ms: row.ms, d: row.payload }, version);
+      assert.equal(row.head, head, `event ${row.seq} chains from the one before`);
+    }
+    assert.equal(events.at(-1).kind, "GAME_FINISHED");
+    const published = await w.setup.database.rows("SELECT kind, game_id, payload FROM blockchain_events");
+    assert.deepEqual(published.map((row) => [row.kind, row.game_id]), [["RESULT", w.gameId]], "only the result is published");
+    assert.equal(parseGameResultRecord(published[0].payload).h, head, "committing to the head of the whole history");
   });
 
   it("refuses hostile and out-of-order commands, and never lets a player act for the other", async () => {
@@ -312,7 +304,6 @@ describe("GameService", () => {
       audit: w.setup.app.audit,
       logger: w.setup.logger,
       network: "steem",
-      outbox: w.setup.app.outbox,
     });
     assert.equal(await restarted.restoreAll(), 1);
     const after = await restarted.view(w.alice.user.id, w.gameId);
@@ -357,73 +348,5 @@ describe("GameService", () => {
     assert.equal(rebuilt.version, view.version, "the failed move never happened");
     const retry = await w.games.command(mover.user.id, { gameId: w.gameId, commandId: uuidV4(deterministicRandom("retry")), expectedVersion: view.version, command: { type: "END_PHASE" } });
     assert.equal(retry.ok, true);
-  });
-});
-
-describe("RecordSealer", () => {
-  const kinds = (record) => record.e.map((event) => event.k);
-
-  it("seals the opening at once, then one record per turn, chained from genesis", async () => {
-    const w = await world();
-    await w.games.entropy(w.alice.user.id, w.gameId, ENTROPY.s0);
-    assert.deepEqual(await outboxRecords(w), [], "nothing is sealed before the game starts");
-    await w.games.entropy(w.bob.user.id, w.gameId, ENTROPY.s1);
-    let records = await outboxRecords(w);
-    assert.equal(records.length, 1);
-    assert.deepEqual(kinds(records[0].record), ["GAME_CREATED", "PLAYER_JOINED", "PLAYER_JOINED", "GAME_STARTED"]);
-    assert.equal(records[0].record.p, genesisHead(w.gameId));
-    assert.equal(records[0].status, "BUILT");
-
-    const first = (await w.games.view(w.alice.user.id, w.gameId)).snapshot.activePlayerId;
-    await passTurn(w, seatUser(w, first), "turn-1");
-    records = await outboxRecords(w);
-    assert.equal(records.length, 2);
-    assert.equal(kinds(records[1].record).at(-1), "STATE_CHECKPOINT", "a turn's record closes on its checkpoint");
-    assert.equal(records[1].record.s, 1);
-    assert.equal(records[1].record.p, records[0].record.h);
-    assert.equal(records[1].record.e[0].i, records[0].record.e.at(-1).i + 1);
-  });
-
-  it("seals a run that waited too long, and one that grew too big", async () => {
-    const w = await started({ sealingPolicy: { maxPendingEvents: 3 } });
-    const awaited = async () => {
-      const view = await w.games.view(w.alice.user.id, w.gameId);
-      const player = seatUser(w, view.snapshot.awaitingPlayerId);
-      return { player, own: await w.games.view(player.user.id, w.gameId) };
-    };
-    const endPhase = async (label) => {
-      const { player, own } = await awaited();
-      assert.equal(own.snapshot.legalMoves.canEndPhase, true);
-      return w.games.command(player.user.id, { gameId: w.gameId, commandId: uuidV4(deterministicRandom(label)), expectedVersion: own.version, command: { type: "END_PHASE" } });
-    };
-    assert.equal((await endPhase("phase-1")).ok, true);
-    assert.equal((await outboxRecords(w)).length, 1, "one pending move is not sealed yet");
-
-    w.setup.clock.advance(19 * SECOND);
-    assert.equal(await w.games.sealStale(), 0);
-    w.setup.clock.advance(2 * SECOND);
-    assert.equal(await w.games.sealStale(), 1, "20 seconds later the pending move is sealed");
-    assert.deepEqual(kinds((await outboxRecords(w))[1].record), ["MOVE"]);
-    assert.equal(await w.games.sealStale(), 0, "nothing left to seal");
-
-    const before = (await outboxRecords(w)).length;
-    for (let step = 0; step < 3; step += 1) {
-      const { player, own } = await awaited();
-      await w.games.command(player.user.id, { gameId: w.gameId, commandId: uuidV4(deterministicRandom(`pass-${step}`)), expectedVersion: own.version, command: passCommand(own.snapshot) });
-    }
-    const records = await outboxRecords(w);
-    assert.ok(records.length > before, "the third pending event closes a record");
-    const unsealed = await w.setup.database.rows("SELECT count(*)::integer AS n FROM game_events WHERE game_id = $1 AND record_seq IS NULL", [w.gameId]);
-    assert.ok(unsealed[0].n < 3);
-  });
-
-  it("never fails a move when sealing fails; the events wait unsealed", async () => {
-    const w = await started({ sealingPolicy: { maxRecordBytes: 300 } });
-    assert.deepEqual(await outboxRecords(w), [], "the opening does not fit 300 bytes");
-    assert.ok(w.setup.logger.entries.some((entry) => entry.message.startsWith("sealing game records failed")));
-    const own = await w.games.view(seatUser(w, (await w.games.view(w.alice.user.id, w.gameId)).snapshot.awaitingPlayerId).user.id, w.gameId);
-    const player = seatUser(w, own.seat);
-    const ack = await w.games.command(player.user.id, { gameId: w.gameId, commandId: uuidV4(deterministicRandom("still-plays")), expectedVersion: own.version, command: passCommand(own.snapshot) });
-    assert.equal(ack.ok, true, "the game goes on");
   });
 });

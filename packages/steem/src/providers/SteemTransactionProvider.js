@@ -6,8 +6,8 @@
  * Keys stay inside this object: callers name a signer account, never a key.
  * `verifySigners` refuses a key that is not a posting key of its account, and
  * refuses outright a key that also controls the active or owner authority:
- * if the server were compromised, the attacker could publish game records in
- * the broadcaster's name, but never move funds or take over the account.
+ * if the server were compromised, the attacker could publish records in the
+ * broadcaster's name, but never move funds or take over the account.
  */
 import { isValidAccountName } from "../accountName.js";
 import { decodeWif, publicKeyOf } from "../crypto/keys.js";

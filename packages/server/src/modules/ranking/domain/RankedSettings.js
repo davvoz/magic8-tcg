@@ -1,13 +1,12 @@
 /**
  * Ranked settings from data/ranked/ranked.json, validated when the server
  * starts: seasons (ratings start over with each one), who may play ranked,
- * how wide the rating window of the queue is (and when it stops being a
- * barrier), and the fair-play limits.
+ * and the fair-play limits.
  */
 import { Issues, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
-const TOP_KEYS = Object.freeze(["v", "seasons", "eligibility", "matchmaking", "fairPlay"]);
+const TOP_KEYS = Object.freeze(["v", "seasons", "eligibility", "fairPlay"]);
 const SEASON_KEYS = Object.freeze(["id", "name", "startsAt"]);
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
@@ -16,7 +15,6 @@ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
  * @typedef {Readonly<{
  *   seasons: readonly Season[],
  *   eligibility: Readonly<{ minFinishedCasualGames: number }>,
- *   matchmaking: Readonly<{ baseWindow: number, windowPerSecond: number, maxWindow: number, relaxAfterSeconds: number }>,
  *   fairPlay: Readonly<{ maxRatedGamesPerPairPerDay: number, earlyConcedeTurn: number, earlyConcedesToFlag: number, earlyConcedeWindowDays: number }>,
  * }>} RankedSettings
  */
@@ -66,16 +64,15 @@ export function validateRankedSettings(raw) {
     },
   });
   const eligibility = integers(issues, top.eligibility, "ranked.eligibility", ["minFinishedCasualGames"]);
-  const matchmaking = integers(issues, top.matchmaking, "ranked.matchmaking", ["baseWindow", "windowPerSecond", "maxWindow", "relaxAfterSeconds"]);
   const fairPlay = integers(issues, top.fairPlay, "ranked.fairPlay", ["maxRatedGamesPerPairPerDay", "earlyConcedeTurn", "earlyConcedesToFlag", "earlyConcedeWindowDays"]);
   const ordered = (seasons ?? []).every((season, index, all) => index === 0 || season.startsAt > all[index - 1].startsAt);
   if (!ordered) {
     issues.add("ranked.seasons", "must start in increasing order");
   }
-  if (!issues.isEmpty || seasons === undefined || eligibility === undefined || matchmaking === undefined || fairPlay === undefined) {
+  if (!issues.isEmpty || seasons === undefined || eligibility === undefined || fairPlay === undefined) {
     return fail("VALIDATION", issues.list()[0], { problems: issues.list() });
   }
-  return ok(Object.freeze({ seasons: Object.freeze(seasons), eligibility: Object.freeze(eligibility), matchmaking: Object.freeze(matchmaking), fairPlay: Object.freeze(fairPlay) }));
+  return ok(Object.freeze({ seasons: Object.freeze(seasons), eligibility: Object.freeze(eligibility), fairPlay: Object.freeze(fairPlay) }));
 }
 
 /**

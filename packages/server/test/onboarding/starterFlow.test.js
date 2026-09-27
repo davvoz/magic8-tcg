@@ -149,7 +149,7 @@ describe("starter offer data", () => {
   it("refuses offers that do not match the content", async () => {
     const setup = await buildTestApp();
     const current = contentOf(setup);
-    const valid = { schemaVersion: 1, edition: "core-1", finish: "standard", choices: OFFERED };
+    const valid = { schemaVersion: 1, edition: "core-1", choices: OFFERED };
     assert.equal(validateStarterOffer(valid, current).ok, true);
     for (const offer of [
       { ...valid, choices: ["precon_missing"] },

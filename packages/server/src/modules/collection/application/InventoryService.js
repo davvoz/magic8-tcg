@@ -21,7 +21,7 @@ import { InstanceEventKind, InstanceStatus, OriginKind, checkMintRequest } from 
 import { INVENTORY_REPOSITORY_METHODS } from "./ports.js";
 
 /**
- * @typedef {Readonly<{ definitionId: string, copies: readonly Readonly<{ id: string, edition: string, serial: number, finish: string, status: string, tradeable: boolean }>[] }>} CollectionEntry
+ * @typedef {Readonly<{ definitionId: string, copies: readonly Readonly<{ id: string, edition: string, serial: number, status: string, tradeable: boolean }>[] }>} CollectionEntry
  */
 
 /** Where a copy must come from to be traded. */
@@ -56,7 +56,7 @@ export class InventoryService {
   }
 
   /**
-   * @param {{ ownerId: string, items: readonly import("../domain/CardInstance.js").MintItem[], edition: string, finish: string, origin: { kind: string, ref: string } }} request
+   * @param {{ ownerId: string, items: readonly import("../domain/CardInstance.js").MintItem[], edition: string, origin: { kind: string, ref: string } }} request
    * @returns {Promise<readonly import("../domain/CardInstance.js").CardInstance[]>}
    */
   async mint(request) {
@@ -78,7 +78,6 @@ export class InventoryService {
               definitionId,
               edition: request.edition,
               serial: first + offset,
-              finish: request.finish,
               ownerId: request.ownerId,
               status: InstanceStatus.ACTIVE,
               originKind: /** @type {any} */ (request.origin.kind),
@@ -94,16 +93,16 @@ export class InventoryService {
   }
 
   /**
-   * @param {{ key: string, kind: string, ownerId: string, items: readonly import("../domain/CardInstance.js").MintItem[], edition: string, finish: string }} grant
+   * @param {{ key: string, kind: string, ownerId: string, items: readonly import("../domain/CardInstance.js").MintItem[], edition: string }} grant
    * @returns {Promise<Readonly<{ granted: boolean, instances: readonly import("../domain/CardInstance.js").CardInstance[] }>>}
    */
-  async grantOnce({ key, kind, ownerId, items, edition, finish }) {
+  async grantOnce({ key, kind, ownerId, items, edition }) {
     return this.#unitOfWork(async () => {
       const granted = await this.#repository.insertGrant({ key, userId: ownerId, kind, at: this.#clock.now() });
       if (!granted) {
         return Object.freeze({ granted: false, instances: Object.freeze([]) });
       }
-      const instances = await this.mint({ ownerId, items, edition, finish, origin: { kind: OriginKind.GRANT, ref: key } });
+      const instances = await this.mint({ ownerId, items, edition, origin: { kind: OriginKind.GRANT, ref: key } });
       return Object.freeze({ granted: true, instances });
     });
   }
@@ -132,7 +131,7 @@ export class InventoryService {
     const groups = new Map();
     for (const instance of await this.#repository.listOwned(userId)) {
       const copies = groups.get(instance.definitionId) ?? [];
-      copies.push(Object.freeze({ id: instance.id, edition: instance.edition, serial: instance.serial, finish: instance.finish, status: instance.status, tradeable: isTradeable(instance) }));
+      copies.push(Object.freeze({ id: instance.id, edition: instance.edition, serial: instance.serial, status: instance.status, tradeable: isTradeable(instance) }));
       groups.set(instance.definitionId, copies);
     }
     return Object.freeze([...groups].map(([definitionId, copies]) => Object.freeze({ definitionId, copies: Object.freeze(copies) })));

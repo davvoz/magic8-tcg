@@ -2,7 +2,8 @@
  * The protocol manifest (docs/tcg/03-game-blockchain-protocol.md §11): the
  * trust anchor a verifier needs besides the chain itself. Only the root
  * account's active authority may publish it; it says which broadcaster
- * accounts may sign game records from which block on.
+ * accounts may sign the records we publish (receipts, pack epochs, trades,
+ * sales) from which block on.
  *
  * An authorisation takes effect at max(from_block, block of the manifest
  * operation): a manifest can never authorise records retroactively.
@@ -81,7 +82,7 @@ class ManifestRegistry {
 
   /**
    * @param {string} kind
-   * @param {readonly import("./OperationDecoder.js").ChainOperation[]} operations any operations; only valid manifests of `kind` from `rootAccount` count
+   * @param {readonly import("../chain/ChainOperation.js").ChainOperation[]} operations any operations; only valid manifests of `kind` from `rootAccount` count
    * @param {string} rootAccount
    * @returns {{ epochs: ManifestEpoch[], rejected: number }} rejected: manifests that are malformed or not signed by the root's active authority
    */
@@ -135,10 +136,10 @@ class ManifestRegistry {
   }
 }
 
-/** Which accounts may sign game records at a given block. */
+/** Which accounts may sign our records at a given block. */
 export class BroadcasterRegistry extends ManifestRegistry {
   /**
-   * @param {readonly import("./OperationDecoder.js").ChainOperation[]} operations
+   * @param {readonly import("../chain/ChainOperation.js").ChainOperation[]} operations
    * @param {string} rootAccount
    * @returns {{ registry: BroadcasterRegistry, rejected: number }}
    */
@@ -156,7 +157,7 @@ export class BroadcasterRegistry extends ManifestRegistry {
 /** Which public keys may sign the server's acks (docs/tcg/11-ack-firmati.md) at a given block. */
 export class AckKeyRegistry extends ManifestRegistry {
   /**
-   * @param {readonly import("./OperationDecoder.js").ChainOperation[]} operations
+   * @param {readonly import("../chain/ChainOperation.js").ChainOperation[]} operations
    * @param {string} rootAccount
    * @returns {{ registry: AckKeyRegistry, rejected: number }}
    */

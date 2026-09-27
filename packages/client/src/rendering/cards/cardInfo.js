@@ -2,7 +2,7 @@
  * A card's details, the same on every screen that shows a card to sell,
  * buy, trade or look at: the card at full size (rarity gem included) and,
  * beside it, its name, rarity, type, cost and stats, keywords, rules text
- * and whatever the screen adds (serial, finish, price…). Returns a Modal
+ * and whatever the screen adds (serial, edition, price…). Returns a Modal
  * for the scene to open; Close and Escape call `onClose`.
  */
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";

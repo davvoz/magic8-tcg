@@ -155,10 +155,10 @@ export class TradesScene extends Scene {
     }
     const listHeight = trade.status === "OPEN" ? COLUMNS.height - 2 * INSET - 52 - 16 : COLUMNS.height - 2 * INSET;
     const list = panel.add(new ScrollList({ id: "trades.detail", x: INSET, y: INSET, width, height: listHeight }));
-    const copyThumbs = (copies) => copies.map((copy) => ({ definitionId: copy.definitionId, caption: `#${copy.serial}${copy.finish === "foil" ? " · foil" : ""}`, highlight: copy.finish === "foil", lines: [`Copy #${copy.serial} · ${copy.finish}`] }));
+    const copyThumbs = (copies) => copies.map((copy) => ({ definitionId: copy.definitionId, caption: `#${copy.serial}`, lines: [`Copy #${copy.serial}`] }));
     const sections = [
       { title: `@${trade.proposer} offers`, thumbs: copyThumbs(trade.give), empty: "nothing" },
-      { title: `and asks @${trade.counterparty} for`, thumbs: trade.wants.map((want) => ({ definitionId: want.definitionId, caption: `× ${want.count}`, highlight: false, lines: [`Asked: ${want.count}`] })), empty: "nothing (a gift)" },
+      { title: `and asks @${trade.counterparty} for`, thumbs: trade.wants.map((want) => ({ definitionId: want.definitionId, caption: `× ${want.count}`, lines: [`Asked: ${want.count}`] })), empty: "nothing (a gift)" },
     ];
     if (trade.status === "ACCEPTED") {
       sections.push({ title: `@${trade.counterparty} gave`, thumbs: copyThumbs(trade.take), empty: "nothing" });
@@ -178,7 +178,7 @@ export class TradesScene extends Scene {
   /**
    * A heading and a grid of card thumbnails; returns the y below it.
    * @param {ScrollList} list
-   * @param {{ title: string, thumbs: { definitionId: string, caption: string, highlight: boolean, lines: string[] }[], empty: string }} section
+   * @param {{ title: string, thumbs: { definitionId: string, caption: string, lines: string[] }[], empty: string }} section
    * @param {number} top
    */
   #buildThumbSection(list, { title, thumbs, empty }, top) {
@@ -200,7 +200,6 @@ export class TradesScene extends Scene {
           width: THUMB.width,
           card,
           caption: thumb.caption,
-          highlight: thumb.highlight,
           rarity: rarityOf(this.#app, thumb.definitionId),
           onActivate: known === undefined ? null : () => this.#showCard(thumb.definitionId, thumb.lines),
         }),
@@ -278,9 +277,9 @@ export class TradesScene extends Scene {
     const rowWidth = list.rowWidth - ACTION.small - ACTION.gap;
     copies.forEach((copy, index) => {
       const chosen = this.#give.has(copy.id);
-      const subtitle = [rarityLabel(rarityOf(this.#app, copy.definitionId)), `#${copy.serial}`, copy.finish].filter((part) => part.length > 0).join(" · ");
+      const subtitle = [rarityLabel(rarityOf(this.#app, copy.definitionId)), `#${copy.serial}`].filter((part) => part.length > 0).join(" · ");
       list.add(new OptionRow({ id: `trades.give.${copy.id}`, x: 0, y: rowY(index), width: rowWidth, height: ROW.height, text: this.#cardName(copy.definitionId), subtitle, selected: chosen, enabled: chosen || this.#give.size < MAX_CARDS, onActivate: () => this.#toggleGive(copy.id) }));
-      this.#infoButton(list, { id: `trades.give.info.${copy.id}`, x: rowWidth + ACTION.gap, y: rowY(index), definitionId: copy.definitionId, lines: [`Copy #${copy.serial} · ${copy.finish}`] });
+      this.#infoButton(list, { id: `trades.give.info.${copy.id}`, x: rowWidth + ACTION.gap, y: rowY(index), definitionId: copy.definitionId, lines: [`Copy #${copy.serial}`] });
     });
     list.contentHeight = rowsHeight(copies.length);
   }

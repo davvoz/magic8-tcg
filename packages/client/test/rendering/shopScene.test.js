@@ -109,7 +109,7 @@ describe("ShopScene", () => {
     assert.equal(byId(scene, "shop.buy").text, "Buy for 49.000 STEEM");
   });
 
-  it("sells every card by rarity, rarest first, filterable, in standard or foil", async () => {
+  it("sells every card by rarity, rarest first, filterable", async () => {
     const { scene, market } = await harness();
     click(byId(scene, "shop.tab.singles"));
     assert.equal(byId(scene, "shop.card.archmage_of_the_spire").variant, "primary", "a legendary comes first");
@@ -129,14 +129,13 @@ describe("ShopScene", () => {
     assert.ok(byId(scene, "shop.owned"), "a signed-in player sees how many they own");
     assert.ok(rendered(scene).includes("Single prices (STEEM)"));
     assert.equal(byId(scene, "shop.buy").text, "Buy for 2.500 STEEM");
-    assert.equal(byId(scene, "shop.finish.foil").text, "Foil · 5.000");
+    assert.equal(byId(scene, "shop.finish.foil"), null, "one kind of copy only");
 
-    click(byId(scene, "shop.finish.foil"));
     click(byId(scene, "shop.more"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 10.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 5.000 STEEM");
     click(byId(scene, "shop.buy"));
     await settle();
-    assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { items: [{ productId: "single_pyre_drake_foil", quantity: 2 }], asset: "STEEM" });
+    assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { items: [{ productId: "single_pyre_drake", quantity: 2 }], asset: "STEEM" });
   });
 
   it("shows other offers on their own shelf", async () => {
@@ -180,7 +179,7 @@ describe("ShopScene", () => {
     assert.ok(texts.includes("You received 5 cards"));
     assert.ok(texts.includes("Pack 1"));
     assert.ok(texts.includes(content.catalog.get("pyre_drake").name));
-    assert.ok(texts.includes("#5 · foil"));
+    assert.ok(texts.includes("#5"));
     assert.equal(scene.focusedNode.id, "reveal.collection");
     click(byId(scene, "reveal.collection"));
     assert.deepEqual(navigated.at(-1), { id: SceneId.COLLECTION, params: undefined });
@@ -226,7 +225,7 @@ describe("ShopScene", () => {
     const booster = cart("cart.visual.core_booster");
     assert.deepEqual([booster.cards.length, booster.backs, booster.badge], [0, 3, "×2"], "a pack shows card backs: its cards are unknown until opened");
     const drake = cart("cart.visual.single_pyre_drake");
-    assert.deepEqual([drake.cards.map((face) => face.card.id), drake.foil, drake.badge], [["pyre_drake"], false, "×1"], "a single shows its card");
+    assert.deepEqual([drake.cards.map((face) => face.card.id), drake.badge], [["pyre_drake"], "×1"], "a single shows its card");
     assert.ok(rendered(scene).includes("×2"));
     scene.focus(cart("cart.more.core_booster"));
     click(cart("cart.more.core_booster"));
@@ -239,18 +238,16 @@ describe("ShopScene", () => {
     click(cart("cart.close"));
     assert.equal(scene.modal, null, "back to shopping");
     click(byId(scene, "shop.card.pyre_drake"));
-    click(byId(scene, "shop.finish.foil"));
     click(byId(scene, "shop.addToCart"));
     click(byId(scene, "shop.cart"));
-    assert.equal(cart("cart.total").text, "Total: 8.000 STEEM");
-    assert.equal(cart("cart.visual.single_pyre_drake_foil").foil, true);
-    assert.equal(cart("cart.pay").text, "Pay 8.000 STEEM");
+    assert.equal(cart("cart.total").text, "Total: 5.500 STEEM");
+    assert.equal(cart("cart.pay").text, "Pay 5.500 STEEM");
 
     click(cart("cart.pay"));
     await settle();
     const orders = market.calls.filter((call) => call.name === "createOrder");
     assert.equal(orders.length, 1, "one order for the whole cart");
-    assert.deepEqual(orders[0].args[0], { items: [{ productId: "core_booster", quantity: 3 }, { productId: "single_pyre_drake_foil", quantity: 1 }], asset: "STEEM" });
+    assert.deepEqual(orders[0].args[0], { items: [{ productId: "core_booster", quantity: 3 }, { productId: "single_pyre_drake", quantity: 1 }], asset: "STEEM" });
     assert.equal(transfers.length, 1, "one payment");
     assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
     assert.equal(scene.modal?.id, "reveal", "the cards of the whole cart are revealed");

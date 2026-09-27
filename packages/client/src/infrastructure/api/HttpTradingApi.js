@@ -14,8 +14,8 @@ const isAccount = (value) => typeof value === "string" && /^[a-z0-9.-]{1,32}$/.t
 
 /** @param {any} value */
 const copy = (value) =>
-  typeof value?.id === "string" && UUID.test(value.id) && typeof value.definitionId === "string" && CARD_ID.test(value.definitionId) && isCount(value.serial) && typeof value.finish === "string"
-    ? Object.freeze({ id: value.id, definitionId: value.definitionId, serial: value.serial, finish: value.finish })
+  typeof value?.id === "string" && UUID.test(value.id) && typeof value.definitionId === "string" && CARD_ID.test(value.definitionId) && isCount(value.serial)
+    ? Object.freeze({ id: value.id, definitionId: value.definitionId, serial: value.serial })
     : null;
 
 /** @param {any} value */

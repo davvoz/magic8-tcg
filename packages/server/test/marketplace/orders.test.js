@@ -64,12 +64,11 @@ describe("marketplace orders over HTTP", () => {
     const byId = new Map(json.products.map((product) => [product.id, product]));
     const common = json.priceList.singles.find((price) => price.rarity === "common");
     assert.equal(json.priceList.asset, "STEEM");
-    assert.deepEqual(common, { rarity: "common", standard: "0.500", foil: "1.000" });
+    assert.deepEqual(common, { rarity: "common", price: "0.500" });
     const drake = byId.get("single_pyre_drake");
     assert.equal(drake.rarity, "rare");
     assert.deepEqual(drake.prices, [{ asset: "STEEM", amount: "2.500" }]);
-    assert.deepEqual(byId.get("single_pyre_drake_foil").prices, [{ asset: "STEEM", amount: "5.000" }]);
-    assert.equal(json.products.filter((product) => product.kind === "single" && product.contents[0].finish === null).length, setup.app.marketplace.catalog.rarities.of.size, "every card is on sale");
+    assert.equal(json.products.filter((product) => product.kind === "single").length, setup.app.marketplace.catalog.rarities.of.size, "every card is on sale");
     assert.deepEqual(json.products.filter((product) => product.kind === "pack").map((pack) => [pack.id, pack.cards, pack.prices[0].amount]), [["core_booster", 5, "1.000"], ["core_mini_booster", 3, "0.500"]]);
     const deck = byId.get("deck_precon_arcane");
     assert.equal(deck.cards, 30);
@@ -211,7 +210,7 @@ describe("marketplace orders over HTTP", () => {
       [packEpochAnnouncement(1, epochs[1].commit), packEpochAnnouncement(2, epochs[0].commit), packEpochReveal(1, revealed.secret)],
       "each commitment is published when its epoch opens, the secret when it is revealed",
     );
-    assert.ok(published.every((row) => row.priority === 0 && row.status === "BUILT"), "ahead of game records");
+    assert.ok(published.every((row) => row.priority === 0 && row.status === "BUILT"), "queued, first come first served");
     assert.deepEqual(await setup.app.epochs.revealSettled(), [], "revealed once");
     const sealed = await setup.database.rows("SELECT secret_encrypted FROM rng_epochs WHERE id = 1");
     assert.ok(!Buffer.from(sealed[0].secret_encrypted).toString("hex").includes(revealed.secret), "stored encrypted");
@@ -219,15 +218,15 @@ describe("marketplace orders over HTTP", () => {
   });
 
   it("prices a cart as one order with one payment", async () => {
-    const created = await order(aliceClient, { items: [{ productId: "core_booster", quantity: 2 }, { productId: "single_pyre_drake", quantity: 1 }, { productId: "single_pyre_drake_foil", quantity: 1 }], asset: "STEEM" });
+    const created = await order(aliceClient, { items: [{ productId: "core_booster", quantity: 2 }, { productId: "single_pyre_drake", quantity: 1 }, { productId: "single_ember_imp", quantity: 1 }], asset: "STEEM" });
     assert.equal(created.status, 201, created.text);
     const { order: placed } = created.json;
     assert.deepEqual(
       placed.items.map((item) => [item.productId, item.quantity, item.unitAmount]),
-      [["core_booster", 2, "1.000"], ["single_pyre_drake", 1, "2.500"], ["single_pyre_drake_foil", 1, "5.000"]],
+      [["core_booster", 2, "1.000"], ["single_pyre_drake", 1, "2.500"], ["single_ember_imp", 1, "0.500"]],
     );
-    assert.deepEqual(placed.total, { asset: "STEEM", amount: "9.500" });
-    assert.equal(placed.payment.amount, "9.500", "one transfer pays the whole cart");
+    assert.deepEqual(placed.total, { asset: "STEEM", amount: "5.000" });
+    assert.equal(placed.payment.amount, "5.000", "one transfer pays the whole cart");
     assert.notEqual(placed.rngEpochId, null, "a cart with packs is bound to the open epoch");
     await aliceClient.post(`/api/orders/${placed.id}/cancel`, {});
   });

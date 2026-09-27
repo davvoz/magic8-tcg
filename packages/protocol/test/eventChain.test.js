@@ -2,32 +2,24 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  ENVELOPE_OVERHEAD_BYTES,
   EventChain,
   EventKind,
-  LIMITS,
-  MAX_RECORD_BYTES,
+  GameProtocol,
   ProtocolError,
   Seat,
   canonicalDeck,
-  canonicalize,
   deckCommitment,
   deriveEngineSeed,
   firstSeatFor,
   genesisHead,
   nextHead,
-  packEnvelopes,
-  parseCanonical,
-  sealRecord,
-  sealRecords,
   secretFromBytes,
   seedCommitment,
   stateCommitment,
   stateSalt,
-  validateEnvelope,
-  validateRecord,
+  validateEvent,
 } from "../src/index.js";
-import { GAME_ID, testHex } from "./fixtures/referenceGame.js";
+import { GAME_ID, testHex } from "./fixtures/common.js";
 
 const OTHER_GAME = "01j8x3r6h2qkq4w0v7m5a9c1dy";
 
@@ -166,94 +158,21 @@ describe("commitments", () => {
   });
 });
 
-describe("records and envelopes", () => {
-  it("seal chained events into a canonical, schema-valid record", () => {
-    const chain = newChain();
-    const chained = appendMoves(chain, 3);
-    const sealed = sealRecord({ gameId: GAME_ID, seq: 0, previousHead: genesisHead(GAME_ID), chained, ts: 5 });
-    assert.equal(sealed.head, chain.head);
-    assert.equal(sealed.json, canonicalize(sealed.record));
-    assert.deepEqual(parseCanonical(sealed.json), sealed.record);
-    assert.equal(validateRecord(sealed.record).ok, true);
-    assert.equal(sealed.firstEventSeq, 0);
-    assert.equal(sealed.lastEventSeq, 2);
-  });
-
-  it("refuse events that do not chain from the given head", () => {
-    const chained = appendMoves(newChain(), 3);
-    assert.throws(() => sealRecord({ gameId: GAME_ID, seq: 0, previousHead: "00".repeat(32), chained, ts: 0 }), ProtocolError);
-    assert.throws(() => sealRecord({ gameId: GAME_ID, seq: 0, previousHead: genesisHead(GAME_ID), chained: [chained[0], chained[2]], ts: 0 }), ProtocolError);
-    assert.throws(() => sealRecord({ gameId: GAME_ID, seq: 0, previousHead: genesisHead(GAME_ID), chained: [], ts: 0 }), ProtocolError);
-  });
-
-  it("split long runs into records that each fit one operation, chained together", () => {
-    const chain = newChain();
-    const chained = appendMoves(chain, 600);
-    const records = sealRecords({ gameId: GAME_ID, firstRecordSeq: 0, previousHead: genesisHead(GAME_ID), chained, ts: 0 });
-    assert.ok(records.length >= 3);
-    records.forEach((record, index) => {
-      assert.ok(record.bytes <= MAX_RECORD_BYTES);
-      assert.equal(record.seq, index);
-      assert.ok(record.record.e.length <= LIMITS.MAX_EVENTS_PER_RECORD);
-      if (index > 0) {
-        assert.equal(record.previousHead, records[index - 1].head);
-        assert.equal(record.firstEventSeq, records[index - 1].lastEventSeq + 1);
-      }
-    });
-    assert.equal(records[records.length - 1].head, chain.head);
-  });
-
-  it("respect a smaller byte budget", () => {
-    const chained = appendMoves(newChain(), 50);
-    const records = sealRecords({ gameId: GAME_ID, firstRecordSeq: 0, previousHead: genesisHead(GAME_ID), chained, ts: 0, maxRecordBytes: 1000 });
-    assert.ok(records.every((record) => record.bytes <= 1000));
-    assert.throws(() => sealRecords({ gameId: GAME_ID, firstRecordSeq: 0, previousHead: genesisHead(GAME_ID), chained, ts: 0, maxRecordBytes: 100 }), ProtocolError);
-    assert.throws(() => sealRecords({ gameId: GAME_ID, firstRecordSeq: 0, previousHead: genesisHead(GAME_ID), chained, ts: 0, maxRecordBytes: 9000 }), ProtocolError);
-  });
-
-  it("pack records into canonical envelopes within the operation limit", () => {
-    const chained = appendMoves(newChain(), 400);
-    const records = sealRecords({ gameId: GAME_ID, firstRecordSeq: 0, previousHead: genesisHead(GAME_ID), chained, ts: 0, maxRecordBytes: 1500 });
-    const envelopes = packEnvelopes(records);
-    assert.equal(envelopes.reduce((sum, envelope) => sum + envelope.count, 0), records.length);
-    for (const envelope of envelopes) {
-      assert.ok(envelope.bytes <= LIMITS.MAX_OPERATION_BYTES);
-      assert.ok(envelope.count <= LIMITS.MAX_RECORDS_PER_ENVELOPE);
-      assert.equal(canonicalize(parseCanonical(envelope.json)), envelope.json);
-      assert.equal(validateEnvelope(parseCanonical(envelope.json)).ok, true);
-    }
-    assert.equal(ENVELOPE_OVERHEAD_BYTES, '{"r":[],"v":1}'.length);
-  });
-
-  it("honour a record-count limit and reject limits beyond the protocol", () => {
-    const chained = appendMoves(newChain(), 10);
-    const records = sealRecords({ gameId: GAME_ID, firstRecordSeq: 0, previousHead: genesisHead(GAME_ID), chained, ts: 0, maxRecordBytes: 400 });
-    assert.ok(packEnvelopes(records, { maxRecords: 1 }).every((envelope) => envelope.count === 1));
-    assert.throws(() => packEnvelopes(records, { maxBytes: 9000 }), ProtocolError);
-    assert.throws(() => packEnvelopes(records, { maxRecords: 17 }), ProtocolError);
-    assert.throws(() => packEnvelopes([{ json: "x".repeat(8190) }]), ProtocolError);
-  });
-});
-
 describe("schema", () => {
-  const record = () => {
-    const chained = appendMoves(newChain(), 2);
-    return structuredClone(sealRecord({ gameId: GAME_ID, seq: 0, previousHead: genesisHead(GAME_ID), chained, ts: 0 }).record);
-  };
+  const move = () => ({ a: "s0", d: { type: "END_PHASE" }, i: 0, k: EventKind.MOVE, ms: 0, t: 1 });
 
-  it("rejects unknown fields, wrong versions and bad ids anywhere", () => {
+  it("rejects unknown fields, unknown kinds and bad fields in an event", () => {
+    assert.equal(validateEvent(move()).ok, true);
     const mutations = [
-      (r) => ({ ...r, extra: 1 }),
-      (r) => ({ ...r, v: 2 }),
-      (r) => ({ ...r, g: "01J8X3R6H2QKQ4W0V7M5A9C1DZ" }),
-      (r) => ({ ...r, p: "zz" }),
-      (r) => ({ ...r, e: [] }),
-      (r) => ({ ...r, e: [{ ...r.e[0], extra: true }, r.e[1]] }),
-      (r) => ({ ...r, e: [r.e[0], { ...r.e[1], i: 5 }] }),
-      (r) => ({ ...r, e: [{ ...r.e[0], k: "CARD_EFFECT" }, r.e[1]] }),
+      (e) => ({ ...e, extra: 1 }),
+      (e) => ({ ...e, k: "CARD_EFFECT" }),
+      (e) => ({ ...e, i: -1 }),
+      (e) => ({ ...e, a: "s2" }),
+      (e) => ({ ...e, a: null }),
+      (e) => ({ ...e, d: { type: "END_PHASE", playerId: "s0", extra: "x".repeat(2000) } }),
     ];
     for (const mutate of mutations) {
-      assert.equal(validateRecord(mutate(record())).ok, false, mutate.toString());
+      assert.equal(validateEvent(mutate(move())).ok, false, mutate.toString());
     }
   });
 
@@ -266,8 +185,7 @@ describe("schema", () => {
       t: 0,
       d: { content: "ab".repeat(32), deck_c: ["cd".repeat(32), "ef".repeat(32)], eng: "0.1.0", mode: "casual", net: "steem", seats: [{ acct: "alice", seat: "s0" }, { acct: "bob", seat: "s1" }], seed_c: "12".repeat(32) },
     };
-    const wrap = (event) => ({ e: [event], g: GAME_ID, h: "00".repeat(32), p: "00".repeat(32), s: 0, ts: 0, v: 1 });
-    assert.equal(validateRecord(wrap(created)).ok, true);
+    assert.equal(validateEvent(created).ok, true);
     const broken = [
       { ...created, d: { ...created.d, seats: [{ acct: "alice", seat: "s1" }, { acct: "bob", seat: "s0" }] } },
       { ...created, d: { ...created.d, seats: [{ acct: "alice", seat: "s0" }, { acct: "alice", seat: "s1" }] } },
@@ -276,33 +194,34 @@ describe("schema", () => {
       { ...created, a: "s0" },
     ];
     for (const event of broken) {
-      assert.equal(validateRecord(wrap(event)).ok, false, JSON.stringify(event.d));
+      assert.equal(validateEvent(event).ok, false, JSON.stringify(event.d));
     }
   });
 
   it("limits forced moves to doing nothing", () => {
-    const forced = (cmd) => ({ e: [{ a: "s0", d: { cmd, why: "timeout" }, i: 0, k: EventKind.FORCED_MOVE, ms: 0, t: 1 }], g: GAME_ID, h: "00".repeat(32), p: "00".repeat(32), s: 0, ts: 0, v: 1 });
-    assert.equal(validateRecord(forced({ type: "END_TURN" })).ok, true);
-    assert.equal(validateRecord(forced({ type: "DECLARE_BLOCKERS", blocks: [] })).ok, true);
-    assert.equal(validateRecord(forced({ type: "PLAY_CARD", cardId: "c1", targets: [] })).ok, false);
-    assert.equal(validateRecord(forced({ type: "DECLARE_ATTACKERS", attackerIds: ["c1"] })).ok, false);
-    assert.equal(validateRecord(forced({ type: "END_TURN", cardId: "c1" })).ok, false);
+    const forced = (cmd) => ({ a: "s0", d: { cmd, why: "timeout" }, i: 0, k: EventKind.FORCED_MOVE, ms: 0, t: 1 });
+    assert.equal(validateEvent(forced({ type: "END_TURN" })).ok, true);
+    assert.equal(validateEvent(forced({ type: "DECLARE_BLOCKERS", blocks: [] })).ok, true);
+    assert.equal(validateEvent(forced({ type: "PLAY_CARD", cardId: "c1", targets: [] })).ok, false);
+    assert.equal(validateEvent(forced({ type: "DECLARE_ATTACKERS", attackerIds: ["c1"] })).ok, false);
+    assert.equal(validateEvent(forced({ type: "END_TURN", cardId: "c1" })).ok, false);
   });
 
   it("requires revealed decks sorted and bounded", () => {
-    const finished = (decks) => ({
-      e: [{ a: null, d: { decks, sc: "ab".repeat(32), secret: "cd".repeat(32), ver: 10, why: "concede", win: "s1" }, i: 0, k: EventKind.GAME_FINISHED, ms: 0, t: 3 }],
-      g: GAME_ID,
-      h: "00".repeat(32),
-      p: "00".repeat(32),
-      s: 0,
-      ts: 0,
-      v: 1,
-    });
-    assert.equal(validateRecord(finished([[["a", 1], ["b", 2]], [["c", 3]]])).ok, true);
-    assert.equal(validateRecord(finished([[["b", 1], ["a", 2]], [["c", 3]]])).ok, false);
-    assert.equal(validateRecord(finished([[["a", 1], ["a", 2]], [["c", 3]]])).ok, false);
-    assert.equal(validateRecord(finished([[["a", 0]], [["c", 3]]])).ok, false);
-    assert.equal(validateRecord(finished([[["a", 1]]])).ok, false);
+    const finished = (decks) => ({ a: null, d: { decks, sc: "ab".repeat(32), secret: "cd".repeat(32), ver: 10, why: "concede", win: "s1" }, i: 0, k: EventKind.GAME_FINISHED, ms: 0, t: 3 });
+    assert.equal(validateEvent(finished([[["a", 1], ["b", 2]], [["c", 3]]])).ok, true);
+    assert.equal(validateEvent(finished([[["b", 1], ["a", 2]], [["c", 3]]])).ok, false);
+    assert.equal(validateEvent(finished([[["a", 1], ["a", 2]], [["c", 3]]])).ok, false);
+    assert.equal(validateEvent(finished([[["a", 0]], [["c", 3]]])).ok, false);
+    assert.equal(validateEvent(finished([[["a", 1]]])).ok, false);
+  });
+
+  it("knows SESSION and signed moves only from game protocol v2", () => {
+    const session = { a: "s0", d: { auth: "ab".repeat(65), key: `04${"cd".repeat(64)}` }, i: 3, k: EventKind.SESSION, ms: 1, t: 0 };
+    assert.equal(validateEvent(session, GameProtocol.V2).ok, true);
+    assert.equal(validateEvent(session, GameProtocol.V1).ok, false, "SESSION does not exist in v1");
+    const signed = { ...move(), d: { cid: "0000000a-0000-4000-8000-000000000001", cmd: { type: "END_PHASE" }, ev: 4, sig: "ef".repeat(64) } };
+    assert.equal(validateEvent(signed, GameProtocol.V2).ok, true);
+    assert.equal(validateEvent(move(), GameProtocol.V2).ok, false, "a v2 move carries its signature");
   });
 });

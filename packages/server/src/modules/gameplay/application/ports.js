@@ -27,17 +27,8 @@
  * @property {(query: { mode: string, since: number, limit: number }) => Promise<readonly FinishedGame[]>} listFinished finished games of a mode since a time, oldest first
  * @property {(userId: string, mode: string) => Promise<number>} countFinished games of a mode the user finished (any result)
  *
- * @typedef {object} RecordStore sealing of game events into protocol records (docs/tcg/03 §9)
- * @property {(gameId: string) => Promise<Readonly<{ network: string, protocolVersion: number }> | null>} lockForSealing locks the game row until the unit of work ends
- * @property {(gameId: string) => Promise<readonly ChainedEvent[]>} listUnsealed in sequence order
- * @property {(gameId: string) => Promise<number>} countUnsealed
- * @property {(gameId: string, seq: number) => Promise<string | null>} headAt the chain head after event `seq`
- * @property {(gameId: string) => Promise<number>} nextRecordSeq
- * @property {(gameId: string, fromSeq: number, toSeq: number, recordSeq: number) => Promise<void>} markSealed
- * @property {(before: number) => Promise<readonly string[]>} gamesWithUnsealedBefore games whose oldest unsealed event happened at or before `before`
- *
- * @typedef {object} RecordOutbox where sealed records wait to be published (the chain module)
- * @property {(entry: { network: string, records: readonly import("@magic8/protocol").SealedRecord[] }) => Promise<void>} enqueueGameRecords
+ * @typedef {object} ResultOutbox where finished games' results wait to be published (the chain module)
+ * @property {(entry: { network: string, gameId: string, payload: string }) => Promise<void>} enqueueResult inside the caller's unit of work
  *
  * @typedef {Readonly<{ gameId: string, mode: string, finishedAt: number, winnerSeat: string | null, endReason: string, turn: number,
  *   players: readonly Readonly<{ seat: string, userId: string, account: string }>[] }>} FinishedGame what listeners learn when a game ends
@@ -60,4 +51,3 @@
 
 export const GAME_REPOSITORY_METHODS = Object.freeze(["insertGame", "findGame", "listEvents", "appendEvents", "setEntropy", "setResults", "findAck", "insertCommand", "insertSnapshot", "listActive", "activeGameOf", "listFinished", "countFinished"]);
 
-export const RECORD_STORE_METHODS = Object.freeze(["lockForSealing", "listUnsealed", "countUnsealed", "headAt", "nextRecordSeq", "markSealed", "gamesWithUnsealedBefore"]);

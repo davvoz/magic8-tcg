@@ -4,15 +4,15 @@
  * the client never computes an amount or a recipient.
  *
  * @typedef {Readonly<{ asset: string, amount: string }>} Price amount as a decimal string ("1.000")
- * @typedef {Readonly<{ type: string, ref: string, count: number, finish: string | null }>} ProductContent
+ * @typedef {Readonly<{ type: string, ref: string, count: number }>} ProductContent
  * @typedef {Readonly<{ id: string, kind: string, name: string, description: string, prices: readonly Price[], contents: readonly ProductContent[], rarity: string | null, cards: number, perOrder: number }>} Product `rarity`: of a product that is one card
  * @typedef {Readonly<{ numerator: number, denominator: number }>} Chance
- * @typedef {Readonly<{ id: string, hash: string, size: number, slots: readonly Readonly<{ count: number, odds: Readonly<Record<string, Chance>> }>[], foil: Chance }>} DropTable
- * @typedef {Readonly<{ rarity: string, standard: string, foil: string | null }>} RarityPrice what a single card costs, by finish
+ * @typedef {Readonly<{ id: string, hash: string, size: number, slots: readonly Readonly<{ count: number, odds: Readonly<Record<string, Chance>> }>[] }>} DropTable
+ * @typedef {Readonly<{ rarity: string, price: string }>} RarityPrice what a single card of a rarity costs
  * @typedef {Readonly<{ asset: string, singles: readonly RarityPrice[] }>} PriceList
  * @typedef {Readonly<{ products: readonly Product[], dropTables: readonly DropTable[], rarities: readonly string[], priceList: PriceList }>} Listing `rarities`: commonest first
  * @typedef {Readonly<{ network: string, from: string, to: string, asset: string, amount: string, memo: string, expiresAt: number }>} PaymentInstructions
- * @typedef {Readonly<{ id: string, definitionId: string, edition: string, serial: number, finish: string }>} ReceivedCard
+ * @typedef {Readonly<{ id: string, definitionId: string, edition: string, serial: number }>} ReceivedCard
  * @typedef {Readonly<{ txId: string | null, cards: readonly ReceivedCard[], packs: readonly Readonly<{ index: number, cards: readonly ReceivedCard[] }>[] }>} Fulfilment
  * @typedef {Readonly<{
  *   id: string, status: string, items: readonly Readonly<{ productId: string, name: string, quantity: number, unitAmount: string }>[],

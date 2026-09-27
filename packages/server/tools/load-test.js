@@ -275,7 +275,6 @@ async function main() {
     setInterval(() => app.chain.broadcaster.runOnce().catch(() => undefined), 3000),
     setInterval(() => app.chain.tracker.runOnce().catch(() => undefined), 6000),
     setInterval(() => app.games.tick().catch(() => undefined), 1000),
-    setInterval(() => app.games.sealStale().catch(() => undefined), 5000),
   ];
   const loop = monitorEventLoopDelay({ resolution: 10 });
   loop.enable();
@@ -309,7 +308,6 @@ async function main() {
   loop.disable();
   jobs.forEach(clearInterval);
   // Drain: how many blocks one broadcaster account needs to publish everything (one operation per block).
-  await app.games.sealStale();
   let drainBlocks = 0;
   while ((await database.rows("SELECT 1 FROM blockchain_events WHERE status IN ('BUILT', 'BROADCAST') LIMIT 1")).length > 0 && drainBlocks < 2000) {
     ledger.time += 3000;

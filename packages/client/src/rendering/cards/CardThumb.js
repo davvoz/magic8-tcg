@@ -1,7 +1,7 @@
 /**
  * A card as a small thumbnail for lists of cards (trades, notifications):
  * the board's compact card face scaled to the node's width, with its
- * rarity and an optional caption underneath (serial, finish, copies
+ * rarity and an optional caption underneath (serial, copies
  * asked). Decorative, unless given `onActivate` (e.g. open the card's
  * details): then it can be clicked and focused like a button.
  */
@@ -20,8 +20,6 @@ export class CardThumb extends UiNode {
   /** @type {import("./CardFace.js").CardFaceModel} */
   card;
   caption;
-  /** Drawn in the accent colour (a foil copy). */
-  highlight;
   /** The card's rarity, when known. @type {string | null} */
   rarity;
   /** @type {(() => void) | null} */
@@ -36,13 +34,12 @@ export class CardThumb extends UiNode {
   }
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width: number, card: import("./CardFace.js").CardFaceModel, caption?: string, highlight?: boolean, rarity?: string | null, onActivate?: (() => void) | null }} options
+   * @param {{ id?: string, x?: number, y?: number, width: number, card: import("./CardFace.js").CardFaceModel, caption?: string, rarity?: string | null, onActivate?: (() => void) | null }} options
    */
   constructor(options) {
     super({ ...options, height: CardThumb.heightFor(options.width) });
     this.card = options.card;
     this.caption = options.caption ?? "";
-    this.highlight = options.highlight ?? false;
     this.rarity = options.rarity ?? null;
     this.onActivate = options.onActivate ?? null;
     const clickable = this.onActivate !== null;
@@ -73,7 +70,7 @@ export class CardThumb extends UiNode {
       const font = fontFor(theme, "tiny");
       context.font = font;
       const text = ellipsize((value) => context.measureText(value).width, this.caption, area.width);
-      drawTextInRect(context, text, { x: area.x, y: area.y + cardHeight + 2, width: area.width, height: CAPTION_HEIGHT - 2 }, { font, color: this.highlight ? theme.colors.accentLight : theme.colors.textMuted });
+      drawTextInRect(context, text, { x: area.x, y: area.y + cardHeight + 2, width: area.width, height: CAPTION_HEIGHT - 2 }, { font, color: theme.colors.textMuted });
     }
   }
 }

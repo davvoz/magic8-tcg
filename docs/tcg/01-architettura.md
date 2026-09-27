@@ -7,7 +7,7 @@
 1. **Il client non è mai autorevole.** Invia intenzioni; il server decide. Prezzi, inventario, esiti e ricompense si calcolano solo sul server.
 2. **Il dominio non conosce l'infrastruttura.** Nessun modulo di dominio importa STEEM, HTTP, WebSocket, SQL, orologi o generatori casuali: li riceve come *porte* (interfacce) iniettate.
 3. **La blockchain è un adattatore.** Il gioco dipende da `BlockchainProvider`, `PaymentProvider`, … e non da STEEM. Aggiungere un'altra rete significa scrivere un nuovo adattatore e registrarlo, senza modificare il dominio (OCP).
-4. **Il DB è lo stato operativo, la catena è il notaio.** Ogni scrittura on-chain nasce da un'*outbox* transazionale nel DB e viene riconciliata.
+4. **Il DB è lo stato operativo, la catena è il notaio di ciò che cambia di mano** (acquisti, pacchetti, scambi, vendite) e dei risultati delle partite. La storia delle partite resta nel DB. Ogni scrittura on-chain nasce da un'*outbox* transazionale nel DB e viene riconciliata.
 5. **Configurazione e contenuti sono dati** (carte, regole, prodotti, drop table, prezzi), validati al caricamento come input non fidati.
 6. **Idempotenza ovunque ci sia denaro o stato di partita:** ogni comando sensibile porta una chiave di idempotenza e ogni transizione di stato è un compare-and-set.
 
@@ -16,15 +16,15 @@
 | Termine | Contesto | Significato |
 |---|---|---|
 | `CardDefinition` | Catalog | Le caratteristiche di una carta (costo, statistiche, abilità, rarità, set). Immutabile una volta pubblicata; una modifica di bilanciamento è una nuova versione dei contenuti. |
-| `CardInstance` | Collection | Una **copia posseduta**: id univoco, definizione, edizione, numero di serie, finitura (standard/foil), proprietario, origine (acquisto, pacchetto, omaggio). Predisposta per trading P2P e NFT (`externalRef`). |
+| `CardInstance` | Collection | Una **copia posseduta**: id univoco, definizione, edizione, numero di serie, proprietario, origine (acquisto, pacchetto, omaggio). Predisposta per trading P2P e NFT (`externalRef`). |
 | carta in partita | Gameplay (motore) | Nel motore la classe si chiama ancora `CardInstance` (eredità di magic8): è la carta *dentro una partita*, con id `c1…cN` allocati deterministicamente. Non ha relazione diretta con la copia posseduta. |
 | `Deck` | Decks | Lista `definizione → quantità` di un utente; legale se rispetta le regole **e** l'utente possiede abbastanza copie. |
 | `Product` | Marketplace | Qualcosa che si vende: carta singola, booster, mazzo, starter, bundle. Generico e data-driven: un prodotto è un elenco di *contenuti* (carte, pacchetti, mazzi, altri prodotti). |
 | `Order` | Marketplace | Richiesta d'acquisto con prezzo congelato al momento della creazione, istruzioni di pagamento e macchina a stati. |
 | `Money` | Economy | Importo **intero** nell'unità minima dell'asset (STEEM ha 3 decimali: `1.000 STEEM` = 1000). Mai numeri in virgola mobile. |
-| `Game` | Gameplay | Una partita: posti, mazzi congelati, comandi, eventi, checkpoint, stato di ancoraggio on-chain. |
+| `Game` | Gameplay | Una partita: posti, mazzi congelati, comandi, eventi concatenati con hash, checkpoint. |
 | `Seat` | Gameplay | Posto al tavolo (`s0`, `s1`); è l'id del giocatore nel motore. |
-| Record | Chain | Un blocco di eventi di una partita concatenato crittograficamente, pubblicato in un `custom_json`. |
+| Record | Chain | Un record di protocollo (ricevuta, epoca dei pacchetti, scambio, vendita, risultato di una partita) pubblicato in un `custom_json`. |
 
 ## 3. Bounded context (modular monolith)
 
@@ -75,8 +75,8 @@ graph LR
 | **Marketplace** (`MarketplaceService`) | Prodotti, ordini, fulfilment, pacchetti provably-fair | `products`, `product_items`, `orders`, `order_items`, `rng_epochs` | `MarketplacePaymentProvider` |
 | **Payments** | Rilevare e verificare pagamenti on-chain, rimborsi | `payments`, `refunds` | `PaymentProvider` |
 | **Matchmaking** | Code, accoppiamento, ticket | `matchmaking` | — |
-| **Gameplay** | Attore per partita, comandi, timer, snapshot per prospettiva, reconnect | `games`, `game_players`, `game_commands`, `game_events`, `game_snapshots` | `GameClock`, `BlockchainGamePersistence` |
-| **Chain** | Outbox, batching, broadcast, conferme, riconciliazione, cursori di lettura | `blockchain_transactions`, `blockchain_events`, `chain_cursors` | `BlockchainProvider`, `TransactionProvider` |
+| **Gameplay** | Attore per partita, comandi, timer, snapshot per prospettiva, reconnect | `games`, `game_players`, `game_commands`, `game_events`, `game_snapshots` | `GameClock` |
+| **Chain** | Outbox, broadcast, conferme, riconciliazione, cursori di lettura | `blockchain_transactions`, `blockchain_events`, `chain_cursors` | `BlockchainProvider`, `TransactionProvider` |
 | **Audit** | Registro append-only delle operazioni sensibili | `audit_logs` | — |
 
 **Regole di confine** (verificate da test di architettura come in magic8):
@@ -91,8 +91,8 @@ Questi confini permettono di separare in futuro processi distinti (API, game ser
 ```
 packages/
   engine/     @magic8/engine    regole del gioco (da magic8). Puro, deterministico, zero dipendenze.
-  protocol/   @magic8/protocol  JSON canonico, hashing, Game Blockchain Protocol: costruzione record,
-                                verifica catena, replay. Puro; gira in Node e nel browser (verifica pubblica).
+  protocol/   @magic8/protocol  JSON canonico, hashing, eventi di partita concatenati, record on-chain,
+                                verifica dei pacchetti. Puro; gira in Node e nel browser.
   steem/      @magic8/steem     adattatore STEEM: client RPC con failover, chiavi e firme (secp256k1),
                                 serializzazione transazioni, implementazioni delle porte blockchain.
   server/     @magic8/server    modular monolith: moduli per bounded context, HTTP + WebSocket, PostgreSQL.
@@ -189,15 +189,8 @@ classDiagram
     instructionsFor(order) PaymentInstructions
     verify(order, observation) PaymentVerification
   }
-  class BlockchainGamePersistence {
-    <<port>>
-    anchor(records[]) AnchorReceipt
-    fetchHistory(gameId) OnChainRecord[]
-  }
   PaymentProvider ..> BlockchainProvider
   MarketplacePaymentProvider ..> PaymentProvider
-  BlockchainGamePersistence ..> TransactionProvider
-  BlockchainGamePersistence ..> BlockchainProvider
 ```
 
 | Porta | Responsabilità unica (SRP) | Implementazione STEEM v1 |
@@ -207,7 +200,6 @@ classDiagram
 | `TransactionProvider` | Firma e broadcast di operazioni **dagli account del gioco** (mai degli utenti) | `SteemTransactionProvider`: serializzazione + firma secp256k1 canonica con la posting key del broadcaster |
 | `PaymentProvider` | Rilevare e verificare pagamenti in ingresso rispetto a un'aspettativa (destinatario, asset, importo, memo, mittente) | `SteemTransferPaymentProvider`: legge lo storico dell'account shop, conferma solo sotto il blocco irreversibile |
 | `MarketplacePaymentProvider` | Tradurre un `Order` in istruzioni di pagamento e verificarlo | Generica: compone un `PaymentProvider` scelto per rete; non dipende da STEEM |
-| `BlockchainGamePersistence` | Ancorare record di partita e rileggerli dalla catena | `SteemGamePersistence`: `custom_json` `m8tcg_game` via `TransactionProvider`, lettura via `BlockchainProvider` |
 
 Lato browser c'è una porta speculare, **`WalletConnector`** (`KeychainWalletConnector` in v1): `signLogin(account, message)`, `requestPayment(instructions)`. Il client non costruisce mai l'importo o il destinatario: li riceve dal server nelle istruzioni di pagamento dell'ordine.
 
@@ -221,7 +213,6 @@ CardInstance
   definitionId  riferimento a CardDefinition
   edition       es. "core-1"
   serial        intero progressivo per (definitionId, edition), assegnato dal DB
-  finish        "standard" | "foil"          (estendibile: data-driven)
   ownerId       utente
   status        "active" | "locked" | "burned"
   origin        { kind: "purchase" | "pack" | "grant" | "reward", ref: orderId | grantKey }
@@ -239,9 +230,9 @@ Ogni cambio di proprietario o stato genera un `card_instance_events` (append-onl
 Product  (data-driven, data/products/*.json)
   id, kind: "single" | "booster" | "deck" | "starter" | "bundle" | …  (etichetta di presentazione)
   prices:   [{ asset: "STEEM", amount: "5.000" }, { asset: "SBD", amount: "1.200" }]
-  contents: [ { type: "card",    definitionId, count, finish? }
+  contents: [ { type: "card",    definitionId, count }
             , { type: "pack",    dropTableId, count }
-            , { type: "deck",    deckId, finish? }
+            , { type: "deck",    deckId }
             , { type: "product", productId, count } ]            ← bundle = composizione
   limits:   { perUser?, total?, availableFrom?, availableUntil? }
   active
@@ -249,7 +240,6 @@ Product  (data-driven, data/products/*.json)
 DropTable (data/drop-tables/*.json)
   slots: [ { count: 3, weights: { common: 1 } }, { count: 1, weights: { uncommon: 1 } },
            { count: 1, weights: { rare: 88, epic: 10, legendary: 2 } } ]
-  foilChance: { numerator: 1, denominator: 20 }
   pool: definizioni per rarità (dal catalogo, filtrate per set)
 ```
 
@@ -260,9 +250,9 @@ I prodotti del catalogo standard non si scrivono a mano: li genera il **listino*
 ```
 pricing.json
   asset, edition
-  singles: { perOrder, prices: { <rarità>: { standard, foil? } } }   → single_<carta>, single_<carta>_foil
+  singles: { perOrder, prices: { <rarità>: prezzo } }                → single_<carta>
   packs:   [ { id, name, description, dropTable, price, perOrder } ] → un prodotto per pacchetto, prezzo fisso
-  decks:   { perOrder }                                              → deck_<mazzo>, prezzo = Σ carte × prezzo singola standard
+  decks:   { perOrder }                                              → deck_<mazzo>, prezzo = Σ carte × prezzo singola
 ```
 
 Ogni rarità deve avere un prezzo, così ogni carta è in vendita e ogni mazzo ha un prezzo. Gli id generati sono stabili: cambiare un prezzo non tocca gli ordini già creati, che hanno il prezzo congelato.
@@ -302,7 +292,7 @@ Game
   id, mode ("casual" | "ranked" | "practice"), status (CREATED → ACTIVE → FINISHED | ABORTED)
   contentHash, engineVersion, protocolVersion
   seats: [ { seat: "s0", userId, account, deckSnapshot, entropy }, … ]
-  secret (cifrato a riposo, rivelato on-chain a fine partita)
+  secret (cifrato a riposo, scritto in chiaro nell'evento finale)
   version (versione del motore), lastEventSeq, chainHead
 ```
 
@@ -364,22 +354,17 @@ sequenceDiagram
   participant A as Giocatore A
   participant G as GameActor
   participant DB as PostgreSQL
-  participant O as Chain outbox worker
-  participant C as STEEM
   A->>G: game.command {commandId, expectedVersion, command}
   G->>G: autorizzazione (posto = utente della connessione), versione attesa
   G->>G: engine.execute(command)  (validazione di forma + regole)
   G->>DB: tx: game_commands + game_events (hash concatenati) + games.version
+  Note over G,DB: a fine partita, nella stessa tx: risultato m8tcg_result nell'outbox (03 §9)
   G-->>A: ack + eventi redatti per prospettiva
-  O->>DB: eventi non ancorati (per partita)
-  O->>O: batch per turno/dimensione/età → record con p/h
-  O->>C: custom_json m8tcg_game (posting key del broadcaster)
-  O->>DB: blockchain_transactions (txId, blocco, poi irreversibile)
 ```
 
 ## 9. Scalabilità
 
 - **Game server orizzontali:** ogni partita è posseduta da un solo nodo tramite un *lease* nel DB (`games.owner_node`, `lease_until`); le connessioni WebSocket di quella partita vengono instradate al nodo proprietario. Se il nodo muore, il lease scade e un altro nodo ricostruisce l'attore rigiocando i comandi.
-- **Broadcaster:** un pool di account posting, partizionato per `gameId`; ogni operazione aggrega record di più partite fino a 8 KiB. Capacità stimata e limiti in 03 §10.
+- **Broadcaster:** un pool di account posting, partizionato per ordine o partita; un record per operazione (ricevute, epoche, scambi, vendite, risultati). Di una partita va sulla catena solo il risultato (03 §9).
 - **Letture della catena:** un solo `PaymentWatcher` e un solo `ChainReconciler` per rete (lease nel DB), con cursori persistenti: riavvio senza perdite né doppioni.
 - **DB:** PostgreSQL; indici sulle chiavi di accesso calde; partizionamento di `game_events` per mese quando cresce.

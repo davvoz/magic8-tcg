@@ -30,7 +30,7 @@ const TRADE = Object.freeze({
   role: "counterparty",
   proposer: "alice",
   counterparty: "bob",
-  give: [{ id: uuid(11), definitionId: "ember_imp", serial: 4, finish: "foil" }],
+  give: [{ id: uuid(11), definitionId: "ember_imp", serial: 4 }],
   wants: [{ definitionId: "iron_watcher", count: 2 }],
   take: [],
   createdAt: NOW,
@@ -72,7 +72,7 @@ function fakeApi() {
     list: async () => (calls.push(["list"]), ok(state.trades)),
     tradeableOf: async (account) => (calls.push(["tradeableOf", account]), account === "ghost" ? fail("VALIDATION", "trade with another player who has played here before") : ok(account === "carol" ? [{ definitionId: "iron_watcher", count: 2 }, { definitionId: "ember_imp", count: 1 }] : [])),
     propose: async (offer) => (calls.push(["propose", offer]), offer.to === "nobody" ? fail("VALIDATION", "trade with another player who has played here before") : result({ ...TRADE, id: uuid(2), role: "proposer", proposer: "bob", counterparty: offer.to })),
-    accept: async (id) => (calls.push(["accept", id]), result({ ...TRADE, status: "ACCEPTED", take: [{ id: uuid(21), definitionId: "iron_watcher", serial: 9, finish: "standard" }] })),
+    accept: async (id) => (calls.push(["accept", id]), result({ ...TRADE, status: "ACCEPTED", take: [{ id: uuid(21), definitionId: "iron_watcher", serial: 9 }] })),
     decline: async (id) => (calls.push(["decline", id]), result({ ...TRADE, status: "DECLINED" })),
     cancel: async (id) => (calls.push(["cancel", id]), result({ ...TRADE, status: "CANCELLED" })),
   };
@@ -82,7 +82,7 @@ function screen() {
   const api = fakeApi();
   let reloads = 0;
   const trading = new TradingService({ api, newKey: () => "offer-key-000000000001", onCollectionChanged: () => (reloads += 1), scheduler: immediateScheduler });
-  const copy = (id, serial, tradeable) => ({ id: uuid(id), edition: "core-1", serial, finish: "standard", status: "active", tradeable });
+  const copy = (id, serial, tradeable) => ({ id: uuid(id), edition: "core-1", serial, status: "active", tradeable });
   const account = { collection: { state: { cards: [{ definitionId: "ember_imp", copies: [copy(31, 1, true), copy(32, 2, false)] }] } } };
   const viewport = new Viewport(theme.layout);
   viewport.resize({ cssWidth: 1600, cssHeight: 900 });

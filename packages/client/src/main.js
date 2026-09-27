@@ -245,7 +245,7 @@ async function boot() {
     // Signed moves (docs/tcg/12): a key per game that cannot leave the browser, authorised with Keychain.
     sessionKeys: new WebCryptoSessionKeys({ subtle: crypto.subtle }),
     wallet,
-    // Signed acks, checked on arrival and kept for the verifier page (docs/tcg/11).
+    // Signed acks, checked on arrival and kept as proof of what the server accepted (docs/tcg/11).
     receipts: new AckReceipts({
       store: storageAvailable ? localStore : new InMemoryStore(),
       verify: verifySignedAck,

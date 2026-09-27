@@ -4,11 +4,11 @@
  * once. The offer is data (data/economy/starter-offer.json), validated
  * against the current content at startup.
  *
- * @typedef {Readonly<{ edition: string, finish: string, choices: readonly import("@magic8/engine/domain/decks/DeckList.js").DeckList[] }>} StarterOffer
+ * @typedef {Readonly<{ edition: string, choices: readonly import("@magic8/engine/domain/decks/DeckList.js").DeckList[] }>} StarterOffer
  */
 import { Issues, checkArray, checkInteger, checkObject, checkString, checkUnique } from "@magic8/engine/shared/validation.js";
 
-const OFFER_KEYS = Object.freeze(["schemaVersion", "edition", "finish", "choices"]);
+const OFFER_KEYS = Object.freeze(["schemaVersion", "edition", "choices"]);
 const PRINTING_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const MAX_CHOICES = 5;
 
@@ -25,7 +25,6 @@ export function validateStarterOffer(raw, content) {
   }
   checkInteger(issues, object.schemaVersion, "starterOffer.schemaVersion", { min: 1, max: 1 });
   const edition = checkString(issues, object.edition, "starterOffer.edition", { pattern: PRINTING_PATTERN });
-  const finish = checkString(issues, object.finish, "starterOffer.finish", { pattern: PRINTING_PATTERN });
   const ids = checkArray(issues, object.choices, "starterOffer.choices", { minLength: 1, maxLength: MAX_CHOICES });
   /** @type {import("@magic8/engine/domain/decks/DeckList.js").DeckList[]} */
   const choices = [];
@@ -39,5 +38,5 @@ export function validateStarterOffer(raw, content) {
       }
     });
   }
-  return issues.toResult(Object.freeze({ edition: /** @type {string} */ (edition), finish: /** @type {string} */ (finish), choices: Object.freeze(choices) }));
+  return issues.toResult(Object.freeze({ edition: /** @type {string} */ (edition), choices: Object.freeze(choices) }));
 }

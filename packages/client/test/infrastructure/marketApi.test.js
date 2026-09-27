@@ -23,12 +23,12 @@ const ORDER = Object.freeze({
 });
 const LISTING = Object.freeze({
   products: [
-    { id: "core_booster", kind: "pack", name: "Core Booster", description: "d", prices: [{ asset: "STEEM", amount: "1.000" }], contents: [{ type: "pack", ref: "core_booster", count: 1, finish: null }], rarity: null, cards: 5, limits: { perOrder: 20, availableFrom: null, availableUntil: null } },
-    { id: "single_ember_imp", kind: "single", name: "Ember Imp", description: "d", prices: [{ asset: "STEEM", amount: "0.050" }], contents: [{ type: "card", ref: "ember_imp", count: 1, finish: null }], rarity: "common", cards: 1, limits: { perOrder: 3, availableFrom: null, availableUntil: null } },
+    { id: "core_booster", kind: "pack", name: "Core Booster", description: "d", prices: [{ asset: "STEEM", amount: "1.000" }], contents: [{ type: "pack", ref: "core_booster", count: 1 }], rarity: null, cards: 5, limits: { perOrder: 20, availableFrom: null, availableUntil: null } },
+    { id: "single_ember_imp", kind: "single", name: "Ember Imp", description: "d", prices: [{ asset: "STEEM", amount: "0.050" }], contents: [{ type: "card", ref: "ember_imp", count: 1 }], rarity: "common", cards: 1, limits: { perOrder: 3, availableFrom: null, availableUntil: null } },
   ],
-  dropTables: [{ id: "core_booster", hash: "cd".repeat(32), edition: "core-1", size: 5, odds: [{ count: 5, odds: { common: { numerator: 1, denominator: 1 } } }], foil: { numerator: 1, denominator: 20 }, pools: { common: ["ember_imp"] } }],
+  dropTables: [{ id: "core_booster", hash: "cd".repeat(32), edition: "core-1", size: 5, odds: [{ count: 5, odds: { common: { numerator: 1, denominator: 1 } } }], pools: { common: ["ember_imp"] } }],
   rarities: ["common"],
-  priceList: { asset: "STEEM", singles: [{ rarity: "common", standard: "0.050", foil: null }] },
+  priceList: { asset: "STEEM", singles: [{ rarity: "common", price: "0.050" }] },
 });
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -47,11 +47,11 @@ describe("HttpMarketApi", () => {
     assert.deepEqual(listing.value.dropTables[0].slots, [{ count: 5, odds: { common: { numerator: 1, denominator: 1 } } }]);
     assert.deepEqual(listing.value.products.map((product) => product.rarity), [null, "common"]);
     assert.deepEqual(listing.value.rarities, ["common"]);
-    assert.deepEqual(listing.value.priceList, { asset: "STEEM", singles: [{ rarity: "common", standard: "0.050", foil: null }] });
+    assert.deepEqual(listing.value.priceList, { asset: "STEEM", singles: [{ rarity: "common", price: "0.050" }] });
   });
 
   it("refuses a listing without a valid price list", async () => {
-    for (const priceList of [undefined, { asset: "STEEM", singles: [{ rarity: "common", standard: "cheap", foil: null }] }, { singles: [] }]) {
+    for (const priceList of [undefined, { asset: "STEEM", singles: [{ rarity: "common", price: "cheap" }] }, { singles: [] }]) {
       const listing = await apiWith(() => json(200, { ...LISTING, priceList })).api.listing();
       assert.equal(listing.ok, false, JSON.stringify(priceList));
     }

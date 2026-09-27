@@ -10,7 +10,7 @@ import { uuidV4 } from "../../src/kernel/random.js";
 import { DbErrorCode } from "../../src/platform/db/DbError.js";
 import { buildTestApp, deterministicRandom } from "../helpers.js";
 
-const PRINTING = Object.freeze({ edition: "core-1", finish: "standard" });
+const PRINTING = Object.freeze({ edition: "core-1" });
 
 /** A user row to own cards (users are created by sign-in in real life). */
 async function userIn(setup, account) {
@@ -24,11 +24,11 @@ describe("InventoryService.mint", () => {
     const bob = await userIn(setup, "bob");
     const first = await setup.app.inventory.mint({ ownerId: alice.id, items: [{ definitionId: "ember_imp", count: 3 }, { definitionId: "arcane_apprentice", count: 1 }], ...PRINTING, origin: { kind: "grant", ref: "test:1" } });
     const second = await setup.app.inventory.mint({ ownerId: bob.id, items: [{ definitionId: "ember_imp", count: 2 }], ...PRINTING, origin: { kind: "grant", ref: "test:2" } });
-    const foil = await setup.app.inventory.mint({ ownerId: bob.id, items: [{ definitionId: "ember_imp", count: 1 }], edition: "promo-1", finish: "foil", origin: { kind: "reward", ref: "test:3" } });
+    const promo = await setup.app.inventory.mint({ ownerId: bob.id, items: [{ definitionId: "ember_imp", count: 1 }], edition: "promo-1", origin: { kind: "reward", ref: "test:3" } });
     const imps = (instances) => instances.filter((instance) => instance.definitionId === "ember_imp").map((instance) => instance.serial);
     assert.deepEqual(imps(first), [1, 2, 3]);
     assert.deepEqual(imps(second), [4, 5]);
-    assert.deepEqual(imps(foil), [1], "another edition has its own numbering");
+    assert.deepEqual(imps(promo), [1], "another edition has its own numbering");
     assert.equal(new Set([...first, ...second].map((instance) => instance.id)).size, 6);
   });
 
@@ -49,7 +49,7 @@ describe("InventoryService.mint", () => {
       { items: [{ definitionId: "ember_imp", count: 0 }], ...PRINTING, origin },
       { items: [{ definitionId: "ember_imp", count: 1 }, { definitionId: "ember_imp", count: 1 }], ...PRINTING, origin },
       { items: [{ definitionId: "ember_imp", count: 501 }], ...PRINTING, origin },
-      { items: [{ definitionId: "ember_imp", count: 1 }], edition: "Core 1", finish: "standard", origin },
+      { items: [{ definitionId: "ember_imp", count: 1 }], edition: "Core 1", origin },
       { items: [{ definitionId: "ember_imp", count: 1 }], ...PRINTING, origin: { kind: "gift", ref: "x" } },
     ]) {
       await assert.rejects(setup.app.inventory.mint({ ownerId: alice.id, ...request }), /InventoryService\.mint/, JSON.stringify(request));
@@ -110,7 +110,7 @@ describe("reading a collection", () => {
     const [copy] = await setup.app.inventory.mint({ ownerId: alice.id, items: [{ definitionId: "ember_imp", count: 1 }], ...PRINTING, origin: { kind: "grant", ref: "test" } });
     await assert.rejects(
       setup.database.query(
-        "INSERT INTO card_instances (id, definition_id, edition, serial, finish, owner_id, origin_kind, origin_ref) VALUES ('00000000-0000-4000-8000-00000000abcd', 'ember_imp', 'core-1', $1, 'standard', $2, 'grant', 'forged')",
+        "INSERT INTO card_instances (id, definition_id, edition, serial, owner_id, origin_kind, origin_ref) VALUES ('00000000-0000-4000-8000-00000000abcd', 'ember_imp', 'core-1', $1, $2, 'grant', 'forged')",
         [copy.serial, alice.id],
       ),
       (error) => error.code === DbErrorCode.UNIQUE_VIOLATION,

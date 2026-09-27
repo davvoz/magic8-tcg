@@ -19,7 +19,7 @@ import { CatalogService, PgContentRepository, registerCatalogRoutes } from "./mo
 import { InventoryService, PgInventoryRepository, registerCollectionRoutes } from "./modules/collection/index.js";
 import { DeckService, PgDeckRepository, registerDeckRoutes } from "./modules/decks/index.js";
 import { EconomyService, formatAmount, validateAssets } from "./modules/economy/index.js";
-import { ChainBroadcaster, ChainOutbox, ChainTracker, GameVerification, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS, registerChainRoutes } from "./modules/chain/index.js";
+import { ChainBroadcaster, ChainOutbox, ChainTracker, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository, RefundWatcher } from "./modules/payments/index.js";
 import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, registerMonitoringRoutes } from "./modules/admin/index.js";
@@ -53,20 +53,17 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   marketplacePolicy?: Partial<typeof DEFAULT_MARKETPLACE_POLICY>,
  *   salesPolicy?: Partial<typeof import("./modules/sales/index.js").DEFAULT_SALES_POLICY>,
  *   timePolicy?: Partial<import("./modules/gameplay/domain/TurnClock.js").TimePolicy>,
- *   sealingPolicy?: Partial<typeof import("./modules/gameplay/index.js").DEFAULT_SEALING_POLICY>,
  *   publishing?: { transactions: import("./modules/chain/application/ports.js").TransactionProvider, reader: import("./modules/chain/application/ports.js").PublicationReader } | null,
- *   chainReader?: import("./modules/chain/application/ports.js").PublicationReader | null,
  *   alarmPolicy?: Partial<typeof import("./modules/admin/index.js").DEFAULT_ALARM_POLICY>,
  *   chainPolicies?: { broadcast?: object, tracker?: object, rc?: object },
  *   ackSigner?: import("./modules/gameplay/application/ports.js").AckSigner | null,
  *   verifyMoveSignature?: (message: string, signature: string, sessionKey: string) => boolean,
- *   recoverSigner?: (message: string, signature: string) => string | null,
  * }} deps `verifyMoveSignature` (P-256) is needed for games in protocol v2
  */
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
-  const { staticFiles, publishing, chainReader, ackSigner, verifyMoveSignature, recoverSigner } = optionalAdapters(deps);
-  const { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy } = policiesOf(deps);
+  const { staticFiles, publishing, ackSigner, verifyMoveSignature } = optionalAdapters(deps);
+  const { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
 
@@ -127,7 +124,7 @@ export async function createServerApp(deps) {
   await marketplace.syncProducts();
   const hub = new ConnectionHub({ logger });
   const gameRepository = new PgGameRepository(database);
-  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, outbox, timePolicy, sealingPolicy, ackSigner, gameProtocol: config.gameProtocol, signatures: moveSignatures(wallets.get(defaultNetwork), verifyMoveSignature) });
+  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, results: outbox, timePolicy, ackSigner, gameProtocol: config.gameProtocol, signatures: moveSignatures(wallets.get(defaultNetwork), verifyMoveSignature) });
   const trading = new TradeService({ repository: new PgTradeRepository(database), inventory, findUser: (network, account) => users.findByAccount(network, account), isKnownCard: (id) => currentContent().catalog.has(id), outbox, notifier: hub, notifications, audit, clock, random, unitOfWork, logger, network: defaultNetwork });
   // Sales between players: paid straight to the seller, watched with the shop's payment providers.
   const salesRepository = new PgSalesRepository(database);
@@ -144,9 +141,6 @@ export async function createServerApp(deps) {
   const notificationRelay = new NotificationRelay({ notifications, listen: (channel, onPayload, options) => database.listen(channel, onPayload, options), hub, logger });
   const boardRelay = new BoardRelay({ listen: (channel, onPayload, options) => database.listen(channel, onPayload, options), hub, logger });
 
-
-  const verification = new GameVerification({ repository: chainRepository, reader: chainReader, rootAccount, fetchContent: (hash) => catalog.payload(hash), clock, verifyMoveSignature, recoverSigner });
-
   const router = new Router();
   registerIdentityRoutes({ router, auth, cookie: { name: config.sessionCookieName, secure: config.secure }, clock });
   registerCatalogRoutes({ router, catalog });
@@ -157,7 +151,6 @@ export async function createServerApp(deps) {
   registerDeckRoutes({ router, decks });
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
-  registerChainRoutes({ router, verification });
   registerRankingRoutes({ router, ranking });
   registerGameRoutes({ router, games });
   const readModel = new PgOperationsReadModel(database);
@@ -208,7 +201,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, verification, refunds, admin, monitor, ranking, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, hub, games, gameRepository, secrets, matchmaking, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, hub, games, gameRepository, secrets, matchmaking, realtime });
 }
 
 /** Anchoring states that prove a payload is on chain. */
@@ -252,16 +245,16 @@ function moveSignatures(wallet, verifyMoveSignature) {
  * The optional adapters of createServerApp, with their defaults.
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function optionalAdapters({ staticFiles = null, publishing = null, chainReader = null, ackSigner = null, verifyMoveSignature = undefined, recoverSigner = undefined }) {
-  return { staticFiles, publishing, chainReader: chainReader ?? publishing?.reader ?? null, ackSigner, verifyMoveSignature, recoverSigner };
+function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = null, verifyMoveSignature = undefined }) {
+  return { staticFiles, publishing, ackSigner, verifyMoveSignature };
 }
 
 /**
  * The tunable policies of createServerApp (tests shorten times, lower limits).
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function policiesOf({ identityPolicyOverrides = {}, marketplacePolicy = {}, salesPolicy = {}, timePolicy = {}, sealingPolicy = {}, chainPolicies = {}, alarmPolicy = {} }) {
-  return { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, sealingPolicy, chainPolicies, alarmPolicy };
+function policiesOf({ identityPolicyOverrides = {}, marketplacePolicy = {}, salesPolicy = {}, timePolicy = {}, chainPolicies = {}, alarmPolicy = {} }) {
+  return { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy };
 }
 
 /**

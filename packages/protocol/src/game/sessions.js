@@ -6,30 +6,18 @@
  * per game with Keychain (`sessionAuthorization`, posting key). Every move
  * the player makes is then signed with that key (`moveMessage`). The server
  * records both (SESSION, MOVE.sig): it can still refuse a move, but it can
- * no longer publish, in a player's name, a move the player did not make.
+ * no longer record, in a player's name, a move the player did not make.
  *
  * Like acks, the curves live outside the protocol: whoever checks passes
- * `verifyMoveSignature` (P-256) and `recoverSigner` (secp256k1).
+ * the verifier in (P-256 for moves, secp256k1 for the authorisation).
  */
 import { canonicalize } from "../canonical/CanonicalJson.js";
-import { EventKind, GameProtocol } from "./constants.js";
+import { GameProtocol } from "./constants.js";
 
 export const MOVE_KIND = "m8tcg_move";
 
-export const SignatureStatus = Object.freeze({
-  /** A v1 game: moves are not signed. */
-  NOT_REQUIRED: "NOT_REQUIRED",
-  /** Every player move carries a valid signature by the seat's session key. */
-  VALID: "VALID",
-  /** A player move before the seat had any session key. */
-  UNSIGNED_MOVE: "UNSIGNED_MOVE",
-  /** A player move whose signature is not the seat's session key's. */
-  BAD_MOVE_SIGNATURE: "BAD_MOVE_SIGNATURE",
-});
-
 /**
  * @typedef {(message: string, signatureHex: string, publicKeyHex: string) => boolean} MoveSignatureVerifier P-256, SHA-256, r ‖ s
- * @typedef {Readonly<{ seat: string, account: string, key: string, authorization: string, eventSeq: number }>} SessionGrant
  */
 
 /**
@@ -53,66 +41,10 @@ export function moveMessage({ gameId, commandId, expectedVersion, command }) {
 }
 
 /**
- * The session keys a game's seats authorised, in order.
- * @param {import("./GameHistory.js").GameHistory} history
- * @returns {readonly SessionGrant[]}
+ * The engine command a MOVE event carries: v2 wraps it with its signature.
+ * @param {Readonly<Record<string, unknown>>} data the MOVE payload
+ * @param {number} version the game protocol version
  */
-export function sessionGrants(history) {
-  const created = history.events[0]?.event;
-  if (created === undefined || created.k !== EventKind.GAME_CREATED) {
-    return Object.freeze([]);
-  }
-  const accounts = new Map(/** @type {any} */ (created.d).seats.map((/** @type {any} */ entry) => [entry.seat, entry.acct]));
-  return Object.freeze(
-    history.events
-      .filter(({ event }) => event.k === EventKind.SESSION)
-      .map(({ event }) => {
-        const d = /** @type {any} */ (event.d);
-        return Object.freeze({ seat: /** @type {string} */ (event.a), account: accounts.get(event.a), key: d.key, authorization: d.auth, eventSeq: event.i });
-      }),
-  );
-}
-
-/**
- * Checks that every player move of a v2 game is signed by the key the seat
- * had authorised at that point (a later SESSION replaces an earlier one).
- * Forced moves are the server's own and carry no signature.
- * @param {import("./GameHistory.js").GameHistory} history
- * @param {MoveSignatureVerifier | undefined} verifyMoveSignature
- * @returns {Readonly<{ status: string, message: string | null, eventSeq: number | null }>}
- */
-export function checkMoveSignatures(history, verifyMoveSignature) {
-  if (history.version === null || history.version < GameProtocol.V2) {
-    return outcome(SignatureStatus.NOT_REQUIRED);
-  }
-  if (verifyMoveSignature === undefined) {
-    throw new TypeError("a v2 game needs verifyMoveSignature");
-  }
-  /** @type {Map<string, string>} seat → current session key */
-  const keys = new Map();
-  for (const { event } of history.events) {
-    const d = /** @type {any} */ (event.d);
-    if (event.k === EventKind.SESSION) {
-      keys.set(/** @type {string} */ (event.a), d.key);
-    } else if (event.k === EventKind.MOVE) {
-      const key = keys.get(/** @type {string} */ (event.a));
-      if (key === undefined) {
-        return outcome(SignatureStatus.UNSIGNED_MOVE, `move ${event.i} by ${event.a} before any session key`, event.i);
-      }
-      const message = moveMessage({ gameId: history.gameId, commandId: d.cid, expectedVersion: d.ev, command: d.cmd });
-      if (!verifyMoveSignature(message, d.sig, key)) {
-        return outcome(SignatureStatus.BAD_MOVE_SIGNATURE, `move ${event.i} is not signed by ${event.a}'s session key`, event.i);
-      }
-    }
-  }
-  return outcome(SignatureStatus.VALID);
-}
-
-/**
- * @param {string} status
- * @param {string | null} [message]
- * @param {number | null} [eventSeq]
- */
-function outcome(status, message = null, eventSeq = null) {
-  return Object.freeze({ status, message, eventSeq });
+export function commandOfMove(data, version) {
+  return version >= GameProtocol.V2 ? /** @type {Readonly<Record<string, unknown>>} */ (data.cmd) : data;
 }

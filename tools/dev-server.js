@@ -8,7 +8,7 @@
  * Mounts (first matching prefix wins):
  *   /data/    → data/                 shared game content
  *   /engine/  → packages/engine/src/  rules engine (the client's import map points here)
- *   /protocol/, /steem/, /vendor/noble-hashes/, /vendor/noble-curves/  the verifier page (verify.html)
+ *   /protocol/, /steem/, /vendor/noble-hashes/, /vendor/noble-curves/  the protocol and STEEM code the browser pages run
  *   /         → packages/client/      the browser client
  *
  * Usage: node tools/dev-server.js [port]

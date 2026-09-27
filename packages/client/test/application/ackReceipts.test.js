@@ -36,7 +36,7 @@ describe("AckReceipts", () => {
     assert.equal(receipts.keep(GAME, signedAck(commandId(1)), key), true);
     assert.equal(receipts.keep(GAME, signedAck(commandId(1)), key), true, "a repeated ack is kept once");
     assert.deepEqual(receipts.forGame(GAME).map((ack) => [ack.gameId, ack.commandId, ack.ok]), [[GAME, commandId(1), undefined]]);
-    assert.equal(JSON.parse(store.read(receiptsKey(GAME)).value).length, 1, "stored where the verifier page reads");
+    assert.equal(JSON.parse(store.read(receiptsKey(GAME)).value).length, 1, "stored per game");
 
     const games = Array.from({ length: 21 }, (_, index) => `01j8x3r6h2qkq4w0v7m5a9c${String(index).padStart(3, "0")}`.replace(/[ilou]/g, "0"));
     games.forEach((gameId, index) => receipts.keep(gameId, signedAck(commandId(100 + index), { gameId }), key));

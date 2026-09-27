@@ -80,7 +80,7 @@ export function fakeCollectionApi({ content, starterIds = ["precon_foundry", "pr
     collection: method("collection", () => {
       const groups = new Map();
       for (const copy of state.copies) {
-        groups.set(copy.definitionId, [...(groups.get(copy.definitionId) ?? []), { id: copy.id, edition: "core-1", serial: copy.serial, finish: "standard", status: "active" }]);
+        groups.set(copy.definitionId, [...(groups.get(copy.definitionId) ?? []), { id: copy.id, edition: "core-1", serial: copy.serial, status: "active" }]);
       }
       return ok([...groups].map(([definitionId, copies]) => ({ definitionId, copies })));
     }),

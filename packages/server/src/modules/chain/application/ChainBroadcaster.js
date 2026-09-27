@@ -1,13 +1,13 @@
 /**
- * ChainBroadcaster: publishes BUILT outbox records (docs/tcg/03 §9).
+ * ChainBroadcaster: publishes BUILT outbox records (docs/tcg/03 §16).
  *
  * One round per block (3 s). Only broadcasters the root account's manifest
  * authorises at the irreversible block publish (a record signed before its
  * signer's authorisation would be invalid forever). Each sends at most one
- * operation per round: the most urgent of its records — a receipt or a pack
- * epoch alone, or as many game records as fit one envelope. Records are
- * partitioned among the accounts by game (or order), so a game's records
- * leave in order from the same account.
+ * operation per round: its oldest record (a receipt part, a pack epoch, a
+ * trade, a sale or a game result), alone. Records are partitioned among the
+ * accounts by order (or game), so an order's receipts leave in order from the
+ * same account.
  *
  * Persist first, broadcast second: the signed transaction and the records it
  * carries are written as BROADCAST before anything reaches a node. A crash
@@ -15,7 +15,7 @@
  * or see expire (records BUILT again) — never an unknown one. A broadcast
  * error proves nothing either way, so it is only noted: the tracker decides.
  */
-import { OperationId, packEnvelopes, sha256Hex, utf8 } from "@magic8/protocol";
+import { OperationId, sha256Hex, utf8 } from "@magic8/protocol";
 import { uuidV4 } from "../../../kernel/random.js";
 import { OutboxKind } from "./ChainOutbox.js";
 import { ResourceMode } from "./RcMonitor.js";
@@ -23,12 +23,10 @@ import { ResourceMode } from "./RcMonitor.js";
 export const DEFAULT_BROADCAST_POLICY = Object.freeze({
   /** BUILT records looked at per round. */
   maxRowsPerRound: 200,
-  /** A broadcaster low on Resource Credits sends game records once every this many rounds, so they pack into fuller envelopes. */
-  slowEveryRounds: 10,
 });
 
-const OPERATION_OF_KIND = Object.freeze({ [OutboxKind.GAME_RECORD]: OperationId.GAME, [OutboxKind.RECEIPT]: OperationId.RECEIPT, [OutboxKind.EPOCH]: OperationId.EPOCH, [OutboxKind.TRADE]: OperationId.TRADE, [OutboxKind.SALE]: OperationId.SALE });
-const PURPOSE_OF_KIND = Object.freeze({ [OutboxKind.GAME_RECORD]: "GAME_RECORDS", [OutboxKind.RECEIPT]: "RECEIPT", [OutboxKind.EPOCH]: "EPOCH", [OutboxKind.TRADE]: "TRADE", [OutboxKind.SALE]: "SALE" });
+const OPERATION_OF_KIND = Object.freeze({ [OutboxKind.RECEIPT]: OperationId.RECEIPT, [OutboxKind.EPOCH]: OperationId.EPOCH, [OutboxKind.TRADE]: OperationId.TRADE, [OutboxKind.SALE]: OperationId.SALE, [OutboxKind.RESULT]: OperationId.RESULT });
+const PURPOSE_OF_KIND = Object.freeze({ [OutboxKind.RECEIPT]: "RECEIPT", [OutboxKind.EPOCH]: "EPOCH", [OutboxKind.TRADE]: "TRADE", [OutboxKind.SALE]: "SALE", [OutboxKind.RESULT]: "RESULT" });
 
 /**
  * @typedef {import("../infrastructure/PgChainRepository.js").OutboxRow} OutboxRow
@@ -36,49 +34,31 @@ const PURPOSE_OF_KIND = Object.freeze({ [OutboxKind.GAME_RECORD]: "GAME_RECORDS"
  */
 
 /**
- * The broadcaster that publishes a record: stable for a game (or an order).
+ * The broadcaster that publishes a record: stable for an order (or a game).
  * @param {OutboxRow} row
  * @param {readonly string[]} signers
  */
 export function signerFor(row, signers) {
-  const key = row.gameId ?? row.orderId ?? row.kind;
+  const key = row.orderId ?? row.gameId ?? row.kind;
   return signers[Number.parseInt(sha256Hex(utf8(key)).slice(0, 8), 16) % signers.length];
 }
 
 /**
- * The expected operation JSON for records sent together: an envelope for
- * game records, the payload itself for a receipt or an epoch.
- * @param {string} kind
+ * The expected operation JSON of a transaction's records: the payload of its one record.
  * @param {readonly { payload: string }[]} rows
  * @returns {string | null} null when they cannot form one operation
  */
-export function operationJson(kind, rows) {
-  if (rows.length === 0) {
-    return null;
-  }
-  if (kind !== OutboxKind.GAME_RECORD) {
-    return rows.length === 1 ? rows[0].payload : null;
-  }
-  const envelopes = packEnvelopes(rows.map((row) => ({ json: row.payload })));
-  return envelopes.length === 1 ? envelopes[0].json : null;
+export function operationJson(rows) {
+  return rows.length === 1 ? rows[0].payload : null;
 }
 
 /**
  * @param {readonly OutboxRow[]} own a signer's BUILT rows, most urgent first
- * @param {boolean} holdGameRecords
  * @returns {Batch | null}
  */
-function nextBatch(own, holdGameRecords) {
-  const single = own.find((row) => row.kind !== OutboxKind.GAME_RECORD);
-  const games = own.filter((row) => row.kind === OutboxKind.GAME_RECORD);
-  if (single !== undefined && (single === own[0] || holdGameRecords || games.length === 0)) {
-    return Object.freeze({ kind: single.kind, id: OPERATION_OF_KIND[single.kind], json: single.payload, rows: Object.freeze([single]) });
-  }
-  if (holdGameRecords || games.length === 0) {
-    return null;
-  }
-  const [envelope] = packEnvelopes(games.map((row) => ({ json: row.payload })));
-  return Object.freeze({ kind: OutboxKind.GAME_RECORD, id: OperationId.GAME, json: envelope.json, rows: Object.freeze(games.slice(0, envelope.count)) });
+function nextBatch(own) {
+  const [first] = own;
+  return first === undefined ? null : Object.freeze({ kind: first.kind, id: OPERATION_OF_KIND[first.kind], json: first.payload, rows: Object.freeze([first]) });
 }
 
 export class ChainBroadcaster {
@@ -91,7 +71,6 @@ export class ChainBroadcaster {
   #unitOfWork;
   #logger;
   #policy;
-  #round = 0;
 
   /**
    * @param {{
@@ -128,7 +107,6 @@ export class ChainBroadcaster {
     if (active.length === 0) {
       return 0;
     }
-    this.#round += 1;
     const reference = await this.#transactions.reference();
     const prepared = await this.#unitOfWork(() => this.#prepare(all, active, reference));
     for (const { id, transaction, signer } of prepared) {
@@ -158,10 +136,8 @@ export class ChainBroadcaster {
       bySigner.set(signer, [...(bySigner.get(signer) ?? []), row]);
     }
     const prepared = [];
-    const slowRound = this.#round % this.#policy.slowEveryRounds === 0;
     for (const signer of active) {
-      const holdGameRecords = this.#resources.modeOf(signer) === ResourceMode.SLOW && !slowRound;
-      const batch = nextBatch(bySigner.get(signer) ?? [], holdGameRecords);
+      const batch = nextBatch(bySigner.get(signer) ?? []);
       if (batch === null) {
         continue;
       }

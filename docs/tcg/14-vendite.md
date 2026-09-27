@@ -56,7 +56,7 @@ Un trasferimento col memo dell'acquisto che **non** corrisponde (importo, valuta
 Ogni vendita conclusa è pubblicata dal pool di broadcaster:
 
 ```json
-{"b":"bob","c":["<id copia>","ember_imp",4,"f"],"p":"1.500 STEEM","s":"alice","t":"<id annuncio>","v":1,"x":"<id transazione del pagamento>"}
+{"b":"bob","c":["<id copia>","ember_imp",4],"p":"1.500 STEEM","s":"alice","t":"<id annuncio>","v":1,"x":"<id transazione del pagamento>"}
 ```
 
 `s` ha venduto a `b` la copia `c` per `p`, pagata con la transazione `x` (un trasferimento da `b` a `s`, che chiunque può controllare). Con ricevute (03 §12) e scambi (13) si ricostruisce da chi è passata ogni copia. Il tracker segue questi record come gli altri: un `m8tcg_sale` del nostro broadcaster sconosciuto al database genera l'allarme `UNKNOWN_ON_CHAIN`.

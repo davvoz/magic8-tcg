@@ -66,7 +66,6 @@ export class StarterService {
         ownerId: userId,
         items: starter.entries.map((entry) => ({ definitionId: entry.cardId, count: entry.count })),
         edition: this.#offer.edition,
-        finish: this.#offer.finish,
       });
       if (!grant.granted) {
         throw new AppError("STARTER_ALREADY_CLAIMED", "you already received your starter deck");

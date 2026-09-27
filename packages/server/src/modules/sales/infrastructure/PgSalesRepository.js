@@ -50,7 +50,7 @@ function toPurchase(row) {
 }
 
 /**
- * @typedef {Readonly<{ id: string, definitionId: string, edition: string, serial: number, finish: string }>} ListedCard
+ * @typedef {Readonly<{ id: string, definitionId: string, edition: string, serial: number }>} ListedCard
  * @typedef {Readonly<{ listing: import("../domain/Listing.js").Listing, seller: string, card: ListedCard, reserved: boolean, buyer: string | null }>} ListingRow
  *   `buyer`: who bought it, once sold
  * @typedef {Readonly<{ purchase: import("../domain/Listing.js").Purchase, listing: import("../domain/Listing.js").Listing, seller: string, card: ListedCard }>} PurchaseRow
@@ -63,7 +63,7 @@ const PREFIXED_LISTING_COLUMNS = LISTING_COLUMNS.map((column) => `l.${column} AS
 
 /** The columns every listing row is read with: the copy, the seller, and whether someone is buying it or bought it. */
 const LISTING_DETAILS = `
-  SELECT l.*, s.account AS seller_account, ci.edition, ci.serial, ci.finish,
+  SELECT l.*, s.account AS seller_account, ci.edition, ci.serial,
          EXISTS (SELECT 1 FROM listing_purchases p WHERE p.listing_id = l.id AND p.status IN ('PENDING', 'DETECTED')) AS reserved,
          (SELECT b.account FROM listing_purchases p JOIN users b ON b.id = p.buyer_id WHERE p.listing_id = l.id AND p.status = 'COMPLETED') AS buyer_account
     FROM listings l JOIN users s ON s.id = l.seller_id JOIN card_instances ci ON ci.id = l.card_instance_id`;
@@ -73,7 +73,7 @@ function toListingRow(row) {
   return Object.freeze({
     listing: toListing(row),
     seller: row.seller_account,
-    card: Object.freeze({ id: row.card_instance_id, definitionId: row.definition_id, edition: row.edition, serial: row.serial, finish: row.finish }),
+    card: Object.freeze({ id: row.card_instance_id, definitionId: row.definition_id, edition: row.edition, serial: row.serial }),
     reserved: row.reserved,
     buyer: row.buyer_account,
   });
@@ -297,7 +297,7 @@ export class PgSalesRepository {
    */
   async #purchaseRows(where, params, limit) {
     const rows = await this.#db.rows(
-      `SELECT p.*, ${PREFIXED_LISTING_COLUMNS}, s.account AS seller_account, ci.edition, ci.serial, ci.finish
+      `SELECT p.*, ${PREFIXED_LISTING_COLUMNS}, s.account AS seller_account, ci.edition, ci.serial
          FROM listing_purchases p JOIN listings l ON l.id = p.listing_id JOIN users s ON s.id = l.seller_id JOIN card_instances ci ON ci.id = l.card_instance_id
         WHERE ${where} ORDER BY p.created_at DESC, p.id LIMIT $${params.length + 1}`,
       [...params, limit],
@@ -309,7 +309,7 @@ export class PgSalesRepository {
           purchase: toPurchase(row),
           listing,
           seller: row.seller_account,
-          card: Object.freeze({ id: listing.cardInstanceId, definitionId: listing.definitionId, edition: row.edition, serial: row.serial, finish: row.finish }),
+          card: Object.freeze({ id: listing.cardInstanceId, definitionId: listing.definitionId, edition: row.edition, serial: row.serial }),
         });
       }),
     );

@@ -24,7 +24,7 @@ const PAYMENT_PROBLEMS = Object.freeze({
 });
 
 /**
- * @typedef {Readonly<{ definitionId: string, count?: number, caption?: string, serial?: number, finish?: string }>} NotificationCard
+ * @typedef {Readonly<{ definitionId: string, count?: number, caption?: string, serial?: number }>} NotificationCard
  * @typedef {Readonly<{ title: string, body: string, cards: readonly NotificationCard[], target: string | null, tone: "good" | "bad" | "info" }>} NotificationText
  * @typedef {{ data: Readonly<Record<string, any>>, account: string, name: (definitionId: unknown) => string, list: (cards: unknown) => string, single: NotificationCard | null, singleName: string, problem: string }} Facts
  */
@@ -123,7 +123,7 @@ function cardsOf(value) {
 }
 
 /**
- * One copy (a sale): its serial and finish, as a caption too.
+ * One copy (a sale): its serial, as a caption too.
  * @param {unknown} value
  * @returns {NotificationCard | null}
  */
@@ -133,9 +133,7 @@ function cardOf(value) {
     return null;
   }
   const serial = Number.isSafeInteger(card.serial) ? card.serial : undefined;
-  const finish = typeof card.finish === "string" ? card.finish : undefined;
-  const caption = [serial === undefined ? "" : `#${serial}`, finish === "foil" ? "foil" : ""].filter((part) => part.length > 0).join(" · ");
-  return Object.freeze({ definitionId: card.definitionId, serial, finish, caption });
+  return Object.freeze({ definitionId: card.definitionId, serial, caption: serial === undefined ? "" : `#${serial}` });
 }
 
 /**

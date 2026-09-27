@@ -17,9 +17,9 @@
  *
  * @typedef {Readonly<{ count: number, weights: Readonly<Record<string, number>> }>} DropSlot
  * @typedef {Readonly<{ numerator: number, denominator: number }>} Chance
- * @typedef {Readonly<{ v: 1, id: string, edition: string, slots: readonly DropSlot[], foil: Chance, pools: Readonly<Record<string, readonly string[]>> }>} DropTable
+ * @typedef {Readonly<{ v: 1, id: string, edition: string, slots: readonly DropSlot[], pools: Readonly<Record<string, readonly string[]>> }>} DropTable
  *   A drop table with its card pools resolved: pools list card ids per rarity, sorted.
- * @typedef {Readonly<{ cardId: string, rarity: string, finish: string }>} PackCard
+ * @typedef {Readonly<{ cardId: string, rarity: string }>} PackCard
  */
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -31,11 +31,10 @@ import { ProtocolError } from "../game/ProtocolError.js";
 
 export const DROP_TABLE_VERSION = 1;
 export const PACK_SECRET_BYTES = 32;
-export const Finish = Object.freeze({ STANDARD: "standard", FOIL: "foil" });
 
 const PACK_LABEL = utf8("m8tcg/v1/pack");
 const SEPARATOR = new Uint8Array([0]);
-const TABLE_KEYS = Object.freeze(["v", "id", "edition", "slots", "foil", "pools"]);
+const TABLE_KEYS = Object.freeze(["v", "id", "edition", "slots", "pools"]);
 const TABLE_ID_PATTERN = /^[a-z0-9_]{1,40}$/;
 const EDITION_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const RARITY_PATTERN = /^[a-z][a-z0-9_]{0,23}$/;
@@ -73,10 +72,6 @@ export function validateDropTable(table) {
   checkHeader(candidate);
   checkPools(candidate.pools);
   checkSlots(candidate.slots, candidate.pools);
-  const foil = candidate.foil;
-  if (!isObject(foil) || Object.keys(foil).length !== 2 || !isInt(foil.denominator, 1, MAX_WEIGHT) || !isInt(foil.numerator, 0, foil.denominator)) {
-    throw new ProtocolError("foil must be { numerator, denominator } with 0 ≤ numerator ≤ denominator");
-  }
   return /** @type {DropTable} */ (table);
 }
 
@@ -198,8 +193,7 @@ export function packSeed({ secret, orderId, txId, index }) {
 
 /**
  * Draws one pack. Slots in order; within a slot each card picks a rarity by
- * weight (rarities in sorted order), then a card uniformly from that pool,
- * then its finish.
+ * weight (rarities in sorted order), then a card uniformly from that pool.
  * @param {DropTable} table
  * @param {string} seed 32 bytes as lowercase hex (from packSeed)
  * @returns {readonly PackCard[]}
@@ -219,8 +213,7 @@ export function drawPack(table, seed) {
       const rarity = pickWeighted(rarities, slot.weights, random.nextInt(total));
       const pool = table.pools[rarity];
       const cardId = pool[random.nextInt(pool.length)];
-      const finish = random.nextInt(table.foil.denominator) < table.foil.numerator ? Finish.FOIL : Finish.STANDARD;
-      cards.push(Object.freeze({ cardId, rarity, finish }));
+      cards.push(Object.freeze({ cardId, rarity }));
     }
   }
   return Object.freeze(cards);

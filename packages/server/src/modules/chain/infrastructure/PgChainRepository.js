@@ -8,13 +8,13 @@
 import { fromTimestamp, toTimestamp } from "../../../platform/db/Database.js";
 
 /**
- * @typedef {Readonly<{ id: number, kind: string, gameId: string | null, orderId: string | null, recordSeq: number | null, payload: string, priority: number, attempts: number }>} OutboxRow
+ * @typedef {Readonly<{ id: number, kind: string, orderId: string | null, gameId: string | null, payload: string, priority: number, attempts: number }>} OutboxRow
  * @typedef {Readonly<{ id: string, txId: string, signer: string, status: string, blockNum: number | null, expiration: number }>} StoredTransaction
  */
 
 /** @param {import("../../../platform/db/Database.js").Row} row @returns {OutboxRow} */
 const toRow = (row) =>
-  Object.freeze({ id: row.id, kind: row.kind, gameId: row.game_id, orderId: row.order_id, recordSeq: row.record_seq, payload: row.payload, priority: row.priority, attempts: row.attempts });
+  Object.freeze({ id: row.id, kind: row.kind, orderId: row.order_id, gameId: row.game_id, payload: row.payload, priority: row.priority, attempts: row.attempts });
 
 /** @param {import("../../../platform/db/Database.js").Row} row @returns {StoredTransaction} */
 const toTransaction = (row) =>
@@ -99,16 +99,6 @@ export class PgChainRepository {
   }
 
   /**
-   * @param {string} gameId
-   * @param {number} recordSeq
-   * @returns {Promise<string | null>} the record's canonical JSON
-   */
-  async gameRecordPayload(gameId, recordSeq) {
-    const row = await this.#db.maybeOne("SELECT payload FROM blockchain_events WHERE game_id = $1 AND record_seq = $2", [gameId, recordSeq]);
-    return row === null ? null : row.payload;
-  }
-
-  /**
    * @param {string} transactionId
    * @param {number} blockNum
    * @param {number} at
@@ -150,14 +140,6 @@ export class PgChainRepository {
       [transactionId],
     );
     return Object.freeze(rows.map(toRow));
-  }
-
-  /**
-   * @param {string} gameId
-   * @param {number} recordSeq
-   */
-  async markConflict(gameId, recordSeq) {
-    await this.#db.query("UPDATE blockchain_events SET reconciliation = 'CONFLICT' WHERE game_id = $1 AND record_seq = $2", [gameId, recordSeq]);
   }
 
   /** @param {string} name */
@@ -222,20 +204,5 @@ export class PgChainRepository {
   async openAlerts(network) {
     const rows = await this.#db.rows("SELECT kind, fingerprint, details FROM chain_alerts WHERE network = $1 AND resolved_at IS NULL ORDER BY id", [network]);
     return Object.freeze(rows.map((row) => Object.freeze({ kind: row.kind, fingerprint: row.fingerprint, details: row.details })));
-  }
-
-  /**
-   * Where a game's records are: the index a verifier may use to find them on chain.
-   * @param {string} gameId
-   * @returns {Promise<readonly Readonly<{ seq: number, status: string, network: string, txId: string | null, blockNum: number | null }>[]>}
-   */
-  async gameIndex(gameId) {
-    const rows = await this.#db.rows(
-      `SELECT e.record_seq, e.status, e.network, t.tx_id, t.block_num
-         FROM blockchain_events e LEFT JOIN blockchain_transactions t ON t.id = e.transaction_id
-        WHERE e.game_id = $1 ORDER BY e.record_seq`,
-      [gameId],
-    );
-    return Object.freeze(rows.map((row) => Object.freeze({ seq: row.record_seq, status: row.status, network: row.network, txId: row.tx_id, blockNum: row.block_num })));
   }
 }

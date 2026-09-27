@@ -10,22 +10,16 @@
  * - Pairing takes the two oldest tickets of a mode, locked with SKIP LOCKED,
  *   and creates the game in the same unit of work: two servers can never
  *   pair the same ticket twice. The match is announced only after commit.
- * - Ranked (docs/tcg/09-classificata.md): only eligible players; a ticket
- *   carries the player's rating; the oldest ticket is paired with the
- *   closest rating inside a window that widens while it waits, preferring
- *   someone it has not already played too often today.
- * - The window is a preference, not a wall: a ticket that waited longer
- *   than `relaxAfterSeconds` takes the closest opponent in the queue at any
- *   distance, and, failing that, one it already played today (that game is
- *   recorded but does not count towards ratings, T24). A small player base
- *   always finds a game instead of searching forever.
+ * - Ranked (docs/tcg/09-classificata.md): only eligible players, but no
+ *   pairing rules: like casual, the two oldest tickets play each other
+ *   straight away, whatever their ratings or how often they met today
+ *   (games over the daily limit are recorded but not rated, T24).
  */
 import { AppError } from "../../../kernel/AppError.js";
 import { uuidV4 } from "../../../kernel/random.js";
 
 export const QueueMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
 const MODES = Object.freeze(Object.values(QueueMode));
-const RANKED_CANDIDATES = 50;
 export const TicketStatus = Object.freeze({ WAITING: "WAITING", MATCHED: "MATCHED", CANCELLED: "CANCELLED", EXPIRED: "EXPIRED" });
 const DEFAULT_RATING = 1000;
 const MAX_PAIRS_PER_RUN = 50;
@@ -87,7 +81,7 @@ export class MatchmakingService {
     const deck = await this.#decks.playableDeckList(user.id, deckId);
     const now = this.#clock.now();
     // Re-joining the same queue (another deck, another try) keeps the moment the
-    // search started: the rating window goes on widening instead of starting over.
+    // search started, and with it the place in the queue.
     const waiting = await this.#repository.findWaiting(user.id);
     const since = waiting !== null && waiting.mode === mode ? waiting.createdAt : now;
     await this.#unitOfWork(async () => {
@@ -140,8 +134,8 @@ export class MatchmakingService {
     let created = 0;
     for (let run = 0; run < MAX_PAIRS_PER_RUN; run += 1) {
       const staged = await this.#unitOfWork(async () => {
-        const tickets = mode === QueueMode.RANKED ? await this.#rankedPair() : await this.#repository.lockOldestPair(mode);
-        if (tickets === null || tickets.length < 2) {
+        const tickets = await this.#repository.lockOldestPair(mode);
+        if (tickets.length < 2) {
           return null;
         }
         const game = await this.#games.stageGame({ mode, entrants: tickets.map((ticket) => ({ userId: ticket.userId, account: ticket.account, deckId: ticket.deckId, deck: ticket.deck.map(([cardId, count]) => ({ cardId, count })) })) });
@@ -156,65 +150,6 @@ export class MatchmakingService {
       created += 1;
     }
     return created;
-  }
-
-  /**
-   * The oldest ranked ticket that has an acceptable opponent, with the closest one.
-   *
-   * Two passes over the waiting tickets, oldest first. The strict pass keeps
-   * the rating window and the daily limit between the same two players. The
-   * relaxed pass only looks at tickets that waited longer than
-   * `relaxAfterSeconds`: for those the window is dropped (the closest
-   * opponent in the queue wins, however far) and, as a last resort, so is the
-   * daily limit, because a game that does not count beats no game at all.
-   * @returns {Promise<readonly any[] | null>}
-   */
-  async #rankedPair() {
-    const tickets = await this.#repository.lockWaiting(QueueMode.RANKED, RANKED_CANDIDATES);
-    if (tickets.length < 2) {
-      return null;
-    }
-    const { baseWindow, windowPerSecond, maxWindow, relaxAfterSeconds } = this.#ranking.settings.matchmaking;
-    const now = this.#clock.now();
-    for (const relaxed of [false, true]) {
-      for (const anchor of tickets) {
-        const waited = (now - anchor.createdAt) / 1000;
-        if (relaxed && waited < relaxAfterSeconds) {
-          continue;
-        }
-        const window = relaxed ? Number.POSITIVE_INFINITY : Math.min(maxWindow, baseWindow + windowPerSecond * waited);
-        const opponent = await this.#opponentFor(anchor, tickets, window, relaxed);
-        if (opponent !== null) {
-          return [anchor, opponent];
-        }
-      }
-    }
-    return null;
-  }
-
-  /**
-   * The closest rating to `anchor` inside `window` that may still play a
-   * counted game against it, or, when `orElseAnyone`, simply the closest one.
-   * @param {any} anchor
-   * @param {readonly any[]} tickets
-   * @param {number} window
-   * @param {boolean} orElseAnyone
-   * @returns {Promise<any | null>}
-   */
-  async #opponentFor(anchor, tickets, window, orElseAnyone) {
-    const candidates = tickets
-      .filter((other) => other.userId !== anchor.userId && Math.abs(other.rating - anchor.rating) <= window)
-      .sort((left, right) => Math.abs(left.rating - anchor.rating) - Math.abs(right.rating - anchor.rating));
-    for (const candidate of candidates) {
-      if (await this.#ranking.pairAllowed(anchor.userId, candidate.userId)) {
-        return candidate;
-      }
-    }
-    if (orElseAnyone && candidates.length > 0) {
-      this.#logger.info("ranked pair over the daily limit", { anchor: anchor.userId, opponent: candidates[0].userId });
-      return candidates[0];
-    }
-    return null;
   }
 
   /** Drops tickets that waited too long. */

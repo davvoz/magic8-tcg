@@ -1,7 +1,7 @@
 /**
  * The listing as the shop presents it: packs of unknown cards, complete
- * decks, single cards (one entry per card, with its standard and foil
- * offers) and anything else on sale (special offers). Pure: the server's
+ * decks, single cards (one entry per card) and anything else on sale
+ * (special offers). Pure: the server's
  * listing in, the shelves out; prices are the server's, never computed here
  * except for display (a deck's card-by-card breakdown).
  */
@@ -11,7 +11,7 @@ export const ShopCategory = Object.freeze({ PACKS: "packs", DECKS: "decks", SING
 /**
  * @typedef {import("../ports/MarketApi.contract.js").Product} Product
  * @typedef {import("../ports/MarketApi.contract.js").Listing} Listing
- * @typedef {Readonly<{ cardId: string, rarity: string | null, standard: Product | null, foil: Product | null }>} SingleOffer
+ * @typedef {Readonly<{ cardId: string, rarity: string | null, product: Product }>} SingleOffer
  * @typedef {Readonly<{ packs: readonly Product[], decks: readonly Product[], singles: readonly SingleOffer[], offers: readonly Product[] }>} Shelves
  */
 
@@ -26,15 +26,13 @@ export function shelvesOf(listing) {
   const decks = [];
   /** @type {Product[]} */
   const offers = [];
-  /** @type {Map<string, { cardId: string, rarity: string | null, standard: Product | null, foil: Product | null }>} */
+  /** @type {Map<string, SingleOffer>} */
   const singles = new Map();
   for (const product of listing.products) {
     const [only] = product.contents;
     const single = product.contents.length === 1 && only.type === "card" && only.count === 1;
     if (single) {
-      const offer = singles.get(only.ref) ?? { cardId: only.ref, rarity: product.rarity, standard: null, foil: null };
-      offer[only.finish === "foil" ? "foil" : "standard"] = product;
-      singles.set(only.ref, offer);
+      singles.set(only.ref, Object.freeze({ cardId: only.ref, rarity: product.rarity, product }));
     } else if (product.contents.length === 1 && only.type === "pack") {
       packs.push(product);
     } else if (product.contents.length === 1 && only.type === "deck" && only.count === 1) {
@@ -49,7 +47,7 @@ export function shelvesOf(listing) {
     packs: Object.freeze(packs.sort(byPrice)),
     decks: Object.freeze(decks.sort(byPrice)),
     // Rarest first, then by name.
-    singles: Object.freeze([...singles.values()].map((offer) => Object.freeze(offer)).sort((left, right) => rank(right.rarity) - rank(left.rarity) || nameOf(left).localeCompare(nameOf(right)))),
+    singles: Object.freeze([...singles.values()].sort((left, right) => rank(right.rarity) - rank(left.rarity) || left.product.name.localeCompare(right.product.name))),
     offers: Object.freeze(offers.sort(byPrice)),
   });
 }
@@ -63,20 +61,6 @@ export function priceOf(product) {
 }
 
 /**
- * The offer to show for a single: the standard one when on sale, otherwise the foil one.
- * @param {SingleOffer} offer
- * @returns {Product}
- */
-export function mainOfferOf(offer) {
-  return /** @type {Product} */ (offer.standard ?? offer.foil);
-}
-
-/** @param {SingleOffer} offer */
-function nameOf(offer) {
-  return offer.standard?.name ?? offer.foil?.name ?? offer.cardId;
-}
-
-/**
  * What a deck's cards cost one by one as singles: the server prices a deck
  * at this sum (display only; the order's price is the server's).
  * @param {readonly Readonly<{ cardId: string, count: number }>[]} entries the deck's cards
@@ -86,7 +70,7 @@ function nameOf(offer) {
 export function deckBreakdown(entries, singles) {
   const lines = entries.map(({ cardId, count }) => {
     const offer = singles.find((candidate) => candidate.cardId === cardId);
-    const unit = offer?.standard ? priceOf(offer.standard).amount : null;
+    const unit = offer === undefined ? null : priceOf(offer.product).amount;
     return Object.freeze({ cardId, count, rarity: offer?.rarity ?? null, unit, amount: unit === null ? null : multiplyAmount(unit, count) });
   });
   const total = lines.every((line) => line.amount !== null) ? lines.reduce((sum, line) => addAmounts(sum, /** @type {string} */ (line.amount)), "0") : null;

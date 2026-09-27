@@ -65,11 +65,11 @@ function collectionEntry(value) {
     return null;
   }
   const entry = /** @type {any} */ (value);
-  const copies = Array.isArray(entry.copies) && entry.copies.every((copy) => isObject(copy) && UUID_PATTERN.test(copy.id) && isString(copy.edition) && isCount(copy.serial) && isString(copy.finish) && isString(copy.status)) ? entry.copies : null;
+  const copies = Array.isArray(entry.copies) && entry.copies.every((copy) => isObject(copy) && UUID_PATTERN.test(copy.id) && isString(copy.edition) && isCount(copy.serial) && isString(copy.status)) ? entry.copies : null;
   if (!isString(entry.definitionId) || copies === null) {
     return null;
   }
-  return Object.freeze({ definitionId: entry.definitionId, copies: Object.freeze(copies.map((copy) => Object.freeze({ id: copy.id, edition: copy.edition, serial: copy.serial, finish: copy.finish, status: copy.status, tradeable: copy.tradeable === true }))) });
+  return Object.freeze({ definitionId: entry.definitionId, copies: Object.freeze(copies.map((copy) => Object.freeze({ id: copy.id, edition: copy.edition, serial: copy.serial, status: copy.status, tradeable: copy.tradeable === true }))) });
 }
 
 /**

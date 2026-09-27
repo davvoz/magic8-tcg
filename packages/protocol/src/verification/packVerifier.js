@@ -18,7 +18,6 @@ import { CanonicalJsonError, parseCanonical } from "../canonical/CanonicalJson.j
 import { LIMITS, OperationId } from "../game/constants.js";
 import { ProtocolError } from "../game/ProtocolError.js";
 import { BroadcasterRegistry } from "../game/manifest.js";
-import { FINISH_CODES } from "../receipts/receipts.js";
 import { PackEpochKind, drawPack, dropTableHash, packEpochCommitment, packSeed } from "../packs/packs.js";
 
 export const PackVerdict = Object.freeze({
@@ -31,7 +30,7 @@ export const PackVerdict = Object.freeze({
 const PAGE_SIZE = 1000;
 
 /**
- * @typedef {import("../game/OperationDecoder.js").ChainOperation} ChainOperation
+ * @typedef {import("../chain/ChainOperation.js").ChainOperation} ChainOperation
  * @typedef {Readonly<{ json: Record<string, any>, blockNum: number }>} Signed
  */
 
@@ -114,17 +113,16 @@ function epochIndex(epochs) {
 
 /**
  * Takes every redrawn card out of the receipt's cards; false if one is missing.
- * @param {Map<string, number>} remaining definition:finishCode → count
- * @param {readonly { cardId: string, finish: string }[]} drawn
+ * @param {Map<string, number>} remaining definition → count
+ * @param {readonly { cardId: string }[]} drawn
  */
 function takeCards(remaining, drawn) {
   for (const card of drawn) {
-    const key = `${card.cardId}:${FINISH_CODES[/** @type {keyof typeof FINISH_CODES} */ (card.finish)]}`;
-    const count = remaining.get(key) ?? 0;
+    const count = remaining.get(card.cardId) ?? 0;
     if (count === 0) {
       return false;
     }
-    remaining.set(key, count - 1);
+    remaining.set(card.cardId, count - 1);
   }
   return true;
 }
@@ -173,7 +171,7 @@ function checkPack(pack, { orderId, txId, epochs, receiptBlock, paymentBlock, dr
   if (!takeCards(remaining, drawn)) {
     return { verdict: PackVerdict.INVALID, problem: `pack ${pack.idx} is not what its seed draws` };
   }
-  return { cards: Object.freeze(drawn.map((card) => `${card.cardId}:${card.finish}`)) };
+  return { cards: Object.freeze(drawn.map((card) => card.cardId)) };
 }
 
 /**
@@ -197,8 +195,8 @@ export function verifyOrderPacks({ orderId, operations, isAuthorizedBroadcaster,
   }
   const { receipt, cards, blockNum: receiptBlock } = assembled;
   const remaining = new Map();
-  for (const [, definitionId, , finish] of cards) {
-    remaining.set(`${definitionId}:${finish}`, (remaining.get(`${definitionId}:${finish}`) ?? 0) + 1);
+  for (const [, definitionId] of cards) {
+    remaining.set(definitionId, (remaining.get(definitionId) ?? 0) + 1);
   }
   const context = { orderId, txId: receipt.pay.tx, epochs: epochIndex(signedOf(OperationId.EPOCH)), receiptBlock, paymentBlock, dropTables, remaining };
   const packs = [];
@@ -215,7 +213,7 @@ export function verifyOrderPacks({ orderId, operations, isAuthorizedBroadcaster,
 
 /**
  * Every custom_json with one of `ids` in an account's history.
- * @param {import("./chainVerifier.js").ChainReader} reader
+ * @param {import("../chain/ChainOperation.js").ChainReader} reader
  * @param {string} account
  * @param {ReadonlySet<string>} ids
  * @param {number} maxPages
@@ -244,7 +242,7 @@ async function historyOperations(reader, account, ids, maxPages) {
  * Reads what verifyOrderPacks needs from the chain: the root's manifests,
  * then receipts and epochs from every authorised broadcaster's history
  * (irreversible blocks only).
- * @param {{ orderId: string, reader: import("./chainVerifier.js").ChainReader, rootAccount: string, dropTables: ReadonlyMap<string, unknown>, paymentBlock?: number | null, maxHistoryPages?: number }} input
+ * @param {{ orderId: string, reader: import("../chain/ChainOperation.js").ChainReader, rootAccount: string, dropTables: ReadonlyMap<string, unknown>, paymentBlock?: number | null, maxHistoryPages?: number }} input
  */
 export async function verifyOrderOnChain({ orderId, reader, rootAccount, dropTables, paymentBlock = null, maxHistoryPages = 200 }) {
   const head = await reader.head();

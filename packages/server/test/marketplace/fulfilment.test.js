@@ -105,7 +105,7 @@ describe("fulfilment", () => {
   });
 
   it("fulfils a cart: every line's cards, its packs numbered across the order, one receipt", async () => {
-    const created = await aliceClient.post("/api/orders", { items: [{ productId: "core_mini_booster", quantity: 1 }, { productId: "single_pyre_drake_foil", quantity: 2 }, { productId: "core_booster", quantity: 1 }], asset: "STEEM" }, { "Idempotency-Key": newKey() });
+    const created = await aliceClient.post("/api/orders", { items: [{ productId: "core_mini_booster", quantity: 1 }, { productId: "single_pyre_drake", quantity: 2 }, { productId: "core_booster", quantity: 1 }], asset: "STEEM" }, { "Idempotency-Key": newKey() });
     assert.equal(created.status, 201, created.text);
     const { order } = created.json;
     setup.ledger.transfer({ from: order.payment.from, to: order.payment.to, amount: `${order.payment.amount} STEEM`, memo: order.payment.memo, time: setup.clock.now() });
@@ -114,17 +114,17 @@ describe("fulfilment", () => {
     assert.equal(await setup.app.fulfilment.fulfilVerified(), 1);
     const { fulfilment, status } = await orderOf(aliceClient, order.id);
     assert.equal(status, "FULFILLED");
-    assert.deepEqual(fulfilment.cards.map((card) => [card.definitionId, card.finish]), [["pyre_drake", "foil"], ["pyre_drake", "foil"]]);
+    assert.deepEqual(fulfilment.cards.map((card) => card.definitionId), ["pyre_drake", "pyre_drake"]);
     assert.deepEqual(fulfilment.packs.map((pack) => [pack.index, pack.cards.length]), [[0, 3], [1, 5]], "the mini booster, then the booster");
     const [receipt] = await receipts(order.id);
-    assert.deepEqual(parseCanonical(receipt.payload).items, [{ p: "core_mini_booster", q: 1 }, { p: "single_pyre_drake_foil", q: 2 }, { p: "core_booster", q: 1 }]);
+    assert.deepEqual(parseCanonical(receipt.payload).items, [{ p: "core_mini_booster", q: 1 }, { p: "single_pyre_drake", q: 2 }, { p: "core_booster", q: 1 }]);
     const [told] = (await aliceClient.get("/api/notifications")).json.notifications;
     assert.deepEqual([told.data.orderId, told.data.total, told.data.items.length], [order.id, 10, 3]);
   });
 
-  it("mints bought decks and saves them to the account, and prints foil singles", async () => {
+  it("mints bought decks and saves them to the account, and prints singles", async () => {
     const deckOrder = await buyAndPay(bobClient, "deck_precon_arcane");
-    const foilOrder = await buyAndPay(bobClient, "single_pyre_drake_foil");
+    const singleOrder = await buyAndPay(bobClient, "single_pyre_drake");
     assert.equal(await setup.app.fulfilment.fulfilVerified(), 2);
     const deck = (await orderOf(bobClient, deckOrder.id)).fulfilment;
     assert.equal(deck.cards.length, 30);
@@ -133,9 +133,9 @@ describe("fulfilment", () => {
     const saved = decks.find((candidate) => candidate.name === "Arcane Conclave");
     assert.ok(saved, "saved to the account");
     assert.equal(saved.playable, true, JSON.stringify(saved.problems));
-    const foil = (await orderOf(bobClient, foilOrder.id)).fulfilment;
-    assert.deepEqual(foil.cards.map((card) => [card.definitionId, card.finish]), [["pyre_drake", "foil"]]);
-    assert.equal(parseCanonical((await receipts(foilOrder.id))[0].payload).cards[0][3], "f");
+    const single = (await orderOf(bobClient, singleOrder.id)).fulfilment;
+    assert.deepEqual(single.cards.map((card) => Object.keys(card).sort()), [["definitionId", "edition", "id", "serial"]]);
+    assert.deepEqual(parseCanonical((await receipts(singleOrder.id))[0].payload).cards[0].slice(1), ["pyre_drake", single.cards[0].serial]);
   });
 
   it("fulfils an order once, even with concurrent workers", async () => {
@@ -169,7 +169,11 @@ describe("fulfilment", () => {
   });
 
   it("splits a big order's receipt into operations of at most 8 KB", async () => {
-    const order = await buyAndPay(bobClient, "core_booster", 20);
+    const created = await bobClient.post("/api/orders", { items: [{ productId: "core_booster", quantity: 20 }, { productId: "core_mini_booster", quantity: 20 }], asset: "STEEM" }, { "Idempotency-Key": newKey() });
+    const { order } = created.json;
+    setup.ledger.transfer({ from: order.payment.from, to: order.payment.to, amount: `${order.payment.amount} STEEM`, memo: order.payment.memo, time: setup.clock.now() });
+    setup.ledger.finalize();
+    await setup.app.settlement.runOnce();
     assert.equal(await setup.app.fulfilment.fulfilVerified(), 1);
     const parts = await receipts(order.id);
     assert.ok(parts.length > 1, `${parts.length} parts`);
@@ -177,8 +181,8 @@ describe("fulfilment", () => {
       assert.ok(utf8Length(part.payload) <= 8192);
       return parseCanonical(part.payload).cards;
     });
-    assert.equal(cards.length, 100);
-    assert.equal((await orderOf(bobClient, order.id)).fulfilment.packs.length, 20);
+    assert.equal(cards.length, 160);
+    assert.equal((await orderOf(bobClient, order.id)).fulfilment.packs.length, 40);
   });
 
   it("lets a player recompute every pack from public data once the epoch is revealed", async () => {
@@ -197,12 +201,12 @@ describe("fulfilment", () => {
     const publicApi = new ApiClient(server.base);
     const epoch = (await publicApi.get("/api/pack-epochs")).json.epochs.find((candidate) => candidate.id === rngEpochId);
     const table = (await publicApi.get("/api/products")).json.dropTables.find((candidate) => candidate.id === "core_booster");
-    const resolved = { v: 1, id: table.id, edition: table.edition, slots: table.odds.map((slot) => ({ count: slot.count, weights: Object.fromEntries(Object.entries(slot.odds).map(([rarity, odds]) => [rarity, odds.numerator])) })), foil: table.foil, pools: table.pools };
+    const resolved = { v: 1, id: table.id, edition: table.edition, slots: table.odds.map((slot) => ({ count: slot.count, weights: Object.fromEntries(Object.entries(slot.odds).map(([rarity, odds]) => [rarity, odds.numerator])) })), pools: table.pools };
     for (const pack of fulfilment.packs) {
       const expected = drawPack(resolved, packSeed({ secret: epoch.secret, orderId: order.id, txId: fulfilment.txId, index: pack.index }));
       assert.deepEqual(
-        pack.cards.map((card) => `${card.definitionId}:${card.finish}`).sort(),
-        expected.map((card) => `${card.cardId}:${card.finish}`).sort(),
+        pack.cards.map((card) => card.definitionId).sort(),
+        expected.map((card) => card.cardId).sort(),
         `pack ${pack.index} is exactly what its seed draws`,
       );
     }

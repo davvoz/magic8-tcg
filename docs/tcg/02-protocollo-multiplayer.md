@@ -32,7 +32,7 @@
 | GET | `/api/content/{hash}` | Il payload canonico, identico byte per byte a quello che l'hash certifica; `Cache-Control: immutable`. Pubblico, anche per i verificatori. |
 | GET | `/api/starter` | `{ claimed, choices: [{ id, name, faction, size, cards }] }`: i tre starter fra cui scegliere |
 | POST | `/api/starter` | `{ "starterId": "precon_harvest" }` → 201 `{ deck, cardsGranted }`. Una volta per account: in seguito 409 `STARTER_ALREADY_CLAIMED`, anche con richieste concorrenti. Le carte vengono coniate e salvate come mazzo giocabile in un'unica transazione. |
-| GET | `/api/collection` | `{ cards: [{ definitionId, copies: [{ id, edition, serial, finish, status }] }] }` |
+| GET | `/api/collection` | `{ cards: [{ definitionId, copies: [{ id, edition, serial, status }] }] }` |
 | GET | `/api/collection/cards/{instanceId}` | Dettaglio e storia di una copia propria; le copie altrui risultano 404 |
 | GET/POST | `/api/decks` | Elenco `{ decks, limit }` / creazione `{ name, faction, cards: [{ cardId, count }] }` |
 | GET/PUT/DELETE | `/api/decks/{id}` | Solo il proprietario (per gli altri 404). La versione viaggia come `ETag`; `PUT` richiede `If-Match` (manca → 428, versione vecchia → 412). `DELETE` è logica: le partite continuano a riferirsi al mazzo. |
@@ -43,7 +43,7 @@
 
 | Metodo | Percorso | Corpo | Note |
 |---|---|---|---|
-| GET | `/api/products` | — | Pubblico. `{ products, dropTables, rarities }`: prodotti in vendita con prezzi (stringhe decimali esatte) e contenuti; drop table risolte con hash, probabilità per slot, probabilità foil e pool di carte |
+| GET | `/api/products` | — | Pubblico. `{ products, dropTables, rarities }`: prodotti in vendita con prezzi (stringhe decimali esatte) e contenuti; drop table risolte con hash, probabilità per slot e pool di carte |
 | GET | `/api/pack-epochs` | — | Pubblico. Epoche dei pacchetti: impegno (`commit`), apertura, chiusura e, solo quando tutti gli ordini dell'epoca sono chiusi, il segreto rivelato |
 | POST | `/api/orders` | `{ "items": [{ "productId", "quantity" }], "asset" }` (carrello, 1–20 righe, ogni prodotto una volta) oppure `{ "productId", "quantity", "asset" }` (una riga) + `Idempotency-Key` | Il prezzo **non** si invia: lo calcola il server dal listino, riga per riga. Un ordine = un pagamento, qualunque sia il numero di righe; al massimo 1000 carte in tutto. Risposta con istruzioni di pagamento `{ to, amount, asset, memo, expiresAt }` |
 | GET | `/api/orders/{id}` | — | Solo il proprietario |
@@ -53,12 +53,11 @@
 
 **Ordine come lo vede il client:** `{ id, status, items: [{ productId, name, quantity, unitAmount }], total: { asset, amount }, payment: { network, from, to, asset, amount, memo, expiresAt } | null, rngEpochId, failureReason, createdAt, updatedAt }`; `payment` c'è solo finché l'ordine si può pagare. `GET /api/orders/{id}` aggiunge `fulfilment` per gli ordini evasi: `{ txId, cards: [{ id, definitionId, edition, serial, finish }], packs: [{ index, epoch, table, cards }] }`. Creare un ordine senza `Idempotency-Key` (16–64 caratteri) dà 428; la stessa chiave con un corpo diverso 409; più di 5 ordini non pagati 409 `LIMIT_REACHED`.
 
-### Partite e verifica
+### Partite
 
 | Metodo | Percorso | Note |
 |---|---|---|
-| GET | `/api/games/{id}` | Metadati, esito, record e transazioni on-chain |
-| GET | `/api/games/{id}/verification` | Esito del verificatore (§14 di 03) eseguito dal server; il client può rieseguirlo in locale |
+| GET | `/api/games/{id}` | Metadati ed esito |
 | GET | `/api/games?mine=1` | Storico partite |
 | GET | `/api/games/live` | Partite in corso da guardare, prima le più seguite (pubblica; 10) |
 

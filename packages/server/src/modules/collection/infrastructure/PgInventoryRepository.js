@@ -17,7 +17,6 @@ function toInstance(row) {
     definitionId: row.definition_id,
     edition: row.edition,
     serial: row.serial,
-    finish: row.finish,
     ownerId: row.owner_id,
     status: row.status,
     originKind: row.origin_kind,
@@ -53,14 +52,13 @@ export class PgInventoryRepository {
     }
     const column = (/** @type {(instance: import("../domain/CardInstance.js").CardInstance) => unknown} */ pick) => instances.map(pick);
     await this.#db.query(
-      `INSERT INTO card_instances (id, definition_id, edition, serial, finish, owner_id, status, origin_kind, origin_ref, minted_at)
-       SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], $4::integer[], $5::text[], $6::uuid[], $7::text[], $8::text[], $9::text[], $10::timestamptz[])`,
+      `INSERT INTO card_instances (id, definition_id, edition, serial, owner_id, status, origin_kind, origin_ref, minted_at)
+       SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], $4::integer[], $5::uuid[], $6::text[], $7::text[], $8::text[], $9::timestamptz[])`,
       [
         column((instance) => instance.id),
         column((instance) => instance.definitionId),
         column((instance) => instance.edition),
         column((instance) => instance.serial),
-        column((instance) => instance.finish),
         column((instance) => instance.ownerId),
         column((instance) => instance.status),
         column((instance) => instance.originKind),

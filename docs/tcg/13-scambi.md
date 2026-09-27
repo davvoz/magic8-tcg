@@ -30,7 +30,7 @@
 Ogni scambio concluso è pubblicato dal pool di broadcaster:
 
 ```json
-{"a":{"cards":[["<id copia>","ember_imp",4,"f"]],"u":"alice"},"b":{"cards":[["<id copia>","iron_watcher",9,"s"]],"u":"bob"},"t":"<id scambio>","v":1}
+{"a":{"cards":[["<id copia>","ember_imp",4]],"u":"alice"},"b":{"cards":[["<id copia>","iron_watcher",9]],"u":"bob"},"t":"<id scambio>","v":1}
 ```
 
 `a` ha proposto e ha dato le sue carte a `b`; `b` ha dato le sue ad `a`. Con le ricevute di acquisto (03 §12) si ricostruisce da chi è passata ogni copia, dal conio a oggi. Il tracker segue questi record come gli altri: un `m8tcg_trade` firmato dal nostro broadcaster e sconosciuto al database genera l'allarme `UNKNOWN_ON_CHAIN`.

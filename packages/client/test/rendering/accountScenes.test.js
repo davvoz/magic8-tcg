@@ -189,7 +189,7 @@ describe("CollectionScene", () => {
     const count = foundry.entries.find((entry) => entry.cardId === cardId).count;
     assert.equal(byId(scene, "collection.owned").text, `You own ${count} (${count} playable)`);
     assert.equal(byId(scene, "collection.copies").children[0].children.length, count, "one line per copy");
-    assert.ok(rendered(scene).some((text) => /^#\d+ · core-1 · standard$/.test(text)));
+    assert.ok(rendered(scene).some((text) => /^#\d+ · core-1$/.test(text)));
   });
 
   it("filters by faction and type", async () => {

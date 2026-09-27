@@ -1,7 +1,7 @@
 /**
  * Card-for-card trades as the server runs them (docs/tcg/13-scambi.md).
  *
- * @typedef {Readonly<{ id: string, definitionId: string, serial: number, finish: string }>} TradeCopy
+ * @typedef {Readonly<{ id: string, definitionId: string, serial: number }>} TradeCopy
  * @typedef {Readonly<{ definitionId: string, count: number }>} TradeWant
  * @typedef {Readonly<{
  *   id: string, status: "OPEN" | "ACCEPTED" | "DECLINED" | "CANCELLED" | "EXPIRED", role: "proposer" | "counterparty",

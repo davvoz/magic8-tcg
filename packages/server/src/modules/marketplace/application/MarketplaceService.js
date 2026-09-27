@@ -126,13 +126,13 @@ export class MarketplaceService {
     const now = this.#clock.now();
     const products = [...this.#catalog.products.values()].filter((product) => isOnSale(product, now)).map((product) => this.#productView(product));
     const dropTables = [...this.#catalog.dropTables.values()].map(({ table, hash, size, odds }) =>
-      Object.freeze({ id: table.id, hash, edition: table.edition, size, odds, foil: table.foil, pools: table.pools, table }),
+      Object.freeze({ id: table.id, hash, edition: table.edition, size, odds, pools: table.pools, table }),
     );
     const { asset, singles } = this.#catalog.priceList;
     const format = (units) => this.#economy.format(units, asset);
     const priceList = Object.freeze({
       asset,
-      singles: Object.freeze([...singles].map(([rarity, price]) => Object.freeze({ rarity, standard: format(price.standard), foil: price.foil === null ? null : format(price.foil) }))),
+      singles: Object.freeze([...singles].map(([rarity, price]) => Object.freeze({ rarity, price: format(price) }))),
     });
     return Object.freeze({ products: Object.freeze(products), dropTables: Object.freeze(dropTables), rarities: this.#catalog.rarities.order, priceList });
   }

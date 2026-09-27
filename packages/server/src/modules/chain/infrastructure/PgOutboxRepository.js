@@ -10,12 +10,12 @@ export class PgOutboxRepository {
   }
 
   /**
-   * @param {{ network: string, kind: string, orderId?: string | null, gameId?: string | null, recordSeq?: number | null, payload: string, payloadHash: string, priority: number, at: number }} record
+   * @param {{ network: string, kind: string, orderId?: string | null, gameId?: string | null, payload: string, payloadHash: string, priority: number, at: number }} record
    */
-  async insert({ network, kind, orderId = null, gameId = null, recordSeq = null, payload, payloadHash, priority, at }) {
+  async insert({ network, kind, orderId = null, gameId = null, payload, payloadHash, priority, at }) {
     await this.#db.query(
-      "INSERT INTO blockchain_events (network, kind, order_id, game_id, record_seq, payload, payload_hash, priority, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'BUILT', $9)",
-      [network, kind, orderId, gameId, recordSeq, payload, payloadHash, priority, toTimestamp(at)],
+      "INSERT INTO blockchain_events (network, kind, order_id, game_id, payload, payload_hash, priority, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, 'BUILT', $8)",
+      [network, kind, orderId, gameId, payload, payloadHash, priority, toTimestamp(at)],
     );
   }
 

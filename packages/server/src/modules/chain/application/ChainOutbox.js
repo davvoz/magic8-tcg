@@ -1,6 +1,8 @@
 /**
  * ChainOutbox: protocol records waiting to be published on chain
- * (docs/tcg/03-game-blockchain-protocol.md §16). A record is written in the
+ * (docs/tcg/03-game-blockchain-protocol.md §16): purchase receipts, pack
+ * epochs, trades, sales and game results. A game's history stays in the
+ * database; only its result, committing to that history, is published. A record is written in the
  * same transaction as the state it describes — a fulfilled order and its
  * receipt commit together — and is immutable afterwards (database
  * triggers). The ChainBroadcaster publishes BUILT records; the ChainTracker
@@ -8,10 +10,9 @@
  */
 import { sha256Hex, utf8 } from "@magic8/protocol";
 
-export const OutboxKind = Object.freeze({ GAME_RECORD: "GAME_RECORD", RECEIPT: "RECEIPT", EPOCH: "EPOCH", TRADE: "TRADE", SALE: "SALE" });
-/** Receipts and pack epochs go out before game records: buyers wait for them, and a commitment must precede the sales it binds. */
-const RECEIPT_PRIORITY = 0;
-const GAME_RECORD_PRIORITY = 1;
+export const OutboxKind = Object.freeze({ RECEIPT: "RECEIPT", EPOCH: "EPOCH", TRADE: "TRADE", SALE: "SALE", RESULT: "RESULT" });
+/** Every kind goes out in the order it was written. */
+const PRIORITY = 0;
 
 export class ChainOutbox {
   #repository;
@@ -30,17 +31,7 @@ export class ChainOutbox {
    */
   async enqueueReceipt({ network, orderId, parts }) {
     for (const payload of parts) {
-      await this.#repository.insert({ network, kind: OutboxKind.RECEIPT, orderId, payload, payloadHash: sha256Hex(utf8(payload)), priority: RECEIPT_PRIORITY, at: this.#clock.now() });
-    }
-  }
-
-  /**
-   * Sealed game records, in record order; each is published exactly as sealed.
-   * @param {{ network: string, records: readonly Readonly<{ gameId: string, seq: number, json: string }>[] }} entry
-   */
-  async enqueueGameRecords({ network, records }) {
-    for (const { gameId, seq, json } of records) {
-      await this.#repository.insert({ network, kind: OutboxKind.GAME_RECORD, gameId, recordSeq: seq, payload: json, payloadHash: sha256Hex(utf8(json)), priority: GAME_RECORD_PRIORITY, at: this.#clock.now() });
+      await this.#repository.insert({ network, kind: OutboxKind.RECEIPT, orderId, payload, payloadHash: sha256Hex(utf8(payload)), priority: PRIORITY, at: this.#clock.now() });
     }
   }
 
@@ -49,7 +40,7 @@ export class ChainOutbox {
    * @param {{ network: string, payload: string }} entry canonical JSON
    */
   async enqueueEpoch({ network, payload }) {
-    await this.#repository.insert({ network, kind: OutboxKind.EPOCH, payload, payloadHash: sha256Hex(utf8(payload)), priority: RECEIPT_PRIORITY, at: this.#clock.now() });
+    await this.#repository.insert({ network, kind: OutboxKind.EPOCH, payload, payloadHash: sha256Hex(utf8(payload)), priority: PRIORITY, at: this.#clock.now() });
   }
 
   /**
@@ -57,7 +48,7 @@ export class ChainOutbox {
    * @param {{ network: string, tradeId: string, payload: string }} entry canonical JSON
    */
   async enqueueTrade({ network, payload }) {
-    await this.#repository.insert({ network, kind: OutboxKind.TRADE, payload, payloadHash: sha256Hex(utf8(payload)), priority: RECEIPT_PRIORITY, at: this.#clock.now() });
+    await this.#repository.insert({ network, kind: OutboxKind.TRADE, payload, payloadHash: sha256Hex(utf8(payload)), priority: PRIORITY, at: this.#clock.now() });
   }
 
   /**
@@ -65,7 +56,15 @@ export class ChainOutbox {
    * @param {{ network: string, listingId: string, payload: string }} entry canonical JSON
    */
   async enqueueSale({ network, payload }) {
-    await this.#repository.insert({ network, kind: OutboxKind.SALE, payload, payloadHash: sha256Hex(utf8(payload)), priority: RECEIPT_PRIORITY, at: this.#clock.now() });
+    await this.#repository.insert({ network, kind: OutboxKind.SALE, payload, payloadHash: sha256Hex(utf8(payload)), priority: PRIORITY, at: this.#clock.now() });
+  }
+
+  /**
+   * The result of a finished game (m8tcg_result), written with its last event.
+   * @param {{ network: string, gameId: string, payload: string }} entry canonical JSON
+   */
+  async enqueueResult({ network, gameId, payload }) {
+    await this.#repository.insert({ network, kind: OutboxKind.RESULT, gameId, payload, payloadHash: sha256Hex(utf8(payload)), priority: PRIORITY, at: this.#clock.now() });
   }
 
   /**

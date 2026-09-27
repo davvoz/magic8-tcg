@@ -30,8 +30,8 @@ const price = (value) => (isAmount(value?.asset, value?.amount) ? Object.freeze(
 
 /** @param {any} value */
 function card(value) {
-  const valid = typeof value?.id === "string" && UUID.test(value.id) && typeof value.definitionId === "string" && CARD_ID.test(value.definitionId) && typeof value.edition === "string" && Number.isSafeInteger(value.serial) && value.serial > 0 && typeof value.finish === "string";
-  return valid ? Object.freeze({ id: value.id, definitionId: value.definitionId, edition: value.edition, serial: value.serial, finish: value.finish }) : null;
+  const valid = typeof value?.id === "string" && UUID.test(value.id) && typeof value.definitionId === "string" && CARD_ID.test(value.definitionId) && typeof value.edition === "string" && Number.isSafeInteger(value.serial) && value.serial > 0;
+  return valid ? Object.freeze({ id: value.id, definitionId: value.definitionId, edition: value.edition, serial: value.serial }) : null;
 }
 
 /** @param {any} value the fields of a listing besides its card and price */

@@ -24,7 +24,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const NOW = 1_790_000_000_000;
 const DAY = 24 * 60 * 60 * 1000;
 const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const CARD = Object.freeze({ id: uuid(11), definitionId: "ember_imp", edition: "core-1", serial: 4, finish: "foil" });
+const CARD = Object.freeze({ id: uuid(11), definitionId: "ember_imp", edition: "core-1", serial: 4 });
 const LISTING = Object.freeze({ id: uuid(1), status: "ACTIVE", seller: "alice", card: CARD, price: { asset: "STEEM", amount: "1.500" }, reserved: false, buyer: null, createdAt: NOW, expiresAt: NOW + 2 * DAY + 1, closedAt: null });
 const MEMO = `m8sale-${"a".repeat(26)}`;
 const PURCHASE = Object.freeze({
@@ -118,7 +118,7 @@ function market({ account = "bob", wallet = fakeWallet() } = {}) {
   const api = fakeApi();
   const connection = fakeConnection();
   let reloads = 0;
-  const copy = (id, serial, tradeable, status = "active") => ({ id: uuid(id), edition: "core-1", serial, finish: "standard", status, tradeable });
+  const copy = (id, serial, tradeable, status = "active") => ({ id: uuid(id), edition: "core-1", serial, status, tradeable });
   const accountService = { state: { account }, collection: { state: { cards: [{ definitionId: "iron_watcher", copies: [copy(31, 1, true), copy(32, 2, false), copy(33, 3, true, "locked")] }] } } };
   const sales = new SalesService({ api, wallet, account: accountService, scheduler: immediateScheduler, newKey: () => "list-key-000000000001", onCollectionChanged: () => (reloads += 1), connection });
   const viewport = new Viewport(theme.layout);
@@ -266,9 +266,9 @@ describe("MarketScene", () => {
   });
 
   it("describes listings, and goes back where the player came from", () => {
-    assert.equal(listingSubtitle(LISTING, NOW), "#4 · foil · @alice · 3 day(s) left");
-    assert.equal(listingSubtitle({ ...LISTING, status: "SOLD", buyer: "bob" }, NOW), "#4 · foil · sold to @bob");
-    assert.equal(listingSubtitle({ ...LISTING, reserved: true }, NOW), "#4 · foil · @alice · a buyer is paying");
+    assert.equal(listingSubtitle(LISTING, NOW), "#4 · @alice · 3 day(s) left");
+    assert.equal(listingSubtitle({ ...LISTING, status: "SOLD", buyer: "bob" }, NOW), "#4 · sold to @bob");
+    assert.equal(listingSubtitle({ ...LISTING, reserved: true }, NOW), "#4 · @alice · a buyer is paying");
     const { scene, navigated } = market({ account: null });
     scene.enter({ from: "collection" });
     assert.equal(byId(scene, "market.sell"), null, "signed out: nothing to sell");

@@ -1,9 +1,8 @@
 /**
- * Structural validation of protocol data read from untrusted sources (the
- * chain, a server response, a file). Exactly the fields of
- * docs/tcg/03-game-blockchain-protocol.md §6–7 are accepted; anything else is
- * a problem. Semantic checks (sequence, chaining, lifecycle, replay) belong to
- * the history assembler and the replay verifier.
+ * Structural validation of game protocol events. Exactly the fields of
+ * docs/tcg/03-game-blockchain-protocol.md §6 are accepted; anything else is
+ * a problem. Semantic checks (sequence, chaining, lifecycle) belong to the
+ * event chain and the recorder.
  */
 import {
   Issues,
@@ -26,24 +25,18 @@ import {
   EventKind,
   FORCED_COMMAND_TYPES,
   ForcedMoveReason,
-  GAME_ID_PATTERN,
   GameMode,
   LIMITS,
-  GAME_PROTOCOL_VERSIONS,
   GameProtocol,
   NETWORK_PATTERN,
-  PROTOCOL_VERSION,
   REASON_PATTERN,
   SEATS,
 } from "./constants.js";
 
 export const SchemaError = Object.freeze({
-  INVALID_ENVELOPE: "INVALID_ENVELOPE",
-  INVALID_RECORD: "INVALID_RECORD",
+  INVALID_EVENT: "INVALID_EVENT",
 });
 
-const ENVELOPE_KEYS = Object.freeze(["r", "v"]);
-const RECORD_KEYS = Object.freeze(["e", "g", "h", "p", "s", "ts", "v"]);
 const EVENT_KEYS = Object.freeze(["a", "d", "i", "k", "ms", "t"]);
 const SEAT_ENTRY_KEYS = Object.freeze(["acct", "seat"]);
 const HEX_ENTROPY_PATTERN = new RegExp(`^[0-9a-f]{${LIMITS.ENTROPY_BYTES * 2}}$`);
@@ -318,7 +311,7 @@ function checkForcedCommand(issues, command, path) {
  * @param {Issues} issues
  * @param {unknown} value
  * @param {string} path
- * @param {number} [version] the game protocol version of the record carrying the event
+ * @param {number} [version] the game protocol version of the game
  * @returns {Readonly<Record<string, unknown>> | undefined}
  */
 export function checkEvent(issues, value, path, version = GameProtocol.V1) {
@@ -351,60 +344,12 @@ export function checkEvent(issues, value, path, version = GameProtocol.V1) {
 }
 
 /**
- * @param {Issues} issues
  * @param {unknown} value
- * @param {string} path
- * @returns {Readonly<Record<string, unknown>> | undefined}
- */
-export function checkRecord(issues, value, path) {
-  const record = checkObject(issues, value, path, RECORD_KEYS);
-  if (record === undefined) {
-    return undefined;
-  }
-  let version = checkInteger(issues, record.v, `${path}.v`, { min: GameProtocol.V1, max: GameProtocol.V2 });
-  if (version !== undefined && !GAME_PROTOCOL_VERSIONS.includes(version)) {
-    version = issues.add(`${path}.v`, `expected one of ${GAME_PROTOCOL_VERSIONS.join(", ")}`);
-  }
-  checkString(issues, record.g, `${path}.g`, { pattern: GAME_ID_PATTERN });
-  checkInteger(issues, record.s, `${path}.s`, { min: 0 });
-  checkHash(issues, record.p, `${path}.p`);
-  checkHash(issues, record.h, `${path}.h`);
-  checkInteger(issues, record.ts, `${path}.ts`, { min: 0 });
-  const events = checkArrayOf(issues, record.e, `${path}.e`, {
-    minLength: 1,
-    maxLength: LIMITS.MAX_EVENTS_PER_RECORD,
-    item: (item, itemPath) => checkEvent(issues, item, itemPath, version ?? GameProtocol.V1),
-  });
-  if (events !== undefined && !events.every((event, index) => index === 0 || event.i === /** @type {number} */ (events[index - 1].i) + 1)) {
-    issues.add(`${path}.e`, "event sequence numbers must be contiguous");
-  }
-  return record;
-}
-
-/**
- * @param {unknown} value
+ * @param {number} [version] the game protocol version of the game
  * @returns {import("@magic8/engine/shared/Result.js").Ok<Readonly<Record<string, unknown>>> | import("@magic8/engine/shared/Result.js").Fail}
  */
-export function validateRecord(value) {
+export function validateEvent(value, version = GameProtocol.V1) {
   const issues = new Issues();
-  const record = checkRecord(issues, value, "record");
-  return issues.toResult(record, SchemaError.INVALID_RECORD);
-}
-
-/**
- * @param {unknown} value parsed envelope
- * @returns {import("@magic8/engine/shared/Result.js").Ok<Readonly<{ v: number, r: readonly Readonly<Record<string, unknown>>[] }>> | import("@magic8/engine/shared/Result.js").Fail}
- */
-export function validateEnvelope(value) {
-  const issues = new Issues();
-  const envelope = checkObject(issues, value, "envelope", ENVELOPE_KEYS);
-  if (envelope !== undefined) {
-    checkInteger(issues, envelope.v, "envelope.v", { min: PROTOCOL_VERSION, max: PROTOCOL_VERSION });
-    checkArrayOf(issues, envelope.r, "envelope.r", {
-      minLength: 1,
-      maxLength: LIMITS.MAX_RECORDS_PER_ENVELOPE,
-      item: (item, itemPath) => checkRecord(issues, item, itemPath),
-    });
-  }
-  return issues.toResult(/** @type {any} */ (envelope), SchemaError.INVALID_ENVELOPE);
+  const event = checkEvent(issues, value, "event", version);
+  return issues.toResult(/** @type {any} */ (event), SchemaError.INVALID_EVENT);
 }

@@ -13,7 +13,7 @@ import { uuidV4 } from "../../src/kernel/random.js";
 import { buildTestApp, deterministicRandom, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
 
-const PRINTING = Object.freeze({ edition: "core-1", finish: "standard" });
+const PRINTING = Object.freeze({ edition: "core-1" });
 const HOUR = 60 * 60 * 1000;
 
 async function world(policy = {}) {

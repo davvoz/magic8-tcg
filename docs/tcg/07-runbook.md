@@ -27,6 +27,7 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 | `M8_METRICS_TOKEN` | per il monitoraggio | 32–128 caratteri: `Authorization: Bearer …` su `/api/metrics` |
 | `M8_STEEM_NODES` | default nell'ordine di 06 | nodi RPC, separati da virgola |
 | `M8_HOST`, `M8_PORT`, `M8_LOG_LEVEL`, `M8_SERVE_CLIENT`, `M8_APP_NAME` | no | |
+| `M8_LOG_FORMAT` | no | `pretty` (predefinito: righe brevi, senza hash, txId e chiavi) oppure `json` (tutti i campi, per un sistema di raccolta log) |
 
 Il server rifiuta di partire con:
 - una configurazione non valida (il messaggio dice quale variabile);
@@ -39,17 +40,14 @@ Il server rifiuta di partire con:
 
 **Metriche:** `GET /api/metrics` in formato Prometheus, da raccogliere ogni 30–60 s.
 
-**Log:** una riga JSON per evento su stdout. Da mandare a un sistema che possa avvisare sulle righe `"level":"error"`, in particolare `alarm raised: …` e `chain alert: …`.
+**Log:** su stdout, una riga per evento. In produzione impostare `M8_LOG_FORMAT=json` (una riga JSON con tutti i campi, compresi txId e hash utili alle indagini) e mandarla a un sistema che possa avvisare sulle righe `"level":"error"`, in particolare `alarm raised: …` e `chain alert: …`. Il formato predefinito (`pretty`) è per chi legge il terminale e tralascia hash, txId, chiavi e id.
 
 ## 2. Lancio (una volta)
 
 1. Creare gli account: root (meglio dedicato), shop, 1–4 broadcaster (nomi validi: ogni parte tra i punti ha almeno 3 caratteri). Delegare Steem Power ai broadcaster da un account freddo.
 2. Aprire `/manifest.html` e pubblicare con Keychain, chiave **active del root**, la lista dei broadcaster. Poi, scegliendo "Ack keys", la chiave pubblica di `M8_ACK_KEY` (all'avvio il log la mostra se non è ancora nominata: `the ack key is not named…`). Attendere circa un minuto (irreversibilità).
 3. Avviare il server con `M8_BROADCASTER_KEYS`. Nel log: nessun `broadcaster not authorised`.
-4. Giocare una partita di prova e verificarla:
-   - `node tools/verify-game.js <id> --server https://…`;
-   - da `/verify.html?game=<id>`.
-5. Comprare un pacchetto di prova. Dopo la rivelazione dell'epoca (circa 7 giorni) verificarlo con `node tools/verify-order.js <ordine> --server https://…`.
+4. Comprare un pacchetto di prova. Dopo la rivelazione dell'epoca (circa 7 giorni) verificarlo con `node tools/verify-order.js <ordine> --server https://…`.
 
 ## 3. Backup e ripristino
 
@@ -58,7 +56,7 @@ Il server rifiuta di partire con:
   - i segreti delle epoche non rivelate sono persi, e quei pacchetti non si potranno più dimostrare;
   - i segreti delle partite in corso sono persi, e quelle partite non si possono riprendere.
   Un backup del database insieme alla sua chiave equivale a un furto dei segreti.
-- **Cosa si ricostruisce dalla catena:** la storia delle partite pubblicate e le ricevute. **Non** si ricostruiscono inventari, ordini non evasi, sessioni: per quelli serve il backup.
+- **Cosa si ricostruisce dalla catena:** le ricevute, gli scambi, le vendite e i risultati delle partite (chi ha giocato, chi ha vinto, l'hash finale). **Non** si ricostruisce la storia delle partite (resta solo nel DB dal 2026-09-27), gli inventari, gli ordini non evasi e le sessioni: per quelli serve il backup.
 - **Dopo un ripristino a un punto passato**, il tracker vedrà sulla catena operazioni che il database non conosce più: allarmi `UNKNOWN_ON_CHAIN` attesi. Si risolvono dal pannello annotando "ripristino del …".
 
 ## 4. Chiavi
@@ -77,7 +75,7 @@ Il server rifiuta di partire con:
 2. Cambiare la chiave posting dell'account (serve la chiave owner o active, fuori dal server), oppure usare un account nuovo.
 3. Pubblicare un manifest con gli account validi e attendere l'irreversibilità.
 4. Aggiornare `M8_BROADCASTER_KEYS` e riavviare. I record in attesa ripartono da soli, con gli stessi byte.
-5. Gli allarmi `UNKNOWN_ON_CHAIN` delle operazioni fatte dall'attaccante vanno risolti annotando l'incidente. Le partite restano verificabili: le operazioni firmate dopo la revoca non contano.
+5. Gli allarmi `UNKNOWN_ON_CHAIN` delle operazioni fatte dall'attaccante vanno risolti annotando l'incidente. Le operazioni firmate dopo la revoca non contano per i verificatori.
 
 ### 4.3 Chiave degli ack compromessa (o sospetta)
 
@@ -140,4 +138,4 @@ Dal pannello, "Check hash chain" ricalcola la catena di hash dell'audit. `BROKEN
 2. Cambiare la chiave dei dati (§4.1), le credenziali del database e il token delle metriche.
 3. Invalidare tutte le sessioni: `UPDATE sessions SET revoked_at = now() WHERE revoked_at IS NULL`.
 
-Lo shop e il root non hanno chiavi sul server: i fondi non sono esposti. Le partite pubblicate restano verificabili; quelle pubblicate dopo la revoca con chiavi rubate non contano.
+Lo shop e il root non hanno chiavi sul server: i fondi non sono esposti. I record pubblicati dopo la revoca con chiavi rubate non contano. La storia delle partite è nel DB: dopo una compromissione va considerata non affidabile dal momento dell'intrusione, e confrontata con gli ack che i giocatori hanno conservato (11).

@@ -31,7 +31,7 @@ const rarities = /** @type {{ ok: true, value: import("../../src/application/con
 const NOW = 10 * 24 * 60 * 60 * 1000;
 
 const feed = [
-  { id: 3, kind: "sale.sold", data: { account: "carol", card: { definitionId: "pyre_drake", serial: 7, finish: "foil" }, price: "1.500", asset: "STEEM", listingId: "l" }, createdAt: NOW - 5 * 60 * 1000, read: false },
+  { id: 3, kind: "sale.sold", data: { account: "carol", card: { definitionId: "pyre_drake", serial: 7 }, price: "1.500", asset: "STEEM", listingId: "l" }, createdAt: NOW - 5 * 60 * 1000, read: false },
   { id: 2, kind: "trade.offered", data: { account: "bob", tradeId: "t", give: [{ definitionId: "ember_imp", count: 2 }], wants: [{ definitionId: "iron_watcher", count: 1 }] }, createdAt: NOW - 3 * 60 * 60 * 1000, read: false },
   { id: 1, kind: "trade.expired", data: { account: "bob", tradeId: "u", give: [] }, createdAt: NOW - 2 * 24 * 60 * 60 * 1000, read: true },
 ];
@@ -87,7 +87,7 @@ describe("NotificationsScene", () => {
     assert.equal(h.notifications.state.unread, 0);
 
     const thumbs = nodes(scene.root).filter((node) => node instanceof CardThumb);
-    assert.deepEqual(thumbs.map((thumb) => [thumb.card.id, thumb.rarity, thumb.caption]), [["pyre_drake", "rare", "#7 · foil"], ["ember_imp", "common", "2× offered"], ["iron_watcher", "uncommon", "asked"]]);
+    assert.deepEqual(thumbs.map((thumb) => [thumb.card.id, thumb.rarity, thumb.caption]), [["pyre_drake", "rare", "#7"], ["ember_imp", "common", "2× offered"], ["iron_watcher", "uncommon", "asked"]]);
     thumbs[0].activate();
     assert.equal(byId(scene, "cardInfo.name").text, "Pyre Drake");
     assert.equal(byId(scene, "cardInfo.rarity").text, "Rare");

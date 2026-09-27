@@ -43,7 +43,7 @@ function chance(value) {
 function product(value) {
   const prices = all(value.prices, price);
   const contents = all(value.contents, (content) =>
-    isString(content.type) && isString(content.ref) && isCount(content.count) && (content.finish === null || isString(content.finish)) ? Object.freeze({ type: content.type, ref: content.ref, count: content.count, finish: content.finish }) : null,
+    isString(content.type) && isString(content.ref) && isCount(content.count) ? Object.freeze({ type: content.type, ref: content.ref, count: content.count }) : null,
   );
   const rarity = value.rarity ?? null;
   const named = ["id", "kind", "name", "description"].every((key) => isString(value[key]));
@@ -57,7 +57,7 @@ function product(value) {
 function priceList(value) {
   const raw = /** @type {any} */ (value);
   const isAmount = (amount) => isString(amount) && AMOUNT_PATTERN.test(amount);
-  const singles = isObject(raw) ? all(raw.singles, (entry) => (isString(entry.rarity) && isAmount(entry.standard) && (entry.foil === null || isAmount(entry.foil)) ? Object.freeze({ rarity: entry.rarity, standard: entry.standard, foil: entry.foil }) : null)) : null;
+  const singles = isObject(raw) ? all(raw.singles, (entry) => (isString(entry.rarity) && isAmount(entry.price) ? Object.freeze({ rarity: entry.rarity, price: entry.price }) : null)) : null;
   return singles !== null && isString(raw.asset) ? Object.freeze({ asset: raw.asset, singles }) : null;
 }
 
@@ -67,17 +67,16 @@ function dropTable(value) {
     const odds = isObject(slot.odds) ? Object.entries(slot.odds).map(([rarity, odd]) => [rarity, chance(odd)]) : null;
     return isCount(slot.count) && odds !== null && odds.every(([, odd]) => odd !== null) ? Object.freeze({ count: slot.count, odds: Object.freeze(Object.fromEntries(odds)) }) : null;
   });
-  const foil = chance(value.foil);
-  if (!isString(value.id) || !isString(value.hash) || !isCount(value.size) || slots === null || foil === null) {
+  if (!isString(value.id) || !isString(value.hash) || !isCount(value.size) || slots === null) {
     return null;
   }
-  return Object.freeze({ id: value.id, hash: value.hash, size: value.size, slots, foil });
+  return Object.freeze({ id: value.id, hash: value.hash, size: value.size, slots });
 }
 
 /** @param {any} value */
 function receivedCard(value) {
-  return UUID_PATTERN.test(value.id) && isString(value.definitionId) && isString(value.edition) && isCount(value.serial) && isString(value.finish)
-    ? Object.freeze({ id: value.id, definitionId: value.definitionId, edition: value.edition, serial: value.serial, finish: value.finish })
+  return UUID_PATTERN.test(value.id) && isString(value.definitionId) && isString(value.edition) && isCount(value.serial)
+    ? Object.freeze({ id: value.id, definitionId: value.definitionId, edition: value.edition, serial: value.serial })
     : null;
 }
 

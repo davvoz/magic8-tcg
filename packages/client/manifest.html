@@ -22,10 +22,10 @@
 <body>
   <main>
     <h1>Broadcaster manifest</h1>
-    <p>The root account authorises the accounts that publish game records. Verifiers accept only records signed by an account authorised <em>before</em> the record's block, so publish this before the server starts broadcasting. It is signed with the root account's <strong>active</strong> key in Steem Keychain, on this computer: that key never goes to the game server. To revoke every broadcaster (for example after a leaked key), publish an empty list.</p>
+    <p>The root account authorises the accounts that publish the shop's records (purchase receipts, pack epochs, trades, sales). Verifiers accept only records signed by an account authorised <em>before</em> the record's block, so publish this before the server starts broadcasting. It is signed with the root account's <strong>active</strong> key in Steem Keychain, on this computer: that key never goes to the game server. To revoke every broadcaster (for example after a leaked key), publish an empty list.</p>
     <form id="manifest">
       <label>Root account <input type="text" id="root" autocomplete="off" spellcheck="false" required></label>
-      <label>What it authorises <select id="kind"><option value="broadcasters">Broadcaster accounts (sign game records)</option><option value="ack_keys">Ack keys (sign the server's acks to players)</option></select></label>
+      <label>What it authorises <select id="kind"><option value="broadcasters">Broadcaster accounts (sign receipts, packs, trades and sales)</option><option value="ack_keys">Ack keys (sign the server's acks to players)</option></select></label>
       <label><span id="members-label">Broadcaster accounts, comma-separated (posting keys only on the server)</span> <input type="text" id="accounts" autocomplete="off" spellcheck="false"></label>
       <label>Valid from block (0 = from the block that includes this manifest) <input type="text" id="from" value="0" inputmode="numeric"></label>
       <button type="submit" id="publish">Publish with Keychain</button>

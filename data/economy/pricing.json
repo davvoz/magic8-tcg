@@ -5,18 +5,18 @@
   "singles": {
     "perOrder": 3,
     "prices": {
-      "common": { "standard": "0.5", "foil": "1" },
-      "uncommon": { "standard": "1", "foil": "2" },
-      "rare": { "standard": "2.5", "foil": "5" },
-      "epic": { "standard": "5", "foil": "10" },
-      "legendary": { "standard": "12.5", "foil": "25" }
+      "common": "0.5",
+      "uncommon": "1",
+      "rare": "2.5",
+      "epic": "5",
+      "legendary": "12.5"
     }
   },
   "packs": [
     {
       "id": "core_booster",
       "name": "Core Booster",
-      "description": "5 unknown cards: 3 common, 1 uncommon and 1 rare or better. 1 card in 20 is foil.",
+      "description": "5 unknown cards: 3 common, 1 uncommon and 1 rare or better.",
       "dropTable": "core_booster",
       "price": "1",
       "perOrder": 20
@@ -24,7 +24,7 @@
     {
       "id": "core_mini_booster",
       "name": "Core Mini Booster",
-      "description": "3 unknown cards: 2 common and 1 uncommon or better. 1 card in 20 is foil.",
+      "description": "3 unknown cards: 2 common and 1 uncommon or better.",
       "dropTable": "core_mini_booster",
       "price": "0.5",
       "perOrder": 20

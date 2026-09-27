@@ -6,12 +6,12 @@
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
-import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, recoverSigner, signMessage } from "@magic8/steem";
+import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, signMessage } from "@magic8/steem";
 import { createServerApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { readServerContent } from "./contentFiles.js";
 import { verifySessionSignature } from "./kernel/crypto/sessionSignatures.js";
-import { createJsonLogger } from "./kernel/logger.js";
+import { createConsoleLogger, createJsonLogger } from "./kernel/logger.js";
 import { nodeSecureRandom } from "./kernel/random.js";
 import { systemClock } from "./kernel/time.js";
 import { openDatabase } from "./platform/db/openDatabase.js";
@@ -28,7 +28,6 @@ const SALE_POLL_INTERVAL_MS = 5000;
 const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
 const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
 const GAME_TICK_INTERVAL_MS = 1000;
-const RECORD_SEAL_INTERVAL_MS = 5000;
 /** The rating window widens while a ticket waits, so the queue is re-run often. */
 const MATCHMAKING_INTERVAL_MS = 5000;
 /** One broadcast round per block. */
@@ -50,7 +49,8 @@ async function main() {
     }
     throw error;
   }
-  const logger = createJsonLogger({ write: (line) => process.stdout.write(line), level: config.logLevel });
+  const createLogger = config.logFormat === "json" ? createJsonLogger : createConsoleLogger;
+  const logger = createLogger({ write: (line) => process.stdout.write(line), level: config.logLevel });
   const database = await openDatabase({ url: config.databaseUrl, baseDirectory: REPOSITORY_ROOT, logger });
   const rpc = new SteemRpcClient({ nodes: config.steemNodes });
   const chain = new SteemBlockchainProvider({ rpc });
@@ -63,7 +63,7 @@ async function main() {
     ? new StaticFiles([
         { prefix: "/data/", directory: join(REPOSITORY_ROOT, "data") },
         { prefix: "/engine/", directory: join(REPOSITORY_ROOT, "packages", "engine", "src") },
-        // The verifier page (verify.html) runs the protocol and reads STEEM nodes directly.
+        // The browser pages (the game, manifest.html, admin.html) run the protocol and read STEEM nodes directly.
         { prefix: "/protocol/", directory: join(REPOSITORY_ROOT, "packages", "protocol", "src") },
         { prefix: "/steem/", directory: join(REPOSITORY_ROOT, "packages", "steem", "src") },
         { prefix: "/vendor/noble-hashes/", directory: join(REPOSITORY_ROOT, "node_modules", "@noble", "hashes") },
@@ -83,10 +83,8 @@ async function main() {
     content: await readServerContent(join(REPOSITORY_ROOT, "data")),
     staticFiles,
     publishing,
-    chainReader: publishing?.reader ?? new SteemPublicationReader({ chain }),
     ackSigner: ackSignerFrom(config, logger),
     verifyMoveSignature: verifySessionSignature,
-    recoverSigner,
   });
 
   const restored = await app.games.restoreAll();
@@ -116,7 +114,6 @@ async function main() {
     // Keeps a pack epoch open ahead of sales, so its commitment is already on chain when a buyer orders.
     every(ORDER_EXPIRY_INTERVAL_MS, "pack epoch rollover", () => app.epochs.current(), logger),
     every(GAME_TICK_INTERVAL_MS, "game timers", () => app.games.tick(), logger),
-    every(RECORD_SEAL_INTERVAL_MS, "record sealing", () => app.games.sealStale(), logger),
     every(NOTIFICATION_PURGE_INTERVAL_MS, "notification retention", () => app.notifications.purge(), logger),
     every(MATCHMAKING_INTERVAL_MS, "matchmaking", () => app.matchmaking.pair(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "queue expiry", () => app.matchmaking.expireStale(), logger),

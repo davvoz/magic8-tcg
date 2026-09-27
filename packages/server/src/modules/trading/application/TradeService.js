@@ -38,7 +38,7 @@ export const DEFAULT_TRADE_POLICY = Object.freeze({
 });
 
 /**
- * @typedef {Readonly<{ id: string, definitionId: string, serial: number, finish: string }>} TradeCard
+ * @typedef {Readonly<{ id: string, definitionId: string, serial: number }>} TradeCard
  */
 
 export class TradeService {
@@ -321,7 +321,7 @@ export class TradeService {
    */
   async #publish(trade, toCounterparty, toProposer) {
     const { proposer, counterparty } = await this.#repository.accountsOf(trade.id);
-    const cardsOf = (copies) => copies.map((copy) => ({ id: copy.id, definitionId: copy.definitionId, serial: copy.serial, finish: copy.finish }));
+    const cardsOf = (copies) => copies.map((copy) => ({ id: copy.id, definitionId: copy.definitionId, serial: copy.serial }));
     const payload = tradeRecord({ tradeId: trade.id, proposer: { account: proposer, cards: cardsOf(toCounterparty) }, counterparty: { account: counterparty, cards: cardsOf(toProposer) } });
     await this.#outbox.enqueueTrade({ network: this.#network, tradeId: trade.id, payload });
     return { proposer, counterparty };
@@ -381,7 +381,7 @@ function checkCopies(copies) {
  * @param {Awaited<ReturnType<import("../infrastructure/PgTradeRepository.js").PgTradeRepository["listFor"]>>[number]} row
  */
 function viewOf(userId, { trade, proposerAccount, counterpartyAccount, items }) {
-  const side = (name) => Object.freeze(items.filter((item) => item.side === name).map((item) => Object.freeze({ id: item.id, definitionId: item.definitionId, serial: item.serial, finish: item.finish })));
+  const side = (name) => Object.freeze(items.filter((item) => item.side === name).map((item) => Object.freeze({ id: item.id, definitionId: item.definitionId, serial: item.serial })));
   return Object.freeze({
     id: trade.id,
     status: trade.status,

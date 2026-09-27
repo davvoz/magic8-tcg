@@ -40,7 +40,7 @@ export class SteemPublicationReader {
   #chain;
 
   /**
-   * @param {{ chain: Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getHead" | "getAccountHistory" | "getLatestHistoryIndex" | "getBlock"> & Partial<Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getAccount">> }} deps
+   * @param {{ chain: Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getHead" | "getAccountHistory" | "getLatestHistoryIndex" | "getBlock"> }} deps
    */
   constructor({ chain }) {
     this.#chain = chain;
@@ -57,23 +57,6 @@ export class SteemPublicationReader {
   /** @param {string} account */
   latestIndex(account) {
     return this.#chain.getLatestHistoryIndex(account);
-  }
-
-  /**
-   * The keys that alone satisfy the account's posting authority today (session keys are authorised with one), or null for no such account.
-   * @param {string} account
-   * @returns {Promise<readonly string[] | null>}
-   */
-  async postingKeys(account) {
-    if (this.#chain.getAccount === undefined) {
-      return null;
-    }
-    const found = await this.#chain.getAccount(account);
-    if (found === null) {
-      return null;
-    }
-    const { posting } = found;
-    return Object.freeze(posting.keys.filter((entry) => posting.threshold > 0 && entry.weight >= posting.threshold).map((entry) => entry.key));
   }
 
   /**

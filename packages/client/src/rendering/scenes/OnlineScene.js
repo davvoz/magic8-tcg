@@ -167,7 +167,7 @@ export class OnlineScene extends Scene {
     if (state.error !== null) {
       panel.add(new TextBlock({ id: "online.error", x: INSET, y: top + 96, width, height: 2 * 28, text: state.error.message, size: "small", colorKey: "danger" }));
     }
-    panel.add(new TextBlock({ x: INSET, y: top + 176, width, height: 4 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and the whole game is recorded so it can be verified later.", size: "small", colorKey: "textMuted" }));
+    panel.add(new TextBlock({ x: INSET, y: top + 176, width, height: 4 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and every move of the game is recorded.", size: "small", colorKey: "textMuted" }));
     const y = COLUMNS.height - INSET - BUTTON.height;
     if (state.status === OnlineStatus.SEARCHING) {
       return panel.add(new Button({ id: "online.cancel", x: INSET, y, width, height: BUTTON.height, text: "Stop searching", onActivate: () => online.leaveQueue() }));

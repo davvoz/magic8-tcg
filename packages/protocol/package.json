@@ -2,7 +2,7 @@
   "name": "@magic8/protocol",
   "version": "0.1.0",
   "private": true,
-  "description": "Game Blockchain Protocol: canonical JSON, hashing, hash-chained game records, commit-reveal, verification and replay",
+  "description": "Game Blockchain Protocol: canonical JSON, hashing, hash-chained game events, commit-reveal, and the on-chain records of receipts, packs, trades and sales",
   "type": "module",
   "engines": {
     "node": ">=22"

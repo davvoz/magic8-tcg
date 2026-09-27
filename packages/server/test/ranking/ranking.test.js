@@ -1,6 +1,6 @@
 /**
  * Ranked play end to end on the real services: eligibility, the ranked
- * queue's rating window, ratings updated once per game, the daily limit
+ * queue pairing anyone with anyone, ratings updated once per game, the daily limit
  * between the same players, fair-play flags, the leaderboard and a
  * player's standing, and the catch-up of missed games.
  */
@@ -95,22 +95,15 @@ describe("ranked play", () => {
     await assert.rejects(early.setup.app.matchmaking.join({ user: carol.user, mode: "ranked", deckId: carol.deckId }), /no ranked season/);
   });
 
-  it("pairs close ratings first, and far ones only after the window widens", async () => {
+  it("pairs any two ranked players straight away, however far apart their ratings", async () => {
     const { setup, player } = await world();
     const strong = await player("strong");
     const weak = await player("weak");
-    const mid = await player("mid");
-    await setRating(setup, strong, 1900);
-    await setRating(setup, weak, 1200);
-    await setRating(setup, mid, 1260);
+    await setRating(setup, strong, 2400);
+    await setRating(setup, weak, 1100);
     await setup.app.matchmaking.join({ user: strong.user, mode: "ranked", deckId: strong.deckId });
-    setup.clock.advance(1000);
     await setup.app.matchmaking.join({ user: weak.user, mode: "ranked", deckId: weak.deckId });
-    assert.equal(last(strong.inbox, "match.found"), undefined, "700 points apart: not yet");
-    setup.clock.advance(1000);
-    await setup.app.matchmaking.join({ user: mid.user, mode: "ranked", deckId: mid.deckId });
-    assert.equal(last(weak.inbox, "match.found").gameId, last(mid.inbox, "match.found").gameId, "the two close players meet");
-    assert.equal(last(strong.inbox, "match.found"), undefined);
+    assert.equal(last(weak.inbox, "match.found").gameId, last(strong.inbox, "match.found").gameId, "1300 points apart, no wait");
   });
 
   it("stops rating the same two players after the daily limit, and flags quick concessions", async () => {
@@ -118,14 +111,8 @@ describe("ranked play", () => {
     const alice = await player("alice");
     const bob = await player("bob");
     await rankedGame(setup, alice, bob, bob);
-    await setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId });
-    setup.clock.advance(1000);
-    await setup.app.matchmaking.join({ user: bob.user, mode: "ranked", deckId: bob.deckId });
-    assert.equal((await setup.app.matchmaking.status(bob.user.id)).state, "searching", "the queue will not pair them again today");
-    await setup.app.matchmaking.leave(alice.user.id);
-    await setup.app.matchmaking.leave(bob.user.id);
 
-    // A game between them that happened anyway (created outside the queue) is not counted, and is flagged.
+    // Another game between them (here created outside the queue) is not counted, and is flagged.
     const deck = setup.app.catalog.current().content.preconDecks[0].entries;
     const before = await setup.app.ranking.ratingOf(alice.user.id);
     const extra = await setup.app.games.createGame({ mode: "ranked", entrants: [alice, bob].map((entrant) => ({ userId: entrant.user.id, account: entrant.user.account, deckId: null, deck })) });
@@ -140,39 +127,13 @@ describe("ranked play", () => {
     assert.deepEqual((await admin.rankingFlags()).length, 2, "operators see them");
   });
 
-  it("pairs whoever is left once the window stops being a wall", async () => {
-    const { setup, player } = await world();
-    const strong = await player("strong");
-    const weak = await player("weak");
-    await setRating(setup, strong, 2400);
-    await setRating(setup, weak, 1100);
-    await setup.app.matchmaking.join({ user: strong.user, mode: "ranked", deckId: strong.deckId });
-    setup.clock.advance(1000);
-    await setup.app.matchmaking.join({ user: weak.user, mode: "ranked", deckId: weak.deckId });
-    assert.equal(last(strong.inbox, "match.found"), undefined, "1300 points apart: not straight away");
-
-    setup.clock.advance(10 * 1000);
-    const rejoined = await setup.app.matchmaking.join({ user: weak.user, mode: "ranked", deckId: weak.deckId });
-    assert.equal(rejoined.since, setup.clock.now() - 10 * 1000, "searching again does not restart the wait");
-    assert.equal(last(strong.inbox, "match.found"), undefined, "11s in, still inside the window");
-
-    setup.clock.advance(10 * 1000);
-    assert.equal(await setup.app.matchmaking.pair(), 1, "past relaxAfterSeconds the queue takes the closest opponent there is");
-    assert.equal(last(weak.inbox, "match.found").gameId, last(strong.inbox, "match.found").gameId);
-  });
-
-  it("pairs two players again past the daily limit rather than leaving them alone", async () => {
+  it("pairs two players again past the daily limit, straight away", async () => {
     const { setup, player } = await world({ fairPlay: { maxRatedGamesPerPairPerDay: 1 } });
     const alice = await player("alice");
     const bob = await player("bob");
     await rankedGame(setup, alice, bob, bob);
     await setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId });
-    setup.clock.advance(1000);
     await setup.app.matchmaking.join({ user: bob.user, mode: "ranked", deckId: bob.deckId });
-    assert.equal((await setup.app.matchmaking.status(bob.user.id)).state, "searching", "someone else is preferred first");
-
-    setup.clock.advance(20 * 1000);
-    assert.equal(await setup.app.matchmaking.pair(), 1, "nobody else showed up: they play again");
     const rematch = last(bob.inbox, "match.found");
     assert.equal(last(alice.inbox, "match.found").gameId, rematch.gameId);
     const before = await setup.app.ranking.ratingOf(alice.user.id);

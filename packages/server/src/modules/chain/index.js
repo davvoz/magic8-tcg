@@ -9,8 +9,6 @@ export { ChainBroadcaster, DEFAULT_BROADCAST_POLICY, operationJson, signerFor } 
 export { AlertKind, ChainTracker, DEFAULT_TRACKER_POLICY } from "./application/ChainTracker.js";
 export { DEFAULT_RC_POLICY, RcMonitor, ResourceMode } from "./application/RcMonitor.js";
 export { PUBLICATION_READER_METHODS, TRANSACTION_PROVIDER_METHODS } from "./application/ports.js";
-export { GameVerification } from "./application/GameVerification.js";
 export { ManifestWatcher } from "./application/ManifestWatcher.js";
-export { registerChainRoutes } from "./http/chainRoutes.js";
 export { PgChainRepository } from "./infrastructure/PgChainRepository.js";
 export { PgOutboxRepository } from "./infrastructure/PgOutboxRepository.js";

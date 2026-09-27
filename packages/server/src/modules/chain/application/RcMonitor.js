@@ -1,10 +1,9 @@
 /**
  * RcMonitor: watches the broadcasters' Resource Credits (docs/tcg/03 §10).
  *
- * Below the slow threshold a broadcaster sends game records less often, so
- * they pack into fuller envelopes (fewer operations for the same bytes);
+ * Below the slow threshold the log warns that a broadcaster is running low;
  * below the critical threshold it stops and an alert asks a human to add
- * Steem Power (ideally delegated from a cold account). Games never stop:
+ * Steem Power (ideally delegated from a cold account). Nothing else stops:
  * the database stays the operational source and the outbox waits.
  */
 export const ResourceMode = Object.freeze({ NORMAL: "NORMAL", SLOW: "SLOW", PAUSED: "PAUSED" });
@@ -88,7 +87,7 @@ export class RcMonitor {
       const day = new Date(Math.floor(this.#clock.now() / DAY_MS) * DAY_MS).toISOString().slice(0, 10);
       await this.#repository.insertAlert({ network: this.#transactions.network, kind: "RC_CRITICAL", fingerprint: `${signer}:${day}`, details: fields, at: this.#clock.now() });
     } else if (mode === ResourceMode.SLOW) {
-      this.#logger.warn("broadcaster low on resource credits: batching more", fields);
+      this.#logger.warn("broadcaster low on resource credits", fields);
     } else {
       this.#logger.info("broadcaster resource credits recovered", fields);
     }
