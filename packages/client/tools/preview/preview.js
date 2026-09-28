@@ -12,7 +12,7 @@
  *   /tools/preview/?scene=match&turns=6      a match after N auto-played turns (seeded)
  *   /tools/preview/?scene=match&deck=precon_shadow   playing that deck (default: the first playable one)
  *   /tools/preview/?scene=match&inspect=1    plus the inspect overlay on a hand card
- *   ...&art=procedural                       every card with its procedural art, ignoring data/art/
+ *   ...&art=procedural                       every card and the table with procedural art, ignoring data/art/
  *
  * Illustrations are all loaded before the first frame, so a screenshot never
  * catches a card still procedural because its image was on its way.
@@ -40,6 +40,7 @@ import { immediateScheduler } from "../../src/infrastructure/time/ImmediateSched
 import { InputManager } from "../../src/input/InputManager.js";
 import { CardNode } from "../../src/rendering/board/CardNode.js";
 import { CardIllustrations } from "../../src/rendering/cards/CardIllustrations.js";
+import { TableArt, TablePiece } from "../../src/rendering/images/TableArt.js";
 import { CanvasHost } from "../../src/rendering/canvas/CanvasHost.js";
 import { GameLoop } from "../../src/rendering/canvas/GameLoop.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
@@ -264,7 +265,8 @@ async function boot() {
   }
   const app = buildApp(content.value);
   const illustrations = await loadIllustrations(request.procedural || !rawIllustrations.ok ? null : rawIllustrations.value, content.value.catalog);
-  const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations }));
+  const tableArt = request.procedural ? undefined : await loadTableArt();
+  const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations, tableArt }));
   registerScenes(sceneManager, app);
   await show(sceneManager, app, request);
   document.title = `Magic8 preview: ${request.scene}`;
@@ -288,6 +290,17 @@ async function loadIllustrations(raw, catalog) {
   });
   await illustrations.preload(illustrations.cardIds);
   return illustrations;
+}
+
+/** The painted table (same files as the game), already downloaded. */
+async function loadTableArt() {
+  const tableArt = new TableArt({
+    urls: { [TablePiece.MAT]: "/data/art/Tappeto.jpg", [TablePiece.CARD_BACK]: "/data/art/Dorso.jpg", [TablePiece.PANEL]: "/data/art/Texture.jpg" },
+    loadImage: loadBrowserImage,
+    logger,
+  });
+  await tableArt.preload();
+  return tableArt;
 }
 
 boot().catch((error) => {

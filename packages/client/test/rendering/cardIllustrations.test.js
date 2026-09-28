@@ -9,7 +9,8 @@ import { describe, it } from "node:test";
 
 import { buildIllustrationManifest } from "../../src/application/content/IllustrationManifest.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
-import { coverCrop, paintCardArt } from "../../src/rendering/cards/CardArt.js";
+import { paintCardArt } from "../../src/rendering/cards/CardArt.js";
+import { coverCrop } from "../../src/rendering/ui/drawing.js";
 import { CardFaceProfile, paintCardFace } from "../../src/rendering/cards/CardFace.js";
 import { CardIllustrations } from "../../src/rendering/cards/CardIllustrations.js";
 import { loadBundledContent } from "../application/fixtures.js";

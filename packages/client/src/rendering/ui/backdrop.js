@@ -1,11 +1,13 @@
 /**
  * The shared scene background: a deep radial glow, a vignette and a
  * deterministic scatter of faint motes, so every screen sits in the same
- * space instead of on a flat colour. Pure drawing; no state.
+ * space instead of on a flat colour. The match is played on the painted
+ * mat instead (Theme.tableArt) once its image is ready. Pure drawing; no state.
  */
 import { hashString, unitSequence } from "@magic8/engine/shared/hash.js";
+import { TablePiece } from "../images/TableArt.js";
 import { withAlpha } from "../theme/color.js";
-import { radialGradient } from "./drawing.js";
+import { drawImageCover, radialGradient } from "./drawing.js";
 
 const MOTE_COUNT = 70;
 const MOTE_VALUES_PER_ITEM = 3;
@@ -34,6 +36,31 @@ export function drawSceneBackdrop(context, theme, bounds, { glowKey = "backgroun
   if (motes) {
     drawMotes(context, bounds, { color: colors.accentLight, seed });
   }
+  context.restore();
+}
+
+/**
+ * The match background: the painted mat under a soft vignette, or the
+ * shared backdrop while the mat is not ready.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {import("@magic8/engine/shared/geometry.js").Rect} bounds
+ */
+export function drawTableBackdrop(context, theme, bounds) {
+  const mat = theme.tableArt?.imageFor(TablePiece.MAT) ?? null;
+  if (mat === null) {
+    drawSceneBackdrop(context, theme, bounds, { seed: "match", motes: false });
+    return;
+  }
+  const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  context.save();
+  drawImageCover(context, mat, bounds);
+  context.fillStyle = radialGradient(context, center, Math.max(bounds.width, bounds.height) * 0.7, [
+    [0, withAlpha(theme.colors.backgroundGlow, 0.18)],
+    [VIGNETTE_INNER, withAlpha(theme.colors.letterbox, 0)],
+    [1, withAlpha(theme.colors.letterbox, 0.55)],
+  ]);
+  context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
   context.restore();
 }
 

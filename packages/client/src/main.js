@@ -58,6 +58,7 @@ import { registerScenes } from "./rendering/scenes/registerScenes.js";
 import { SceneId } from "./rendering/scenes/sceneIds.js";
 import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
 import { CoinArt } from "./rendering/board/CoinArt.js";
+import { TableArt, TablePiece } from "./rendering/images/TableArt.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 
@@ -95,6 +96,9 @@ const COIN_ART = Object.freeze({
   files: Object.freeze({ [CoinFace.HEADS]: "coin_testa.png", [CoinFace.TAILS]: "coin_croce.png" }),
   disc: Object.freeze({ x: 0.5, y: 0.465, radius: 0.36 }),
 });
+
+/** The painted table, in ART_DIRECTORY: the match mat, the card back (portrait, near card proportions) and the panel stone. */
+const TABLE_ART_FILES = Object.freeze({ [TablePiece.MAT]: "Tappeto.jpg", [TablePiece.CARD_BACK]: "Dorso.jpg", [TablePiece.PANEL]: "Texture.jpg" });
 
 /** Theme used only to render the error screen when the real theme cannot be loaded. */
 const FALLBACK_THEME_RAW = Object.freeze({
@@ -231,6 +235,13 @@ async function boot() {
     onLoaded: () => presentation?.loop.requestRender(),
     logger,
   });
+  // The mat, the card back and the panel stone; a piece whose image is not ready is drawn procedurally.
+  const tableArt = new TableArt({
+    urls: Object.fromEntries(Object.entries(TABLE_ART_FILES).map(([piece, file]) => [piece, `${ART_DIRECTORY}${file}`])),
+    loadImage: loadBrowserImage,
+    onLoaded: () => presentation?.loop.requestRender(),
+    logger,
+  });
 
   const localStore = new LocalStorageStore(globalThis.localStorage);
   const storageAvailable = localStore.isAvailable();
@@ -315,7 +326,7 @@ async function boot() {
     ...rarities,
   });
 
-  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt }));
+  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt }));
   registerScenes(sceneManager, app);
   // A notification that arrives shows as a toast on any screen; a click opens the feed.
   const toasts = new ToastLayer({ viewport: theme.value.layout, onOpen: () => sceneManager.navigate(SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
@@ -331,6 +342,8 @@ async function boot() {
   void illustrations.preload(illustrations.cardIds);
   // Ready before the first match, so the coin is the painted one from its first frame.
   void coinArt.preload();
+  // Small and seen everywhere (the menu's card fan, every match): fetched straight away.
+  void tableArt.preload();
 }
 
 /**

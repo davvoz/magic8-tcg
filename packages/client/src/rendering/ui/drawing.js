@@ -1,8 +1,8 @@
 /**
  * Small drawing helpers shared by widgets, cards and scenes: rounded
- * rectangles, gradients, glows, bevels and text. Everything is procedural
- * (no images), and every colour comes from the caller so nothing here
- * knows the theme.
+ * rectangles, gradients, glows, bevels, text, and images laid over an area.
+ * Every colour and image comes from the caller so nothing here knows the
+ * theme.
  */
 import { withAlpha } from "../theme/color.js";
 
@@ -230,4 +230,40 @@ export function insetRect(area, amount) {
     width: Math.max(0, area.width - 2 * amount),
     height: Math.max(0, area.height - 2 * amount),
   };
+}
+
+/**
+ * The part of an image that covers `area` without distortion: as much of
+ * the image as the area's proportions allow, centred on `focus` and slid
+ * back inside the image where the focus is near an edge.
+ * @param {{ width: number, height: number }} image
+ * @param {{ width: number, height: number }} area
+ * @param {readonly [number, number]} focus
+ * @returns {{ x: number, y: number, width: number, height: number }} in image pixels
+ */
+export function coverCrop(image, area, [focusX, focusY]) {
+  const scale = Math.max(area.width / image.width, area.height / image.height);
+  const width = Math.min(image.width, area.width / scale);
+  const height = Math.min(image.height, area.height / scale);
+  return {
+    x: Math.min(Math.max(focusX * image.width - width / 2, 0), image.width - width),
+    y: Math.min(Math.max(focusY * image.height - height / 2, 0), image.height - height),
+    width,
+    height,
+  };
+}
+
+/**
+ * Fills `area` with an image, cropped to cover it without distortion
+ * (coverCrop). The caller clips it to a shape if it needs one.
+ * @param {CanvasRenderingContext2D} context
+ * @param {{ source: CanvasImageSource, width: number, height: number }} image
+ * @param {Rect} area
+ * @param {readonly [number, number]} [focus]
+ */
+export function drawImageCover(context, image, area, focus = [0.5, 0.5]) {
+  const crop = coverCrop(image, area, focus);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image.source, crop.x, crop.y, crop.width, crop.height, area.x, area.y, area.width, area.height);
 }

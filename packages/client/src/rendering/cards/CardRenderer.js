@@ -9,7 +9,8 @@
 import { Highlight } from "../../input/interaction/MatchInteraction.js";
 import { CARD_SIZE } from "../board/BoardLayout.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
-import { bevelRoundedRect, fillRoundedRect, glowRoundedRect, insetRect, verticalGradient } from "../ui/drawing.js";
+import { TablePiece } from "../images/TableArt.js";
+import { bevelRoundedRect, drawImageCover, fillRoundedRect, glowRoundedRect, insetRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
 import { drawGem, starPath } from "../ui/shapes.js";
 import { CardFaceProfile, paintCardFace } from "./CardFace.js";
 
@@ -89,13 +90,48 @@ function ringFor(theme, { highlight = null, focused = false }) {
 }
 
 /**
- * The hidden side of a card: a deep slab with a double gold rim and a
- * central star gem. Drawn at the given size (no base system: it has no text).
+ * The hidden side of a card: the painted back (Theme.tableArt) once its
+ * image is ready, framed by a thin gold rim; until then a deep slab with a
+ * double gold rim and a central star gem. Drawn at the given size (no base
+ * system: it has no text).
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").Theme} theme
  * @param {{ x: number, y: number, width: number, height: number }} at
  */
 export function drawCardBack(context, theme, at) {
+  const painted = theme.tableArt?.imageFor(TablePiece.CARD_BACK) ?? null;
+  if (painted === null) {
+    paintDrawnCardBack(context, theme, at);
+  } else {
+    paintPaintedCardBack(context, theme, at, painted);
+  }
+}
+
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {{ x: number, y: number, width: number, height: number }} at
+ * @param {import("../images/ImageCache.js").LoadedImage} image
+ */
+function paintPaintedCardBack(context, theme, at, image) {
+  const { colors } = theme;
+  const radius = at.width * 0.1;
+  const rim = Math.max(1, at.width * 0.03);
+  context.save();
+  roundedRectPath(context, at, radius);
+  context.clip();
+  drawImageCover(context, image, at);
+  context.restore();
+  bevelRoundedRect(context, at, { light: withAlpha(colors.accentLight, 0.2), dark: withAlpha("#000000", 0.6), radius });
+  fillRoundedRect(context, at, { stroke: colors.accentDark, radius, lineWidth: rim });
+}
+
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {{ x: number, y: number, width: number, height: number }} at
+ */
+function paintDrawnCardBack(context, theme, at) {
   const { colors } = theme;
   const radius = at.width * 0.1;
   const rim = Math.max(1, at.width * 0.04);

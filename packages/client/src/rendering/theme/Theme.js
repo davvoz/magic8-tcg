@@ -57,9 +57,10 @@ const MAX_FACTIONS = 16;
  *   animation: Readonly<Record<string, number>>,
  *   illustrations?: import("../cards/CardIllustrations.js").IllustrationSource,
  *   coinArt?: import("../board/CoinArt.js").CoinArtSource,
- * }>} Theme `illustrations` and `coinArt` are not read from theme.json: the composition root
- *   attaches the painted card art and the painted coin, and without them cards and the
- *   coin toss are drawn procedurally
+ *   tableArt?: import("../images/TableArt.js").TableArtSource,
+ * }>} Theme `illustrations`, `coinArt` and `tableArt` are not read from theme.json: the
+ *   composition root attaches the painted card art, the painted coin and the painted table
+ *   (mat, card back, panel stone), and without them all of these are drawn procedurally
  */
 
 /**

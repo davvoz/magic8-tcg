@@ -10,6 +10,7 @@ import { Highlight } from "../../input/interaction/MatchInteraction.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
 import { bodyFont, fontFor } from "../theme/Theme.js";
 import { drawOutlinedText, drawTextInRect, fillRoundedRect, glowRoundedRect, verticalGradient } from "../ui/drawing.js";
+import { paintStone } from "../ui/Panel.js";
 import { drawCardStackIcon, drawGem, drawOrb } from "../ui/shapes.js";
 import { UiNode } from "../ui/UiNode.js";
 
@@ -99,7 +100,9 @@ export class PlayerNode extends UiNode {
       glowRoundedRect(context, area, { color: halo, radius, blur: HALO_BLUR, lineWidth: 2 });
     }
     const rim = halo ?? (this.isActive ? withAlpha(colors.accent, 0.7) : colors.panelBorder);
-    fillRoundedRect(context, area, { fill: verticalGradient(context, area, [[0, shade(colors.panel, 0.08)], [1, shade(colors.panelDark, -0.2)]]), stroke: rim, radius, lineWidth: halo === null ? 1.5 : 3 });
+    fillRoundedRect(context, area, { fill: verticalGradient(context, area, [[0, shade(colors.panel, 0.08)], [1, shade(colors.panelDark, -0.2)]]), radius });
+    paintStone(context, theme, area, radius);
+    fillRoundedRect(context, area, { stroke: rim, radius, lineWidth: halo === null ? 1.5 : 3 });
   }
 
   /**

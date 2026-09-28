@@ -51,7 +51,7 @@ import { MatchPresenter } from "../board/MatchPresenter.js";
 import { PlayerNode, lifeCrystalCentre } from "../board/PlayerNode.js";
 import { describeEvent } from "../board/eventLog.js";
 import { CardDetail } from "../cards/CardDetail.js";
-import { drawSceneBackdrop } from "../ui/backdrop.js";
+import { drawTableBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
 import { Label } from "../ui/Label.js";
@@ -259,7 +259,7 @@ export class MatchScene extends Scene {
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
     const { theme, viewport } = this.services;
-    drawSceneBackdrop(context, theme, viewport.bounds, { seed: "match", motes: false });
+    drawTableBackdrop(context, theme, viewport.bounds);
     const shake = this.#ending?.shake ?? { x: 0, y: 0 };
     if (shake.x === 0 && shake.y === 0) {
       super.render(context);
@@ -529,7 +529,7 @@ export class MatchScene extends Scene {
    */
   #buildSidebar(snapshot, layout, interaction) {
     const { sidebar } = layout;
-    const panel = this.root.add(new Panel({ id: "sidebar", ...sidebar }));
+    const panel = this.root.add(new Panel({ id: "sidebar", ...sidebar, textured: true }));
     const width = sidebar.width - 2 * SIDEBAR.inset;
     panel.add(new Label({ x: SIDEBAR.inset, y: SIDEBAR.inset, width, height: SIDEBAR.titleHeight, text: snapshot.isOver ? "Match over" : `Turn ${snapshot.turnNumber}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     panel.add(new Label({ x: SIDEBAR.inset, y: SIDEBAR.inset + SIDEBAR.titleHeight, width, height: SIDEBAR.phaseHeight, text: phaseName(snapshot.phase), size: "small", colorKey: "textMuted", align: "left", fit: true }));
@@ -630,7 +630,7 @@ export class MatchScene extends Scene {
   /** @param {import("../board/BoardLayout.js").BoardLayout} layout */
   #buildLog(layout) {
     const { log } = layout;
-    const panel = this.root.add(new Panel({ id: "log", ...log }));
+    const panel = this.root.add(new Panel({ id: "log", ...log, textured: true }));
     const width = log.width - 2 * LOG.inset;
     panel.add(new Label({ x: LOG.inset, y: LOG.inset, width, height: LOG.headerHeight, text: "Battle log", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
     const top = LOG.inset + LOG.headerHeight;

@@ -1,6 +1,6 @@
 /**
- * Static board furniture drawn beneath the cards: the play zones as sunken
- * fields (the active seat's battlefield lit with a warm rim), the turn
+ * Static board furniture drawn beneath the cards: the play zones as sunken,
+ * tinted fields over the mat (the active seat's battlefield lit with a warm rim), the turn
  * banner as a ribbon across the middle, and the opponent's hidden hand
  * (card backs). Non-interactive.
  */
@@ -15,6 +15,8 @@ const ZONE_RADIUS = 14;
 const ZONE_DEPTH = 10;
 const ACTIVE_GLOW_BLUR = 26;
 const RIBBON_NOTCH = 18;
+/** How opaque a zone's dark tint is, top to bottom: light enough for the mat beneath to show through. */
+const ZONE_TINT = Object.freeze({ top: 0.35, bottom: 0.55 });
 
 export class BoardNode extends UiNode {
   #layout;
@@ -62,7 +64,7 @@ export class BoardNode extends UiNode {
       glowRoundedRect(context, zone, { color: withAlpha(colors.accent, 0.55), radius: ZONE_RADIUS, blur: ACTIVE_GLOW_BLUR, lineWidth: 2 });
     }
     fillRoundedRect(context, zone, {
-      fill: verticalGradient(context, zone, [[0, withAlpha(colors.panelDark, 0.75)], [1, withAlpha(shade(colors.panelDark, -0.5), 0.85)]]),
+      fill: verticalGradient(context, zone, [[0, withAlpha(colors.panelDark, ZONE_TINT.top)], [1, withAlpha(shade(colors.panelDark, -0.5), ZONE_TINT.bottom)]]),
       stroke: active ? withAlpha(colors.accent, 0.7) : withAlpha(colors.panelBorder, 0.7),
       radius: ZONE_RADIUS,
       lineWidth: active ? 2 : 1,

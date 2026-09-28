@@ -17,7 +17,7 @@ import { hashString, unitSequence } from "@magic8/engine/shared/hash.js";
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
 import { factionTones } from "../theme/Theme.js";
-import { radialGradient, roundedRectPath, verticalGradient } from "../ui/drawing.js";
+import { drawImageCover, radialGradient, roundedRectPath, verticalGradient } from "../ui/drawing.js";
 import { polygonPath, starPath } from "../ui/shapes.js";
 
 /** How many seeded values a painter may draw on. */
@@ -74,36 +74,12 @@ function illustrationOf(theme, model) {
 }
 
 /**
- * The part of an image that covers `area` without distortion: as much of
- * the image as the area's proportions allow, centred on `focus` and slid
- * back inside the image where the focus is near an edge.
- * @param {{ width: number, height: number }} image
- * @param {{ width: number, height: number }} area
- * @param {readonly [number, number]} focus
- * @returns {{ x: number, y: number, width: number, height: number }} in image pixels
- */
-export function coverCrop(image, area, [focusX, focusY]) {
-  const scale = Math.max(area.width / image.width, area.height / image.height);
-  const width = Math.min(image.width, area.width / scale);
-  const height = Math.min(image.height, area.height / scale);
-  return {
-    x: Math.min(Math.max(focusX * image.width - width / 2, 0), image.width - width),
-    y: Math.min(Math.max(focusY * image.height - height / 2, 0), image.height - height),
-    width,
-    height,
-  };
-}
-
-/**
  * @param {CanvasRenderingContext2D} context
  * @param {import("./CardIllustrations.js").Illustration} illustration
  * @param {import("@magic8/engine/shared/geometry.js").Rect} area
  */
 function paintIllustration(context, { image, focus }, area) {
-  const crop = coverCrop(image, area, focus);
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(image.source, crop.x, crop.y, crop.width, crop.height, area.x, area.y, area.width, area.height);
+  drawImageCover(context, image, area, focus);
 }
 
 /**
