@@ -192,6 +192,8 @@ describe("WebSocket gateway", () => {
     const [foundA, foundB] = await Promise.all([a.waitFor("match.found"), b.waitFor("match.found")]);
     assert.equal(foundA.gameId, foundB.gameId);
     const { gameId } = foundA;
+    const declined = await a.request("game.decline", { gameId });
+    assert.deepEqual([declined.t, declined.d.code, declined.d.details.code], ["error", "CONFLICT", "GAME_NOT_ACTIVE"], "a v1 game has no Keychain acceptance to decline");
 
     const joined = await a.request("game.entropy", { gameId, entropy: "1a".repeat(16) });
     assert.deepEqual(joined, { t: "game.joined", re: joined.re, d: { gameId } }, "every request gets a reply");

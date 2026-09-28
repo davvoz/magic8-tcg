@@ -8,12 +8,17 @@
  * - A disconnected seat waits at most `disconnectGraceMs` before the server
  *   acts for it; absent longer than `abandonMs`, or after `maxForcedTurns`
  *   turns in a row ended by the server, it forfeits.
+ * - Before the game (docs/tcg/12): a seat that sends no entropy within
+ *   `entropyMs` gets the server's; in protocol v2 both players must authorise
+ *   their session key with Keychain within `authorizeMs`, or the game is
+ *   called off without starting.
  *
- * @typedef {Readonly<{ entropyMs: number, turnMs: number, blockMs: number, reserveMs: number, disconnectGraceMs: number, abandonMs: number, maxForcedTurns: number }>} TimePolicy
+ * @typedef {Readonly<{ entropyMs: number, authorizeMs: number, turnMs: number, blockMs: number, reserveMs: number, disconnectGraceMs: number, abandonMs: number, maxForcedTurns: number }>} TimePolicy
  */
 
 export const DEFAULT_TIME_POLICY = Object.freeze({
   entropyMs: 15_000,
+  authorizeMs: 60_000,
   turnMs: 90_000,
   blockMs: 60_000,
   reserveMs: 90_000,

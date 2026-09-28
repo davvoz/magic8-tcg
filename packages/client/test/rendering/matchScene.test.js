@@ -150,6 +150,8 @@ describe("Decision clock (MatchScene)", () => {
     return {
       humanPlayerIds: [P1],
       clock,
+      openingToss: null,
+      begin: () => ({ ok: true, value: undefined }),
       subscribe: () => () => undefined,
       snapshotFor: () => snapshot,
       eventsFor: () => [],

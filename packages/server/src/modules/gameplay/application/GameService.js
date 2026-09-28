@@ -7,7 +7,9 @@
  * players' frozen decks and their commitments (GAME_CREATED, docs/tcg/03 §5):
  * the server is bound to its randomness and to both decks before either
  * player contributes entropy, and the first player is decided by lot from
- * the resulting seed.
+ * the resulting seed. In protocol v2 the game starts only once both
+ * players have also authorised their session keys with Keychain; a player
+ * who declines, or does not answer in time, calls the game off.
  *
  * Every accepted command gets an ack signed with the server's ack key, when
  * one is configured (docs/tcg/11-ack-firmati.md).
@@ -16,7 +18,7 @@
  * watch ends when they stop, disconnect, or the game ends.
  */
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
-import { GameMode, GameRecorder, LATEST_GAME_PROTOCOL, ackMessage, bytesToHex, canonicalDeck, deckCommitment, hexToBytes, seedCommitment } from "@magic8/protocol";
+import { GameMode, GameProtocol, GameRecorder, LATEST_GAME_PROTOCOL, ackMessage, bytesToHex, canonicalDeck, deckCommitment, hexToBytes, seedCommitment } from "@magic8/protocol";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { ulid } from "../../../kernel/ulid.js";
 import { DEFAULT_TIME_POLICY } from "../domain/TurnClock.js";
@@ -204,7 +206,8 @@ export class GameService {
     this.#actors.set(game.id, this.#newActor(game, recorder, this.#currentContent().content));
     for (const player of game.players) {
       const opponent = game.players.find((other) => other.seat !== player.seat);
-      this.#notifier.send(player.userId, "match.found", { gameId: game.id, seat: player.seat, opponent: { account: opponent?.account ?? null }, seedCommit: game.seedCommit, protocol: game.protocolVersion, entropyDeadline: game.createdAt + this.#timePolicy.entropyMs });
+      const authorizeDeadline = game.protocolVersion >= GameProtocol.V2 ? { authorizeDeadline: game.createdAt + this.#timePolicy.authorizeMs } : {};
+      this.#notifier.send(player.userId, "match.found", { gameId: game.id, seat: player.seat, opponent: { account: opponent?.account ?? null }, seedCommit: game.seedCommit, protocol: game.protocolVersion, entropyDeadline: game.createdAt + this.#timePolicy.entropyMs, ...authorizeDeadline });
     }
   }
 
@@ -239,6 +242,16 @@ export class GameService {
   async session(userId, { gameId, key, authorization }) {
     const actor = await this.#actorFor(gameId);
     return actor === null ? notInGame() : actor.session(userId, { key, authorization });
+  }
+
+  /**
+   * v2: the player will not authorise a session key; the game, not yet started, is called off.
+   * @param {string} userId
+   * @param {unknown} gameId
+   */
+  async decline(userId, gameId) {
+    const actor = await this.#actorFor(gameId);
+    return actor === null ? notInGame() : actor.decline(userId);
   }
 
   /**

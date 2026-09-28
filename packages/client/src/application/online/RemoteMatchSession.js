@@ -13,8 +13,17 @@
  *
  * With no seat it is a spectator's session: it shows what the server
  * streams to spectators (no hand on either side) and submits nothing.
+ *
+ * Who plays first was settled by the server's committed seed; the opening
+ * update says who (GAME_STARTED). Until anyone moves, the session offers that
+ * outcome as a coin toss to show (`openingToss`), with the faces drawn from
+ * the game id so both players see the same coin.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
+import { GameEventType } from "@magic8/engine/domain/game/GameEventType.js";
+import { ChaChaRandom } from "@magic8/engine/domain/random/ChaChaRandom.js";
+import { CoinToss } from "../match/CoinToss.js";
+import { textSeed } from "../match/textSeed.js";
 
 /**
  * The decision clock the server sends with every view (docs/tcg/02 §3.7):
@@ -42,6 +51,8 @@ export class RemoteMatchSession {
   #stopped = false;
   /** @type {any} */
   #result = null;
+  /** The game's opening, once seen: who plays first, and the version it left the game at. @type {{ firstPlayerId: string, version: number } | null} */
+  #opening = null;
   /** @type {Set<(update: { events: readonly any[], version: number, playerId: string | null }) => void>} */
   #listeners = new Set();
 
@@ -100,6 +111,25 @@ export class RemoteMatchSession {
     return this.#result;
   }
 
+  /**
+   * The coin toss telling who plays first, while nobody has moved yet; null
+   * after that, or when this session never saw the game open.
+   * @returns {CoinToss | null}
+   */
+  get openingToss() {
+    const opening = this.#opening;
+    const playerIds = this.#snapshot?.players?.map((/** @type {{ id: string }} */ player) => player.id) ?? [];
+    if (opening === null || opening.version !== this.#version || !playerIds.includes(opening.firstPlayerId)) {
+      return null;
+    }
+    return CoinToss.decided({ playerIds, firstPlayerId: opening.firstPlayerId, random: ChaChaRandom.fromSeed(textSeed(this.#gameId)) });
+  }
+
+  /** The server starts online games: nothing to do here. */
+  begin() {
+    return ok(undefined);
+  }
+
   /** Who is on the clock and by when, as the server last sent it (null before the first view). */
   get clock() {
     return this.#clock;
@@ -123,9 +153,21 @@ export class RemoteMatchSession {
     this.#version = update.version;
     this.#protocol = typeof update.protocol === "number" ? update.protocol : this.#protocol;
     this.#clock = update.clock ?? this.#clock;
+    this.#noteOpening(update.events ?? [], update.version);
     const published = Object.freeze({ events: update.events ?? [], version: update.version, playerId: null });
     for (const listener of this.#listeners) {
       listener(published);
+    }
+  }
+
+  /**
+   * @param {readonly any[]} events
+   * @param {number} version
+   */
+  #noteOpening(events, version) {
+    const started = events.find((event) => event?.type === GameEventType.GAME_STARTED);
+    if (started !== undefined && typeof started.firstPlayerId === "string") {
+      this.#opening = Object.freeze({ firstPlayerId: started.firstPlayerId, version });
     }
   }
 

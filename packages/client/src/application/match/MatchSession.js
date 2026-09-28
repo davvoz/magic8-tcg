@@ -9,8 +9,11 @@
  * - Listeners receive `{ events, version }` after each command and fetch
  *   perspective snapshots through `snapshotFor`. The engine itself is never
  *   exposed.
+ * - A session built with an `openingToss` shows it before the first turn:
+ *   the match screen plays the toss, then calls `begin()`, so the AI never
+ *   moves while the coin is still in the air.
  */
-import { fail } from "@magic8/engine/shared/Result.js";
+import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { CommandError } from "@magic8/engine/domain/commands/CommandError.js";
 import { concede } from "@magic8/engine/domain/commands/commandFactories.js";
 import { redactEventsFor } from "@magic8/engine/domain/game/GameSnapshot.js";
@@ -30,6 +33,9 @@ export class MatchSession {
   #scheduler;
   #logger;
   #aiDelayMs;
+  /** @type {import("./CoinToss.js").CoinToss | null} */
+  #openingToss;
+  #started = false;
   /** @type {Set<(update: SessionUpdate) => void>} */
   #listeners = new Set();
   /** Serialises drive runs so a submit during a pending drive is never lost. @type {Promise<void>} */
@@ -37,14 +43,16 @@ export class MatchSession {
   #stopped = false;
 
   /**
-   * @param {{ engine: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, controllers: ReadonlyMap<string, import("./PlayerController.contract.js").PlayerController>, scheduler: import("../ports/Scheduler.contract.js").Scheduler, logger: import("../ports/Logger.contract.js").Logger, aiDelayMs?: number }} deps
+   * @param {{ engine: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, controllers: ReadonlyMap<string, import("./PlayerController.contract.js").PlayerController>, scheduler: import("../ports/Scheduler.contract.js").Scheduler, logger: import("../ports/Logger.contract.js").Logger, aiDelayMs?: number, openingToss?: import("./CoinToss.js").CoinToss | null }} deps
+   *   `openingToss`: the toss that seated the engine's first player, to be shown before the match begins
    */
-  constructor({ engine, controllers, scheduler, logger, aiDelayMs = 0 }) {
+  constructor({ engine, controllers, scheduler, logger, aiDelayMs = 0, openingToss = null }) {
     this.#engine = engine;
     this.#controllers = new Map(controllers);
     this.#scheduler = scheduler;
     this.#logger = logger;
     this.#aiDelayMs = aiDelayMs;
+    this.#openingToss = openingToss;
   }
 
   get isOver() {
@@ -58,6 +66,11 @@ export class MatchSession {
 
   get version() {
     return this.#engine.version;
+  }
+
+  /** The coin toss to show before the first turn; null once the match has begun (or when nobody tossed). */
+  get openingToss() {
+    return this.#started ? null : this.#openingToss;
   }
 
   /** No decision clock offline: practice and hot-seat matches are untimed. */
@@ -83,10 +96,19 @@ export class MatchSession {
   start() {
     const result = this.#engine.start();
     if (result.ok) {
+      this.#started = true;
       this.#publish(result.value.events, result.value.version, null);
       this.#scheduleDrive();
     }
     return result;
+  }
+
+  /**
+   * Starts the match unless it already has: what the match screen calls once
+   * the opening (the coin toss) has been shown.
+   */
+  begin() {
+    return this.#started ? ok(undefined) : this.start();
   }
 
   /**

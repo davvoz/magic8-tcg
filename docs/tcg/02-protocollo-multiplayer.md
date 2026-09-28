@@ -90,7 +90,8 @@
 | `queue.join` | `{ "mode": "casual"\|"ranked", "deckId" }` | Il mazzo viene rivalidato (regole + possesso) e congelato |
 | `queue.leave` | `{}` | |
 | `game.entropy` | `{ "gameId", "entropy": "<hex32>" }` | Contributo al seed dopo aver ricevuto `seed_c` (03 §5) |
-| `game.session` | `{ "gameId", "key", "authorization" }` | v2: la chiave di sessione e la sua autorizzazione Keychain (12); risposta `game.session` |
+| `game.session` | `{ "gameId", "key", "authorization" }` | v2: la chiave di sessione e la sua autorizzazione Keychain (12); risposta `game.session`. È anche l'accettazione della partita: si parte solo quando hanno firmato entrambi |
+| `game.decline` | `{ "gameId" }` | v2, solo prima dell'avvio: il giocatore non firma (ha detto no a Keychain). Il server chiude la partita e manda `game.aborted` a entrambi; risposta `game.declined` (12) |
 | `game.command` | `{ "gameId", "commandId": "<uuid>", "expectedVersion": 41, "command": { "type": "PLAY_CARD", "cardId": "c17", "targets": ["c3"] }, "signature"? }` | Il `playerId` non si invia: il server usa il posto dell'utente. In v2 `signature` è obbligatoria (12) |
 | `game.sync` | `{ "gameId", "sinceSeq" }` | Recupero eventi persi o snapshot completo |
 | `game.concede` | `{ "gameId", "commandId", "expectedVersion"?, "signature"? }` | Scorciatoia per `CONCEDE`; in v2 firmata come una mossa |
@@ -103,12 +104,13 @@
 |---|---|
 | `welcome` | `{ "user", "serverTime", "activeGame": <vista della partita> \| null, "queue": { "state" }, "ackKey": "STM…" \| null }` (risposta a `hello`: chi rientra riceve subito lo stato completo della sua partita) |
 | `queue.status` | `{ "state": "searching"\|"idle", "since", "estimatedWaitMs" }` |
-| `match.found` | `{ "gameId", "seat", "opponent": { "account" }, "seedCommit": "<hex64>", "protocol": 1\|2, "entropyDeadline" }` |
+| `match.found` | `{ "gameId", "seat", "opponent": { "account" }, "seedCommit": "<hex64>", "protocol": 1\|2, "entropyDeadline", "authorizeDeadline"? }` (`authorizeDeadline` solo in v2) |
 | `game.joined` | `{ "gameId" }` (risposta a `game.entropy`) |
-| `game.state` | la **vista della partita** (risposta a `game.sync`): `{ "gameId", "seat", "status", "opponent": { "account" }, "seedCommit", "entropyDeadline", "version", "lastSeq", "head", "snapshot": <snapshot per prospettiva> \| null, "clock": { "activeSeat", "deadline", "reserveMs": { "s0", "s1" } } }` |
+| `game.state` | la **vista della partita** (risposta a `game.sync`): `{ "gameId", "seat", "status", "opponent": { "account" }, "seedCommit", "entropyDeadline", "version", "lastSeq", "head", "snapshot": <snapshot per prospettiva> \| null, "clock": { "activeSeat", "deadline", "reserveMs": { "s0", "s1" } } }`; in v2 anche `"authorized": { "s0", "s1" }` (chi ha firmato) e `"authorizeDeadline"` (finché la partita aspetta). Prima dell'avvio arriva a entrambi dopo ogni firma |
 | `game.events` | la vista della partita più `events`: gli eventi del motore redatti per prospettiva, per le animazioni. Il client **sostituisce** il proprio stato con lo snapshot ricevuto: non applica eventi e non ha mai un motore di una partita online |
 | `game.ack` | `{ "commandId", "ok": true, "version", "head", "seq", "at", "key", "sig" }` (firmato, 11) oppure `{ "commandId", "ok": false, "error": { "code" } }` |
 | `game.over` | `{ "gameId", "winner", "reason", "you" }` (l'URL di verifica arriva con M5) |
+| `game.aborted` | `{ "gameId", "reason": "declined"\|"not_authorized", "seats": [...], "you" }`: v2, la partita è stata chiusa prima di iniziare perché i posti in `seats` non l'hanno accettata con Keychain (12). Nessun risultato |
 | `watch.state`, `watch.events`, `watch.over` | la vista dello spettatore, gli aggiornamenti dopo ogni mossa, la fine (10) |
 | `session.replaced` | `{}`: la connessione sta per essere chiusa (4000) perché l'utente si è connesso da un'altra scheda |
 | `order.updated` | `{ "orderId", "status", "cards"?: [...] }` |
@@ -137,6 +139,7 @@ Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN
 - Timer di turno (es. 90 s) più riserva per giocatore (es. 90 s per partita), timer di risposta per i blocchi (60 s). Configurazione per modalità.
 - Il client mostra un orologio col tempo restante della decisione corrente (`clock.deadline` in `game.state`/`game.events`), colorato più urgente sotto i 20/10 s; nessun timer nelle partite locali (in pratica, senza server).
 - Allo scadere, il server esegue la mossa forzata minima (`END_PHASE`, blocchi vuoti) registrata come `FORCED_MOVE` con `why: "timeout"`.
+- Prima dell'avvio: 15 s per l'entropia (poi la mette il server) e, in v2, 60 s per firmare con Keychain (`authorizeMs`; poi la partita viene chiusa, 12).
 - I timer vivono nel `GameActor` (orologio iniettato → testabili con orologio finto).
 
 ### 3.8 Spettatori

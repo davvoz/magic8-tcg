@@ -1,7 +1,8 @@
 /**
  * The online lobby against a real OnlineService and a scripted server:
- * decks with their playability, queueing, and handing the match to the
- * match screen once the server starts the game.
+ * decks with their playability, queueing, handing the match to the match
+ * screen once the server starts the game, and — in v2 — saying who has
+ * accepted the game with Keychain, and who did not when it is cancelled.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -10,7 +11,7 @@ import { ok } from "@magic8/engine/shared/Result.js";
 import { OnlineService } from "../../src/application/online/OnlineService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { OnlineScene } from "../../src/rendering/scenes/OnlineScene.js";
+import { OnlineScene, matchedText } from "../../src/rendering/scenes/OnlineScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
@@ -89,5 +90,31 @@ describe("OnlineScene", () => {
     assert.equal(match.id, SceneId.MATCH);
     assert.deepEqual(match.params.session.humanPlayerIds, ["s1"]);
     assert.equal(match.params.againScene, SceneId.ONLINE, "play again leads back to the lobby");
+  });
+});
+
+describe("OnlineScene before a v2 game starts", () => {
+  const WAITING = (authorized) => ({ gameId: GAME, seat: "s1", status: "CREATED", protocol: 2, opponent: { account: "bob" }, version: 0, snapshot: null, authorized });
+
+  it("says the game starts once both players sign it, and who has", () => {
+    const state = (acceptance) => ({ status: "matched", opponent: "bob", acceptance, error: null, session: null, watching: null });
+    assert.equal(matchedText(state({ you: false, opponent: false })), "Opponent found: @bob. The game starts once both of you sign it with Keychain: accept it in Keychain, waiting for @bob.");
+    assert.equal(matchedText(state({ you: true, opponent: false })), "Opponent found: @bob. The game starts once both of you sign it with Keychain: you have accepted, waiting for @bob.");
+    assert.equal(matchedText(state({ you: false, opponent: true })), "Opponent found: @bob. The game starts once both of you sign it with Keychain: accept it in Keychain, @bob has accepted.");
+    assert.equal(matchedText(state(null)), "Opponent found: @bob. Shuffling with both players' randomness…", "v1: nothing to sign");
+  });
+
+  it("shows who has accepted, then the cancellation and who did not accept, and lets the player search again", async () => {
+    const { scene, navigated, push } = await harness();
+    push("game.state", WAITING({ s0: true, s1: false }));
+    assert.ok(rendered(scene).some((text) => text.includes("@bob has accepted")), rendered(scene).join(" | "));
+    assert.equal(byId(scene, "online.find").enabled, false, "no new search while a game waits");
+
+    push("game.aborted", { gameId: GAME, reason: "not_authorized", seats: ["s1"], you: "s1" });
+    const texts = rendered(scene);
+    assert.ok(texts.some((text) => text.includes("cancelled before it started")));
+    assert.ok(texts.some((text) => text.includes("You did not sign the game with Keychain in time")), texts.join(" | "));
+    assert.equal(byId(scene, "online.find").enabled, true);
+    assert.ok(navigated.every((entry) => entry.id !== SceneId.MATCH), "never went to the board");
   });
 });

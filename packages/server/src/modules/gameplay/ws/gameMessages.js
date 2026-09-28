@@ -52,6 +52,16 @@ export function registerGameMessages({ router, games }) {
     return { t: "game.session", d: { gameId: body.gameId } };
   });
 
+  // v2: the player said no to Keychain; a game that has not started is called off (both players get game.aborted).
+  router.on("game.decline", async ({ principal }, data) => {
+    const body = validated(data, ["gameId"], (issues, object) => checkString(issues, object.gameId, "d.gameId", GAME_ID));
+    const result = await games.decline(principal.user.id, body.gameId);
+    if (!result.ok) {
+      throw new AppError("CONFLICT", result.error.message, { code: result.error.code });
+    }
+    return { t: "game.declined", d: { gameId: body.gameId } };
+  });
+
   router.on("game.command", async ({ principal }, data) => {
     const body = validated(data, ["gameId", "commandId", "expectedVersion", "command", "signature"], (issues, object) => {
       checkString(issues, object.gameId, "d.gameId", GAME_ID);

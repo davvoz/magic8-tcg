@@ -14,14 +14,14 @@
  * targets. Those targets are fixed when the cast is created, because a
  * creature it kills has left the board by the time the card is held up.
  */
-import { Easing, Tween } from "../animation/Tween.js";
+import { Timeline } from "../animation/Timeline.js";
+import { Easing } from "../animation/Tween.js";
 
 /**
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
  * @typedef {import("@magic8/engine/domain/game/GameSnapshot.js").CardView} CardView
  * @typedef {Readonly<{ x: number, y: number, name: string }>} CastTarget
  * @typedef {{ x: number, y: number, width: number, height: number, alpha: number, turn: number, glow: number, ring: number, strike: number }} RevealFrame
- * @typedef {{ to: RevealFrame, durationMs: number, easing: (t: number) => number }} Stage
  */
 
 /** How long the rune takes to spread, as a multiple of the long duration. */
@@ -39,12 +39,8 @@ export class CastReveal {
   #targets;
   /** Centre of the held card: where the beams start, and where they stay once it sinks. */
   #origin;
-  /** @type {RevealFrame} */
-  #state;
-  /** Stages not started yet, in order. @type {Stage[]} */
-  #stages;
-  /** @type {Tween<RevealFrame> | null} */
-  #tween = null;
+  /** @type {Timeline<RevealFrame>} */
+  #timeline;
 
   /**
    * @param {{ card: CardView, caption: string, targets: readonly CastTarget[], from: Rect, at: Rect, to: Rect, animation: Readonly<Record<string, number>>, holdMs: number }} options
@@ -61,16 +57,17 @@ export class CastReveal {
     const faceUp = { ...held, turn: 1, glow: 1 };
     const burst = { ...faceUp, ring: 1 };
     const struck = { ...burst, strike: 1 };
-    this.#state = { ...from, alpha: 0.9, turn: 0, glow: 0, ring: 0, strike: 0 };
-    this.#stages = [
-      { to: held, durationMs: animation.mediumMs, easing: Easing.easeOutCubic },
-      { to: faceUp, durationMs: animation.mediumMs, easing: Easing.easeInOutQuad },
-      { to: burst, durationMs: animation.longMs * BURST_MULTIPLIER, easing: Easing.easeOutCubic },
-      { to: struck, durationMs: animation.mediumMs, easing: Easing.easeOutCubic },
-      { to: struck, durationMs: holdMs, easing: Easing.linear },
-      { to: { ...shrunkOnto(struck, to, SINK_SCALE), alpha: 0, glow: 0 }, durationMs: animation.longMs, easing: Easing.easeInOutQuad },
-    ];
-    this.#advance();
+    this.#timeline = new Timeline({
+      from: { ...from, alpha: 0.9, turn: 0, glow: 0, ring: 0, strike: 0 },
+      stages: [
+        { to: held, durationMs: animation.mediumMs, easing: Easing.easeOutCubic },
+        { to: faceUp, durationMs: animation.mediumMs, easing: Easing.easeInOutQuad },
+        { to: burst, durationMs: animation.longMs * BURST_MULTIPLIER, easing: Easing.easeOutCubic },
+        { to: struck, durationMs: animation.mediumMs, easing: Easing.easeOutCubic },
+        { to: struck, durationMs: holdMs, easing: Easing.linear },
+        { to: { ...shrunkOnto(struck, to, SINK_SCALE), alpha: 0, glow: 0 }, durationMs: animation.longMs, easing: Easing.easeInOutQuad },
+      ],
+    });
   }
 
   /** @returns {CardView} */
@@ -94,11 +91,11 @@ export class CastReveal {
 
   /** @returns {RevealFrame} where and how the card is drawn right now */
   get frame() {
-    return this.#state;
+    return this.#timeline.frame;
   }
 
   get isDone() {
-    return this.#tween === null;
+    return this.#timeline.isDone;
   }
 
   /**
@@ -107,21 +104,7 @@ export class CastReveal {
    *   hold, where nothing moves and the frame need not be redrawn
    */
   update(dtMs) {
-    if (this.#tween === null) {
-      return false;
-    }
-    const previous = this.#state;
-    this.#state = this.#tween.update(dtMs);
-    if (this.#tween.isDone) {
-      this.#advance();
-    }
-    return !sameFrame(previous, this.#state);
-  }
-
-  /** Starts the next stage from wherever the card now is; null once there is none. */
-  #advance() {
-    const stage = this.#stages.shift();
-    this.#tween = stage === undefined ? null : new Tween({ from: this.#state, to: stage.to, durationMs: stage.durationMs, easing: stage.easing });
+    return this.#timeline.update(dtMs);
   }
 }
 
@@ -137,12 +120,4 @@ function shrunkOnto(frame, target, scale) {
   const width = frame.width * scale;
   const height = frame.height * scale;
   return { ...frame, x: target.x + (target.width - width) / 2, y: target.y + (target.height - height) / 2, width, height };
-}
-
-/**
- * @param {RevealFrame} a
- * @param {RevealFrame} b
- */
-function sameFrame(a, b) {
-  return Object.keys(a).every((key) => a[key] === b[key]);
 }

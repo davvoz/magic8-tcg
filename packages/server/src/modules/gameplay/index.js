@@ -2,7 +2,7 @@
  * Gameplay module (GameService, GameActor): authoritative games, their
  * protocol events and timers. Other modules use only what is exported here.
  */
-export { GameActor, GameError, GameStatus, MAX_SPECTATORS } from "./application/GameActor.js";
+export { AbortReason, GameActor, GameError, GameStatus, MAX_SPECTATORS } from "./application/GameActor.js";
 export { GameService } from "./application/GameService.js";
 
 export { DEFAULT_TIME_POLICY } from "./domain/TurnClock.js";

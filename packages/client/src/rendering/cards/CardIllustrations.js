@@ -5,12 +5,13 @@
  * decoded, then `onLoaded` asks for a redraw. An image that fails to load
  * is not retried: that card stays procedural for the session.
  *
- * Drawing stays synchronous and the loader is injected, so the layer runs
- * under node --test with a fake loader and without any image at all.
+ * Downloads go through an ImageCache; this class knows which cards have an
+ * illustration, where each file is, and how it is framed.
  */
+import { ImageCache } from "../images/ImageCache.js";
 
 /**
- * @typedef {Readonly<{ source: CanvasImageSource, width: number, height: number }>} LoadedImage
+ * @typedef {import("../images/ImageCache.js").LoadedImage} LoadedImage
  * @typedef {Readonly<{ image: LoadedImage, focus: import("../../application/content/IllustrationManifest.js").Focus }>} Illustration
  * @typedef {Readonly<{ imageFor: (cardId: string) => Illustration | null }>} IllustrationSource what the card painters read (Theme.illustrations)
  */
@@ -21,13 +22,7 @@ const PRELOAD_CONCURRENCY = 4;
 export class CardIllustrations {
   #entries;
   #urlFor;
-  #loadImage;
-  #onLoaded;
-  #logger;
-  /** @type {Map<string, Promise<void>>} downloads started, settled or not */
-  #requested = new Map();
-  /** @type {Map<string, LoadedImage>} */
-  #ready = new Map();
+  #images;
 
   /**
    * @param {{
@@ -41,9 +36,11 @@ export class CardIllustrations {
   constructor({ manifest, urlFor, loadImage, onLoaded = () => undefined, logger }) {
     this.#entries = manifest.entries;
     this.#urlFor = urlFor;
-    this.#loadImage = loadImage;
-    this.#onLoaded = onLoaded;
-    this.#logger = logger;
+    this.#images = new ImageCache({
+      loadImage,
+      onLoaded,
+      onFailed: ({ key, url, reason }) => logger.warn("card illustration unavailable", { cardId: key, url, reason }),
+    });
   }
 
   /** Cards that have an illustration, loaded or not. */
@@ -61,12 +58,8 @@ export class CardIllustrations {
     if (entry === undefined) {
       return null;
     }
-    const image = this.#ready.get(cardId);
-    if (image === undefined) {
-      void this.#request(cardId);
-      return null;
-    }
-    return { image, focus: entry.focus };
+    const image = this.#images.imageFor(cardId, this.#urlFor(entry.file));
+    return image === null ? null : { image, focus: entry.focus };
   }
 
   /**
@@ -78,35 +71,10 @@ export class CardIllustrations {
     const queue = cardIds.filter((cardId) => this.#entries.has(cardId));
     const worker = async () => {
       for (let cardId = queue.shift(); cardId !== undefined; cardId = queue.shift()) {
-        await this.#request(cardId);
+        const entry = /** @type {import("../../application/content/IllustrationManifest.js").IllustrationEntry} */ (this.#entries.get(cardId));
+        await this.#images.load(cardId, this.#urlFor(entry.file));
       }
     };
     await Promise.all(Array.from({ length: Math.min(PRELOAD_CONCURRENCY, queue.length) }, worker));
-  }
-
-  /**
-   * Starts (once) the download of a card's image. Never rejects.
-   * @param {string} cardId
-   */
-  #request(cardId) {
-    const started = this.#requested.get(cardId);
-    if (started !== undefined) {
-      return started;
-    }
-    const entry = /** @type {import("../../application/content/IllustrationManifest.js").IllustrationEntry} */ (this.#entries.get(cardId));
-    const url = this.#urlFor(entry.file);
-    const download = this.#loadImage(url).then(
-      (image) => {
-        if (!(image.width > 0 && image.height > 0)) {
-          throw new Error("the image is empty");
-        }
-        this.#ready.set(cardId, image);
-        this.#onLoaded();
-      },
-    ).catch((error) => {
-      this.#logger.warn("card illustration unavailable", { cardId, url, reason: error instanceof Error ? error.message : String(error) });
-    });
-    this.#requested.set(cardId, download);
-    return download;
   }
 }

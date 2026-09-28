@@ -19,6 +19,12 @@
  * MOVE, so it can never record a move in a player's name that the player
  * did not sign. Forced moves stay the server's, and say so.
  *
+ * A game starts once it has both players' entropy and, in v2, both session
+ * keys: nobody is dealt a hand, drawn to go first or put on the clock before
+ * both have accepted the game with Keychain. A player who refuses (decline)
+ * or lets the time run out calls the game off (GAME_ABORTED): both players
+ * are told who did not sign, and nothing counts for either of them.
+ *
  * A finished game's result — winner, reason, and the chain head after its
  * last event — goes to the outbox in the same unit of work as that event, to
  * be published once on chain (m8tcg_result, docs/tcg/03 §9): the server
@@ -36,6 +42,14 @@ import { CONCEDE_COMMAND, forcedCommandFor } from "../domain/forcedCommand.js";
 import { TurnClock } from "../domain/TurnClock.js";
 
 export const GameStatus = Object.freeze({ CREATED: "CREATED", ACTIVE: "ACTIVE", FINISHED: "FINISHED", ABORTED: "ABORTED" });
+
+/** Why a game that never started was called off (GAME_ABORTED `why`). */
+export const AbortReason = Object.freeze({
+  /** v2: a player refused to authorise their session key. */
+  DECLINED: "declined",
+  /** v2: a player did not authorise their session key in time. */
+  NOT_AUTHORIZED: "not_authorized",
+});
 
 export const GameError = Object.freeze({
   NOT_IN_GAME: "NOT_IN_GAME",
@@ -91,6 +105,8 @@ export class GameActor {
   #status;
   #lastSeq;
   #entropyDeadline;
+  /** v2: when the game is called off if a seat has not authorised a session key. */
+  #authorizeDeadline;
   /** @type {Map<string, string>} seat → entropy */
   #entropies = new Map();
   /** @type {Map<string, Ack>} */
@@ -142,6 +158,7 @@ export class GameActor {
     this.#lastSeq = game.lastEventSeq;
     this.#turnClock = new TurnClock(timePolicy, SEATS);
     this.#entropyDeadline = game.createdAt + timePolicy.entropyMs;
+    this.#authorizeDeadline = game.createdAt + timePolicy.authorizeMs;
     for (const player of game.players) {
       if (player.entropy !== null) {
         this.#entropies.set(player.seat, player.entropy);
@@ -262,9 +279,43 @@ export class GameActor {
       if (!(await signatures.authorizesSession({ account, message: sessionAuthorization(this.id, key), signature: authorization }))) {
         return fail(GameError.INVALID_SIGNATURE, `the authorisation is not signed by a posting key of @${account}`);
       }
-      const chained = this.#recorder.session({ seat, key, authorization, clock: { turn: this.#engine === null ? 0 : this.#engine.getSnapshot(null).turnNumber, ms: this.#elapsed() } });
-      await this.#persist([chained], {}, async () => undefined);
+      await this.#recordSession(seat, key, authorization);
+      return Object.freeze({ ok: true });
+    });
+  }
+
+  /**
+   * Records a seat's (checked) session key; before the start, it may be the last thing the game waited for.
+   * @param {string} seat
+   * @param {string} key
+   * @param {string} authorization
+   */
+  async #recordSession(seat, key, authorization) {
+    const chained = this.#recorder.session({ seat, key, authorization, clock: { turn: this.#engine === null ? 0 : this.#engine.getSnapshot(null).turnNumber, ms: this.#elapsed() } });
+    if (this.#status === GameStatus.CREATED) {
       this.#sessions.set(seat, key);
+      await this.#admit([chained], async () => undefined);
+      return;
+    }
+    await this.#persist([chained], {}, async () => undefined);
+    this.#sessions.set(seat, key);
+  }
+
+  /**
+   * v2: the player will not authorise a session key for this game (they said no to Keychain).
+   * Only before the start: the game is called off and both players are told.
+   * @param {string} userId
+   */
+  decline(userId) {
+    return this.#enqueue(async () => {
+      const seat = this.seatOf(userId);
+      if (seat === null) {
+        return fail(GameError.NOT_IN_GAME, "you are not playing this game");
+      }
+      if (!this.signsMoves || this.#status !== GameStatus.CREATED) {
+        return fail(GameError.GAME_NOT_ACTIVE, this.#status === GameStatus.CREATED ? "this game does not use session keys" : "the game is no longer waiting for players");
+      }
+      await this.#abort(AbortReason.DECLINED, [seat]);
       return Object.freeze({ ok: true });
     });
   }
@@ -338,7 +389,7 @@ export class GameActor {
     });
   }
 
-  /** Timers: missing entropy, decisions that ran out of time, abandonment. */
+  /** Timers: missing entropy, session keys not authorised in time, decisions that ran out of time, abandonment. */
   tick() {
     return this.#enqueue(async () => {
       const now = this.#clock.now();
@@ -348,6 +399,9 @@ export class GameActor {
             await this.#join(seat, bytesToHex(this.#random.bytes(LIMITS.ENTROPY_BYTES)), EntropySource.SERVER);
           }
         }
+      }
+      if (this.#status === GameStatus.CREATED && this.signsMoves && now >= this.#authorizeDeadline) {
+        await this.#abort(AbortReason.NOT_AUTHORIZED, this.#unauthorizedSeats());
       }
       for (let forced = 0; forced < MAX_FORCED_PER_TICK && this.#status === GameStatus.ACTIVE; forced += 1) {
         const due = this.#turnClock.due(now);
@@ -613,8 +667,20 @@ export class GameActor {
   async #join(seat, entropy, source) {
     const joined = this.#recorder.joined({ seat, entropy, source, ms: this.#elapsed() });
     this.#entropies.set(seat, entropy);
-    if (this.#entropies.size < SEATS.length) {
-      await this.#persist([joined], {}, () => this.#repository.setEntropy(this.id, seat, entropy, source));
+    await this.#admit([joined], () => this.#repository.setEntropy(this.id, seat, entropy, source));
+  }
+
+  /**
+   * Records a step of the game's setup (an entropy, a session key) and starts
+   * the game in the same unit of work if that was the last thing it waited
+   * for; otherwise tells both players where the setup stands.
+   * @param {readonly import("@magic8/protocol").ChainedEvent[]} chained
+   * @param {() => Promise<unknown>} alsoWrite
+   */
+  async #admit(chained, alsoWrite) {
+    if (!this.#readyToStart()) {
+      await this.#persist(chained, {}, alsoWrite);
+      this.#announceSetup();
       return;
     }
     const started = this.#recorder.started({ ms: this.#elapsed() });
@@ -624,10 +690,49 @@ export class GameActor {
       throw new Error(`game ${this.id}: the engine did not start (${opening.error.message})`);
     }
     const now = this.#clock.now();
-    await this.#persist([joined, started], { status: GameStatus.ACTIVE, version: engine.version, firstSeat: this.#recorder.firstSeat, startedAt: now }, () => this.#repository.setEntropy(this.id, seat, entropy, source));
+    await this.#persist([...chained, started], { status: GameStatus.ACTIVE, version: engine.version, firstSeat: this.#recorder.firstSeat, startedAt: now }, alsoWrite);
     this.#engine = engine;
     this.#status = GameStatus.ACTIVE;
     this.#afterMove({ events: opening.value.events, over: false });
+  }
+
+  /** Every seat's entropy is in and, in v2, every seat has authorised a session key. */
+  #readyToStart() {
+    return this.#entropies.size === SEATS.length && this.#unauthorizedSeats().length === 0;
+  }
+
+  /** @returns {string[]} v2: the seats that have not authorised a session key yet (none in v1) */
+  #unauthorizedSeats() {
+    return this.signsMoves ? SEATS.filter((seat) => !this.#sessions.has(seat)) : [];
+  }
+
+  /** v2: while the game waits for its players, each one learns who has accepted it so far. */
+  #announceSetup() {
+    if (!this.signsMoves) {
+      return;
+    }
+    for (const player of this.#game.players) {
+      this.#notifier.send(player.userId, "game.state", this.#viewFor(player.seat));
+    }
+  }
+
+  /**
+   * Calls off a game that never started: the secret is revealed as the
+   * protocol requires, nobody wins or loses, and both players are told which
+   * seats did not accept it.
+   * @param {string} reason an AbortReason
+   * @param {readonly string[]} seats the seats that did not authorise their session key
+   */
+  async #abort(reason, seats) {
+    const now = this.#clock.now();
+    const chained = this.#recorder.aborted({ reason, started: false, clock: { turn: 0, ms: this.#elapsed() } });
+    const results = Object.fromEntries(SEATS.map((seat) => [seat, "aborted"]));
+    await this.#persist([chained], { status: GameStatus.ABORTED, endReason: reason, finishedAt: now }, () => this.#repository.setResults(this.id, results));
+    this.#status = GameStatus.ABORTED;
+    this.#logger.info("game called off before it started", { game: this.id, reason, seats });
+    for (const player of this.#game.players) {
+      this.#notifier.send(player.userId, "game.aborted", { gameId: this.id, reason, seats: [...seats], you: player.seat });
+    }
   }
 
   /**
@@ -683,12 +788,25 @@ export class GameActor {
       seedCommit: this.#game.seedCommit,
       protocol: this.#recorder.version,
       entropyDeadline: this.#status === GameStatus.CREATED ? this.#entropyDeadline : null,
+      ...this.#setupView(),
       version: this.#engine?.version ?? 0,
       lastSeq: this.#lastSeq,
       head: this.#recorder.head,
       snapshot: this.#engine === null ? null : this.#engine.getSnapshot(seat),
       clock: this.#turnClock.view(),
     });
+  }
+
+  /** v2: which seats have authorised a session key, and until when the other may (only while the game waits for its players). */
+  #setupView() {
+    if (!this.signsMoves) {
+      return {};
+    }
+    const waiting = this.#status === GameStatus.CREATED;
+    return {
+      authorized: Object.freeze(Object.fromEntries(SEATS.map((seat) => [seat, this.#sessions.has(seat)]))),
+      authorizeDeadline: waiting ? this.#authorizeDeadline : null,
+    };
   }
 
   #elapsed() {

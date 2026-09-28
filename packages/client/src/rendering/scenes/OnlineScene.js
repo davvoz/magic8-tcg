@@ -4,6 +4,10 @@
  * match when the server starts it. A game already running (after a reload
  * or a dropped connection) is offered for resuming. Your ranked standing
  * and the leaderboard come from the server.
+ *
+ * Once matched (protocol v2), the game waits until both players accept it
+ * with Keychain: the lobby says who has. If either does not, the game is
+ * cancelled, the lobby says who did not accept, and a new search can start.
  */
 import { OnlineStatus } from "../../application/online/OnlineService.js";
 import { factionTones } from "../theme/Theme.js";
@@ -30,9 +34,10 @@ const STATUS_TEXT = Object.freeze({
   [OnlineStatus.CONNECTING]: () => "Connecting to the game server…",
   [OnlineStatus.IDLE]: () => "Choose a deck and find an opponent. The first player is drawn by lot.",
   [OnlineStatus.SEARCHING]: () => "Looking for an opponent…",
-  [OnlineStatus.MATCHED]: (state) => `Opponent found: @${state.opponent ?? "?"}. Shuffling with both players' randomness…`,
+  [OnlineStatus.MATCHED]: (state) => matchedText(state),
   [OnlineStatus.PLAYING]: (state) => `Your game against @${state.opponent ?? "?"} is in progress.`,
   [OnlineStatus.OVER]: () => "The game is over.",
+  [OnlineStatus.CANCELLED]: () => "The game was cancelled before it started.",
 });
 
 export class OnlineScene extends Scene {
@@ -175,7 +180,7 @@ export class OnlineScene extends Scene {
     if (state.status === OnlineStatus.PLAYING && state.session !== null) {
       return panel.add(new Button({ id: "online.resume", x: INSET, y, width, height: BUTTON.height, text: "Resume your game", variant: "primary", onActivate: () => this.services.navigate(SceneId.MATCH, { session: online.resume(), againScene: SceneId.ONLINE }) }));
     }
-    const canQueue = state.status === OnlineStatus.IDLE || state.status === OnlineStatus.OVER;
+    const canQueue = state.status === OnlineStatus.IDLE || state.status === OnlineStatus.OVER || state.status === OnlineStatus.CANCELLED;
     return panel.add(
       new Button({
         id: "online.find",
@@ -246,6 +251,22 @@ export class OnlineScene extends Scene {
     }
     return this.#app.online;
   }
+}
+
+/**
+ * The lobby once an opponent is found: in v2, who has accepted the game with
+ * Keychain so far (it starts only when both have); in v1, the shuffle.
+ * @param {import("../../application/online/OnlineService.js").OnlineState} state
+ */
+export function matchedText(state) {
+  const opponent = `@${state.opponent ?? "?"}`;
+  const acceptance = state.acceptance;
+  if (acceptance === null) {
+    return `Opponent found: ${opponent}. Shuffling with both players' randomness…`;
+  }
+  const you = acceptance.you ? "you have accepted" : "accept it in Keychain";
+  const them = acceptance.opponent ? `${opponent} has accepted` : `waiting for ${opponent}`;
+  return `Opponent found: ${opponent}. The game starts once both of you sign it with Keychain: ${you}, ${them}.`;
 }
 
 /**

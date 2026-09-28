@@ -29,6 +29,8 @@
    Il browser manda chiave e firma con `game.session`. Il server:
    - controlla che la firma sia di una chiave posting dell'account del posto (come per il login);
    - registra l'evento `SESSION`.
+
+   Questa firma è anche il modo in cui il giocatore **accetta la partita** (vedi "Avvio" sotto).
 3. **Le mosse.** Ogni comando parte con la firma della chiave di sessione sul JSON canonico:
 
    ```json
@@ -42,12 +44,42 @@
 4. **La resa** è una mossa come le altre: firmata, alla versione vista dal giocatore.
 5. **Pagina ricaricata, o un altro dispositivo:** la chiave è persa. Il client ne crea una nuova e la fa autorizzare (una nuova richiesta di Keychain). Il nuovo `SESSION` sostituisce il precedente da quel punto: le mosse successive devono essere firmate con la chiave nuova.
 
+## Avvio: la partita parte solo quando entrambi hanno firmato
+
+- **Quando parte.** In v2 il server registra `GAME_STARTED` (mani iniziali, sorteggio di chi inizia, orologio) solo quando ha:
+  - l'entropia di entrambi i posti;
+  - un `SESSION` di entrambi i posti.
+
+  L'ultimo dei due che arriva avvia la partita, nella stessa unità di lavoro. Il lancio della moneta che il client mostra all'inizio arriva quindi solo dopo le due firme.
+- **Mentre aspetta.** La vista della partita porta:
+  - `authorized: { "s0": bool, "s1": bool }`, cioè chi ha già firmato;
+  - `authorizeDeadline`, cioè entro quando.
+
+  Dopo ogni firma il server manda `game.state` a entrambi, così ognuno vede se l'altro ha accettato. Anche `match.found` porta `authorizeDeadline`.
+- **Rifiuto.** Chi dice no a Keychain manda `game.decline`, che è ammesso solo prima dell'avvio. Il server chiude subito la partita.
+- **Tempo scaduto.** Se allo scadere di `authorizeMs` (60 s dalla creazione) manca una firma, la partita viene chiusa. L'entropia mancante, invece, continua a essere messa dal server dopo `entropyMs`, come in v1.
+- **Partita chiusa.**
+  - Il server registra `GAME_ABORTED` con `why`:
+    - `"declined"` se qualcuno ha rifiutato;
+    - `"not_authorized"` se è scaduto il tempo.
+  - `GAME_ABORTED` rivela il segreto (03) ma non i mazzi, perché nessuna carta è stata distribuita.
+  - La partita passa a `ABORTED`, con risultato `aborted` per entrambi i posti. Non conta per la classifica: nessun `onGameFinished`.
+  - Entrambi i giocatori ricevono `game.aborted { gameId, reason, seats, you }`, dove `seats` sono i posti che non hanno firmato.
+  - Il client mostra chi non ha accettato e permette di cercare subito un'altra partita.
+- **Dopo l'avvio non cambia niente.** Una pagina ricaricata che non riesce a far firmare una nuova chiave non annulla la partita: il giocatore viene avvisato che le sue mosse non possono partire.
+- **Quando il client apre Keychain** (`SessionAuthorizer`):
+  - da solo, al massimo una volta per partita e per pagina: quando la partita viene trovata, oppure quando una pagina ricaricata la riprende;
+  - dopo un rifiuto non lo riapre mai da solo, nemmeno sugli aggiornamenti della partita. Solo una mossa che il giocatore prova a fare chiede di nuovo;
+  - un prompt rimasto aperto su una partita annullata o finita viene ignorato: non si manda niente al server.
+- **Verifica end-to-end:** `packages/server/test/e2e/onlineStart.test.js` usa il server vero e due client veri (`OnlineService` su WebSocket, chiavi WebCrypto) con un Keychain pilotato dal test.
+
 ## Formato (differenze da v1)
 
 - **Versioni:** il protocollo di gioco vale 2 per tutta la partita (`games.protocol_version`) ed entra nell'hash di ogni evento.
 - **`SESSION`** (nuovo, attore = posto): `{ "key": "04…" (punto P-256 non compresso, 130 hex), "auth": "<firma Keychain, 130 hex>" }`. Ammesso in qualsiasi momento prima della fine.
 - **`MOVE`** (v2): `{ "cid": "<uuid>", "cmd": <comando>, "ev": <int>, "sig": "<r‖s, 128 hex>" }`.
 - `PLAYER_JOINED`, `FORCED_MOVE` e gli altri eventi non cambiano.
+- **`GAME_ABORTED`**: finalmente usato, con `why` = `declined` | `not_authorized` e senza `decks` (vedi "Avvio").
 
 ## Costi
 

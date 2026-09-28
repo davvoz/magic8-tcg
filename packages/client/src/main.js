@@ -24,6 +24,7 @@ import { ShopService } from "./application/shop/ShopService.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
 import { IdentityService } from "./application/identity/IdentityService.js";
+import { CoinFace } from "./application/match/CoinToss.js";
 import { MatchSetupService } from "./application/match/MatchSetupService.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
@@ -56,6 +57,7 @@ import { SceneManager } from "./rendering/scenes/SceneManager.js";
 import { registerScenes } from "./rendering/scenes/registerScenes.js";
 import { SceneId } from "./rendering/scenes/sceneIds.js";
 import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
+import { CoinArt } from "./rendering/board/CoinArt.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 
@@ -84,6 +86,15 @@ const CONTENT_MANIFEST = Object.freeze({
 });
 /** Where the illustration files named in data/art/illustrations.json live. */
 const ART_DIRECTORY = "data/art/";
+/**
+ * The painted coin of the opening toss: one image per face (1024², the coin
+ * seen slightly from above with its rim painted beneath), and where the face
+ * sits in them, as fractions of the image.
+ */
+const COIN_ART = Object.freeze({
+  files: Object.freeze({ [CoinFace.HEADS]: "coin_testa.png", [CoinFace.TAILS]: "coin_croce.png" }),
+  disc: Object.freeze({ x: 0.5, y: 0.465, radius: 0.36 }),
+});
 
 /** Theme used only to render the error screen when the real theme cannot be loaded. */
 const FALLBACK_THEME_RAW = Object.freeze({
@@ -212,6 +223,14 @@ async function boot() {
 
   // Painted card art: cards without it (or whose image fails) keep their procedural art.
   const illustrations = buildIllustrations(rawIllustrations, content.value.catalog);
+  // The painted coin of the opening toss; a face whose image is not ready is drawn procedurally.
+  const coinArt = new CoinArt({
+    urls: Object.fromEntries(Object.entries(COIN_ART.files).map(([face, file]) => [face, `${ART_DIRECTORY}${file}`])),
+    disc: COIN_ART.disc,
+    loadImage: loadBrowserImage,
+    onLoaded: () => presentation?.loop.requestRender(),
+    logger,
+  });
 
   const localStore = new LocalStorageStore(globalThis.localStorage);
   const storageAvailable = localStore.isAvailable();
@@ -296,7 +315,7 @@ async function boot() {
     ...rarities,
   });
 
-  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations }));
+  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt }));
   registerScenes(sceneManager, app);
   // A notification that arrives shows as a toast on any screen; a click opens the feed.
   const toasts = new ToastLayer({ viewport: theme.value.layout, onOpen: () => sceneManager.navigate(SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
@@ -310,6 +329,8 @@ async function boot() {
   sceneManager.navigate(SceneId.MAIN_MENU);
   // Fetched in the background so cards rarely appear procedural first; each one redraws as it arrives.
   void illustrations.preload(illustrations.cardIds);
+  // Ready before the first match, so the coin is the painted one from its first frame.
+  void coinArt.preload();
 }
 
 /**

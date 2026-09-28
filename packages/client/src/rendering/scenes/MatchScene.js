@@ -12,14 +12,22 @@
  * A session with no human player is a spectator's: the first seat sits at
  * the bottom, no hand is shown (the server never sends one), and nothing
  * can be played.
+ *
+ * A session that offers an opening toss has it played first (CoinFlip,
+ * drawn by CoinTossNode over the board): until the coin has landed and the
+ * verdict faded, nothing can be played and the board does not tell whose
+ * turn it is. Then the scene asks the session to `begin()`.
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
+import { ControllerKind } from "../../application/match/PlayerController.contract.js";
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
 import { KeyMap, isKey } from "../../input/KeyMap.js";
 import { Highlight, InteractionMode, MatchInteraction } from "../../input/interaction/MatchInteraction.js";
 import { BoardNode } from "../board/BoardNode.js";
 import { CardNode } from "../board/CardNode.js";
 import { ClockNode } from "../board/ClockNode.js";
+import { CoinFlip } from "../board/CoinFlip.js";
+import { CoinTossNode } from "../board/CoinTossNode.js";
 import { EffectsNode } from "../board/EffectsNode.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
@@ -37,6 +45,7 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const MAX_LOG_LINES = 12;
+const TOSS_BANNER = "Coin toss · who plays first?";
 const LOG_LINE_HEIGHT = 22;
 const SIDEBAR = Object.freeze({ inset: 12, buttonHeight: 48, gap: 8, titleHeight: 36, phaseHeight: 26, promptTop: 84, promptHeight: 64, buttonsTop: 156 });
 const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
@@ -67,6 +76,8 @@ export class MatchScene extends Scene {
   /** @type {string[]} */
   #log = [];
   #gameOverShown = false;
+  /** The opening coin toss being played, null once it is over (or when there was none). @type {CoinFlip | null} */
+  #coinFlip = null;
   #now;
   /** The clock's last displayed whole second, so ticking asks for a redraw only when the number on screen would change. @type {number | null} */
   #clockSecondShown = null;
@@ -98,21 +109,61 @@ export class MatchScene extends Scene {
     this.#gameOverShown = false;
     this.#log = [];
     this.#interaction = new MatchInteraction(this.#playerId);
+    const toss = session.openingToss;
+    this.#coinFlip = toss === null ? null : new CoinFlip({ toss, animation: this.services.theme.animation });
     this.#unsubscribe = session.subscribe((update) => this.#onUpdate(update));
     this.#refresh([], false);
+    if (this.#coinFlip === null) {
+      this.#begin();
+    }
   }
 
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#coinFlip = null;
   }
 
   /** @param {number} dtMs */
   update(dtMs) {
     const inputChanged = super.update(dtMs);
-    const changed = this.#presenter.update(dtMs) || inputChanged || this.#tickClock();
+    const tossChanged = this.#advanceCoinFlip(dtMs);
+    const changed = this.#presenter.update(dtMs) || inputChanged || tossChanged || this.#tickClock();
     this.#maybeShowGameOver();
     return changed;
+  }
+
+  /** True while the opening coin toss is being played. */
+  get isTossing() {
+    return this.#coinFlip !== null;
+  }
+
+  /**
+   * Moves the toss on; once it is over, lifts it off the board and lets the match begin.
+   * @param {number} dtMs
+   * @returns {boolean} whether a render is needed
+   */
+  #advanceCoinFlip(dtMs) {
+    const flip = this.#coinFlip;
+    if (flip === null) {
+      return false;
+    }
+    const changed = flip.update(dtMs);
+    if (!flip.isDone) {
+      return changed;
+    }
+    this.#coinFlip = null;
+    this.#rebuild();
+    this.#begin();
+    return true;
+  }
+
+  /** Starts a local match that waited for its toss; online games are already running. */
+  #begin() {
+    const begun = this.#session?.begin();
+    if (begun !== undefined && !begun.ok) {
+      this.services.logger.error("match start failed", begun.error);
+    }
   }
 
   /**
@@ -144,6 +195,9 @@ export class MatchScene extends Scene {
 
   /** @param {import("../../input/InputManager.js").KeyInput} input */
   onKey(input) {
+    if (this.isTossing) {
+      return;
+    }
     if (input.type === "keydown" && isKey(input.key, KeyMap.END_TURN) && this.modal === null && this.#snapshot?.legalMoves?.canEndTurn === true) {
       this.#submit(endTurn(this.#playerId));
       return;
@@ -261,13 +315,14 @@ export class MatchScene extends Scene {
     const reopenGameOver = this.modal?.id === "gameOver";
     this.closeModal();
     this.root.clear();
-    this.root.add(new BoardNode({ layout, banner: bannerFor(snapshot, this.#viewer()), activePlayerId: activeSeatFor(snapshot) }));
+    this.root.add(this.#boardFor(snapshot, layout));
     this.root.add(new ClockNode({ x: layout.clock.x, y: layout.clock.y, size: layout.clock.width, clock: () => this.#clockView(), now: this.#now }));
     this.#buildPlayers(snapshot, layout, interaction);
     this.#buildCards(snapshot, layout, interaction);
     this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction) }));
     this.#buildSidebar(snapshot, layout, interaction);
     this.#buildLog(layout);
+    this.#buildCoinToss(snapshot);
     if (reopenGameOver) {
       this.#showGameOver(snapshot);
     }
@@ -275,6 +330,18 @@ export class MatchScene extends Scene {
     const fallback = this.modal === null ? null : this.modal.focusableNodes()[0] ?? null;
     this.focus(scope.findById(focusedId) ?? fallback);
     this.services.requestRender();
+  }
+
+  /**
+   * The table itself; while the coin is tossed its banner and lit seat keep the result to themselves.
+   * @param {Snapshot} snapshot
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   */
+  #boardFor(snapshot, layout) {
+    if (this.isTossing) {
+      return new BoardNode({ layout, banner: TOSS_BANNER, activePlayerId: null });
+    }
+    return new BoardNode({ layout, banner: bannerFor(snapshot, this.#viewer()), activePlayerId: activeSeatFor(snapshot) });
   }
 
   /**
@@ -288,7 +355,7 @@ export class MatchScene extends Scene {
       if (player === undefined) {
         continue;
       }
-      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: snapshot.activePlayerId === player.id, highlight: interaction.highlightFor(player.id), onTap: (id) => this.#tap(id), lifeShown: () => this.#presenter.lifeFor(player) }));
+      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: interaction.highlightFor(player.id), onTap: (id) => this.#tap(id), lifeShown: () => this.#presenter.lifeFor(player) }));
     }
   }
 
@@ -324,16 +391,53 @@ export class MatchScene extends Scene {
     const width = sidebar.width - 2 * SIDEBAR.inset;
     panel.add(new Label({ x: SIDEBAR.inset, y: SIDEBAR.inset, width, height: SIDEBAR.titleHeight, text: snapshot.isOver ? "Match over" : `Turn ${snapshot.turnNumber}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     panel.add(new Label({ x: SIDEBAR.inset, y: SIDEBAR.inset + SIDEBAR.titleHeight, width, height: SIDEBAR.phaseHeight, text: phaseName(snapshot.phase), size: "small", colorKey: "textMuted", align: "left", fit: true }));
-    const prompt = this.#spectating ? `Watching ${snapshot.players.map((player) => nameOf(snapshot, player.id)).join(" vs ")}` : interaction.prompt;
+    const prompt = this.#promptFor(snapshot, interaction);
     panel.add(new TextBlock({ x: SIDEBAR.inset, y: SIDEBAR.promptTop, width, height: SIDEBAR.promptHeight, text: prompt, size: "small", colorKey: "accent" }));
     let y = SIDEBAR.buttonsTop;
     for (const spec of this.#sidebarButtons(snapshot, interaction)) {
       if (!spec.visible) {
         continue;
       }
-      panel.add(new Button({ id: spec.id, x: SIDEBAR.inset, y, width, height: SIDEBAR.buttonHeight, text: spec.text, enabled: spec.enabled, variant: spec.variant, onActivate: spec.onActivate }));
+      panel.add(new Button({ id: spec.id, x: SIDEBAR.inset, y, width, height: SIDEBAR.buttonHeight, text: spec.text, enabled: spec.enabled && !this.isTossing, variant: spec.variant, onActivate: spec.onActivate }));
       y += SIDEBAR.buttonHeight + SIDEBAR.gap;
     }
+  }
+
+  /**
+   * @param {Snapshot} snapshot
+   * @param {MatchInteraction} interaction
+   */
+  #promptFor(snapshot, interaction) {
+    if (this.isTossing) {
+      return "Tossing a coin for the first turn…";
+    }
+    return this.#spectating ? `Watching ${snapshot.players.map((player) => nameOf(snapshot, player.id)).join(" vs ")}` : interaction.prompt;
+  }
+
+  /**
+   * The toss over everything else, while it lasts.
+   * @param {Snapshot} snapshot
+   */
+  #buildCoinToss(snapshot) {
+    const flip = this.#coinFlip;
+    if (flip === null) {
+      return;
+    }
+    const { viewport } = this.services;
+    const viewerId = this.#spectating ? null : this.#playerId;
+    this.root.add(new CoinTossNode({ flip, width: viewport.logicalWidth, height: viewport.logicalHeight, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId) }));
+  }
+
+  /**
+   * A player as the toss names them: @account for someone playing online, the seat name for the local AI.
+   * @param {Snapshot} snapshot
+   * @param {string} playerId
+   */
+  #displayName(snapshot, playerId) {
+    if (this.#session?.controllerKindOf(playerId) === ControllerKind.AI) {
+      return snapshot.players.find((player) => player.id === playerId)?.name ?? "?";
+    }
+    return nameOf(snapshot, playerId);
   }
 
   /**

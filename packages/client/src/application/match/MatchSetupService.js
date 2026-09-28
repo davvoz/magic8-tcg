@@ -2,15 +2,22 @@
  * Use case: start a match. Validates both deck lists against the deck rules
  * (the engine only checks what would break it), builds the engine with the
  * core registries and wraps it in a MatchSession.
+ *
+ * Who plays first: the first seat, unless a `coinSeed` is given — then a
+ * coin is tossed (CoinToss) and its winner takes the first turn. The toss
+ * draws from its own seed so it never shares randomness with the shuffles.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
 import { validateDeck } from "@magic8/engine/domain/decks/DeckValidator.js";
 import { GameEngine } from "@magic8/engine/domain/game/GameEngine.js";
+import { ChaChaRandom } from "@magic8/engine/domain/random/ChaChaRandom.js";
+import { CoinToss } from "./CoinToss.js";
 import { MatchSession } from "./MatchSession.js";
 
 export const MatchSetupError = Object.freeze({
   ILLEGAL_DECK: "ILLEGAL_DECK",
+  INVALID_SEED: "INVALID_SEED",
 });
 
 /**
@@ -34,29 +41,61 @@ export class MatchSetupService {
   }
 
   /**
-   * @param {{ seats: readonly SeatSetup[], seed: string | number, aiDelayMs?: number }} options
+   * @param {{ seats: readonly SeatSetup[], seed: string | number, coinSeed?: string | number, aiDelayMs?: number }} options
    *   `seed`: a 32-byte hex key (see infrastructure/random/seedProvider.js); integers are accepted for tests and tools.
+   *   `coinSeed`: same form; when given, a coin toss decides who plays first and the session shows it before the first turn.
    * @returns {import("@magic8/engine/shared/Result.js").Ok<MatchSession> | import("@magic8/engine/shared/Result.js").Fail}
    */
-  createMatch({ seats, seed, aiDelayMs = 0 }) {
+  createMatch({ seats, seed, coinSeed, aiDelayMs = 0 }) {
     for (const seat of seats) {
       const report = validateDeck(seat.deckList, this.#content.deckRules, this.#content.catalog);
       if (!report.valid) {
         return fail(MatchSetupError.ILLEGAL_DECK, `deck "${seat.deckList.name}" is not legal: ${report.problems[0].message}`, { seatId: seat.id, problems: report.problems });
       }
     }
+    if (coinSeed !== undefined && !ChaChaRandom.isValidSeed(coinSeed)) {
+      return fail(MatchSetupError.INVALID_SEED, "the coin seed must be a 32-byte key (hex or bytes) or a safe integer");
+    }
+    const openingToss = coinSeed === undefined ? null : tossBetween(seats, coinSeed);
     const engine = GameEngine.create({
       rules: this.#content.gameRules,
       catalog: this.#content.catalog,
       effects: this.#effects,
       commands: createCoreCommandRegistry(),
-      players: seats.map((seat) => ({ id: seat.id, name: seat.name, deckList: seat.deckList })),
+      players: firstPlayerAhead(seats, openingToss).map((seat) => ({ id: seat.id, name: seat.name, deckList: seat.deckList })),
       seed,
     });
     if (!engine.ok) {
       return engine;
     }
     const controllers = new Map(seats.map((seat) => [seat.id, seat.controller]));
-    return ok(new MatchSession({ engine: engine.value, controllers, scheduler: this.#scheduler, logger: this.#logger, aiDelayMs }));
+    return ok(new MatchSession({ engine: engine.value, controllers, scheduler: this.#scheduler, logger: this.#logger, aiDelayMs, openingToss }));
   }
+}
+
+/**
+ * The toss between the two seats; none when the seats are not two distinct
+ * players, which the engine then refuses with its own reason.
+ * @param {readonly SeatSetup[]} seats
+ * @param {string | number} coinSeed
+ */
+function tossBetween(seats, coinSeed) {
+  const playerIds = seats.map((seat) => seat.id);
+  if (playerIds.length !== 2 || playerIds[0] === playerIds[1]) {
+    return null;
+  }
+  return CoinToss.flip({ playerIds, random: ChaChaRandom.fromSeed(coinSeed) });
+}
+
+/**
+ * The seats in engine order: the engine gives the first turn to the first
+ * player, so the toss winner moves to the front.
+ * @param {readonly SeatSetup[]} seats
+ * @param {CoinToss | null} toss
+ */
+function firstPlayerAhead(seats, toss) {
+  if (toss === null) {
+    return seats;
+  }
+  return [...seats].sort((a, b) => Number(b.id === toss.firstPlayerId) - Number(a.id === toss.firstPlayerId));
 }

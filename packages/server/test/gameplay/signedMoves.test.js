@@ -91,18 +91,21 @@ describe("signed moves on the server (protocol v2)", () => {
     assert.equal((await w.games.concede(player.id, { gameId: w.gameId, commandId: concede.commandId, expectedVersion: now.version, signature })).ok, true);
   });
 
-  it("needs a session key before a move, takes a newer one in place of a lost one, and keeps them across a restart", async () => {
+  it("needs both session keys before the game starts, takes a newer one in place of a lost one, and keeps them across a restart", async () => {
     const w = await world();
     const sessions = { alice: sessionKey(), bob: sessionKey() };
     await w.games.entropy(w.alice.id, w.gameId, ENTROPY.s0);
     await w.games.entropy(w.bob.id, w.gameId, ENTROPY.s1);
-    let turn = await turnOf(w);
-    const signFor = (player) => (player === w.alice ? sessions.alice : sessions.bob);
-    const move = (label) => ({ gameId: w.gameId, commandId: uuidV4(deterministicRandom(label)), expectedVersion: turn.own.version, command: turn.command });
-    assert.equal((await w.games.command(turn.player.id, signedCommand(move("early"), signFor(turn.player)))).error.code, "SESSION_REQUIRED");
+    const waiting = await w.games.view(w.alice.id, w.gameId);
+    assert.deepEqual([waiting.status, waiting.snapshot], ["CREATED", null], "both entropies are in, but nobody has accepted the game with Keychain");
+    const early = { gameId: w.gameId, commandId: uuidV4(deterministicRandom("early")), expectedVersion: 0, command: { type: "END_TURN" } };
+    assert.equal((await w.games.command(w.alice.id, signedCommand(early, sessions.alice))).error.code, "GAME_NOT_ACTIVE");
     for (const [player, session] of [[w.alice, sessions.alice], [w.bob, sessions.bob]]) {
       await w.games.session(player.id, grantFor(w.gameId, session, player.keys.privateKey));
     }
+    let turn = await turnOf(w);
+    const signFor = (player) => (player === w.alice ? sessions.alice : sessions.bob);
+    const move = (label) => ({ gameId: w.gameId, commandId: uuidV4(deterministicRandom(label)), expectedVersion: turn.own.version, command: turn.command });
     assert.equal((await w.games.command(turn.player.id, signedCommand(move("first"), signFor(turn.player)))).ok, true);
 
     // The page was reloaded: the browser lost its key and authorises a new one.

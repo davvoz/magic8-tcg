@@ -1,6 +1,8 @@
 /**
  * Deck selection: pick one of your decks and start a match against the
  * built-in AI, which plays a preconstructed deck (chosen by the match seed).
+ * A coin toss (with its own seed) decides who plays first; the match screen
+ * shows it and starts the match once the coin has landed.
  * Signed in, "your decks" are the account's (the starter you took and the
  * decks you built); offline, the preconstructed decks too. Each deck is a
  * banner row in its faction's colour; decks that break the rules are shown
@@ -134,6 +136,7 @@ export class DeckSelectionScene extends Scene {
       return;
     }
     const seed = this.#app.createSeed();
+    const coinSeed = this.#app.createSeed();
     const others = this.#app.deckSelection.listRivalDecks().filter((option) => option.deck.id !== selected.deck.id);
     const rival = others.length === 0 ? selected : others[seedIndex(seed, others.length)];
     const created = this.#app.matchSetup.createMatch({
@@ -142,18 +145,14 @@ export class DeckSelectionScene extends Scene {
         { ...AI_SEAT, deckList: rival.deck, controller: new BasicAiController() },
       ],
       seed,
+      coinSeed,
       aiDelayMs: this.services.theme.animation.mediumMs,
     });
     if (!created.ok) {
       this.services.logger.error("match setup failed", created.error);
       return;
     }
-    const started = created.value.start();
-    if (!started.ok) {
-      this.services.logger.error("match start failed", started.error);
-      return;
-    }
-    this.#app.logger.info("match started", { deck: selected.deck.id, rival: rival.deck.id, seed });
+    this.#app.logger.info("match created", { deck: selected.deck.id, rival: rival.deck.id, seed, coinSeed, first: created.value.openingToss?.firstPlayerId ?? null });
     this.services.navigate(SceneId.MATCH, { session: created.value });
   }
 }

@@ -3,7 +3,9 @@
  * the browser makes a key that cannot be exported, the wallet authorises it
  * with the account's posting key, and every command leaves signed; a page
  * that lost its key authorises a new one; without an authorised key no move
- * is sent. Real WebCrypto and secp256k1.
+ * is sent. That signature is also how the player accepts the game: saying no
+ * to the wallet declines it, and a game the opponent did not accept is
+ * cancelled with a notice naming them. Real WebCrypto and secp256k1.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -11,7 +13,8 @@ import { describe, it } from "node:test";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { moveMessage, sessionAuthorization } from "@magic8/protocol";
 import { publicKeyOf, recoverSigner, signMessage, verifySessionSignature } from "@magic8/steem";
-import { OnlineService } from "../../src/application/online/OnlineService.js";
+import { CancellationCode } from "../../src/application/online/cancellation.js";
+import { OnlineService, OnlineStatus } from "../../src/application/online/OnlineService.js";
 import { WebCryptoSessionKeys } from "../../src/infrastructure/crypto/webSessionKeys.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 
@@ -24,7 +27,8 @@ const GAME = "01j8x3r6h2qkq4w0v7m5a9c1dz";
 const POSTING = new Uint8Array(32).fill(0x21);
 const VIEW = (overrides = {}) => ({ gameId: GAME, seat: "s0", status: "ACTIVE", protocol: 2, opponent: { account: "bob" }, version: 7, snapshot: { version: 7, isOver: false }, ...overrides });
 
-function world({ approve = true } = {}) {
+/** @param {{ approve?: boolean, activeGame?: object | null }} [options] `activeGame`: the game the welcome resumes, as after a page reload */
+function world({ approve = true, activeGame = null } = {}) {
   const statusListeners = new Set();
   const listeners = new Set();
   const requests = [];
@@ -34,10 +38,13 @@ function world({ approve = true } = {}) {
     request: async (t, d) => {
       requests.push({ t, d });
       if (t === "hello") {
-        return ok({ t: "welcome", d: { user: { account: "alice" }, serverTime: 0, activeGame: null, queue: { state: "idle" } } });
+        return ok({ t: "welcome", d: { user: { account: "alice" }, serverTime: 0, activeGame, queue: { state: "idle" } } });
       }
       if (t === "game.command") {
         return ok({ t: "game.ack", d: { commandId: d.commandId, ok: true, version: d.expectedVersion + 1 } });
+      }
+      if (t === "game.decline") {
+        return ok({ t: "game.declined", d: { gameId: d.gameId } });
       }
       return ok({ t, d: { gameId: d.gameId } });
     },
@@ -87,19 +94,22 @@ describe("signed moves on the client", () => {
   });
 
   it("authorises a new key for a game in progress after a reload, and sends nothing it cannot sign", async () => {
-    const { requests, prompts, push } = world();
-    await flush();
-    push("game.events", VIEW({ version: 12 }));
+    const { requests, prompts, push } = world({ activeGame: VIEW({ version: 12 }) });
     await flush();
     assert.equal(prompts.length, 1, "the reloaded page asked for a new key");
     assert.equal(requests.filter((request) => request.t === "game.session").length, 1);
-
-    const refused = world({ approve: false });
+    push("game.events", VIEW({ version: 13 }));
     await flush();
-    refused.push("game.events", VIEW());
+    assert.equal(prompts.length, 1, "the game's updates do not ask again");
+
+    const refused = world({ approve: false, activeGame: VIEW() });
     await flush();
     assert.equal(refused.online.state.error.code, "SESSION_REFUSED");
+    refused.push("game.events", VIEW({ version: 8 }));
+    await flush();
+    assert.equal(refused.prompts.length, 1, "a refusal is not asked again on the game's updates");
     const attempt = await refused.online.state.session.submit({ type: "END_PHASE" });
+    assert.equal(refused.prompts.length, 2, "the player's move asks Keychain again");
     assert.equal(attempt.error.code, "SESSION_REQUIRED");
     assert.equal(refused.requests.some((request) => request.t === "game.command"), false);
   });
@@ -112,5 +122,69 @@ describe("signed moves on the client", () => {
     assert.equal(prompts.length, 0);
     assert.equal((await online.state.session.submit({ type: "END_PHASE" })).ok, true);
     assert.equal(requests.findLast((request) => request.t === "game.command").d.signature, undefined);
+  });
+});
+
+describe("accepting a game with Keychain (v2)", () => {
+  const FOUND = Object.freeze({ gameId: GAME, seat: "s0", opponent: { account: "bob" }, seedCommit: "ef".repeat(32), protocol: 2 });
+  /** The server's view while the game waits for its players. */
+  const WAITING = (authorized) => VIEW({ status: "CREATED", version: 0, snapshot: null, authorized });
+
+  it("says who has accepted while the game waits for both signatures", async () => {
+    const { online, push } = world();
+    await flush();
+    push("match.found", FOUND);
+    assert.equal(online.state.status, OnlineStatus.MATCHED);
+    assert.deepEqual(online.state.acceptance, { you: false, opponent: false }, "nobody yet, the moment the match is found");
+    await flush();
+    assert.deepEqual(online.state.acceptance, { you: true, opponent: false }, "our signature went through");
+    push("game.state", WAITING({ s0: true, s1: true }));
+    assert.deepEqual(online.state.acceptance, { you: true, opponent: true }, "the server says bob has too");
+    push("game.events", VIEW({ version: 1, authorized: { s0: true, s1: true } }));
+    assert.equal(online.state.status, OnlineStatus.PLAYING);
+    assert.equal(online.state.acceptance, null, "nothing left to accept once the game runs");
+  });
+
+  it("declines the game when the player says no to Keychain, and says so", async () => {
+    const { online, requests, push } = world({ approve: false });
+    await flush();
+    push("match.found", FOUND);
+    await flush();
+    assert.deepEqual(requests.find((request) => request.t === "game.decline")?.d, { gameId: GAME });
+    assert.equal(requests.some((request) => request.t === "game.session"), false, "nothing to authorise");
+    assert.equal(online.state.status, OnlineStatus.CANCELLED);
+    assert.equal(online.state.session, null);
+    assert.equal(online.state.error.code, CancellationCode.YOU_DECLINED);
+    assert.match(online.state.error.message, /You did not accept the game in Keychain/);
+    push("game.aborted", { gameId: GAME, reason: "declined", seats: ["s0"], you: "s0" });
+    assert.equal(online.state.status, OnlineStatus.CANCELLED, "the server's own notice changes nothing");
+  });
+
+  it("tells the player their opponent did not accept, and lets them look for another", async () => {
+    const { online, push } = world();
+    await flush();
+    push("match.found", FOUND);
+    await flush();
+    const session = online.state.session;
+    push("game.aborted", { gameId: "01j8x3r6h2qkq4w0v7m5a9c1zz", reason: "declined", seats: ["s1"], you: "s0" });
+    assert.equal(online.state.status, OnlineStatus.MATCHED, "another game's notice is not ours");
+    push("game.aborted", { gameId: GAME, reason: "declined", seats: ["s1"], you: "s0" });
+    assert.equal(online.state.status, OnlineStatus.CANCELLED);
+    assert.equal(online.state.error.code, CancellationCode.OPPONENT_DECLINED);
+    assert.match(online.state.error.message, /@bob did not accept the game in Keychain, so it was cancelled/);
+    assert.equal(session?.isStopped, true);
+    assert.equal(online.state.session, null);
+
+    push("match.found", { ...FOUND, gameId: "01j8x3r6h2qkq4w0v7m5a9c1zy", opponent: { account: "carol" } });
+    assert.equal(online.state.status, OnlineStatus.MATCHED, "a new match after a cancelled one");
+    assert.equal(online.state.error, null);
+  });
+
+  it("does not decline a game that already started when a reloaded page cannot sign", async () => {
+    const { online, requests } = world({ approve: false, activeGame: VIEW({ version: 9 }) });
+    await flush();
+    assert.equal(requests.some((request) => request.t === "game.decline"), false);
+    assert.equal(online.state.status, OnlineStatus.PLAYING);
+    assert.equal(online.state.error.code, "SESSION_REFUSED");
   });
 });

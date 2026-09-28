@@ -7,12 +7,23 @@
  * secret (seedCommit); only then does the client draw its 16 random bytes
  * and send them, so neither side can steer the seed (docs/tcg/03 §5).
  *
- * States: offline → connecting → idle ⇄ searching → matched → playing → over.
+ * States: offline → connecting → idle ⇄ searching → matched → playing → over,
+ * or matched → cancelled when the game is called off before it starts.
  *
  * In game protocol v2 (docs/tcg/12) the browser makes a session key for the
  * game as soon as it is matched (or after a reload, for a game in progress)
  * and asks the wallet to authorise it with the account's posting key; every
- * move is then signed with it.
+ * move is then signed with it. That signature is also how a player accepts
+ * the game: the server starts it only once both have signed, and while it
+ * waits the state says who has (`acceptance`). Saying no to the wallet
+ * declines the game; the server then calls it off for both players and each
+ * is told who did not accept (game.aborted). The wallet prompt itself, and
+ * the rule that the player is asked at most once unprompted per game, live
+ * in SessionAuthorizer.
+ *
+ * Side effects (entropy, wallet prompts) happen on events that mean
+ * something new — a match found, a welcome after (re)connecting, a move the
+ * player tries — never on the routine game views the server keeps sending.
  *
  * Every move the server accepts comes back with a signed ack; with a
  * `receipts` store they are checked and kept (docs/tcg/11-ack-firmati.md).
@@ -22,7 +33,9 @@
  * reconnection until it ends or the player stops watching.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
+import { cancellationNotice } from "./cancellation.js";
 import { RemoteMatchSession } from "./RemoteMatchSession.js";
+import { AuthorizationState, SessionAuthorizer } from "./SessionAuthorizer.js";
 
 export const OnlineStatus = Object.freeze({
   OFFLINE: "offline",
@@ -32,14 +45,17 @@ export const OnlineStatus = Object.freeze({
   MATCHED: "matched",
   PLAYING: "playing",
   OVER: "over",
+  /** The game was called off before it started: a player did not accept it (v2). */
+  CANCELLED: "cancelled",
 });
 
 /**
  * @typedef {Readonly<{ id: string, name: string, faction: string, totalCards: number, playable: boolean, problem: string | null }>} OnlineDeck id is the server's deck id
- * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null }>} OnlineState
+ * @typedef {Readonly<{ you: boolean, opponent: boolean }>} Acceptance v2, while the game waits for its players: who has accepted it with Keychain
+ * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null, acceptance: Acceptance | null }>} OnlineState
  */
 
-const INITIAL = Object.freeze({ status: OnlineStatus.OFFLINE, error: null, opponent: null, session: null, watching: null });
+const INITIAL = Object.freeze({ status: OnlineStatus.OFFLINE, error: null, opponent: null, session: null, watching: null, acceptance: null });
 
 export class OnlineService {
   #connection;
@@ -49,12 +65,12 @@ export class OnlineService {
   #liveGames;
   #receipts;
   #sessionKeys;
-  #wallet;
+  #authorizer;
   #logger;
   /** The signed-in account, from the welcome. @type {string | null} */
   #account = null;
-  /** @type {Set<string>} games whose session key is being authorised */
-  #authorizing = new Set();
+  /** @type {Set<string>} games this browser is done with (cancelled, dismissed): late news about them is ignored */
+  #closedGames = new Set();
   /** The key the server said it signs acks with. @type {string | null} */
   #ackKey = null;
   /** @type {OnlineState} */
@@ -86,7 +102,7 @@ export class OnlineService {
     this.#liveGames = liveGames ?? null;
     this.#receipts = receipts ?? null;
     this.#sessionKeys = sessionKeys ?? null;
-    this.#wallet = wallet ?? null;
+    this.#authorizer = new SessionAuthorizer({ sessionKeys: this.#sessionKeys, wallet: wallet ?? null, send: (type, data) => this.#connection.request(type, data) });
     this.#logger = logger;
   }
 
@@ -222,10 +238,10 @@ export class OnlineService {
   dismissGame() {
     const session = this.#state.session;
     if (session !== null) {
-      this.#sessionKeys?.forget(session.gameId);
+      this.#close(session.gameId);
     }
     this.#state.session?.stop();
-    this.#set({ status: OnlineStatus.IDLE, session: null, opponent: null });
+    this.#set({ status: OnlineStatus.IDLE, session: null, opponent: null, acceptance: null });
   }
 
   /**
@@ -258,8 +274,9 @@ export class OnlineService {
   #welcomed({ activeGame, queue, ackKey, user }) {
     this.#ackKey = typeof ackKey === "string" ? ackKey : null;
     this.#account = typeof user?.account === "string" ? user.account : null;
-    if (activeGame !== null) {
+    if (activeGame !== null && !this.#closedGames.has(activeGame.gameId)) {
       this.#adopt(activeGame);
+      this.#resumed(activeGame);
     } else if (this.#state.session === null) {
       this.#set({ status: queue.state === "searching" ? OnlineStatus.SEARCHING : OnlineStatus.IDLE, error: null });
     }
@@ -278,6 +295,8 @@ export class OnlineService {
     } else if (t === "game.over") {
       this.#state.session?.finish(d);
       this.#set({ status: OnlineStatus.OVER });
+    } else if (t === "game.aborted") {
+      this.#cancelled(d);
     } else if (t.startsWith("watch.")) {
       this.#onWatchMessage(t, d);
     } else if (t === "session.replaced") {
@@ -327,35 +346,113 @@ export class OnlineService {
       request: (type, data) => this.#connection.request(type, data),
       newCommandId: this.#newCommandId,
       onAck: (ack) => this.#keepAck(gameId, ack),
-      signMove: (move) => this.#sessionKeys?.sign(move) ?? Promise.resolve(null),
+      signMove: (move) => this.#signMove(gameId, move),
     });
   }
 
   /**
-   * v2: a session key for this game, authorised by the account through the wallet (Keychain asks the player once).
+   * v2: signs a move with the game's key. Without one (the player refused
+   * Keychain after a reload) the move they are trying to make is what asks
+   * Keychain again — the player's own action, never a background retry.
+   * @param {string} gameId
+   * @param {import("../ports/SessionKeys.contract.js").MoveToSign} move
+   */
+  async #signMove(gameId, move) {
+    const signature = (await this.#sessionKeys?.sign(move)) ?? null;
+    if (signature !== null) {
+      return signature;
+    }
+    const outcome = await this.#authorizer.retry(gameId, this.#account);
+    this.#authorized(gameId, outcome);
+    return outcome.state === AuthorizationState.AUTHORIZED ? ((await this.#sessionKeys?.sign(move)) ?? null) : null;
+  }
+
+  /**
+   * v2: asks the wallet to authorise this game's key — once; SessionAuthorizer never asks twice unprompted.
    * @param {string} gameId
    */
-  async #authorizeSession(gameId) {
-    if (this.#authorizing.has(gameId) || this.#sessionKeys?.has(gameId) === true) {
-      return;
-    }
-    if (this.#sessionKeys === null || this.#wallet === null || this.#account === null) {
-      this.#set({ error: { code: "SESSION_UNAVAILABLE", message: "this game needs signed moves, and no wallet can authorise them here" } });
-      return;
-    }
-    this.#authorizing.add(gameId);
-    try {
-      const { key, authorizationText } = await this.#sessionKeys.create(gameId);
-      const signed = await this.#wallet.signMessage({ account: this.#account, message: authorizationText, keyRole: "Posting" });
-      const reply = signed.ok ? await this.#connection.request("game.session", { gameId, key, authorization: signed.value }) : null;
-      if (reply === null || !reply.ok || reply.value.t !== "game.session") {
-        this.#sessionKeys.forget(gameId);
-        const refused = reply === null ? "the wallet did not authorise it" : "the server refused it";
-        this.#set({ error: { code: "SESSION_REFUSED", message: `this game's signing key is not authorised (${refused}): your moves cannot be sent` } });
+  async #requestAuthorization(gameId) {
+    this.#authorized(gameId, await this.#authorizer.ask(gameId, this.#account));
+  }
+
+  /**
+   * What an authorisation attempt means for the game. Before the start, no
+   * signature means the game is declined; during it, the player is told
+   * their moves cannot be sent until they sign (their next move asks).
+   * @param {string} gameId
+   * @param {import("./SessionAuthorizer.js").Authorization} outcome
+   */
+  #authorized(gameId, outcome) {
+    if (outcome.state === AuthorizationState.AUTHORIZED) {
+      this.#accepted(gameId);
+    } else if (outcome.state === AuthorizationState.REFUSED || outcome.state === AuthorizationState.UNAVAILABLE) {
+      if (this.#waitingFor(gameId)) {
+        void this.#decline(gameId);
+      } else if (this.#state.session?.gameId === gameId) {
+        this.#set({ error: { code: "SESSION_REFUSED", message: `Your moves in this game are not signed (${outcome.reason ?? "Keychain did not sign"}). Your next move will ask Keychain again.` } });
       }
-    } finally {
-      this.#authorizing.delete(gameId);
     }
+  }
+
+  /**
+   * Whether `gameId` is our game and it has not started yet.
+   * @param {string} gameId
+   */
+  #waitingFor(gameId) {
+    return this.#state.status === OnlineStatus.MATCHED && this.#state.session?.gameId === gameId;
+  }
+
+  /**
+   * Our signature is in: the lobby shows we have accepted until the server says more.
+   * @param {string} gameId
+   */
+  #accepted(gameId) {
+    if (this.#state.error?.code === "SESSION_REFUSED" && this.#state.session?.gameId === gameId) {
+      this.#set({ error: null });
+    }
+    const acceptance = this.#state.acceptance;
+    if (this.#waitingFor(gameId) && acceptance !== null) {
+      this.#set({ acceptance: Object.freeze({ ...acceptance, you: true }) });
+    }
+  }
+
+  /**
+   * v2: we will not sign this game. The server calls it off and tells both
+   * players; the lobby says so at once, without waiting for that message.
+   * @param {string} gameId
+   */
+  async #decline(gameId) {
+    const seat = this.#state.session?.seat ?? "";
+    this.#cancelled({ gameId, reason: "declined", seats: [seat], you: seat });
+    const reply = await this.#connection.request("game.decline", { gameId });
+    if (!reply.ok || reply.value.t !== "game.declined") {
+      this.#logger.warn("the game could not be declined; the server calls it off when its time runs out", reply.ok ? reply.value.d : reply.error);
+    }
+  }
+
+  /**
+   * The server called our game off before it started (game.aborted): back to
+   * the lobby, saying who did not accept it.
+   * @param {{ gameId: string, reason: string, seats: readonly string[], you: string }} aborted
+   */
+  #cancelled(aborted) {
+    const session = this.#state.session;
+    if (session === null || session.gameId !== aborted.gameId) {
+      return;
+    }
+    this.#close(aborted.gameId);
+    session.stop();
+    this.#lastView = null;
+    this.#set({ status: OnlineStatus.CANCELLED, session: null, acceptance: null, error: cancellationNotice(aborted, this.#state.opponent) });
+  }
+
+  /**
+   * This browser is done with the game: its key goes, an open wallet prompt for it will be ignored, late views of it too.
+   * @param {string} gameId
+   */
+  #close(gameId) {
+    this.#closedGames.add(gameId);
+    this.#authorizer.close(gameId);
   }
 
   /**
@@ -371,34 +468,47 @@ export class OnlineService {
   /** @param {{ gameId: string, seat: string, opponent: { account: string | null }, protocol?: number }} found */
   #matched(found) {
     const session = this.#playerSession(found.gameId, found.seat);
-    this.#set({ status: OnlineStatus.MATCHED, opponent: found.opponent.account, session, error: null });
+    const acceptance = (found.protocol ?? 1) >= 2 ? Object.freeze({ you: false, opponent: false }) : null;
+    this.#set({ status: OnlineStatus.MATCHED, opponent: found.opponent.account, session, error: null, acceptance });
     // Our entropy, drawn only now that the server is committed to its secret.
     this.#sendEntropy(found.gameId);
     if ((found.protocol ?? 1) >= 2) {
-      this.#authorizeSession(found.gameId);
+      // Accepting the game: the one Keychain prompt the player gets without asking for it.
+      void this.#requestAuthorization(found.gameId);
     }
   }
 
   /**
-   * A game view from the server: create the session if needed (resume), then update it.
+   * Back to a game after (re)connecting: what may not have reached the
+   * server is sent again, and a page that lost its key (reloaded) asks
+   * Keychain for a new one — once.
+   * @param {any} view
+   */
+  #resumed(view) {
+    if (view.status === "CREATED") {
+      // The server ignores an entropy it already has.
+      this.#sendEntropy(view.gameId);
+    }
+    if (view.protocol >= 2 && (view.status === "CREATED" || view.status === "ACTIVE") && this.#sessionKeys?.has(view.gameId) !== true) {
+      void this.#requestAuthorization(view.gameId);
+    }
+  }
+
+  /**
+   * A game view from the server: create the session if needed, then update it. No side effects.
    * @param {any} view
    */
   #adopt(view) {
+    if (this.#closedGames.has(view.gameId)) {
+      return;
+    }
     let session = this.#state.session;
     if (session === null || session.gameId !== view.gameId) {
       session = this.#playerSession(view.gameId, view.seat);
     }
     session.apply(view);
     this.#lastView = view;
-    if (view.protocol >= 2 && (view.status === "CREATED" || view.status === "ACTIVE")) {
-      // A reloaded page lost its key: authorise a new one for the game in progress.
-      this.#authorizeSession(view.gameId);
-    }
-    if (view.status === "CREATED") {
-      // Reconnected before the game started: our entropy may not have arrived (the server ignores a second one).
-      this.#sendEntropy(view.gameId);
-    }
-    this.#set({ status: statusOfGame(view.status), session, opponent: view.opponent?.account ?? this.#state.opponent });
+    this.#set({ status: statusOfGame(view.status), session, opponent: view.opponent?.account ?? this.#state.opponent, acceptance: acceptanceIn(view) });
   }
 
   /** @param {string} gameId */
@@ -424,5 +534,22 @@ function statusOfGame(gameStatus) {
   if (gameStatus === "ACTIVE") {
     return OnlineStatus.PLAYING;
   }
+  if (gameStatus === "ABORTED") {
+    return OnlineStatus.CANCELLED;
+  }
   return gameStatus === "CREATED" ? OnlineStatus.MATCHED : OnlineStatus.OVER;
+}
+
+/**
+ * v2: who has accepted the game, while it waits for its players; null otherwise.
+ * @param {any} view the server's game view
+ * @returns {Acceptance | null}
+ */
+function acceptanceIn(view) {
+  const authorized = view.authorized;
+  if (view.status !== "CREATED" || authorized === null || typeof authorized !== "object") {
+    return null;
+  }
+  const opponentSeat = Object.keys(authorized).find((seat) => seat !== view.seat);
+  return Object.freeze({ you: authorized[view.seat] === true, opponent: opponentSeat !== undefined && authorized[opponentSeat] === true });
 }

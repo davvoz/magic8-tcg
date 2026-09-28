@@ -56,8 +56,10 @@ const MAX_FACTIONS = 16;
  *   spacing: Readonly<{ unit: number, radius: number }>,
  *   animation: Readonly<Record<string, number>>,
  *   illustrations?: import("../cards/CardIllustrations.js").IllustrationSource,
- * }>} Theme `illustrations` is not read from theme.json: the composition root attaches the
- *   painted card art, and without it every card is drawn procedurally
+ *   coinArt?: import("../board/CoinArt.js").CoinArtSource,
+ * }>} Theme `illustrations` and `coinArt` are not read from theme.json: the composition root
+ *   attaches the painted card art and the painted coin, and without them cards and the
+ *   coin toss are drawn procedurally
  */
 
 /**
