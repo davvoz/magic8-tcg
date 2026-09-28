@@ -249,8 +249,10 @@ describe("MatchScene coin toss (practice match)", () => {
     assert.ok(session.version > 0, "the match began once the coin had landed");
     assert.equal(session.snapshotFor(null).turnNumber >= 1, true);
     assert.equal(session.snapshotFor(null).awaitingPlayerId, "player", "the AI took the first turn, now it is ours");
+    assert.ok(!rendered(scene).includes("Coin toss"), "the coin is gone");
+    assert.equal(buttonWithId(scene, "endTurn").enabled, false, "held back while the AI's turn is shown");
+    runUntil(scene, () => !scene.isBusy, "the board settles");
     const after = rendered(scene);
-    assert.ok(!after.includes("Coin toss"), "the coin is gone");
     assert.ok(after.some((text) => text.includes("Your turn")), after.join(" | "));
     assert.equal(buttonWithId(scene, "endTurn").enabled, true);
   });

@@ -146,8 +146,34 @@ describe("SceneManager", () => {
     assert.equal(logger.entries.length, 1);
     assert.ok(renders >= 2);
     assert.equal(manager.has("a"), true);
-    assert.equal(manager.update(16), false);
+    assert.equal(manager.update(16), true, "the new scene is fading in");
+    manager.update(10000);
+    assert.equal(manager.isFading, false);
+    assert.equal(manager.update(16), false, "then idle");
     manager.render(new FakeContext2D());
+  });
+
+  it("fades each new scene in out of the letterbox colour, under the overlay, without holding up input", () => {
+    const viewport = new Viewport(theme.layout);
+    const manager = new SceneManager({ theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined });
+    const seen = [];
+    manager.register("a", () => ({ enter: () => undefined, exit: () => undefined, update: () => false, render: () => seen.push("scene"), onPointer: () => seen.push("click"), onKey: () => undefined }));
+    manager.setOverlay({ update: () => false, render: () => seen.push("overlay"), onPointer: () => false });
+    manager.navigate("a");
+    const veils = (context) => context.calls.filter((call) => call.method === "fillRect").length;
+    const arriving = new FakeContext2D();
+    manager.render(arriving);
+    assert.equal(veils(arriving), 1, "a veil over the scene");
+    assert.deepEqual(seen, ["scene", "overlay"], "drawn between the scene and the overlay");
+    manager.onPointer({ type: "down", x: 10, y: 10 });
+    assert.equal(seen.at(-1), "click", "the scene takes input while it fades in");
+    manager.update(theme.animation.mediumMs);
+    assert.equal(manager.isFading, true);
+    manager.update(theme.animation.mediumMs);
+    assert.equal(manager.isFading, false);
+    const settled = new FakeContext2D();
+    manager.render(settled);
+    assert.equal(veils(settled), 0, "and nothing once it is in");
   });
 
   it("gives scenes navigate/hasScene services bound to itself", () => {

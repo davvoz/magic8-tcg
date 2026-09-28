@@ -3,10 +3,18 @@
  * the GameLoop's and InputManager's single target, and the only way scenes
  * move between each other (`navigate`). Scenes never construct one another.
  * An optional overlay (the toasts) is drawn above every scene and sees
- * pointer events first.
+ * pointer events first. Each scene it moves to fades in out of the
+ * letterbox colour, so screens follow one another instead of cutting; the
+ * new scene takes input at once, the fade is only drawn over it.
  *
  * @typedef {{ update: (dtMs: number) => boolean, render: (context: CanvasRenderingContext2D, theme: import("../theme/Theme.js").Theme) => void, onPointer: (input: { type: string, x: number, y: number }) => boolean }} SceneOverlay
  */
+import { Easing } from "../animation/Tween.js";
+import { withAlpha } from "../theme/color.js";
+
+/** How long a new scene takes to fade in, as a multiple of the medium duration. */
+const FADE_MEDIUM = 1.5;
+
 export class SceneManager {
   /** @type {Map<string, (services: import("./Scene.js").SceneServices) => import("./Scene.js").Scene>} */
   #factories = new Map();
@@ -18,6 +26,8 @@ export class SceneManager {
   #requestRender;
   /** @type {SceneOverlay | null} */
   #overlay = null;
+  /** The fade-in of the current scene: how far through it is, and how long it lasts; null once it is over. @type {{ elapsedMs: number, durationMs: number } | null} */
+  #fade = null;
 
   /**
    * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void }} deps
@@ -80,6 +90,8 @@ export class SceneManager {
     this.#current = scene;
     this.#currentId = sceneId;
     scene.enter(params);
+    const durationMs = this.#services.theme.animation.mediumMs * FADE_MEDIUM;
+    this.#fade = durationMs > 0 ? { elapsedMs: 0, durationMs } : null;
     this.#requestRender();
     return true;
   }
@@ -88,13 +100,52 @@ export class SceneManager {
   update(dtMs) {
     const scene = this.#current?.update(dtMs) ?? false;
     const overlay = this.#overlay?.update(dtMs) ?? false;
-    return scene || overlay;
+    return this.#advanceFade(dtMs) || scene || overlay;
+  }
+
+  /** True while the current scene is still fading in. */
+  get isFading() {
+    return this.#fade !== null;
+  }
+
+  /**
+   * @param {number} dtMs
+   * @returns {boolean} whether the fade moved (its last frame included)
+   */
+  #advanceFade(dtMs) {
+    const fade = this.#fade;
+    if (fade === null) {
+      return false;
+    }
+    fade.elapsedMs += dtMs;
+    if (fade.elapsedMs >= fade.durationMs) {
+      this.#fade = null;
+    }
+    return true;
   }
 
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
     this.#current?.render(context);
+    this.#paintFade(context);
     this.#overlay?.render(context, this.#services.theme);
+  }
+
+  /**
+   * The veil over a scene fading in: opaque as it arrives, lifting quickly then gently.
+   * @param {CanvasRenderingContext2D} context
+   */
+  #paintFade(context) {
+    const fade = this.#fade;
+    if (fade === null) {
+      return;
+    }
+    const { theme, viewport } = this.#services;
+    const area = viewport.bounds;
+    context.save();
+    context.fillStyle = withAlpha(theme.colors.letterbox, 1 - Easing.easeOutCubic(Math.min(1, fade.elapsedMs / fade.durationMs)));
+    context.fillRect(area.x, area.y, area.width, area.height);
+    context.restore();
   }
 
   /** @param {import("../../input/InputManager.js").PointerInput | import("../../input/InputManager.js").WheelInput} input */

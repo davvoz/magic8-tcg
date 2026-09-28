@@ -2,12 +2,13 @@
  * Board cards: the shared card face (CardFace) drawn in a base 150×210
  * coordinate system and scaled uniformly to the requested rectangle, so
  * hand cards, battlefield cards and shrinking "dying" cards share one code
- * path, plus the glowing ring that shows interaction state. Also the card
+ * path, plus the glowing ring that shows interaction state and the flash
+ * of a blow the card just took. Also the card
  * back shown for the opponent's hidden hand.
  */
 import { Highlight } from "../../input/interaction/MatchInteraction.js";
 import { CARD_SIZE } from "../board/BoardLayout.js";
-import { shade, withAlpha } from "../theme/color.js";
+import { mix, shade, withAlpha } from "../theme/color.js";
 import { bevelRoundedRect, fillRoundedRect, glowRoundedRect, insetRect, verticalGradient } from "../ui/drawing.js";
 import { drawGem, starPath } from "../ui/shapes.js";
 import { CardFaceProfile, paintCardFace } from "./CardFace.js";
@@ -15,6 +16,8 @@ import { CardFaceProfile, paintCardFace } from "./CardFace.js";
 const BASE = CARD_SIZE.battlefield;
 const BASE_FRAME = Object.freeze({ x: 0, y: 0, width: BASE.width, height: BASE.height });
 const RING = Object.freeze({ radius: BASE.width * 0.06, blur: 22, lineWidth: 3.5, focusLineWidth: 3 });
+/** A struck card: its face washed with a hot white-red, and a red halo round it, both at full strength the instant the blow lands. */
+const FLASH = Object.freeze({ tint: 0.45, wash: 0.6, blur: 26, lineWidth: 4 });
 
 /** Highlight → theme colour key of the ring. */
 const RING_COLORS = Object.freeze({
@@ -28,7 +31,7 @@ const RING_COLORS = Object.freeze({
 /**
  * @typedef {import("./CardFace.js").CardFaceModel} BoardCard
  * @typedef {{ x: number, y: number, width: number, height: number, alpha: number }} CardPlacement
- * @typedef {{ highlight?: string | null, focused?: boolean, rarity?: string | null }} CardStyle `rarity`: shown on the type ribbon when known
+ * @typedef {{ highlight?: string | null, focused?: boolean, rarity?: string | null, flash?: number }} CardStyle `rarity`: shown on the type ribbon when known; `flash`: 0–1, how brightly a blow it just took still shows
  */
 
 /**
@@ -53,7 +56,22 @@ export function drawCard(context, theme, card, at) {
   if (ring !== null) {
     fillRoundedRect(context, BASE_FRAME, { stroke: ring.color, radius: RING.radius, lineWidth: ring.width });
   }
+  paintFlash(context, theme, at.flash ?? 0);
   context.restore();
+}
+
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {number} strength 0–1
+ */
+function paintFlash(context, theme, strength) {
+  if (strength <= 0) {
+    return;
+  }
+  const { danger } = theme.colors;
+  glowRoundedRect(context, BASE_FRAME, { color: withAlpha(danger, strength), radius: RING.radius, blur: FLASH.blur, lineWidth: FLASH.lineWidth });
+  fillRoundedRect(context, BASE_FRAME, { fill: withAlpha(mix("#ffffff", danger, FLASH.tint), FLASH.wash * strength), radius: RING.radius });
 }
 
 /**

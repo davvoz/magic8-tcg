@@ -12,6 +12,9 @@ import { CardNode } from "../../src/rendering/board/CardNode.js";
 import { CARD_SIZE } from "../../src/rendering/board/BoardLayout.js";
 import { CastReveal } from "../../src/rendering/board/CastReveal.js";
 import { EffectsNode } from "../../src/rendering/board/EffectsNode.js";
+import { TurnBanner } from "../../src/rendering/board/TurnBanner.js";
+import { GameOverNode } from "../../src/rendering/board/GameOverNode.js";
+import { GameOverMood, GameOverSequence } from "../../src/rendering/board/GameOverSequence.js";
 import { PlayerNode } from "../../src/rendering/board/PlayerNode.js";
 import { CardVisual } from "../../src/rendering/cards/CardVisual.js";
 import { artSeedOf, paintCardArt } from "../../src/rendering/cards/CardArt.js";
@@ -32,7 +35,7 @@ const content = await loadBundledContent();
 
 /** A presenter with nothing on the board but one cast playing out. */
 function fakePresenter(reveal) {
-  return { leavingVisuals: [], floats: [], cardFor: () => null, get reveal() { return reveal.isDone ? null : reveal; } };
+  return { leavingVisuals: [], floats: [], cardFor: () => null, get moment() { return reveal.isDone ? null : reveal; } };
 }
 
 /** No NaN or negative extent may reach the canvas: the flip passes through zero width. */
@@ -278,8 +281,134 @@ describe("cast reveal", () => {
   });
 });
 
+describe("turn banner", () => {
+  it("sweeps whose turn it is across the table and leaves nothing behind", () => {
+    const banner = new TurnBanner({ playerId: "p1", turnNumber: 7, animation: theme.animation });
+    const layout = { width: 1600, height: 900, cards: {}, banner: { x: 300, y: 420, width: 1000, height: 56 } };
+    const labels = [];
+    const node = new EffectsNode({ presenter: { leavingVisuals: [], floats: [], cardFor: () => null, get moment() { return banner.isDone ? null : banner; } }, layout, blocks: [], turnLabel: (playerId) => (labels.push(playerId), { text: "Your turn", mine: true }) });
+    let shown = 0;
+    for (let frames = 0; frames < 200 && !banner.isDone; frames += 1) {
+      const context = new FakeContext2D();
+      node.draw(context, theme);
+      assertBalanced(context);
+      assertFinite(context);
+      shown += context.texts.includes("Your turn") && context.texts.includes("Turn 7") ? 1 : 0;
+      banner.update(theme.animation.shortMs / 2);
+    }
+    assert.ok(shown > 0, "the words and the turn number are drawn");
+    assert.ok(labels.every((playerId) => playerId === "p1"), "asked for the label of the player whose turn it is");
+    assert.equal(banner.isDone, true, "the banner finishes");
+  });
+});
+
+describe("life crystal pulse", () => {
+  it("swells and throws off a ring when life moves, and shakes the plate only for a blow", () => {
+    const player = { id: "p1", name: "Alice", life: 12, resources: { current: 0, max: 0 }, librarySize: 20, handSize: 3, graveyard: [] };
+    const draw = (kick) => {
+      const context = new FakeContext2D();
+      new PlayerNode({ player, rect: { x: 0, y: 0, width: 200, height: 184 }, isMe: true, isActive: false, highlight: null, onTap: () => undefined, lifeKick: () => kick }).draw(context, theme);
+      assertBalanced(context);
+      assertFinite(context);
+      return context;
+    };
+    const count = (context, method) => context.calls.filter((call) => call.method === method).length;
+    const still = draw(null);
+    const hit = draw({ progress: 0.1, delta: -3 });
+    const healed = draw({ progress: 0.1, delta: 2 });
+    assert.equal(count(still, "translate"), 0, "no shake at rest");
+    assert.equal(count(hit, "translate"), 1, "a blow shakes the plate");
+    assert.equal(count(healed, "translate"), 0, "healing does not");
+    assert.equal(count(hit, "arc"), count(still, "arc") + 1, "the ring spreading from the crystal");
+    assert.ok(hit.texts.includes("12") && healed.texts.includes("12"));
+  });
+});
+
+describe("game over sequence", () => {
+  const crystal = { x: 60, y: 90, radius: 30 };
+  const play = (mood, crystals) => {
+    const sequence = new GameOverSequence({ mood, title: mood === GameOverMood.TRIUMPH ? "Victory" : "Defeat", subtitle: "Life reached zero.", crystals, animation: theme.animation });
+    const node = new GameOverNode({ sequence, width: 1600, height: 900, centreY: 450 });
+    const seen = { titles: 0, shards: 0, frames: 0 };
+    for (let frames = 0; frames < 400 && !sequence.isDone; frames += 1) {
+      const context = new FakeContext2D();
+      node.draw(context, theme);
+      assertBalanced(context);
+      assertFinite(context);
+      seen.titles += context.texts.includes(sequence.title) ? 1 : 0;
+      seen.shards = Math.max(seen.shards, sequence.shards.length);
+      seen.frames += 1;
+      sequence.update(theme.animation.shortMs / 2);
+    }
+    const after = new FakeContext2D();
+    node.draw(after, theme);
+    return { sequence, seen, after };
+  };
+
+  it("cracks the crystal, bursts it into shards, shows the outcome, and ends without leaving anything drawn", () => {
+    for (const mood of [GameOverMood.TRIUMPH, GameOverMood.DEFEAT, GameOverMood.NEUTRAL]) {
+      const { sequence, seen, after } = play(mood, [crystal]);
+      assert.equal(sequence.isDone, true, `${mood} finishes`);
+      assert.ok(seen.titles > 0, `${mood}: the outcome is shown`);
+      assert.ok(seen.shards > 0, `${mood}: the crystal bursts`);
+      assert.deepEqual(after.calls, [], `${mood}: nothing is drawn once it is over`);
+      assert.equal(sequence.update(16), false);
+    }
+  });
+
+  it("shakes only while something strikes, and never without a crystal to break unless a defeat lands", () => {
+    const quiet = new GameOverSequence({ mood: GameOverMood.TRIUMPH, title: "Victory", subtitle: "", crystals: [], animation: theme.animation });
+    let moved = false;
+    for (let step = 0; step < 200 && !quiet.isDone; step += 1) {
+      const { x, y } = quiet.shake;
+      moved ||= x !== 0 || y !== 0;
+      quiet.update(20);
+    }
+    assert.equal(moved, false, "a conceded victory does not shake");
+    assert.deepEqual(play(GameOverMood.TRIUMPH, []).seen.shards, 0, "and throws no shards");
+    const heavy = new GameOverSequence({ mood: GameOverMood.DEFEAT, title: "Defeat", subtitle: "", crystals: [], animation: theme.animation });
+    let thud = false;
+    for (let step = 0; step < 200 && !heavy.isDone; step += 1) {
+      thud ||= heavy.shake.y !== 0;
+      heavy.update(20);
+    }
+    assert.equal(thud, true, "a defeat lands with a thud");
+  });
+});
+
+describe("CardVisual", () => {
+  it("lights up when a blow lands, not before, and fades back to rest", () => {
+    const visual = new CardVisual("c1", { x: 0, y: 0, width: 100, height: 140, alpha: 1 });
+    visual.hit(200, 400);
+    assert.equal(visual.flash, 0, "the blow is still on its way");
+    assert.equal(visual.isAnimating, true);
+    assert.equal(visual.update(100), false, "nothing to redraw while it waits");
+    visual.update(100);
+    assert.equal(visual.flash, 1, "full strength as it lands");
+    visual.update(200);
+    assert.ok(visual.flash > 0 && visual.flash < 1, "fading");
+    visual.update(200);
+    assert.equal(visual.flash, 0);
+    assert.equal(visual.isAnimating, false);
+  });
+
+  it("stays in its slot while the blow that kills it is on its way, then leaves", () => {
+    const slot = { x: 0, y: 0, width: 100, height: 140 };
+    const visual = new CardVisual("c1", { ...slot, alpha: 1 });
+    visual.moveTo(slot, 0);
+    visual.leaveTo({ x: 500, y: 500, width: 10, height: 10 }, 400, 200);
+    visual.update(150);
+    assert.deepEqual(visual.state, { ...slot, alpha: 1 }, "held in place");
+    visual.update(50);
+    visual.update(200);
+    assert.ok(visual.state.alpha < 1 && visual.state.x > 0, "on its way out after the delay");
+    visual.update(400);
+    assert.equal(visual.isGone, true);
+  });
+});
+
 describe("CardNode lift", () => {
-  it("draws a tappable card larger around its centre while hovered or focused, never while leaving", () => {
+  it("eases a tappable card larger around its centre while hovered or focused, never while leaving", () => {
     const card = { ...content.catalog.all().find((definition) => definition.isCreature), instanceId: "c1", damage: 0, summoningSick: false, exhausted: false };
     const slot = { x: 100, y: 100, ...CARD_SIZE.battlefield };
     const visual = new CardVisual("c1", { ...slot, alpha: 1 });
@@ -291,9 +420,16 @@ describe("CardNode lift", () => {
     assert.equal(node.isLifted, false);
     assert.equal(scaleOf(rest), 1);
     node.hovered = true;
+    const rising = new FakeContext2D();
+    node.draw(rising, theme);
+    assert.equal(node.isLifted, true);
+    assert.equal(scaleOf(rising), 1, "not grown yet: the raise eases in over the next frames");
+    assert.equal(visual.isAnimating, true);
+    assert.equal(visual.update(16), true);
+    visual.update(1000);
+    assert.equal(visual.isAnimating, false, "and settles");
     const lifted = new FakeContext2D();
     node.draw(lifted, theme);
-    assert.equal(node.isLifted, true);
     assert.ok(scaleOf(lifted) > 1, "grown");
     assert.ok(translateOf(lifted)[0] < slot.x && translateOf(lifted)[1] < slot.y, "around the centre");
     node.hovered = false;

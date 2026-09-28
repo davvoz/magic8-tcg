@@ -62,6 +62,20 @@ export function verticalGradient(context, area, stops) {
 }
 
 /**
+ * Left-to-right gradient over `area`.
+ * @param {CanvasRenderingContext2D} context
+ * @param {Rect} area
+ * @param {readonly (readonly [number, string])[]} stops `[offset, color]` pairs
+ */
+export function horizontalGradient(context, area, stops) {
+  const gradient = context.createLinearGradient(area.x, area.y, area.x + area.width, area.y);
+  for (const [offset, color] of stops) {
+    gradient.addColorStop(offset, color);
+  }
+  return gradient;
+}
+
+/**
  * Radial gradient centred at `center`, transparent at `radius`.
  * @param {CanvasRenderingContext2D} context
  * @param {{ x: number, y: number }} center

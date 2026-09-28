@@ -2,7 +2,9 @@
  * A card on the board as a widget: hit-tested and focused at its layout
  * slot, drawn wherever its CardVisual currently is. Tapping it reports the
  * instance id to the scene; the interaction state machine decides what
- * that means. A tappable card lifts slightly under the pointer or focus.
+ * that means. A tappable card lifts slightly under the pointer or focus:
+ * the node tells its visual when to be raised, and the visual — which
+ * outlives the node across rebuilds — eases the card up and down.
  */
 import { drawCard } from "../cards/CardRenderer.js";
 import { UiNode } from "../ui/UiNode.js";
@@ -53,7 +55,9 @@ export class CardNode extends UiNode {
       return;
     }
     const lifted = this.isLifted;
-    drawCard(context, theme, this.card, { ...liftedPlacement(this.visual.state, lifted ? LIFT_SCALE : 1), highlight: this.highlight, focused: lifted });
+    this.visual.liftTo(lifted);
+    const scale = 1 + (LIFT_SCALE - 1) * this.visual.lift;
+    drawCard(context, theme, this.card, { ...liftedPlacement(this.visual.state, scale), highlight: this.highlight, focused: lifted, flash: this.visual.flash });
   }
 }
 

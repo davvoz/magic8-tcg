@@ -17,6 +17,21 @@
  * drawn by CoinTossNode over the board): until the coin has landed and the
  * verdict faded, nothing can be played and the board does not tell whose
  * turn it is. Then the scene asks the session to `begin()`.
+ *
+ * Moves wait their turn the same way: while the board is still playing out
+ * what happened (the presenter is busy) or a move is on its way to the
+ * server, nothing can be played — cards and buttons go quiet and come back
+ * once it is over. Inspecting cards, cancelling and conceding stay open.
+ *
+ * The other side is paced too. The AI decides in an instant and a remote
+ * opponent's moves arrive whenever they are made, so each update is taken
+ * with the state it led to and shown only once the board has finished
+ * showing the one before: every move is seen, one after another.
+ *
+ * When the match ends, the blow that ended it plays out first, then the end
+ * itself (GameOverSequence, drawn by GameOverNode over the board): the
+ * fallen crystal breaks, the table darkens, the outcome comes down. Only
+ * then is the result offered.
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { ControllerKind } from "../../application/match/PlayerController.contract.js";
@@ -29,9 +44,11 @@ import { ClockNode } from "../board/ClockNode.js";
 import { CoinFlip } from "../board/CoinFlip.js";
 import { CoinTossNode } from "../board/CoinTossNode.js";
 import { EffectsNode } from "../board/EffectsNode.js";
+import { GameOverNode } from "../board/GameOverNode.js";
+import { GameOverMood, GameOverSequence } from "../board/GameOverSequence.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
-import { PlayerNode } from "../board/PlayerNode.js";
+import { PlayerNode, lifeCrystalCentre } from "../board/PlayerNode.js";
 import { describeEvent } from "../board/eventLog.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -45,14 +62,21 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const MAX_LOG_LINES = 12;
+/** Updates allowed to wait their turn; past this the oldest are shown at once, unanimated, so a fast match cannot leave the board far behind. */
+const MAX_BACKLOG = 6;
 const TOSS_BANNER = "Coin toss · who plays first?";
 const LOG_LINE_HEIGHT = 22;
 const SIDEBAR = Object.freeze({ inset: 12, buttonHeight: 48, gap: 8, titleHeight: 36, phaseHeight: 26, promptTop: 84, promptHeight: 64, buttonsTop: 156 });
 const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
 const GAME_OVER = Object.freeze({ width: 720, height: 320 });
 const INSPECT = Object.freeze({ width: 440, height: 640, card: Object.freeze({ width: 380, height: 540 }) });
+/** Marks that invite a tap, dropped while moves are held back. @type {ReadonlySet<string>} */
+const INVITING = new Set([Highlight.PLAYABLE, Highlight.TARGETABLE]);
 
-/** @typedef {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} Snapshot */
+/**
+ * @typedef {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} Snapshot
+ * @typedef {Readonly<{ snapshot: Snapshot, events: readonly Readonly<Record<string, unknown>>[] }>} Step one update as the board shows it: the state a move led to, and what happened on the way
+ */
 
 export class MatchScene extends Scene {
   /** @type {(cardId: string) => string | null} */
@@ -81,6 +105,14 @@ export class MatchScene extends Scene {
   #now;
   /** The clock's last displayed whole second, so ticking asks for a redraw only when the number on screen would change. @type {number | null} */
   #clockSecondShown = null;
+  /** A move sent to the server and not yet answered: another one would carry the same game version and be refused. */
+  #submitting = false;
+  /** Whether the widgets were last built with play held back, so the tree is rebuilt when that changes. */
+  #builtBusy = false;
+  /** Updates that arrived while the board was still showing an earlier one, oldest first. @type {Step[]} */
+  #backlog = [];
+  /** The end of the match being played out, before the result is offered; null until the match ends. @type {GameOverSequence | null} */
+  #ending = null;
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
@@ -107,12 +139,14 @@ export class MatchScene extends Scene {
     this.#playerId = session.humanPlayerIds[0] ?? "";
     this.#spectating = session.humanPlayerIds.length === 0;
     this.#gameOverShown = false;
+    this.#ending = null;
+    this.#backlog = [];
     this.#log = [];
     this.#interaction = new MatchInteraction(this.#playerId);
     const toss = session.openingToss;
     this.#coinFlip = toss === null ? null : new CoinFlip({ toss, animation: this.services.theme.animation });
     this.#unsubscribe = session.subscribe((update) => this.#onUpdate(update));
-    this.#refresh([], false);
+    this.#show({ snapshot: session.snapshotFor(this.#playerId), events: [] }, false);
     if (this.#coinFlip === null) {
       this.#begin();
     }
@@ -128,9 +162,45 @@ export class MatchScene extends Scene {
   update(dtMs) {
     const inputChanged = super.update(dtMs);
     const tossChanged = this.#advanceCoinFlip(dtMs);
-    const changed = this.#presenter.update(dtMs) || inputChanged || tossChanged || this.#tickClock();
+    const presented = this.#presenter.update(dtMs);
+    const caughtUp = this.#showNextStep();
+    const ending = this.#ending?.update(dtMs) ?? false;
+    const changed = presented || caughtUp || ending || inputChanged || tossChanged || this.#tickClock();
     this.#maybeShowGameOver();
+    if (this.isBusy !== this.#builtBusy) {
+      this.#rebuild();
+      return true;
+    }
     return changed;
+  }
+
+  /** True while moves are held back: the toss, the board playing out what happened, or a move awaiting the server. */
+  get isBusy() {
+    return this.isTossing || this.#submitting || this.#backlog.length > 0 || this.#presenter.isBusy || this.isEnding;
+  }
+
+  /** True while the end of the match is being played out, before the result is offered. */
+  get isEnding() {
+    return this.#ending !== null && !this.#ending.isDone;
+  }
+
+  /** Whether the board may move on to the next update: nothing left to play out from the last one, and no coin in the air. */
+  get #readyForStep() {
+    return !this.isTossing && !this.#presenter.isBusy;
+  }
+
+  /**
+   * Shows the oldest waiting update once the board is ready for it.
+   * @returns {boolean} whether one was shown
+   */
+  #showNextStep() {
+    const next = this.#backlog[0];
+    if (next === undefined || !this.#readyForStep) {
+      return false;
+    }
+    this.#backlog.shift();
+    this.#show(next, true);
+    return true;
   }
 
   /** True while the opening coin toss is being played. */
@@ -190,7 +260,15 @@ export class MatchScene extends Scene {
   render(context) {
     const { theme, viewport } = this.services;
     drawSceneBackdrop(context, theme, viewport.bounds, { seed: "match", motes: false });
+    const shake = this.#ending?.shake ?? { x: 0, y: 0 };
+    if (shake.x === 0 && shake.y === 0) {
+      super.render(context);
+      return;
+    }
+    context.save();
+    context.translate(shake.x, shake.y);
     super.render(context);
+    context.restore();
   }
 
   /** @param {import("../../input/InputManager.js").KeyInput} input */
@@ -198,7 +276,7 @@ export class MatchScene extends Scene {
     if (this.isTossing) {
       return;
     }
-    if (input.type === "keydown" && isKey(input.key, KeyMap.END_TURN) && this.modal === null && this.#snapshot?.legalMoves?.canEndTurn === true) {
+    if (input.type === "keydown" && isKey(input.key, KeyMap.END_TURN) && this.modal === null && !this.isBusy && this.#snapshot?.legalMoves?.canEndTurn === true) {
       this.#submit(endTurn(this.#playerId));
       return;
     }
@@ -235,24 +313,37 @@ export class MatchScene extends Scene {
     return this.#presenter;
   }
 
+  /** @returns {GameOverSequence | null} the end of the match, once it has begun to play out */
+  get ending() {
+    return this.#ending;
+  }
+
   /** @param {import("../../application/match/MatchSession.js").SessionUpdate} update */
   #onUpdate(update) {
     if (this.#session === null) {
       return;
     }
-    this.#refresh(this.#session.eventsFor(update.events, this.#playerId), true);
+    // Taken now: the session tells its listeners straight after each move, while its state is still the one that move led to.
+    const step = Object.freeze({ snapshot: this.#session.snapshotFor(this.#playerId), events: this.#session.eventsFor(update.events, this.#playerId) });
+    if (this.#backlog.length === 0 && this.#readyForStep) {
+      this.#show(step, true);
+      return;
+    }
+    this.#backlog.push(step);
+    while (this.#backlog.length > MAX_BACKLOG) {
+      this.#show(/** @type {Step} */ (this.#backlog.shift()), false);
+    }
   }
 
   /**
-   * Pulls a fresh snapshot, re-lays out the board, feeds the presenter and rebuilds the tree.
-   * @param {readonly Readonly<Record<string, unknown>>[]} events
+   * Shows one step: re-lays out the board, feeds the presenter and rebuilds the tree.
+   * @param {Step} step
    * @param {boolean} animate
    */
-  #refresh(events, animate) {
+  #show({ snapshot, events }, animate) {
     if (this.#session === null || this.#interaction === null) {
       return;
     }
-    const snapshot = this.#session.snapshotFor(this.#playerId);
     this.#snapshot = snapshot;
     this.#layout = computeBoardLayout(snapshot, this.#playerId, this.services.viewport);
     this.#presenter.apply(snapshot, events, this.#layout, animate);
@@ -263,13 +354,41 @@ export class MatchScene extends Scene {
     this.#maybeShowGameOver();
   }
 
-  /** The result waits for the opponent's last cast to play out: it is what ended the game. */
+  /**
+   * Once the blow that ended the match has played out (the opponent's last
+   * cast, the killing attack), the end itself is played; the result is offered after it.
+   */
   #maybeShowGameOver() {
     const snapshot = this.#snapshot;
-    if (snapshot !== null && snapshot.isOver && !this.#gameOverShown && this.#presenter.reveal === null) {
+    if (snapshot === null || !snapshot.isOver || this.#gameOverShown || this.#backlog.length > 0 || this.#presenter.isBusy) {
+      return;
+    }
+    if (this.#ending === null) {
+      this.#ending = this.#endingFor(snapshot);
+      this.#rebuild();
+      return;
+    }
+    if (this.#ending.isDone) {
       this.#gameOverShown = true;
       this.#showGameOver(snapshot);
     }
+  }
+
+  /**
+   * How this match ends on screen: whose crystal breaks (nobody's when it was
+   * conceded), and the outcome as the viewer sees it.
+   * @param {Snapshot} snapshot
+   */
+  #endingFor(snapshot) {
+    const layout = /** @type {import("../board/BoardLayout.js").BoardLayout} */ (this.#layout);
+    const conceded = snapshot.endReason === GameEndReason.CONCEDE;
+    const crystals = conceded
+      ? []
+      : snapshot.players.filter((player) => player.life <= 0).flatMap((player) => {
+          const seat = [layout.me, layout.opponent].find((candidate) => candidate.id === player.id);
+          return seat === undefined ? [] : [lifeCrystalCentre(seat.hud)];
+        });
+    return new GameOverSequence({ mood: moodFor(snapshot, this.#viewer()), title: outcomeFor(snapshot, this.#viewer()), subtitle: reasonFor(snapshot), crystals, animation: this.services.theme.animation });
   }
 
   /**
@@ -279,7 +398,13 @@ export class MatchScene extends Scene {
   #submit(command) {
     const result = this.#session?.submit(command);
     if (result instanceof Promise) {
-      result.then((settled) => this.#onSubmitted(settled));
+      this.#submitting = true;
+      this.#rebuild();
+      result.then((settled) => {
+        this.#submitting = false;
+        this.#onSubmitted(settled);
+        this.#rebuild();
+      });
     } else if (result !== undefined) {
       this.#onSubmitted(result);
     }
@@ -296,6 +421,9 @@ export class MatchScene extends Scene {
 
   /** @param {string} id card instance or player id */
   #tap(id) {
+    if (this.isBusy) {
+      return;
+    }
     const command = this.#interaction?.tap(id) ?? null;
     if (command !== null) {
       this.#submit(command);
@@ -311,6 +439,7 @@ export class MatchScene extends Scene {
     if (snapshot === null || layout === null || interaction === null) {
       return;
     }
+    this.#builtBusy = this.isBusy;
     const focusedId = this.focusedNode?.id ?? "";
     const reopenGameOver = this.modal?.id === "gameOver";
     this.closeModal();
@@ -319,10 +448,11 @@ export class MatchScene extends Scene {
     this.root.add(new ClockNode({ x: layout.clock.x, y: layout.clock.y, size: layout.clock.width, clock: () => this.#clockView(), now: this.#now }));
     this.#buildPlayers(snapshot, layout, interaction);
     this.#buildCards(snapshot, layout, interaction);
-    this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction) }));
+    this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction), turnLabel: (playerId) => this.#turnLabel(snapshot, playerId) }));
     this.#buildSidebar(snapshot, layout, interaction);
     this.#buildLog(layout);
     this.#buildCoinToss(snapshot);
+    this.#buildEnding(layout);
     if (reopenGameOver) {
       this.#showGameOver(snapshot);
     }
@@ -355,7 +485,7 @@ export class MatchScene extends Scene {
       if (player === undefined) {
         continue;
       }
-      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: interaction.highlightFor(player.id), onTap: (id) => this.#tap(id), lifeShown: () => this.#presenter.lifeFor(player) }));
+      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeShown: () => this.#presenter.lifeFor(player), lifeKick: () => this.#presenter.lifeKickFor(player.id) }));
     }
   }
 
@@ -375,9 +505,21 @@ export class MatchScene extends Scene {
       if (visual === null || slot === undefined) {
         continue;
       }
-      const highlight = interaction.highlightFor(card.instanceId);
+      const highlight = this.#highlightFor(interaction, card.instanceId);
       this.root.add(new CardNode({ card, visual, slot, highlight, enabled: highlight !== null && highlight !== Highlight.ATTACKING, onTap: (id) => this.#tap(id) }));
     }
+  }
+
+  /**
+   * How a card or seat is marked. While moves are held back, the marks that
+   * invite a tap (playable, targetable) are dropped — the table goes quiet
+   * until it can be played again; those that describe the board stay.
+   * @param {MatchInteraction} interaction
+   * @param {string} id
+   */
+  #highlightFor(interaction, id) {
+    const highlight = interaction.highlightFor(id);
+    return this.isBusy && INVITING.has(highlight ?? "") ? null : highlight;
   }
 
   /**
@@ -398,7 +540,8 @@ export class MatchScene extends Scene {
       if (!spec.visible) {
         continue;
       }
-      panel.add(new Button({ id: spec.id, x: SIDEBAR.inset, y, width, height: SIDEBAR.buttonHeight, text: spec.text, enabled: spec.enabled && !this.isTossing, variant: spec.variant, onActivate: spec.onActivate }));
+      const held = spec.plays ? this.isBusy : this.isTossing;
+      panel.add(new Button({ id: spec.id, x: SIDEBAR.inset, y, width, height: SIDEBAR.buttonHeight, text: spec.text, enabled: spec.enabled && !held, variant: spec.variant, onActivate: spec.onActivate }));
       y += SIDEBAR.buttonHeight + SIDEBAR.gap;
     }
   }
@@ -429,6 +572,27 @@ export class MatchScene extends Scene {
   }
 
   /**
+   * The end of the match over everything else, once it has begun.
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   */
+  #buildEnding(layout) {
+    if (this.#ending !== null) {
+      this.root.add(new GameOverNode({ sequence: this.#ending, width: layout.width, height: layout.height, centreY: layout.banner.y + layout.banner.height / 2 }));
+    }
+  }
+
+  /**
+   * What the banner of a new turn says: the viewer's own turn, or whose it is.
+   * @param {Snapshot} snapshot
+   * @param {string} playerId
+   * @returns {import("../board/EffectsNode.js").TurnLabel}
+   */
+  #turnLabel(snapshot, playerId) {
+    const mine = !this.#spectating && playerId === this.#playerId;
+    return Object.freeze({ text: mine ? "Your turn" : `${this.#displayName(snapshot, playerId)}'s turn`, mine });
+  }
+
+  /**
    * A player as the toss names them: @account for someone playing online, the seat name for the local AI.
    * @param {Snapshot} snapshot
    * @param {string} playerId
@@ -443,7 +607,8 @@ export class MatchScene extends Scene {
   /**
    * @param {Snapshot} snapshot
    * @param {MatchInteraction} interaction
-   * @returns {{ id: string, text: string, visible: boolean, enabled: boolean, variant: import("../ui/Button.js").ButtonVariant, onActivate: () => void }[]}
+   * @returns {{ id: string, text: string, visible: boolean, enabled: boolean, plays: boolean, variant: import("../ui/Button.js").ButtonVariant, onActivate: () => void }[]}
+   *   `plays`: the button makes a move, so it waits while moves are held back
    */
   #sidebarButtons(snapshot, interaction) {
     const moves = snapshot.legalMoves;
@@ -451,14 +616,14 @@ export class MatchScene extends Scene {
     const confirmLabel = interaction.confirmLabel;
     const playing = !snapshot.isOver && !this.#spectating;
     if (this.#spectating) {
-      return [{ id: "leave", text: "Leave", visible: true, enabled: true, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
+      return [{ id: "leave", text: "Leave", visible: true, enabled: true, plays: false, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
     }
     return [
-      { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: true, variant: "primary", onActivate: () => this.#confirm() },
-      { id: "cancel", text: "Cancel", visible: interaction.canCancel, enabled: true, variant: "secondary", onActivate: () => this.onCancel() },
-      { id: "endPhase", text: "End phase", visible: playing, enabled: moves?.canEndPhase === true && !busy, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
-      { id: "endTurn", text: "End turn (E)", visible: playing, enabled: moves?.canEndTurn === true && !busy, variant: "primary", onActivate: () => this.#submit(endTurn(this.#playerId)) },
-      { id: "leave", text: snapshot.isOver ? "Back to menu" : "Concede", visible: true, enabled: true, variant: snapshot.isOver ? "secondary" : "danger", onActivate: () => (snapshot.isOver ? this.#leave(SceneId.MAIN_MENU) : this.#confirmConcede()) },
+      { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: true, plays: true, variant: "primary", onActivate: () => this.#confirm() },
+      { id: "cancel", text: "Cancel", visible: interaction.canCancel, enabled: true, plays: false, variant: "secondary", onActivate: () => this.onCancel() },
+      { id: "endPhase", text: "End phase", visible: playing, enabled: moves?.canEndPhase === true && !busy, plays: true, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
+      { id: "endTurn", text: "End turn (E)", visible: playing, enabled: moves?.canEndTurn === true && !busy, plays: true, variant: "primary", onActivate: () => this.#submit(endTurn(this.#playerId)) },
+      { id: "leave", text: snapshot.isOver ? "Back to menu" : "Concede", visible: true, enabled: true, plays: false, variant: snapshot.isOver ? "secondary" : "danger", onActivate: () => (snapshot.isOver ? this.#leave(SceneId.MAIN_MENU) : this.#confirmConcede()) },
     ];
   }
 
@@ -478,6 +643,9 @@ export class MatchScene extends Scene {
   }
 
   #confirm() {
+    if (this.isBusy) {
+      return;
+    }
     const command = this.#interaction?.confirm() ?? null;
     if (command !== null) {
       this.#submit(command);
@@ -593,6 +761,19 @@ function outcomeFor(snapshot, viewer) {
     return `${nameOf(snapshot, snapshot.winnerId)} wins`;
   }
   return snapshot.winnerId === viewer.playerId ? "Victory" : "Defeat";
+}
+
+/**
+ * How the end feels to the viewer: a triumph for the winner (and for a
+ * spectator, who watches someone win), a defeat for the loser, neither for a draw.
+ * @param {Snapshot} snapshot
+ * @param {Viewer} viewer
+ */
+function moodFor(snapshot, viewer) {
+  if (snapshot.winnerId === null) {
+    return GameOverMood.NEUTRAL;
+  }
+  return viewer.spectating || snapshot.winnerId === viewer.playerId ? GameOverMood.TRIUMPH : GameOverMood.DEFEAT;
 }
 
 /** @param {Snapshot} snapshot */

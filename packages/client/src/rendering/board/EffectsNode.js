@@ -1,17 +1,20 @@
 /**
  * Transient overlay drawn above the cards: block arrows, cards on their
- * way to the graveyard, floating damage/heal numbers and the card the
- * opponent just cast. It reads the presenter and the layout every frame and
+ * way to the graveyard, floating damage/heal numbers, and the moment
+ * playing over the table — the card the opponent just cast, or the banner
+ * of a new turn. It reads the presenter and the layout every frame and
  * holds no state of its own.
  */
 import { paintRuneCircle } from "../cards/CardArt.js";
 import { drawCard, drawCardBack } from "../cards/CardRenderer.js";
 import { withAlpha } from "../theme/color.js";
 import { bodyFont, displayFont, factionTones } from "../theme/Theme.js";
-import { drawOutlinedText, glowRoundedRect, radialGradient } from "../ui/drawing.js";
+import { drawOutlinedText, glowRoundedRect, horizontalGradient, radialGradient } from "../ui/drawing.js";
 import { drawArrow } from "../ui/shapes.js";
 import { UiNode } from "../ui/UiNode.js";
+import { CastReveal } from "./CastReveal.js";
 import { floatOffset } from "./MatchPresenter.js";
+import { TurnBanner } from "./TurnBanner.js";
 
 const ARROW_WIDTH = 5;
 const ARROW_GLOW = 14;
@@ -27,23 +30,30 @@ const CAST_CARD = Object.freeze({ haloBlur: 36, haloAlpha: 0.55, gleamUntil: 0.3
 const CAST_CAPTION = Object.freeze({ font: 22, gap: 12, height: 30, spread: 70 });
 /** The beam to each target, the rune that marks it and the name under it. */
 const CAST_TARGET = Object.freeze({ beamWidth: 3, beamBlur: 16, markRadius: 26, markRays: 8, markFrom: 0.55, nameFont: 15, nameGap: 8, nameHeight: 20, nameSpread: 80 });
+/** The turn banner: the band of light, the words on it (sliding in from `slide` of the board's width) and the turn number under them. */
+const TURN = Object.freeze({ bandHeight: 150, edge: 2, font: 64, glowBlur: 24, slide: 0.18, dim: 0.35, captionFont: 18, captionGap: 6, captionHeight: 24 });
 
-/** @typedef {Readonly<{ attackerId: string, blockerId: string }>} Block */
+/**
+ * @typedef {Readonly<{ attackerId: string, blockerId: string }>} Block
+ * @typedef {Readonly<{ text: string, mine: boolean }>} TurnLabel what a turn banner says, and whether it announces the viewer's own turn
+ */
 
 export class EffectsNode extends UiNode {
   #presenter;
   #layout;
   #blocks;
+  #turnLabel;
 
   /**
-   * @param {{ presenter: import("./MatchPresenter.js").MatchPresenter, layout: import("./BoardLayout.js").BoardLayout, blocks: readonly Block[] }} options
+   * @param {{ presenter: import("./MatchPresenter.js").MatchPresenter, layout: import("./BoardLayout.js").BoardLayout, blocks: readonly Block[], turnLabel?: (playerId: string) => TurnLabel }} options
    */
-  constructor({ presenter, layout, blocks }) {
+  constructor({ presenter, layout, blocks, turnLabel = () => ({ text: "New turn", mine: false }) }) {
     super({ id: "effects", width: layout.width, height: layout.height });
     this.passthrough = true;
     this.#presenter = presenter;
     this.#layout = layout;
     this.#blocks = blocks;
+    this.#turnLabel = turnLabel;
   }
 
   /**
@@ -55,11 +65,58 @@ export class EffectsNode extends UiNode {
     for (const visual of this.#presenter.leavingVisuals) {
       const card = this.#presenter.cardFor(visual.instanceId);
       if (card !== null) {
-        drawCard(context, theme, card, visual.state);
+        drawCard(context, theme, card, { ...visual.state, flash: visual.flash });
       }
     }
     this.#paintFloats(context, theme);
-    this.#paintReveal(context, theme);
+    const moment = this.#presenter.moment;
+    if (moment instanceof CastReveal) {
+      this.#paintReveal(context, theme, moment);
+    } else if (moment instanceof TurnBanner) {
+      this.#paintTurnBanner(context, theme, moment);
+    }
+  }
+
+  /**
+   * A new turn: a band of light opens across the middle of the table with
+   * whose turn it is written large on it — warm for the viewer's own, cold
+   * for the opponent's.
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   * @param {TurnBanner} banner
+   */
+  #paintTurnBanner(context, theme, banner) {
+    const { frame } = banner;
+    const alpha = Math.min(1, Math.max(0, frame.alpha));
+    if (alpha <= 0) {
+      return;
+    }
+    const area = this.bounds;
+    const { colors } = theme;
+    const label = this.#turnLabel(banner.playerId);
+    const tone = label.mine ? colors.accent : colors.focus;
+    const centreY = this.#layout.banner.y + this.#layout.banner.height / 2;
+    const height = TURN.bandHeight * Math.max(0, frame.band);
+    const band = { x: area.x, y: centreY - height / 2, width: area.width, height };
+    context.save();
+    context.globalAlpha = alpha;
+    context.fillStyle = withAlpha(colors.letterbox, TURN.dim);
+    context.fillRect(area.x, area.y, area.width, area.height);
+    const fade = (color, strength) => horizontalGradient(context, band, [[0, withAlpha(color, 0)], [0.5, withAlpha(color, strength)], [1, withAlpha(color, 0)]]);
+    context.fillStyle = fade(colors.letterbox, 0.85);
+    context.fillRect(band.x, band.y, band.width, band.height);
+    context.fillStyle = fade(tone, 0.28);
+    context.fillRect(band.x, band.y, band.width, band.height);
+    context.fillStyle = fade(tone, 0.9);
+    context.fillRect(band.x, band.y, band.width, TURN.edge);
+    context.fillRect(band.x, band.y + band.height - TURN.edge, band.width, TURN.edge);
+    const offset = frame.sweep * area.width * TURN.slide;
+    const font = TURN.font * frame.scale;
+    const words = { x: area.x + offset, y: centreY - font * 0.75, width: area.width, height: font * 1.2 };
+    drawOutlinedText(context, label.text, words, { font: displayFont(theme, font), color: label.mine ? colors.accentLight : colors.text, outline: withAlpha(colors.letterbox, 0.9), outlineWidth: 5, glow: withAlpha(tone, 0.9), glowBlur: TURN.glowBlur });
+    const caption = { x: area.x - offset / 2, y: words.y + words.height + TURN.captionGap, width: area.width, height: TURN.captionHeight };
+    drawOutlinedText(context, `Turn ${banner.turnNumber}`, caption, { font: displayFont(theme, TURN.captionFont), color: colors.textMuted, outline: withAlpha(colors.letterbox, 0.85), outlineWidth: 3 });
+    context.restore();
   }
 
   /**
@@ -69,12 +126,9 @@ export class EffectsNode extends UiNode {
    * everything here is the light and the card itself.
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
+   * @param {CastReveal} reveal
    */
-  #paintReveal(context, theme) {
-    const reveal = this.#presenter.reveal;
-    if (reveal === null) {
-      return;
-    }
+  #paintReveal(context, theme, reveal) {
     const { frame, card, caption, targets, origin } = reveal;
     const tones = factionTones(theme, card.faction);
     const centre = { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 };
@@ -136,13 +190,16 @@ export class EffectsNode extends UiNode {
   }
 
   /**
-   * Damage and heal numbers pop in, rise and fade.
+   * Damage and heal numbers pop in, rise and fade; one still waiting for its blow to land is not drawn yet.
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
    */
   #paintFloats(context, theme) {
     context.save();
     for (const { spec, progress } of this.#presenter.floats) {
+      if (progress < 0) {
+        continue;
+      }
       const pop = progress < FLOAT_POP.untilProgress ? FLOAT_POP.scale - (FLOAT_POP.scale - 1) * (progress / FLOAT_POP.untilProgress) : 1;
       context.globalAlpha = 1 - progress;
       const color = theme.colors[spec.colorKey] ?? theme.colors.text;

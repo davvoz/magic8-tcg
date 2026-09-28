@@ -7,15 +7,19 @@
  * What such a spell does — its floating numbers and the life it moves — is
  * held back until the reveal strikes its targets, so the numbers change
  * when the card is seen to hit, not while it is still face-down in a hand.
+ * In the same way a blow struck in combat shows where it lands once the
+ * attacker's lunge arrives. A banner marks each new turn; banners and casts
+ * play one after another, never over each other.
  *
  * It never inspects state deltas to guess what happened: events say what
  * happened, the layout says where things belong.
  */
 import { GameEventType } from "@magic8/engine/domain/game/GameEventType.js";
 import { ZoneType } from "@magic8/engine/domain/game/ZoneType.js";
-import { CardVisual } from "../cards/CardVisual.js";
+import { CardVisual, blowLandsAfter } from "../cards/CardVisual.js";
 import { CARD_SIZE } from "./BoardLayout.js";
 import { CastReveal } from "./CastReveal.js";
+import { TurnBanner } from "./TurnBanner.js";
 
 const MAX_FLOATS = 32;
 const FLOAT_RISE = 40;
@@ -32,16 +36,21 @@ const REVEAL_SIZE = Object.freeze({ width: 210, height: 294 });
 /** How far down a card an anchor sits: floating numbers hang near the top, a target is marked through the middle. */
 const FLOAT_DEPTH = 1 / 3;
 const CENTRE = 1 / 2;
+/** How long a struck card stays lit, and a life crystal keeps pulsing, as multiples of the long duration. */
+const FLASH_LONG = 0.8;
+const KICK_LONG = 1.2;
 
 /**
  * @typedef {Readonly<{ text: string, colorKey: string, x: number, y: number }>} FloatSpec
- * @typedef {{ spec: FloatSpec, ageMs: number, durationMs: number }} Float
- * @typedef {{ cast: CastReveal, floats: FloatSpec[], lives: Map<string, number>, struck: boolean }} PendingReveal
- *   what the cast did — its floats, and each player's life as it stood before — held until `struck`
+ * @typedef {{ spec: FloatSpec, ageMs: number, durationMs: number }} Float `ageMs` starts below 0 while the blow it marks is still on its way
+ * @typedef {{ delta: number, ageMs: number, durationMs: number }} Kick a life total that just moved, pulsing; `ageMs` as for a Float
+ * @typedef {{ cast: CastReveal, release: (() => void)[], lives: Map<string, number>, struck: boolean }} PendingReveal
+ *   what the cast did — its effects on the board, and each player's life as it stood before — held until `struck`
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
  * @typedef {import("./BoardLayout.js").BoardLayout} BoardLayout
  * @typedef {import("@magic8/engine/domain/game/GameSnapshot.js").CardView} CardView
  * @typedef {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} Snapshot
+ * @typedef {Readonly<Record<string, unknown>>} GameEvent
  */
 
 export class MatchPresenter {
@@ -51,8 +60,14 @@ export class MatchPresenter {
   #cards = new Map();
   /** @type {Float[]} */
   #floats = [];
-  /** Opponent casts waiting to be shown, oldest first; only the first one runs. @type {PendingReveal[]} */
-  #reveals = [];
+  /** Life totals that just moved, by player id. @type {Map<string, Kick>} */
+  #kicks = new Map();
+  /**
+   * The moments played one after another over the middle of the table —
+   * the opponent's casts and the turn banners — oldest first; only the first runs.
+   * @type {(PendingReveal | TurnBanner)[]}
+   */
+  #moments = [];
   #animation;
 
   /** @param {Readonly<Record<string, number>>} animation theme durations (shortMs, mediumMs, longMs) */
@@ -65,14 +80,25 @@ export class MatchPresenter {
     return [...this.#visuals.values()].filter((visual) => visual.isLeaving);
   }
 
-  /** @returns {readonly { spec: FloatSpec, progress: number }[]} */
+  /**
+   * @returns {readonly { spec: FloatSpec, progress: number }[]} progress runs 0 → 1 over the float's life; below 0 it is not shown yet
+   */
   get floats() {
     return this.#floats.map((float) => ({ spec: float.spec, progress: float.ageMs / float.durationMs }));
   }
 
-  /** @returns {CastReveal | null} the opponent's cast being played out right now, if any */
+  /** @returns {CastReveal | null} the next of the opponent's casts to be played out — running, or waiting behind a turn banner */
   get reveal() {
-    return this.#reveals[0]?.cast ?? null;
+    return this.#pendingReveals()[0]?.cast ?? null;
+  }
+
+  /** @returns {CastReveal | TurnBanner | null} the moment playing over the table right now */
+  get moment() {
+    const head = this.#moments[0];
+    if (head === undefined) {
+      return null;
+    }
+    return head instanceof TurnBanner ? head : head.cast;
   }
 
   /**
@@ -81,8 +107,18 @@ export class MatchPresenter {
    * @param {Readonly<{ id: string, life: number }>} player
    */
   lifeFor(player) {
-    const held = this.#reveals.find((pending) => !pending.struck && pending.lives.has(player.id));
+    const held = this.#pendingReveals().find((pending) => !pending.struck && pending.lives.has(player.id));
     return held === undefined ? player.life : /** @type {number} */ (held.lives.get(player.id));
+  }
+
+  /**
+   * How a player's life total is pulsing, if it just moved.
+   * @param {string} playerId
+   * @returns {{ progress: number, delta: number } | null} progress 0 → 1; null when nothing is showing
+   */
+  lifeKickFor(playerId) {
+    const kick = this.#kicks.get(playerId);
+    return kick === undefined || kick.ageMs < 0 ? null : { progress: Math.min(1, kick.ageMs / kick.durationMs), delta: kick.delta };
   }
 
   /** @param {string} instanceId */
@@ -98,42 +134,88 @@ export class MatchPresenter {
   /**
    * Reconciles visuals with a new snapshot and its events.
    * @param {Snapshot} snapshot
-   * @param {readonly Readonly<Record<string, unknown>>[]} events already redacted for this perspective
+   * @param {readonly GameEvent[]} events already redacted for this perspective
    * @param {BoardLayout} layout
    * @param {boolean} animate false on first display: everything snaps into place
    */
   apply(snapshot, events, layout, animate = true) {
     const duration = animate ? this.#animation.mediumMs : 0;
-    const present = new Set(Object.keys(layout.cards));
+    const impacts = animate ? this.#impactsOf(events) : new Map();
     for (const player of snapshot.players) {
       for (const card of [...player.battlefield, ...(player.hand ?? [])]) {
         this.#cards.set(card.instanceId, card);
         this.#place(card, layout, duration);
       }
     }
-    for (const [instanceId, visual] of this.#visuals) {
-      if (!present.has(instanceId) && !visual.isLeaving) {
-        visual.leaveTo(this.#graveyardFor(instanceId, layout), animate ? this.#animation.longMs : 0);
-      }
-    }
+    this.#sendOff(layout, animate ? this.#animation.longMs : 0, impacts);
     if (animate) {
-      this.#enqueueEffects(events, snapshot, layout);
+      this.#enqueueEffects(events, snapshot, layout, impacts);
     }
   }
 
   /**
-   * Floats, nudges and the opponent's cast; what the cast did waits for its reveal to strike.
-   * @param {readonly Readonly<Record<string, unknown>>[]} events
+   * Cards no longer on the table head for their owner's graveyard — once
+   * the blow that sent them there has landed.
+   * @param {BoardLayout} layout
+   * @param {number} durationMs
+   * @param {Map<string, number>} impacts
+   */
+  #sendOff(layout, durationMs, impacts) {
+    for (const [instanceId, visual] of this.#visuals) {
+      if (layout.cards[instanceId] === undefined && !visual.isLeaving) {
+        visual.leaveTo(this.#graveyardFor(instanceId, layout), durationMs, impacts.get(instanceId) ?? 0);
+      }
+    }
+  }
+
+  /**
+   * When each blow struck in combat lands, by the id of what it struck: a
+   * creature dealing damage is seen to lunge first, and what it hits reacts
+   * when the lunge arrives rather than as it begins. Read before the board
+   * is reconciled, while the creatures that dealt the blows still have their slots.
+   * @param {readonly GameEvent[]} events
+   * @returns {Map<string, number>}
+   */
+  #impactsOf(events) {
+    const landsAfter = blowLandsAfter(this.#animation.shortMs);
+    /** @type {Map<string, number>} */
+    const impacts = new Map();
+    for (const event of events) {
+      if (event.type === GameEventType.DAMAGE_DEALT && typeof event.targetId === "string" && this.#canStrike(event.sourceId)) {
+        impacts.set(event.targetId, landsAfter);
+      }
+    }
+    return impacts;
+  }
+
+  /**
+   * Whether `sourceId` is a creature that can be seen to strike: one the
+   * board last showed on the battlefield, in its slot. A spell's damage
+   * names the spell as its source, but a spell does not lunge.
+   * @param {unknown} sourceId
+   */
+  #canStrike(sourceId) {
+    return typeof sourceId === "string" && this.#cards.get(sourceId)?.zone === ZoneType.BATTLEFIELD && this.#visuals.get(sourceId)?.hasHome === true;
+  }
+
+  /**
+   * Floats, flashes, lunges, turn banners and the opponent's cast; what the
+   * cast did waits for its reveal to strike.
+   * @param {readonly GameEvent[]} events
    * @param {Snapshot} snapshot
    * @param {BoardLayout} layout
+   * @param {Map<string, number>} impacts
    */
-  #enqueueEffects(events, snapshot, layout) {
+  #enqueueEffects(events, snapshot, layout, impacts) {
     const castAt = this.#enqueueReveal(events, snapshot, layout);
-    this.#enqueueFloats(castAt === -1 ? events : events.slice(0, castAt), layout);
+    for (const event of castAt === -1 ? events : events.slice(0, castAt)) {
+      this.#effectsOf(event, layout, impacts).forEach((show) => show());
+    }
     if (castAt !== -1) {
-      this.#holdEffects(/** @type {PendingReveal} */ (this.#reveals.at(-1)), events.slice(castAt + 1), layout);
+      this.#holdEffects(/** @type {PendingReveal} */ (this.#pendingReveals().at(-1)), events.slice(castAt + 1), layout);
     }
     this.#enqueueNudges(events, layout);
+    this.#enqueueTurnBanners(events);
   }
 
   /**
@@ -157,31 +239,62 @@ export class MatchPresenter {
       this.#floats = this.#floats.filter((float) => float.ageMs < float.durationMs);
       changed = true;
     }
-    return this.#advanceReveal(dtMs) || changed;
+    if (this.#kicks.size > 0) {
+      for (const [playerId, kick] of this.#kicks) {
+        kick.ageMs += dtMs;
+        if (kick.ageMs >= kick.durationMs) {
+          this.#kicks.delete(playerId);
+        }
+      }
+      changed = true;
+    }
+    return this.#advanceMoment(dtMs) || changed;
   }
 
   get isAnimating() {
-    return this.#floats.length > 0 || this.#reveals.length > 0 || [...this.#visuals.values()].some((visual) => visual.isAnimating);
+    return this.#floats.length > 0 || this.#kicks.size > 0 || this.#moments.length > 0 || [...this.#visuals.values()].some((visual) => visual.isAnimating);
   }
 
   /**
-   * Runs the reveal at the head of the queue and drops it once it has played out.
+   * Whether the board is still playing out what happened — a cast or a turn
+   * banner over the table, a card on its way somewhere — so the next move
+   * should wait for it. Numbers, flashes and pulses fading out are not waited for.
+   */
+  get isBusy() {
+    return this.#moments.length > 0 || [...this.#visuals.values()].some((visual) => visual.isMoving);
+  }
+
+  /** @returns {PendingReveal[]} the casts among the queued moments, oldest first */
+  #pendingReveals() {
+    return /** @type {PendingReveal[]} */ (this.#moments.filter((moment) => !(moment instanceof TurnBanner)));
+  }
+
+  /**
+   * Runs the moment at the head of the queue and drops it once it has
+   * played out; a cast lets loose what it did as it strikes.
    * @param {number} dtMs
    * @returns {boolean} whether a render is needed
    */
-  #advanceReveal(dtMs) {
-    const current = this.#reveals[0];
+  #advanceMoment(dtMs) {
+    const current = this.#moments[0];
     if (current === undefined) {
       return false;
+    }
+    if (current instanceof TurnBanner) {
+      const changed = current.update(dtMs);
+      if (current.isDone) {
+        this.#moments.shift();
+      }
+      return changed;
     }
     let changed = current.cast.update(dtMs);
     if (!current.struck && (current.cast.frame.strike >= 1 || current.cast.isDone)) {
       current.struck = true;
-      current.floats.forEach((spec) => this.#pushFloat(spec));
+      current.release.forEach((show) => show());
       changed = true;
     }
     if (current.cast.isDone) {
-      this.#reveals.shift();
+      this.#moments.shift();
     }
     return changed;
   }
@@ -232,14 +345,15 @@ export class MatchPresenter {
    * graveyard: nothing of it ever appears on the table, so without this the
    * only trace is a log line. The card is held up, large, over the middle of
    * the board. Our own casts need no reveal: we chose them.
-   * @param {readonly Readonly<Record<string, unknown>>[]} events
+   * @param {readonly GameEvent[]} events
    * @param {Snapshot} snapshot
    * @param {BoardLayout} layout
    * @returns {number} where the revealed cast's CARD_PLAYED sits in `events`; -1 when nothing was revealed
    */
   #enqueueReveal(events, snapshot, layout) {
     const opponent = snapshot.players.find((player) => player.id === layout.opponent.id);
-    if (opponent === undefined || this.#reveals.length >= MAX_REVEALS) {
+    const queued = this.#pendingReveals().length;
+    if (opponent === undefined || queued >= MAX_REVEALS) {
       return -1;
     }
     // One command plays one card, so a batch of events carries at most one cast.
@@ -248,26 +362,38 @@ export class MatchPresenter {
     if (card === null) {
       return -1;
     }
-    const holdMs = this.#animation.longMs * (this.#reveals.length === 0 ? HOLD.alone : HOLD.queued);
+    const holdMs = this.#animation.longMs * (queued === 0 ? HOLD.alone : HOLD.queued);
     const targets = this.#targetsOf(events[castAt], snapshot, layout);
     const cast = new CastReveal({ card, caption: `${opponent.name} casts`, targets, ...revealPathFor(layout), animation: this.#animation, holdMs });
-    this.#reveals.push({ cast, floats: [], lives: new Map(), struck: false });
+    this.#moments.push({ cast, release: [], lives: new Map(), struck: false });
     return castAt;
   }
 
   /**
-   * Holds back what a revealed cast did until it strikes: its floating
-   * numbers, and each player's life as it stood before the cast moved it.
+   * A banner for each turn that starts. Only the newest waits its turn: one
+   * still queued behind a cast is stale by the time the next turn begins.
+   * @param {readonly GameEvent[]} events
+   */
+  #enqueueTurnBanners(events) {
+    for (const event of events) {
+      if (event.type !== GameEventType.TURN_STARTED || typeof event.playerId !== "string") {
+        continue;
+      }
+      this.#moments = this.#moments.filter((moment, index) => index === 0 || !(moment instanceof TurnBanner));
+      this.#moments.push(new TurnBanner({ playerId: event.playerId, turnNumber: Number(event.turnNumber), animation: this.#animation }));
+    }
+  }
+
+  /**
+   * Holds back what a revealed cast did until it strikes: its effects on the
+   * board, and each player's life as it stood before the cast moved it.
    * @param {PendingReveal} pending
-   * @param {readonly Readonly<Record<string, unknown>>[]} effects the events that followed the cast
+   * @param {readonly GameEvent[]} effects the events that followed the cast
    * @param {BoardLayout} layout
    */
   #holdEffects(pending, effects, layout) {
     for (const event of effects) {
-      const spec = this.#floatSpecFor(event, layout);
-      if (spec !== null) {
-        pending.floats.push(spec);
-      }
+      pending.release.push(...this.#effectsOf(event, layout, new Map()));
       const playerId = /** @type {string} */ (event.playerId);
       if (event.type === GameEventType.LIFE_CHANGED && !pending.lives.has(playerId)) {
         pending.lives.set(playerId, /** @type {number} */ (event.life) - /** @type {number} */ (event.delta));
@@ -279,7 +405,7 @@ export class MatchPresenter {
    * Where the spell's targets stand and what they are called, fixed now
    * rather than read later: a creature it kills is already on its way off
    * the board, and gone from the layout within the second.
-   * @param {Readonly<Record<string, unknown>>} event
+   * @param {GameEvent} event
    * @param {Snapshot} snapshot
    * @param {BoardLayout} layout
    * @returns {readonly import("./CastReveal.js").CastTarget[]}
@@ -296,22 +422,39 @@ export class MatchPresenter {
   }
 
   /**
-   * @param {readonly Readonly<Record<string, unknown>>[]} events
+   * What an event shows on the board — its floating number, the flash of a
+   * struck card, the pulse of a life total — each ready to be let loose now
+   * or when a cast strikes. Anchored now: a creature it kills is off the
+   * board by the time a held effect is released.
+   * @param {GameEvent} event
    * @param {BoardLayout} layout
+   * @param {Map<string, number>} impacts when blows struck in combat land, by what they struck
+   * @returns {(() => void)[]}
    */
-  #enqueueFloats(events, layout) {
-    for (const event of events) {
-      const spec = this.#floatSpecFor(event, layout);
-      if (spec !== null) {
-        this.#pushFloat(spec);
-      }
+  #effectsOf(event, layout, impacts) {
+    /** @type {(() => void)[]} */
+    const shows = [];
+    const subject = typeof event.targetId === "string" ? event.targetId : event.playerId;
+    const delayMs = typeof subject === "string" ? impacts.get(subject) ?? 0 : 0;
+    const spec = this.#floatSpecFor(event, layout);
+    if (spec !== null) {
+      shows.push(() => this.#pushFloat(spec, delayMs));
     }
+    const struck = event.type === GameEventType.DAMAGE_DEALT && typeof event.targetId === "string" ? this.#visuals.get(event.targetId) : undefined;
+    if (struck !== undefined) {
+      shows.push(() => struck.hit(delayMs, this.#animation.longMs * FLASH_LONG));
+    }
+    if (event.type === GameEventType.LIFE_CHANGED && typeof event.playerId === "string" && event.delta !== 0) {
+      const playerId = event.playerId;
+      const delta = Number(event.delta);
+      shows.push(() => this.#kicks.set(playerId, { delta, ageMs: -delayMs, durationMs: this.#animation.longMs * KICK_LONG }));
+    }
+    return shows;
   }
 
   /**
-   * The floating text an event shows, anchored now: a creature it kills is
-   * off the board by the time a held float is released.
-   * @param {Readonly<Record<string, unknown>>} event
+   * The floating text an event shows.
+   * @param {GameEvent} event
    * @param {BoardLayout} layout
    * @returns {FloatSpec | null}
    */
@@ -325,26 +468,29 @@ export class MatchPresenter {
     return anchor === null ? null : Object.freeze({ text, colorKey, x: anchor.x, y: anchor.y });
   }
 
-  /** @param {FloatSpec} spec */
-  #pushFloat(spec) {
+  /**
+   * @param {FloatSpec} spec
+   * @param {number} [delayMs] how long until it appears
+   */
+  #pushFloat(spec, delayMs = 0) {
     if (this.#floats.length < MAX_FLOATS) {
-      this.#floats.push({ spec, ageMs: 0, durationMs: this.#animation.longMs * 2 });
+      this.#floats.push({ spec, ageMs: -delayMs, durationMs: this.#animation.longMs * 2 });
     }
   }
 
   /**
-   * A creature that dealt damage lunges toward its target.
-   * @param {readonly Readonly<Record<string, unknown>>[]} events
+   * A creature that dealt damage attacks its target: draws back, lunges and returns.
+   * @param {readonly GameEvent[]} events
    * @param {BoardLayout} layout
    */
   #enqueueNudges(events, layout) {
     for (const event of events) {
-      if (event.type !== GameEventType.DAMAGE_DEALT || typeof event.sourceId !== "string" || typeof event.targetId !== "string") {
+      if (event.type !== GameEventType.DAMAGE_DEALT || typeof event.targetId !== "string" || !this.#canStrike(event.sourceId)) {
         continue;
       }
-      const source = this.#visuals.get(event.sourceId);
+      const source = /** @type {CardVisual} */ (this.#visuals.get(/** @type {string} */ (event.sourceId)));
       const target = this.#anchorFor(event.targetId, layout);
-      if (source !== undefined && target !== null) {
+      if (target !== null) {
         source.nudgeToward(target, this.#animation.shortMs);
       }
     }

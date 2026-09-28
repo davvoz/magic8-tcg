@@ -21,6 +21,8 @@ import { CardNode } from "../../src/rendering/board/CardNode.js";
 import { CardFaceProfile, cardFaceLayout, statusTextFor, typeLineFor } from "../../src/rendering/cards/CardFace.js";
 import { drawCard } from "../../src/rendering/cards/CardRenderer.js";
 import { MatchPresenter } from "../../src/rendering/board/MatchPresenter.js";
+import { CastReveal } from "../../src/rendering/board/CastReveal.js";
+import { TurnBanner } from "../../src/rendering/board/TurnBanner.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MatchScene } from "../../src/rendering/scenes/MatchScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
@@ -85,6 +87,10 @@ const rendered = (scene) => {
 };
 const key = (name) => ({ type: "keydown", key: name, repeat: false });
 const centreOf = (area) => ({ x: area.x + area.width / 2, y: area.y + area.height / 2 });
+/** Steps the scene through the end of the match until the result is offered. */
+const untilResult = (scene) => advancer(scene, 40, 20000)(() => scene.modal?.id === "gameOver", "the result is offered");
+/** Steps the scene until the board has played out what happened and moves are open again. */
+const settle = (scene) => advancer(scene)(() => !scene.isBusy, "the board settles");
 /** Steps the scene in small frames until `reached`, and reports how long that took. */
 const advancer = (scene, step = 40, limitMs = 8000) => (reached, label) => {
   for (let elapsed = 0; elapsed <= limitMs; elapsed += step) {
@@ -105,6 +111,10 @@ describe("Tween", () => {
     assert.equal(tween.isDone, true);
     assert.equal(Easing.easeOutCubic(1), 1);
     assert.ok(Easing.easeOutCubic(0.5) > 0.5, "ease-out is ahead of linear");
+    assert.equal(Easing.easeOutBack(0), 0);
+    assert.equal(Easing.easeOutBack(1), 1);
+    assert.ok([0.6, 0.7, 0.8, 0.9].some((t) => Easing.easeOutBack(t) > 1), "ease-out-back runs past its target before settling");
+    assert.ok(Easing.easeInCubic(0.5) < 0.5, "ease-in lags linear");
     assert.equal(new Tween({ from: { x: 0 }, to: { x: 1 }, durationMs: 0 }).current.x, 1, "zero duration is done immediately");
   });
 });
@@ -454,6 +464,8 @@ describe("MatchScene on the board", () => {
     assert.equal(scene.presenter.reveal, null, "nothing to reveal yet");
     scene.onKey(key("e"));
     await session.whenIdle();
+    assert.equal(scene.presenter.reveal, null, "the AI has cast already, but the board is still announcing its turn");
+    advancer(scene)(() => scene.presenter.reveal !== null, "the cast comes up in its turn");
     const reveal = scene.presenter.reveal;
     assert.ok(reveal, "the AI's spell is played out");
     assert.equal(reveal.card.name, "Ember Bolt");
@@ -494,6 +506,7 @@ describe("MatchScene on the board", () => {
     scene.onKey(key("e"));
     await session.whenIdle();
     assert.equal(session.snapshotFor(null).players[0].life, 3, "the drain has resolved");
+    advancer(scene)(() => scene.presenter.reveal !== null, "the cast comes up in its turn");
     const reveal = scene.presenter.reveal;
     assert.equal(reveal?.card.name, "Blood Tithe");
     assert.equal(byId(scene, P1).lifeShown(), 5, "life still reads as before the cast");
@@ -504,13 +517,69 @@ describe("MatchScene on the board", () => {
     assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-2"), "with its number");
   });
 
+  it("announces each turn with a banner across the table, played in order with the AI's cast, never over it", async () => {
+    const { scene, session } = await sceneFor({ p1: { battlefield: ["cinder_hound"] }, p2: { hand: ["ember_bolt"], resources: 2 } });
+    assert.equal(scene.presenter.moment, null, "nothing announced for a board already in play");
+    scene.onKey(key("e"));
+    await session.whenIdle();
+    const moment = () => scene.presenter.moment;
+    assert.ok(moment() instanceof TurnBanner && moment().playerId === P2, "the opponent's turn is announced first");
+    assert.equal(scene.presenter.reveal, null, "their cast waits its turn");
+    assert.equal(scene.isBusy, true);
+    scene.update(theme.animation.longMs);
+    assert.ok(rendered(scene).includes("Bob's turn"), "once the banner has swept in");
+    assert.ok(!rendered(scene).some((text) => text.includes("Bob cast")), "and the cast is not in the log yet either");
+    const advanceTo = advancer(scene);
+    advanceTo(() => moment() instanceof CastReveal, "the cast plays once the banner is gone");
+    assert.equal(moment().card.name, "Ember Bolt");
+    advanceTo(() => moment() instanceof TurnBanner, "then the next turn is announced");
+    assert.equal(moment().playerId, P1);
+    scene.update(theme.animation.longMs);
+    assert.ok(rendered(scene).includes("Your turn"));
+    advanceTo(() => moment() === null, "and cleared");
+    advanceTo(() => !scene.presenter.isAnimating, "everything settles");
+    assert.equal(scene.update(16), false, "then idle: no redraws");
+  });
+
+  it("shows the AI's moves one after another, each once the board has finished showing the one before", async () => {
+    const { scene, session } = await sceneFor({ p2: { hand: ["ember_imp", "ember_imp"], resources: 2 } });
+    scene.onKey(key("e"));
+    await session.whenIdle();
+    const theirs = () => {
+      let count = 0;
+      const visit = (node) => {
+        count += node instanceof CardNode && node.card.controllerId === P2 ? 1 : 0;
+        node.children.forEach(visit);
+      };
+      visit(scene.root);
+      return count;
+    };
+    const played = session.snapshotFor(P1).players[1].battlefield.length;
+    assert.ok(played >= 2, "the AI has played its creatures already");
+    assert.equal(theirs(), 0, "the board is still announcing its turn");
+    const advanceTo = advancer(scene);
+    advanceTo(() => theirs() === 1, "the first creature comes down");
+    assert.equal(scene.presenter.isBusy, true, "and is still landing");
+    scene.update(16);
+    assert.equal(theirs(), 1, "the next waits for it");
+    advanceTo(() => theirs() === 2, "then the next");
+    advanceTo(() => theirs() === played, "and so on, one by one");
+    settle(scene);
+    assert.equal(scene.update(16), false, "then idle");
+  });
+
   it("waits for the AI's lethal cast to play out before showing the result", async () => {
     const { scene, session } = await sceneFor({ p1: { life: 2 }, p2: { hand: ["blood_tithe"], resources: 2 } });
     scene.onKey(key("e"));
     await session.whenIdle();
     assert.equal(session.isOver, true);
     assert.equal(scene.modal, null, "the killing spell is shown first");
-    advancer(scene)(() => scene.presenter.reveal === null, "played out");
+    let castSeen = false;
+    advancer(scene, 40, 20000)(() => {
+      castSeen ||= scene.presenter.reveal !== null;
+      return scene.modal !== null;
+    }, "the result");
+    assert.equal(castSeen, true, "the cast played out before it");
     assert.equal(scene.modal?.id, "gameOver");
   });
 
@@ -519,7 +588,8 @@ describe("MatchScene on the board", () => {
     scene.onKey(key("e"));
     await session.whenIdle();
     assert.equal(session.snapshotFor(P1).phase, GamePhase.COMBAT_BLOCKERS);
-    assert.equal(scene.interaction.mode, InteractionMode.BLOCKERS);
+    settle(scene);
+    assert.equal(scene.interaction.mode, InteractionMode.BLOCKERS, "asked for blockers once the attack has been shown");
     assert.equal(cardNamed(scene, "Lava Brute").highlight, Highlight.ATTACKING);
     assert.equal(cardNamed(scene, "Lava Brute").enabled, false, "attackers are not tappable until a blocker is picked");
     tapNode(cardNamed(scene, "Steel Sentinel"));
@@ -542,6 +612,7 @@ describe("MatchScene on the board", () => {
     const { scene, session } = await sceneFor({ p1: { hand: ["ember_bolt"], resources: 2 }, p2: { life: 3 } }, { navigate: (id) => navigated.push(id) });
     tapNode(cardNamed(scene, "Ember Bolt"));
     tapNode(byId(scene, P2));
+    untilResult(scene);
     assert.ok(scene.modal, "game over modal");
     assert.ok(rendered(scene).includes("Victory"));
     assert.ok(rendered(scene).includes("Life reached zero."));
@@ -552,6 +623,67 @@ describe("MatchScene on the board", () => {
     tapNode(byId(scene, "leave"));
     assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
     assert.equal(session.isStopped, true);
+  });
+
+  it("plays out the end before offering the result: the fallen crystal cracks and bursts, the table shakes, the outcome comes down", async () => {
+    const { scene, session } = await sceneFor({ p1: { hand: ["ember_bolt"], resources: 2 }, p2: { life: 3 } });
+    tapNode(cardNamed(scene, "Ember Bolt"));
+    tapNode(byId(scene, P2));
+    assert.equal(session.isOver, true);
+    assert.equal(scene.modal, null, "no result yet");
+    const advanceTo = advancer(scene, 20, 20000);
+    advanceTo(() => scene.isEnding, "the end begins once the blow has played out");
+    const ending = byId(scene, "gameOverSequence");
+    assert.ok(ending, "drawn over the board");
+    assert.equal(scene.isBusy, true, "nothing can be played meanwhile");
+    assert.equal(byId(scene, "endTurn"), null);
+    const hud = computeBoardLayout(session.snapshotFor(P1), P1, SIZE).opponent.hud;
+    const within = (point) => point.x >= hud.x && point.x <= hud.x + hud.width && point.y >= hud.y && point.y <= hud.y + hud.height;
+    let shook = false;
+    let cracked = false;
+    let shattered = false;
+    let titled = false;
+    advanceTo(() => {
+      const shake = scene.ending.shake;
+      const context = new FakeContext2D();
+      scene.render(context);
+      shook ||= (shake.x !== 0 || shake.y !== 0) && context.calls.some((call) => call.method === "translate" && call.args[0] === shake.x && call.args[1] === shake.y);
+      const overlay = new FakeContext2D();
+      ending.draw(overlay, theme);
+      cracked ||= !scene.ending.burst && scene.ending.crack > 0 && overlay.calls.some((call) => call.method === "lineTo" && within({ x: call.args[0], y: call.args[1] }));
+      shattered ||= scene.ending.shards.length > 0 && scene.ending.crystals.every(within);
+      titled ||= overlay.texts.includes("Victory") && overlay.texts.includes("Life reached zero.");
+      return scene.modal !== null;
+    }, "the result");
+    assert.ok(shook, "the table shakes");
+    assert.ok(cracked, "the opponent's crystal cracks");
+    assert.ok(shattered, "and bursts into shards");
+    assert.ok(titled, "the outcome comes down over the table");
+    assert.equal(scene.modal?.id, "gameOver", "then the result is offered");
+    assert.equal(scene.isEnding, false);
+    tapNode(byId(scene, "gameOver.board"));
+    assert.deepEqual(scene.ending.shake, { x: 0, y: 0 }, "the board is left still to be looked at");
+    const after = new FakeContext2D();
+    ending.draw(after, theme);
+    assert.deepEqual(after.calls, [], "with nothing left over it");
+  });
+
+  it("breaks no crystal when the match is conceded: the outcome alone comes down", async () => {
+    const { scene } = await sceneFor({ p1: { hand: ["ember_imp"], resources: 1 } });
+    tapNode(byId(scene, "leave"));
+    tapNode(byId(scene, "confirm.ok"));
+    advancer(scene)(() => scene.isEnding, "the end begins");
+    assert.ok(byId(scene, "gameOverSequence"));
+    assert.deepEqual(scene.ending.crystals, [], "no crystal fell");
+    let shards = 0;
+    let titled = false;
+    advancer(scene, 20, 20000)(() => {
+      shards = Math.max(shards, scene.ending.shards.length);
+      titled ||= rendered(scene).filter((text) => text === "Defeat").length > 1;
+      return scene.modal !== null;
+    }, "the result");
+    assert.equal(shards, 0, "no burst");
+    assert.ok(titled, "the outcome comes down over the table (as well as on the ribbon)");
   });
 
   it("concedes only after confirmation", async () => {
@@ -573,10 +705,15 @@ describe("MatchScene on the board", () => {
     session.submit({ type: CommandType.END_TURN, playerId: P1 });
     await session.whenIdle();
     assert.equal(session.snapshotFor(null).awaitingPlayerId, P1, "AI turn over, back to the human");
+    scene.onKey(key("e"));
+    await session.whenIdle();
+    assert.equal(session.snapshotFor(null).turnNumber, 3, "E waits while the board is still showing the AI's turn");
+    settle(scene);
     assert.ok(rendered(scene).some((text) => text.startsWith("Turn 3")));
     scene.onKey(key("e"));
     await session.whenIdle();
     assert.equal(session.snapshotFor(null).turnNumber, 4, "E ends the turn when legal");
+    settle(scene);
     assert.ok(rendered(scene).some((text) => text.startsWith("Turn 4 · Opponent's turn")));
     assert.equal(scene.interaction.mode, InteractionMode.BLOCKERS, "the AI's imp attacks; the board asks for blockers");
   });
@@ -601,13 +738,13 @@ describe("MatchScene on the board", () => {
 
     tapNode(cardNamed(scene, "Ember Bolt"));
     tapNode(byId(scene, P2));
-    assert.equal(scene.modal?.id, "gameOver");
+    untilResult(scene);
     tapNode(byId(scene, "gameOver.again"));
     assert.deepEqual(navigated, [SceneId.DECK_SELECTION]);
     assert.equal(session.isStopped, true);
   });
 
-  it("lunges the attacker toward its target when it deals damage", async () => {
+  it("attacks with the creature that deals damage: it draws back, lunges at its target and returns; the blow shows as it lands", async () => {
     const { scene, session } = await sceneFor({ p1: { battlefield: ["blazing_titan"] }, p2: {} });
     tapNode(byId(scene, "endPhase"));
     tapNode(cardNamed(scene, "Blazing Titan"));
@@ -615,12 +752,93 @@ describe("MatchScene on the board", () => {
     await session.whenIdle();
     const titan = scene.presenter.visualFor(cardNamed(scene, "Blazing Titan").id);
     const home = { ...titan.state };
+    const { shortMs } = theme.animation;
+    const shown = () => scene.presenter.floats.filter((float) => float.progress >= 0).map((float) => float.spec.text);
     assert.equal(titan.isAnimating, true);
-    scene.update(theme.animation.shortMs);
-    assert.ok(titan.state.y < home.y, "moved up toward the opponent's HUD");
-    scene.update(theme.animation.shortMs);
+    assert.deepEqual(shown(), [], "the number waits for the blow");
+    assert.equal(scene.presenter.lifeKickFor(P2), null, "and so does the opponent's crystal");
+    scene.update(shortMs);
+    assert.ok(titan.state.y > home.y, "drew back, away from the opponent's HUD");
+    scene.update(shortMs);
+    assert.ok(titan.state.y < home.y, "lunged up toward it");
+    assert.deepEqual(shown(), ["-6"], "the blow lands");
+    assert.ok(scene.presenter.lifeKickFor(P2).delta < 0, "the crystal takes it");
+    scene.update(shortMs * 2);
     assert.deepEqual(titan.state, home, "and back home");
     assert.equal(titan.isAnimating, false);
+  });
+
+  it("lets a spell's damage show at once: a spell does not lunge", async () => {
+    const { scene, session, id } = await sceneFor({ p1: { hand: ["ember_bolt"], resources: 2 }, p2: { battlefield: ["cinder_hound"] } });
+    const hound = id(P2, ZoneType.BATTLEFIELD, 0);
+    const bolt = scene.presenter.visualFor(id(P1, ZoneType.HAND, 0));
+    const held = { ...bolt.state };
+    const standing = { ...scene.presenter.visualFor(hound).state };
+    tapNode(cardNamed(scene, "Ember Bolt"));
+    tapNode(cardNamed(scene, "Cinder Hound"));
+    await session.whenIdle();
+    assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-3" && float.progress === 0), "the number is up straight away");
+    scene.update(theme.animation.shortMs);
+    assert.ok(scene.presenter.visualFor(hound).flash > 0, "and the hound is lit by the blow");
+    assert.ok(scene.presenter.visualFor(hound).state.width < standing.width, "and already on its way out");
+    assert.ok(bolt.state.width < held.width, "the spell itself shrinks straight into the graveyard");
+  });
+
+  it("holds moves back while the board plays out what happened: cards and buttons go quiet, then come back", async () => {
+    const { scene, session } = await sceneFor({ p1: { hand: ["lava_brute", "ember_imp"], resources: 6 } });
+    tapNode(cardNamed(scene, "Lava Brute"));
+    assert.equal(scene.isBusy, true, "the brute is still landing");
+    const imp = cardNamed(scene, "Ember Imp");
+    assert.equal(imp.highlight, null, "no invitation to play while it lands");
+    assert.equal(imp.enabled, false);
+    assert.equal(byId(scene, "endTurn").enabled, false);
+    assert.equal(byId(scene, "leave").enabled, true, "conceding stays open");
+    imp.activate();
+    scene.onKey(key("e"));
+    assert.equal(session.snapshotFor(P1).players[0].battlefield.length, 1, "taps and keys are ignored meanwhile");
+    assert.equal(session.snapshotFor(P1).turnNumber, 1);
+    settle(scene);
+    assert.equal(cardNamed(scene, "Ember Imp").highlight, Highlight.PLAYABLE, "playable again once the board is still");
+    assert.equal(byId(scene, "endTurn").enabled, true);
+    tapNode(cardNamed(scene, "Ember Imp"));
+    assert.equal(session.snapshotFor(P1).players[0].battlefield.length, 2);
+  });
+
+  it("holds moves back while one is on its way to the server, so a second cannot race it", async () => {
+    const { session } = sessionFromScenario({ p1: { hand: ["ember_imp"], resources: 1 } });
+    session.start();
+    await session.whenIdle();
+    const sent = [];
+    let answer = () => undefined;
+    const online = {
+      humanPlayerIds: session.humanPlayerIds,
+      openingToss: null,
+      clock: null,
+      subscribe: (listener) => session.subscribe(listener),
+      snapshotFor: (playerId) => session.snapshotFor(playerId),
+      eventsFor: (events, playerId) => session.eventsFor(events, playerId),
+      controllerKindOf: (playerId) => session.controllerKindOf(playerId),
+      begin: () => undefined,
+      stop: () => undefined,
+      submit: (command) => {
+        sent.push(command);
+        return new Promise((resolve) => {
+          answer = resolve;
+        });
+      },
+    };
+    const scene = new MatchScene(services());
+    scene.enter({ session: online });
+    tapNode(byId(scene, "endTurn"));
+    assert.equal(scene.isBusy, true, "waiting for the server");
+    assert.equal(byId(scene, "endTurn").enabled, false, "End turn is not offered twice");
+    scene.onKey(key("e"));
+    assert.equal(sent.length, 1, "only the first move went out");
+    answer({ ok: true, value: null });
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(scene.isBusy, false, "open again once the server has answered");
+    assert.equal(byId(scene, "endTurn").enabled, true);
   });
 
   it("navigates back to the menu when entered without a session", () => {

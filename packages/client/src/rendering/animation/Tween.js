@@ -4,11 +4,17 @@
  * by the game loop (`update(dt)`), never read from a clock here.
  */
 
+/** How far easeOutBack overshoots its target before settling back (the classic 1.70158 is too springy for cards; 1.25 keeps the ends exact in binary). */
+const BACK_OVERSHOOT = 1.25;
+
 /** @type {Readonly<Record<string, (t: number) => number>>} */
 export const Easing = Object.freeze({
   linear: (t) => t,
+  easeInCubic: (t) => t ** 3,
   easeOutCubic: (t) => 1 - (1 - t) ** 3,
   easeInOutQuad: (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2),
+  /** Runs slightly past the target and settles back onto it: a landing with some weight. */
+  easeOutBack: (t) => 1 + (BACK_OVERSHOOT + 1) * (t - 1) ** 3 + BACK_OVERSHOOT * (t - 1) ** 2,
 });
 
 /**
