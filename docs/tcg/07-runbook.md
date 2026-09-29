@@ -116,7 +116,7 @@ Il server rifiuta di partire con:
 | Tipo | Significato | Cosa fare |
 |---|---|---|
 | `UNKNOWN_ON_CHAIN` | un'operazione `m8tcg_*` firmata dal nostro broadcaster che il database non conosce | **Trattarla come chiave rubata** (§4.2), a meno che non segua un ripristino da backup (§3) |
-| `CONFLICT` | un record sulla catena ha byte diversi dal nostro con lo stesso `(partita, sequenza)` | Stessa procedura di una chiave rubata. La partita è contestata: non assegnare ricompense legate a quella partita |
+| `CONFLICT` | una nostra transazione nota è sulla catena, ma l'operazione non porta esattamente il record (ricevuta, epoca, scambio, vendita o risultato) che il database le associa | Stessa procedura di una chiave rubata. Il record coinvolto (ordine, scambio, vendita, partita) è contestato: non assegnare ricompense legate a quel risultato |
 | `REPEATED_REBROADCAST` | un record è stato inviato 5 volte senza entrare in un blocco | Nodi che rifiutano la transazione: guardare `last_error` nel log `broadcast failed`. Di solito sono RC esaurite o nodi fuori servizio |
 | `RC_CRITICAL` | broadcaster fermo per Resource Credits | Delegare Steem Power |
 

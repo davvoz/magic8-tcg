@@ -9,7 +9,7 @@
   - gli eventi perdono ogni campo privato (per esempio quale carta è stata pescata);
   - non ci sono mosse legali.
 - **Non serve un ritardo.** Il documento 02 §3.8 prevedeva uno streaming ritardato per non passare informazioni a un giocatore. Non serve: lo spettatore vede **meno** di ciascuno dei due giocatori, cioè solo ciò che entrambi vedono già. Uno spettatore d'accordo con un giocatore non ha niente da dirgli. Il ritardo servirebbe solo se gli spettatori vedessero le mani (come in una trasmissione con commento); in quel caso andrà aggiunto insieme a quella modalità.
-- **Le partite sono pubbliche.** Gli account e le mosse finiscono comunque sulla catena. Per questo non c'è un'opzione "non guardarmi"; se servirà (partite private fra amici) sarà un campo della partita.
+- **Le partite sono pubbliche.** Gli account dei due giocatori e l'esito finiscono comunque sulla catena (`m8tcg_result`, 03 §9); le mosse restano nel DB del server. Per questo non c'è un'opzione "non guardarmi"; se servirà (partite private fra amici) sarà un campo della partita.
 
 ## Regole
 

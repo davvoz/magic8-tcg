@@ -20,7 +20,7 @@ Il testo firmato è JSON canonico:
 {"at":1790294286880,"cmd":"<commandId>","g":"<gameId>","head":"<hex64>","key":"STM…","kind":"m8tcg_ack","seq":4,"v":1,"ver":2}
 ```
 
-- `seq` e `head`: numero e hash di catena dell'ultimo evento prodotto dal comando. L'hash impegna tutta la catena fino a quell'evento (03 §6.4), quindi anche il comando stesso e tutto ciò che è venuto prima.
+- `seq` e `head`: numero e hash di catena dell'ultimo evento prodotto dal comando. L'hash impegna tutta la catena fino a quell'evento (03 §6.2), quindi anche il comando stesso e tutto ciò che è venuto prima.
 - `ver`: la versione del motore raggiunta; `at`: l'ora del server; `key`: la chiave pubblica che firma.
 - **Firma:** secp256k1 come `signBuffer` di Keychain (sha256 del testo, firma compatta con recupero). Si verifica con gli stessi strumenti del login.
 - **Ack sul canale:** `game.ack` diventa `{ "commandId", "ok": true, "version", "head", "seq", "at", "key", "sig" }`.
@@ -31,7 +31,7 @@ Il testo firmato è JSON canonico:
 ## La chiave degli ack
 
 - **È una chiave dedicata** (`M8_ACK_KEY`, WIF). Non controlla nessun account e nessun fondo, e non deve essere la chiave di un broadcaster (il server rifiuta di partire).
-- In https è obbligatoria. In sviluppo, se manca, il server ne crea una a ogni avvio e lo scrive nel log; gli ack firmati così risultano `UNTRUSTED_KEY`.
+- In https è obbligatoria. In sviluppo, se manca, il server ne crea una a ogni avvio e lo scrive nel log (`M8_ACK_KEY is not set…`): nessun manifest la nomina, quindi quegli ack non provano niente.
 - **La fiducia viene dalla catena.** Il root pubblica con la chiave active un manifest `ack_keys`, per esempio da `/manifest.html` scegliendo "Ack keys":
 
   ```json

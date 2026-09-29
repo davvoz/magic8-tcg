@@ -5,10 +5,10 @@
 ## 1. Regole generali
 
 - Tutto su HTTPS/WSS dietro reverse proxy. JSON UTF-8. Nessun dato sensibile nelle URL.
-- **Autenticazione:** cookie di sessione `m8_session` (256 bit casuali, `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`). Il DB conserva solo `sha256(token)`: un dump del DB non contiene sessioni utilizzabili. Scadenza assoluta 7 giorni, di inattività 24 ore, revocabile.
+- **Autenticazione:** cookie di sessione `m8_session` (`__Host-m8_session` in https; 256 bit casuali, `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`). Il DB conserva solo `sha256(token)`: un dump del DB non contiene sessioni utilizzabili. Scadenza assoluta 7 giorni, di inattività 24 ore, revocabile.
 - **CSRF:** `SameSite=Strict` più, per ogni richiesta che modifica stato, controllo dell'header `Origin` contro una allowlist e presenza di `X-M8-Request: 1` (un form di un altro sito non può impostarlo).
 - **Validazione:** ogni corpo di richiesta ha uno schema esplicito (campi ammessi, tipi, lunghezze); campi sconosciuti → 400. Dimensione massima del corpo 16 KiB.
-- **Idempotenza:** le richieste che creano risorse con valore (ordini, pagamenti) richiedono `Idempotency-Key` (UUID). La coppia `(utente, chiave)` è univoca: una ripetizione restituisce la risposta originale; la stessa chiave con un corpo diverso → 409.
+- **Idempotenza:** le richieste che creano risorse con valore (ordini, pagamenti) richiedono `Idempotency-Key` (16–64 caratteri fra lettere, cifre, `-` e `_`; il client usa un UUID). La coppia `(utente, chiave)` è univoca: una ripetizione restituisce la risposta originale; la stessa chiave con un corpo diverso → 409.
 - **Errori:** `{ "error": { "code": "ORDER_EXPIRED", "message": "…" } }`, codici stabili, messaggi senza dettagli interni (stack, SQL).
 - **Rate limit** per IP e per utente, token bucket, con `429` e `Retry-After`.
 - **Header di sicurezza:** `Content-Security-Policy` restrittiva (niente `unsafe-inline`/`unsafe-eval`), `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, `Cross-Origin-Opener-Policy: same-origin`.
@@ -51,19 +51,32 @@
 | POST | `/api/orders/{id}/cancel` | — | Solo da `CREATED`/`PAYMENT_PENDING` |
 | GET | `/api/orders` | — | Storico ordini dell'utente (ultimi 50) |
 
-**Ordine come lo vede il client:** `{ id, status, items: [{ productId, name, quantity, unitAmount }], total: { asset, amount }, payment: { network, from, to, asset, amount, memo, expiresAt } | null, rngEpochId, failureReason, createdAt, updatedAt }`; `payment` c'è solo finché l'ordine si può pagare. `GET /api/orders/{id}` aggiunge `fulfilment` per gli ordini evasi: `{ txId, cards: [{ id, definitionId, edition, serial, finish }], packs: [{ index, epoch, table, cards }] }`. Creare un ordine senza `Idempotency-Key` (16–64 caratteri) dà 428; la stessa chiave con un corpo diverso 409; più di 5 ordini non pagati 409 `LIMIT_REACHED`.
+**Ordine come lo vede il client:** `{ id, status, items: [{ productId, name, quantity, unitAmount }], total: { asset, amount }, payment: { network, from, to, asset, amount, memo, expiresAt } | null, rngEpochId, failureReason, createdAt, updatedAt }`; `payment` c'è solo finché l'ordine si può pagare. `GET /api/orders/{id}` aggiunge `fulfilment` per gli ordini evasi: `{ txId, cards: [{ id, definitionId, edition, serial }], packs: [{ index, epoch, table, cards }] }`. Creare un ordine senza `Idempotency-Key` (16–64 caratteri) dà 428; la stessa chiave con un corpo diverso 409; più di 5 ordini non pagati 409 `LIMIT_REACHED`.
 
 ### Partite
 
 | Metodo | Percorso | Note |
 |---|---|---|
-| GET | `/api/games/{id}` | Metadati ed esito |
-| GET | `/api/games?mine=1` | Storico partite |
-| GET | `/api/games/live` | Partite in corso da guardare, prima le più seguite (pubblica; 10) |
+| GET | `/api/games/live` | Partite in corso da guardare, prima le più seguite (pubblica; al massimo 50; cache 5 s) |
 
-### Admin (ruolo separato, sessione con ri-autenticazione Keychain recente)
+Non ci sono (ancora) endpoint per i metadati o lo storico delle partite di un giocatore.
 
-`/api/admin/refunds` (coda rimborsi, marcatura con txId del rimborso firmato a mano), `/api/admin/chain` (stato broadcaster, RC, anomalie del riconciliatore), `/api/admin/audit`.
+### Admin (pannello `/admin.html`)
+
+Solo per gli utenti con sessione il cui account è in `M8_ADMIN_ACCOUNTS` (default: l'account shop); nessuna ri-autenticazione aggiuntiva. Letture con limite per utente:
+
+| Metodo | Percorso | Note |
+|---|---|---|
+| GET | `/api/admin/overview` | Panoramica: ordini, partite, outbox, pagamenti in attesa di conferma, rimborsi, anomalie aperte, allarmi, stato del processo |
+| GET | `/api/admin/alarms` | Allarmi operativi attivi (07 §5) |
+| GET | `/api/admin/alerts` | Anomalie della catena aperte (07 §6) |
+| POST | `/api/admin/alerts/:id/resolve` | `{ "note" }` (3–500 caratteri): chiude un'anomalia; finisce nell'audit |
+| GET | `/api/admin/refunds` | Coda rimborsi. Il pannello non li chiude: li chiude solo il trasferimento visto sulla catena (07 §7) |
+| GET | `/api/admin/ranking-flags` | Segnalazioni della classificata (09) |
+| GET | `/api/admin/audit?action=&target=&before=&limit=` | Audit log |
+| GET | `/api/admin/audit/verify` | Ricalcola la catena di hash dell'audit |
+
+Monitoraggio (fuori da `/api/admin`): `GET /api/health`, `GET /api/ready` e `GET /api/metrics` con `Authorization: Bearer <M8_METRICS_TOKEN>` (07 §1).
 
 ## 3. WebSocket `/ws`
 
@@ -109,11 +122,13 @@
 | `game.state` | la **vista della partita** (risposta a `game.sync`): `{ "gameId", "seat", "status", "opponent": { "account" }, "seedCommit", "entropyDeadline", "version", "lastSeq", "head", "snapshot": <snapshot per prospettiva> \| null, "clock": { "activeSeat", "deadline", "reserveMs": { "s0", "s1" } } }`; in v2 anche `"authorized": { "s0", "s1" }` (chi ha firmato) e `"authorizeDeadline"` (finché la partita aspetta). Prima dell'avvio arriva a entrambi dopo ogni firma |
 | `game.events` | la vista della partita più `events`: gli eventi del motore redatti per prospettiva, per le animazioni. Il client **sostituisce** il proprio stato con lo snapshot ricevuto: non applica eventi e non ha mai un motore di una partita online |
 | `game.ack` | `{ "commandId", "ok": true, "version", "head", "seq", "at", "key", "sig" }` (firmato, 11) oppure `{ "commandId", "ok": false, "error": { "code" } }` |
-| `game.over` | `{ "gameId", "winner", "reason", "you" }` (l'URL di verifica arriva con M5) |
+| `game.over` | `{ "gameId", "winner", "reason", "you" }` |
 | `game.aborted` | `{ "gameId", "reason": "declined"\|"not_authorized", "seats": [...], "you" }`: v2, la partita è stata chiusa prima di iniziare perché i posti in `seats` non l'hanno accettata con Keychain (12). Nessun risultato |
 | `watch.state`, `watch.events`, `watch.over` | la vista dello spettatore, gli aggiornamenti dopo ogni mossa, la fine (10) |
 | `session.replaced` | `{}`: la connessione sta per essere chiusa (4000) perché l'utente si è connesso da un'altra scheda |
-| `order.updated` | `{ "orderId", "status", "cards"?: [...] }` |
+| `notification`, `notifications.resync` | una notifica appena scritta (per esempio `shop.fulfilled` quando un ordine è evaso), oppure la richiesta di rileggere il feed (15) |
+| `trade.updated` | `{ "tradeId" }` a entrambi i giocatori a ogni cambiamento di uno scambio (13) |
+| `sales.board`, `sale.updated` | `{ "listingId" }`: la bacheca è cambiata / un annuncio del venditore o del compratore è cambiato (14) |
 | `error` | `{ "code", "message" }` |
 
 Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN_PHASE`, `INVALID_COMMAND`, …) più `STALE_VERSION`, `NOT_IN_GAME`, `GAME_NOT_ACTIVE`, `RATE_LIMITED` e, in v2, `SESSION_REQUIRED`, `INVALID_SIGNATURE`. Errori del canale: `BAD_MESSAGE` (envelope malformato; 10 volte → chiusura 4002), `UNKNOWN_MESSAGE`, `VALIDATION` (campi sconosciuti inclusi, come per HTTP). Ogni messaggio con `id` riceve una risposta.

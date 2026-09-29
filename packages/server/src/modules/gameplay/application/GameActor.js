@@ -4,7 +4,7 @@
  * Every input — a player's entropy or command, a timer tick, a connection
  * coming or going — goes through one mailbox and runs alone, so the game
  * state has no race conditions (T15). For each accepted input the protocol
- * events (GameRecorder: hash-chained, docs/tcg/03 §6.4) are persisted in one
+ * events (GameRecorder: hash-chained, docs/tcg/03 §6.2) are persisted in one
  * unit of work with a compare-and-set on the last event sequence; only then
  * are the players told. If persisting fails, the actor reports itself broken
  * and the service rebuilds it from the database by replay.

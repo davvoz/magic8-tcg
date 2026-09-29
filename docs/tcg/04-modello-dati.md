@@ -1,6 +1,6 @@
 # 04 — Modello dati
 
-**Stato:** proposta, 2026-09-24. Lo schema eseguibile è [`packages/server/migrations/001_initial.sql`](../../packages/server/migrations/001_initial.sql); questo documento spiega le scelte che non si leggono dall'SQL.
+**Stato:** proposta, 2026-09-24. Aggiornato il 2026-09-29. Lo schema eseguibile sono le migrazioni in [`packages/server/migrations/`](../../packages/server/migrations/) (001–012, applicate in ordine all'avvio); questo documento spiega le scelte che non si leggono dall'SQL.
 
 ## 1. Tabelle per contesto
 
@@ -14,7 +14,11 @@
 | Payments | `payments`, `refunds` |
 | Chain | `blockchain_transactions`, `blockchain_events` (outbox dei record), `chain_cursors`, `chain_alerts` |
 | Gameplay | `games`, `game_players`, `game_commands`, `game_events`, `game_snapshots`, `matchmaking` |
-| Trasversali | `idempotency_keys`, `audit_logs` |
+| Ranking (006) | `ratings`, `rating_changes`, `ranking_flags` |
+| Trading (007) | `trades`, `trade_items` |
+| Sales (008) | `listings`, `listing_purchases` |
+| Notifications (009) | `notifications` |
+| Trasversali | `idempotency_keys` (creata in 001, oggi non usata: le chiavi di idempotenza stanno in `orders`, `trades` e `listings`), `audit_logs` |
 
 ## 2. Invarianti garantite dal database (non solo dal codice)
 
@@ -60,7 +64,7 @@ Zero righe aggiornate = qualcun altro è arrivato prima (altro worker, altra ric
 
 ### 4.1 Ancoraggio dei record on-chain (M5, migrazione `004_chain.sql`)
 
-`blockchain_events.kind` ∈ `GAME_RECORD`, `RECEIPT`, `EPOCH`; `status`: `BUILT → BROADCAST → INCLUDED → IRREVERSIBLE`, e di nuovo `BUILT` (con `reconciliation = 'MISSING_ON_CHAIN'`, `transaction_id` azzerato) quando la sua transazione scade senza essere inclusa. Il payload non cambia mai (trigger), quindi un nuovo invio pubblica gli stessi byte. `blockchain_transactions` registra ogni transazione firmata **prima** dell'invio (`BROADCAST`, con la scadenza e il JSON firmato), poi `INCLUDED` (con il blocco), `IRREVERSIBLE` o `EXPIRED`. `game_events.record_seq` viene impostato una volta sola, quando l'evento entra in un record. `chain_cursors` tiene la posizione del tracker nello storico di ogni broadcaster (`tracker:<rete>:<account>`); `chain_alerts.fingerprint` evita di registrare due volte la stessa anomalia.
+`blockchain_events.kind` ∈ `RECEIPT`, `EPOCH`, `TRADE` (007), `SALE` (008), `RESULT` (011); `GAME_RECORD` resta ammesso nel vincolo solo per i record di partita già pubblicati prima del 2026-09-27 (la migrazione 010 ha tolto quelli in attesa, e il server non ne crea più). `status`: `BUILT → BROADCAST → INCLUDED → IRREVERSIBLE`, e di nuovo `BUILT` (con `reconciliation = 'MISSING_ON_CHAIN'`, `transaction_id` azzerato) quando la sua transazione scade senza essere inclusa. Il payload non cambia mai (trigger), quindi un nuovo invio pubblica gli stessi byte. `blockchain_transactions` registra ogni transazione firmata **prima** dell'invio (`BROADCAST`, con la scadenza e il JSON firmato), poi `INCLUDED` (con il blocco), `IRREVERSIBLE` o `EXPIRED`. `game_events.record_seq` veniva impostato una volta sola, quando l'evento entrava in un record; dal 2026-09-27 resta vuoto. Un risultato di partita (`RESULT`) ha `game_id` ma non `record_seq`, e un indice unico ne ammette uno solo per partita (011). `chain_cursors` tiene la posizione del tracker nello storico di ogni broadcaster (`tracker:<rete>:<account>`); `chain_alerts.fingerprint` evita di registrare due volte la stessa anomalia.
 
 ### 4.2 Operazioni (M6, migrazione `005_operations.sql`)
 
@@ -72,6 +76,6 @@ Zero righe aggiornate = qualcun altro è arrivato prima (altro worker, altra ric
 
 ## 6. Crescita
 
-- `game_events` è la tabella più grande (≈ 200 righe per partita): partizionamento per mese di `created_at` quando supera qualche decina di milioni di righe; le partite concluse e irreversibili on-chain possono essere archiviate, perché ricostruibili dalla catena.
+- `game_events` è la tabella più grande (≈ 200 righe per partita): partizionamento per mese di `created_at` quando supera qualche decina di milioni di righe. La storia delle partite esiste solo qui (sulla catena c'è solo il risultato con l'hash finale, 03 §9): le partite concluse si possono spostare in un archivio, non cancellare.
 - `audit_logs` e `card_instance_events` crescono lentamente; indicizzati per chiave di accesso.
-- `auth_challenges` scaduti e sessioni revocate vengono ripuliti da un job periodico (non sono dati storici).
+- `auth_challenges` scaduti vengono ripuliti da un job ogni 5 minuti, le notifiche lette dopo 30 giorni e tutte dopo 180 (15). Le sessioni scadute o revocate per ora restano nella tabella: una pulizia periodica non è ancora implementata.

@@ -3,6 +3,13 @@
 **Status:** Architecture accepted 2026-09-21. Implementation in progress — see §3 for the increment log.
 **Date:** 2026-09-21
 
+> **Historical document (note of 2026-09-29).** This is the design of the original single-page magic8 engine, written before the fork into the Magic8 TCG monorepo (2026-09-24). The rules, the command pipeline, the effect system and the rendering principles still hold, but several details below are out of date:
+> - **Layout:** there is no top-level `src/` any more. `src/domain/` and `src/shared/` are now `packages/engine/src/`; `application/`, `infrastructure/`, `input/` and `rendering/` are in `packages/client/src/`, with many more scenes, services and ports (online play, shop, collection, trades, market, notifications). `shared/guards.js` does not exist (validation helpers are in `shared/validation.js`).
+> - **Randomness:** `SeededRandom` (mulberry32, 32-bit state) was replaced by `ChaChaRandom` (ChaCha20, 256-bit key, `domain/random/ChaChaRandom.js`); the seed comes from a commit-reveal between server and players (docs/tcg/00 §1.2 E1, docs/tcg/03 §5).
+> - **Multiplayer:** the "deferred" multiplayer and replay are now provided by the authoritative server (`packages/server`); an online match on the client is a `RemoteMatchSession` that never runs the engine.
+>
+> The current design documents are in [docs/tcg/](../tcg/).
+
 ---
 
 ## Part 1 — Requirements and architectural analysis

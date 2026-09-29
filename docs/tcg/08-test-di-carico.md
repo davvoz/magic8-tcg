@@ -1,6 +1,8 @@
 # 08 — Test di carico
 
-**Stato:** prima misura, 2026-09-24 (M6). Strumento: `node packages/server/tools/load-test.js [giocatori] [comandi massimi per partita]`.
+**Stato:** prima misura, 2026-09-24 (M6); mosse firmate rimisurate il 2026-09-25. Strumento: `node packages/server/tools/load-test.js [giocatori] [comandi massimi per partita]`.
+
+> **Misura storica (2026-09-29).** Le misure sono state fatte quando le partite si pubblicavano ancora sulla catena (`m8tcg_game`, tolto il 2026-09-27, 03). Throughput, latenze e memoria del server restano indicativi, ma sono stati misurati **con** la sigillatura dei record di partita, che oggi non c'è più: probabilmente sono un po' pessimisti. Le parti sulla catena (righe "Record pubblicati" e "Blocchi per pubblicarli", paragrafo **Catena**, ottimizzazione della sigillatura) non valgono più: oggi una partita produce **un solo** record `m8tcg_result` di circa 200 byte (03 §9), quindi un account broadcaster (una operazione per blocco, ~28.800 al giorno) basta per decine di migliaia di partite al giorno. Da rimisurare, idealmente su PostgreSQL vero.
 
 ## Come è fatto il test
 
@@ -54,4 +56,4 @@ Macchina: 4 vCPU Intel Xeon 2,1 GHz, Node 22.
 - Tutto su una macchina, WebSocket su localhost: la rete reale aggiunge latenza, non carico sul server.
 - PGlite al posto di PostgreSQL (vedi sopra).
 - Un solo processo server. Lo scaling orizzontale richiede il lease per partita (01 §9), non ancora implementato.
-- Bot con mosse casuali: le partite reali hanno più giocate per turno e quindi record un po' più grandi (03 §10).
+- Bot con mosse casuali: le partite reali hanno più giocate per turno e quindi storie un po' più lunghe nel DB.

@@ -1,5 +1,5 @@
 /**
- * The per-game hash chain (docs/tcg/03-game-blockchain-protocol.md §6.4):
+ * The per-game hash chain (docs/tcg/03-game-blockchain-protocol.md §6.2):
  *
  *   genesis = H("genesis", utf8(gameId))
  *   head_i  = H("event", raw(head_{i-1}) ‖ utf8(canonical({ a, d, g, i, k, ms, t, v })))

@@ -1,6 +1,13 @@
 # 01 — Architettura, bounded context e domain model
 
-**Stato:** proposta, 2026-09-24.
+**Stato:** proposta, 2026-09-24. Principi, contesti e flussi valgono ancora; alcuni nomi e dettagli sono rimasti quelli del progetto iniziale.
+
+> **Differenze con il codice (2026-09-29).**
+> - **Nomi diversi:** `PaymentWatcher` → `PaymentSettlement` (marketplace) e `RefundWatcher` (payments); `ChainReconciler` → `ChainTracker`; `PgOrderRepository` → `PgMarketplaceRepository`.
+> - **Mai creati come classi a sé:** `BlockchainRegistry` (le implementazioni per rete sono mappe costruite in `main.js`), `MarketplacePaymentProvider`, `PriceSource` (i prezzi vengono dal listino, `PriceList.js`), `GameClock` (i timer sono in `TurnClock` con un orologio iniettato), `PackOpener` (`drawPack` in `@magic8/protocol`), `OrderStateMachine` (transizioni in `Order.js`), `DeckPolicy` (validazione nel motore e in `DeckService`).
+> - **Porte (§6):** le firme reali sono quelle dei provider in `packages/steem/src/providers/` (per esempio `SteemTransferPaymentProvider.incomingTransfers`/`confirm`, `SteemTransactionProvider.signCustomJson`/`broadcast`), non quelle del diagramma.
+> - **Lease per partita (§9):** non implementato; oggi una partita vive in un solo processo (06, "Problemi aperti").
+> - **Moduli in più:** `onboarding` (starter), `ranking` (09), `trading` (13), `sales` (14), `notifications` (15), `admin`.
 
 ## 1. Principi
 
@@ -104,9 +111,9 @@ docs/
 Dipendenze tra pacchetti (acicliche):
 
 ```
-client ──► engine, protocol
+client ──► engine, protocol, steem (verifica delle firme degli ack)
 server ──► engine, protocol, steem
-steem  ──► protocol (solo tipi/codec condivisi)
+steem  ──► engine (Result, validazione), protocol (tipi/codec condivisi)
 protocol ──► engine (per il replay)
 ```
 
@@ -364,7 +371,7 @@ sequenceDiagram
 
 ## 9. Scalabilità
 
-- **Game server orizzontali:** ogni partita è posseduta da un solo nodo tramite un *lease* nel DB (`games.owner_node`, `lease_until`); le connessioni WebSocket di quella partita vengono instradate al nodo proprietario. Se il nodo muore, il lease scade e un altro nodo ricostruisce l'attore rigiocando i comandi.
+- **Game server orizzontali (previsto, non implementato):** ogni partita è posseduta da un solo nodo tramite un *lease* nel DB (`games.owner_node`, `lease_until`); le connessioni WebSocket di quella partita vengono instradate al nodo proprietario. Se il nodo muore, il lease scade e un altro nodo ricostruisce l'attore rigiocando i comandi.
 - **Broadcaster:** un pool di account posting, partizionato per ordine o partita; un record per operazione (ricevute, epoche, scambi, vendite, risultati). Di una partita va sulla catena solo il risultato (03 §9).
-- **Letture della catena:** un solo `PaymentWatcher` e un solo `ChainReconciler` per rete (lease nel DB), con cursori persistenti: riavvio senza perdite né doppioni.
+- **Letture della catena:** `PaymentSettlement`, `RefundWatcher` e `ChainTracker` leggono con cursori persistenti (riavvio senza perdite né doppioni) e decidono con compare-and-set nel DB, così un doppione non applica due volte nulla. Un lease che ne tenga attivo uno solo per rete, previsto qui all'inizio, non è implementato: oggi gira un solo processo.
 - **DB:** PostgreSQL; indici sulle chiavi di accesso calde; partizionamento di `game_events` per mese quando cresce.

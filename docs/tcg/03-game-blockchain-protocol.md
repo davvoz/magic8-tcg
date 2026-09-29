@@ -24,7 +24,7 @@ Le parole DEVE / NON DEVE / DOVREBBE hanno il significato di RFC 2119.
 ## 1. Obiettivo e modello
 
 - Il **game server** è autoritativo: valida i comandi con il motore deterministico e mantiene lo stato nel DB.
-- Ogni evento significativo di una partita riceve un numero di sequenza e un hash concatenato al precedente, nella stessa transazione DB che lo registra (§6.4). La catena degli hash rende rilevabile ogni modifica successiva di un evento.
+- Ogni evento significativo di una partita riceve un numero di sequenza e un hash concatenato al precedente, nella stessa transazione DB che lo registra (§8). La catena degli hash rende rilevabile ogni modifica successiva di un evento.
 - Si registrano gli **input** (comandi dei giocatori e mosse forzate dal server), gli eventi di ciclo di vita e dei **checkpoint di stato salati**. Gli effetti (danni, pescate, morti, trigger) **non** si registrano: si ottengono rigiocando gli input con la stessa versione del motore e dei contenuti.
 - A fine partita il server salva nell'ultimo evento il segreto da cui derivano seed, sali e impegni sui mazzi (§5).
 - Sulla **catena** va ciò che cambia di mano o che serve a verificare un acquisto (pagamenti, ricevute, epoche dei pacchetti, scambi, vendite) e, per ogni partita finita, il suo risultato con l'hash finale della storia (§9).

@@ -1,5 +1,5 @@
 /**
- * RcMonitor: watches the broadcasters' Resource Credits (docs/tcg/03 §10).
+ * RcMonitor: watches the broadcasters' Resource Credits (docs/tcg/03 §16).
  *
  * Below the slow threshold the log warns that a broadcaster is running low;
  * below the critical threshold it stops and an alert asks a human to add

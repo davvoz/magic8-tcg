@@ -12,8 +12,8 @@ Un prompt per ogni carta del set base, raggruppati per fazione. La palette di og
 | Neutral | grey-olive-cream |
 
 Promemoria (dettagli in `docs/tcg/16-illustrazioni.md`):
-- Formato orizzontale, idealmente 3:2 (1200 × 800); vanno bene anche 16:9 e simili.
-- Soggetto nella fascia centrale: nella carta piccola si perde circa il 20% in alto e in basso.
+- Formato orizzontale 7:4 (1344 × 768): la finestra dell'arte ha queste proporzioni e mostra l'immagine intera. Altri formati vengono ritagliati attorno a `focus`.
+- Con un formato diverso da 7:4 tieni il soggetto nella fascia centrale, oppure sposta `focus`.
 - Salva il file con l'id della carta (quello tra parentesi), per esempio `ash_raider.jpg`, e aggiungi la riga in `illustrations.json`.
 
 ## Ember
