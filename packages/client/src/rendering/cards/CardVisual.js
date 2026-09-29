@@ -4,9 +4,10 @@
  * tweened positions, so a card is tappable at its final slot as soon as the
  * snapshot says it is there.
  *
- * Besides its placement a card carries two short-lived values the painter
- * reads: `flash`, the light of a blow it just took, and `lift`, how far it
- * is raised under the pointer.
+ * Besides its placement a card carries short-lived values the painter
+ * reads: `flash`, the light of a blow it just took, `lift`, how far it is
+ * raised under the pointer, and `faceDown` for a card that leaves a pile
+ * nobody may look into (a hidden hand, the deck) and is drawn as its back.
  */
 import { Easing, Tween } from "../animation/Tween.js";
 
@@ -48,6 +49,7 @@ export class CardVisual {
   #hit = null;
   #lift = 0;
   #lifted = false;
+  #faceDown = false;
 
   /**
    * @param {string} instanceId
@@ -151,6 +153,37 @@ export class CardVisual {
       this.#tween = this.#exit;
       this.#queue = [];
     }
+  }
+
+  /**
+   * Leaves a pile on its way to the graveyard in plain sight — discarded
+   * from a hand, milled from the library: it is pulled out of the pile to
+   * `pulled`, waits there `waitMs` for the cards before it to be seen, comes
+   * up to `shown`, is held there, then shrinks toward `target` like any
+   * other card leaving. `faceDown`: it stays a back all the way.
+   * @param {{ pulled: import("@magic8/engine/shared/geometry.js").Rect, shown: import("@magic8/engine/shared/geometry.js").Rect, target: import("@magic8/engine/shared/geometry.js").Rect }} path
+   * @param {{ pullMs: number, waitMs: number, riseMs: number, holdMs: number, leaveMs: number, faceDown: boolean }} timing
+   */
+  surfaceThenLeave({ pulled, shown, target }, { pullMs, waitMs, riseMs, holdMs, leaveMs, faceDown }) {
+    const out = { x: pulled.x, y: pulled.y, width: pulled.width, height: pulled.height, alpha: 1 };
+    const up = { x: shown.x, y: shown.y, width: shown.width, height: shown.height, alpha: 1 };
+    const to = { x: target.x + target.width / 2, y: target.y + target.height / 2, width: 0, height: 0, alpha: 0 };
+    this.#leaving = true;
+    this.#home = up;
+    this.#exit = new Tween({ from: up, to, durationMs: leaveMs, easing: Easing.easeInOutQuad });
+    this.#tween = new Tween({ from: this.state, to: out, durationMs: pullMs, easing: Easing.easeOutCubic });
+    this.#queue = [
+      new Tween({ from: out, to: out, durationMs: waitMs, easing: Easing.linear }),
+      new Tween({ from: out, to: up, durationMs: riseMs, easing: Easing.easeOutCubic }),
+      new Tween({ from: up, to: up, durationMs: holdMs, easing: Easing.linear }),
+      this.#exit,
+    ];
+    this.#faceDown = faceDown;
+  }
+
+  /** Whether the card is drawn as its back: it left a pile nobody may look into. */
+  get faceDown() {
+    return this.#faceDown;
   }
 
   /**

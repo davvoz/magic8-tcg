@@ -2,23 +2,30 @@
  * Turns snapshots and engine events into presentation state: one
  * CardVisual per card on the board (tweening toward its layout slot,
  * entering from the owner's hand or library, leaving toward the owner's
- * graveyard), short-lived floating texts for damage and healing, and the
- * reveal of a spell the opponent cast (which never reaches the board).
- * What such a spell does — its floating numbers and the life it moves — is
- * held back until the reveal strikes its targets, so the numbers change
- * when the card is seen to hit, not while it is still face-down in a hand.
- * In the same way a blow struck in combat shows where it lands once the
- * attacker's lunge arrives. A banner marks each new turn; banners and casts
- * play one after another, never over each other.
+ * graveyard), short-lived floating texts for damage and healing, the
+ * reveal of a spell the opponent cast (which never reaches the board) and
+ * the flare of every other ability that goes off. A blow struck in combat
+ * shows where it lands once the attacker's lunge arrives. A banner marks
+ * each new turn; banners, casts and flares play one after another, never
+ * over each other.
+ *
+ * What a cast or an ability does is not held back here: the scene hands
+ * each update over in beats (StepBeats), and shows the beat with what it
+ * did once the announcement before it `hasStruck`.
  *
  * It never inspects state deltas to guess what happened: events say what
  * happened, the layout says where things belong.
  */
+import { CardType } from "@magic8/engine/domain/cards/CardType.js";
+import { hashString, unitSequence } from "@magic8/engine/shared/hash.js";
 import { GameEventType } from "@magic8/engine/domain/game/GameEventType.js";
 import { ZoneType } from "@magic8/engine/domain/game/ZoneType.js";
 import { CardVisual, blowLandsAfter } from "../cards/CardVisual.js";
-import { CARD_SIZE } from "./BoardLayout.js";
+import { CARD_SIZE, slotsFor } from "./BoardLayout.js";
 import { CastReveal } from "./CastReveal.js";
+import { HudStack, hudStackCentre } from "./PlayerNode.js";
+import { TargetRoulette } from "./TargetRoulette.js";
+import { TriggerFlare } from "./TriggerFlare.js";
 import { TurnBanner } from "./TurnBanner.js";
 
 const MAX_FLOATS = 32;
@@ -29,8 +36,12 @@ const FLOAT_RISE = 40;
  * would run long after the board had moved on; the rest stay in the log.
  */
 const MAX_REVEALS = 2;
-/** How long a cast is held still to be read, as a multiple of the long duration; shorter when it is queued behind another. */
-const HOLD = Object.freeze({ alone: 3, queued: 1.2 });
+/**
+ * How long a cast is held still to be read before it strikes, as a multiple
+ * of the long duration; shorter when it is queued behind another, and
+ * shortest for our own, which we know already.
+ */
+const HOLD = Object.freeze({ alone: 3, queued: 1.2, own: 0.5 });
 /** Size a revealed card is held at: the board card's proportions, 1.6 times over. */
 const REVEAL_SIZE = Object.freeze({ width: 210, height: 294 });
 /** How far down a card an anchor sits: floating numbers hang near the top, a target is marked through the middle. */
@@ -39,13 +50,24 @@ const CENTRE = 1 / 2;
 /** How long a struck card stays lit, and a life crystal keeps pulsing, as multiples of the long duration. */
 const FLASH_LONG = 0.8;
 const KICK_LONG = 1.2;
+/** How long a discarded or milled card is held up, as a multiple of the long duration: long enough to read a face, shorter for a back. */
+const SURFACE_HOLD = Object.freeze({ face: 1.2, back: 0.6 });
+/** How far a discarded card is pulled out of the hand, toward the table, before it comes up. */
+const PULL_OUT = 56;
+/**
+ * Abilities whose target player is hit in one of their piles rather than in
+ * their life: the beam goes to the pile — each card in the hand, the deck.
+ * @type {Readonly<Record<string, string>>}
+ */
+const PILE_EFFECTS = Object.freeze({ discard: HudStack.HAND, mill: HudStack.DECK });
+/** Events that take a card from a pile the board may not show — a hand, the library — to the graveyard. @type {ReadonlySet<string>} */
+const PILE_LEAVES = new Set([GameEventType.CARD_DISCARDED, GameEventType.CARD_MILLED]);
 
 /**
  * @typedef {Readonly<{ text: string, colorKey: string, x: number, y: number }>} FloatSpec
  * @typedef {{ spec: FloatSpec, ageMs: number, durationMs: number }} Float `ageMs` starts below 0 while the blow it marks is still on its way
  * @typedef {{ delta: number, ageMs: number, durationMs: number }} Kick a life total that just moved, pulsing; `ageMs` as for a Float
- * @typedef {{ cast: CastReveal, release: (() => void)[], lives: Map<string, number>, struck: boolean }} PendingReveal
- *   what the cast did — its effects on the board, and each player's life as it stood before — held until `struck`
+ * @typedef {CastReveal | TriggerFlare | TurnBanner} Moment
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
  * @typedef {import("./BoardLayout.js").BoardLayout} BoardLayout
  * @typedef {import("@magic8/engine/domain/game/GameSnapshot.js").CardView} CardView
@@ -56,6 +78,14 @@ const KICK_LONG = 1.2;
 export class MatchPresenter {
   /** @type {Map<string, CardVisual>} */
   #visuals = new Map();
+  /** The layout the board was last shown with: where the hidden hands' backs stood before this update. @type {BoardLayout | null} */
+  #layout = null;
+  /**
+   * Where each card a random discard is about to take from a hidden hand
+   * sits among the backs: the crosshair lands there, and the card comes up
+   * out of that very back. @type {Map<string, Rect>}
+   */
+  #doomedBacks = new Map();
   /** @type {Map<string, CardView>} last known card data, kept for leaving cards */
   #cards = new Map();
   /** @type {Float[]} */
@@ -63,9 +93,9 @@ export class MatchPresenter {
   /** Life totals that just moved, by player id. @type {Map<string, Kick>} */
   #kicks = new Map();
   /**
-   * The moments played one after another over the middle of the table —
-   * the opponent's casts and the turn banners — oldest first; only the first runs.
-   * @type {(PendingReveal | TurnBanner)[]}
+   * The moments played one after another over the table — the opponent's
+   * casts, abilities going off and the turn banners — oldest first; only the first runs.
+   * @type {Moment[]}
    */
   #moments = [];
   #animation;
@@ -89,26 +119,12 @@ export class MatchPresenter {
 
   /** @returns {CastReveal | null} the next of the opponent's casts to be played out — running, or waiting behind a turn banner */
   get reveal() {
-    return this.#pendingReveals()[0]?.cast ?? null;
+    return this.#pendingReveals()[0] ?? null;
   }
 
-  /** @returns {CastReveal | TurnBanner | null} the moment playing over the table right now */
+  /** @returns {Moment | null} the moment playing over the table right now */
   get moment() {
-    const head = this.#moments[0];
-    if (head === undefined) {
-      return null;
-    }
-    return head instanceof TurnBanner ? head : head.cast;
-  }
-
-  /**
-   * The life to show for a player: what it was before a revealed cast hit
-   * them until the reveal strikes, else the snapshot's.
-   * @param {Readonly<{ id: string, life: number }>} player
-   */
-  lifeFor(player) {
-    const held = this.#pendingReveals().find((pending) => !pending.struck && pending.lives.has(player.id));
-    return held === undefined ? player.life : /** @type {number} */ (held.lives.get(player.id));
+    return this.#moments[0] ?? null;
   }
 
   /**
@@ -136,9 +152,10 @@ export class MatchPresenter {
    * @param {Snapshot} snapshot
    * @param {readonly GameEvent[]} events already redacted for this perspective
    * @param {BoardLayout} layout
-   * @param {boolean} animate false on first display: everything snaps into place
+   * @param {{ animate?: boolean, outcome?: readonly GameEvent[] }} [options] `animate`: false on first display,
+   *   where everything snaps into place; `outcome`: what the abilities announced in `events` are going to do (the next beat's events)
    */
-  apply(snapshot, events, layout, animate = true) {
+  apply(snapshot, events, layout, { animate = true, outcome = [] } = {}) {
     const duration = animate ? this.#animation.mediumMs : 0;
     const impacts = animate ? this.#impactsOf(events) : new Map();
     for (const player of snapshot.players) {
@@ -149,8 +166,68 @@ export class MatchPresenter {
     }
     this.#sendOff(layout, animate ? this.#animation.longMs : 0, impacts);
     if (animate) {
-      this.#enqueueEffects(events, snapshot, layout, impacts);
+      this.#playOutPileLeaves(events, snapshot, layout, this.#layout ?? layout);
+      this.#enqueueEffects(events, snapshot, layout, { impacts, outcome });
     }
+    this.#layout = layout;
+  }
+
+  /**
+   * Cards discarded from a hand or milled from a library would otherwise
+   * just be gone — from a hidden hand or the deck, a back fewer or a count
+   * lower. Instead they are played out in plain sight: discarded ones are
+   * pulled out of the hand together, then one after another each comes up,
+   * is held a moment and goes to the graveyard as the next comes up. What
+   * left a pile nobody may look into (a hidden hand, the deck) stays a back
+   * all the way: the board shows that cards went, not which.
+   * @param {readonly GameEvent[]} events
+   * @param {Snapshot} snapshot
+   * @param {BoardLayout} layout
+   * @param {BoardLayout} before the layout the board showed until now
+   */
+  #playOutPileLeaves(events, snapshot, layout, before) {
+    const leaving = events.filter((event) => PILE_LEAVES.has(/** @type {string} */ (event.type)) && typeof event.instanceId === "string");
+    for (const playerId of new Set(leaving.map((event) => event.playerId))) {
+      const seat = seatOf(layout, playerId);
+      if (seat !== null) {
+        this.#playOutSeatLeaves(leaving.filter((event) => event.playerId === playerId), snapshot, { seat, backs: seatOf(before, playerId)?.handSlots ?? [], banner: layout.banner });
+      }
+    }
+  }
+
+  /**
+   * One seat's cards leaving its piles, one after another.
+   * @param {readonly GameEvent[]} leaving the seat's CARD_DISCARDED and CARD_MILLED events, in order
+   * @param {Snapshot} snapshot
+   * @param {{ seat: import("./BoardLayout.js").SeatLayout, backs: readonly Rect[], banner: Rect }} where `backs`: the seat's hidden hand as it stood
+   */
+  #playOutSeatLeaves(leaving, snapshot, { seat, backs, banner }) {
+    const { mediumMs, longMs } = this.#animation;
+    const shown = slotsFor(leaving.length, { ...seat.hand, height: Math.max(seat.hand.height, CARD_SIZE.battlefield.height) }, CARD_SIZE.battlefield);
+    let backsLeft = backs.length;
+    let waitMs = 0;
+    leaving.forEach((event, index) => {
+      const card = findCard(snapshot, event.instanceId);
+      if (card === null) {
+        return;
+      }
+      const discarded = event.type === GameEventType.CARD_DISCARDED;
+      const seen = this.#visuals.get(card.instanceId);
+      backsLeft -= discarded && seen === undefined ? 1 : 0;
+      const back = this.#doomedBacks.get(card.instanceId) ?? backs[backsLeft] ?? centredOn(seat.hand, CARD_SIZE.back);
+      this.#doomedBacks.delete(card.instanceId);
+      const deck = centredOn(pointAt(hudStackCentre(seat.hud, HudStack.DECK)), CARD_SIZE.back);
+      const hidden = discarded ? back : deck;
+      const from = seen === undefined ? hidden : { ...seen.state };
+      const visual = seen ?? new CardVisual(card.instanceId, { ...from, alpha: 1 });
+      const faceDown = seen === undefined;
+      const timing = { pullMs: mediumMs, waitMs, riseMs: mediumMs, holdMs: longMs * (faceDown ? SURFACE_HOLD.back : SURFACE_HOLD.face), leaveMs: longMs, faceDown };
+      visual.surfaceThenLeave({ pulled: discarded ? pulledOut(from, banner) : from, shown: shown[index], target: seat.hud }, timing);
+      this.#visuals.set(card.instanceId, visual);
+      this.#cards.set(card.instanceId, card);
+      // The next comes up as this one starts for the graveyard.
+      waitMs += timing.riseMs + timing.holdMs;
+    });
   }
 
   /**
@@ -199,23 +276,22 @@ export class MatchPresenter {
   }
 
   /**
-   * Floats, flashes, lunges, turn banners and the opponent's cast; what the
-   * cast did waits for its reveal to strike.
+   * Floats, flashes, lunges, turn banners, the opponent's cast and the
+   * flare of the abilities announced.
    * @param {readonly GameEvent[]} events
    * @param {Snapshot} snapshot
    * @param {BoardLayout} layout
-   * @param {Map<string, number>} impacts
+   * @param {{ impacts: Map<string, number>, outcome: readonly GameEvent[] }} context
+   *   `impacts`: when blows struck in combat land; `outcome`: what the abilities announced are going to do
    */
-  #enqueueEffects(events, snapshot, layout, impacts) {
-    const castAt = this.#enqueueReveal(events, snapshot, layout);
-    for (const event of castAt === -1 ? events : events.slice(0, castAt)) {
-      this.#effectsOf(event, layout, impacts).forEach((show) => show());
-    }
-    if (castAt !== -1) {
-      this.#holdEffects(/** @type {PendingReveal} */ (this.#pendingReveals().at(-1)), events.slice(castAt + 1), layout);
+  #enqueueEffects(events, snapshot, layout, { impacts, outcome }) {
+    const revealedId = this.#enqueueReveal(events, snapshot, layout, outcome);
+    for (const event of events) {
+      this.#showEffectsOf(event, layout, impacts);
     }
     this.#enqueueNudges(events, layout);
     this.#enqueueTurnBanners(events);
+    this.#enqueueFlare(events.filter((event) => event.type === GameEventType.ABILITY_TRIGGERED && event.sourceId !== revealedId), snapshot, layout, outcome);
   }
 
   /**
@@ -261,40 +337,46 @@ export class MatchPresenter {
    * should wait for it. Numbers, flashes and pulses fading out are not waited for.
    */
   get isBusy() {
-    return this.#moments.length > 0 || [...this.#visuals.values()].some((visual) => visual.isMoving);
+    return this.#moments.length > 0 || this.#isMoving;
   }
 
-  /** @returns {PendingReveal[]} the casts among the queued moments, oldest first */
+  /**
+   * Whether everything announced so far has struck: each moment still
+   * queued is a cast or an ability whose beams have reached their targets.
+   * The next beat of an update — what they did — can then be shown, while
+   * the cast is still held up to be read.
+   */
+  get hasStruck() {
+    return this.#moments.every((moment) => !(moment instanceof TurnBanner) && moment.hasStruck);
+  }
+
+  /** Whether a card is on its way somewhere. */
+  get #isMoving() {
+    return [...this.#visuals.values()].some((visual) => visual.isMoving);
+  }
+
+  /** @returns {CastReveal[]} the casts among the queued moments, oldest first */
   #pendingReveals() {
-    return /** @type {PendingReveal[]} */ (this.#moments.filter((moment) => !(moment instanceof TurnBanner)));
+    return /** @type {CastReveal[]} */ (this.#moments.filter((moment) => moment instanceof CastReveal));
   }
 
   /**
    * Runs the moment at the head of the queue and drops it once it has
-   * played out; a cast lets loose what it did as it strikes.
+   * played out. An ability waits for the board to settle before it goes
+   * off — the creature it comes from landed, the blows of combat struck,
+   * the fallen gone — so it is not lost among what the last link did.
    * @param {number} dtMs
    * @returns {boolean} whether a render is needed
    */
   #advanceMoment(dtMs) {
     const current = this.#moments[0];
-    if (current === undefined) {
+    if (current === undefined || (current instanceof TriggerFlare && !current.hasStarted && this.#isMoving)) {
       return false;
     }
-    if (current instanceof TurnBanner) {
-      const changed = current.update(dtMs);
-      if (current.isDone) {
-        this.#moments.shift();
-      }
-      return changed;
-    }
-    let changed = current.cast.update(dtMs);
-    if (!current.struck && (current.cast.frame.strike >= 1 || current.cast.isDone)) {
-      current.struck = true;
-      current.release.forEach((show) => show());
-      changed = true;
-    }
-    if (current.cast.isDone) {
+    const changed = current.update(dtMs);
+    if (current.isDone) {
       this.#moments.shift();
+      return true;
     }
     return changed;
   }
@@ -341,32 +423,78 @@ export class MatchPresenter {
   }
 
   /**
-   * A spell the opponent casts is played from a hidden hand straight to the
-   * graveyard: nothing of it ever appears on the table, so without this the
-   * only trace is a log line. The card is held up, large, over the middle of
-   * the board. Our own casts need no reveal: we chose them.
+   * A spell is played from a hand straight to the graveyard: nothing of it
+   * ever stands on the table. So it is given a moment of its own: held up,
+   * large, over the middle of the board, where its beams leave from, and
+   * sunk into its caster's graveyard only once they have struck. The
+   * opponent's comes out of a hidden hand face-down and is held to be read
+   * before it aims; our own leaves our hand face-up — we chose it — and
+   * aims almost at once.
    * @param {readonly GameEvent[]} events
    * @param {Snapshot} snapshot
    * @param {BoardLayout} layout
-   * @returns {number} where the revealed cast's CARD_PLAYED sits in `events`; -1 when nothing was revealed
+   * @param {readonly GameEvent[]} outcome what the spell is going to do
+   * @returns {string | null} the instance id of the revealed spell; null when nothing was revealed
    */
-  #enqueueReveal(events, snapshot, layout) {
-    const opponent = snapshot.players.find((player) => player.id === layout.opponent.id);
+  #enqueueReveal(events, snapshot, layout, outcome) {
     const queued = this.#pendingReveals().length;
-    if (opponent === undefined || queued >= MAX_REVEALS) {
-      return -1;
-    }
     // One command plays one card, so a batch of events carries at most one cast.
-    const castAt = events.findIndex((event) => isOpponentCast(event, opponent.id));
-    const card = castAt === -1 ? null : findCard(snapshot, events[castAt].instanceId);
-    if (card === null) {
-      return -1;
+    const played = queued >= MAX_REVEALS ? undefined : events.find(isSpellCast);
+    const card = played === undefined ? null : findCard(snapshot, played.instanceId);
+    const caster = snapshot.players.find((player) => player.id === played?.playerId);
+    const seat = seatOf(layout, played?.playerId);
+    if (card === null || caster === undefined || seat === null) {
+      return null;
     }
-    const holdMs = this.#animation.longMs * (queued === 0 ? HOLD.alone : HOLD.queued);
-    const targets = this.#targetsOf(events[castAt], snapshot, layout);
-    const cast = new CastReveal({ card, caption: `${opponent.name} casts`, targets, ...revealPathFor(layout), animation: this.#animation, holdMs });
-    this.#moments.push({ cast, release: [], lives: new Map(), struck: false });
-    return castAt;
+    const inHand = this.#visuals.get(card.instanceId);
+    const from = inHand === undefined ? centredOn(seat.hand, CARD_SIZE.back) : { ...inHand.state };
+    // The card now travels as the cast: it does not also fade from the hand.
+    this.#visuals.delete(card.instanceId);
+    this.#cards.delete(card.instanceId);
+    const faceUp = inHand !== undefined;
+    /** @type {number} */
+    let hold = queued === 0 ? HOLD.alone : HOLD.queued;
+    hold = faceUp ? HOLD.own : hold;
+    const { targets, roulette } = this.#aimedAt(card.instanceId, aimOf(card.instanceId, events), { snapshot, layout, outcome });
+    const caption = faceUp ? "You cast" : `${caster.name} casts`;
+    this.#moments.push(new CastReveal({ card, caption, targets, roulette, from, at: centredOn(layout.banner, REVEAL_SIZE), to: seat.hud, faceUp, animation: this.#animation, holdMs: this.#animation.longMs * hold }));
+    return card.instanceId;
+  }
+
+  /**
+   * One flare for the abilities announced together, a rune for each card
+   * they come from: over the card where it stands or where it fell, over
+   * the middle of the table for a spell. Nothing is flared for a card the
+   * board never showed.
+   * @param {readonly GameEvent[]} triggered the ABILITY_TRIGGERED events, in order
+   * @param {Snapshot} snapshot
+   * @param {BoardLayout} layout
+   * @param {readonly GameEvent[]} outcome what the abilities are going to do
+   */
+  #enqueueFlare(triggered, snapshot, layout, outcome) {
+    const sourceIds = new Set(triggered.map((event) => event.sourceId).filter((id) => typeof id === "string"));
+    const sources = [...sourceIds].flatMap((sourceId) => {
+      const card = findCard(snapshot, sourceId) ?? this.#cards.get(/** @type {string} */ (sourceId)) ?? null;
+      const origin = card === null ? null : this.#flareOriginFor(card, layout);
+      return card === null || origin === null ? [] : [Object.freeze({ card, origin: Object.freeze(origin), ...this.#aimedAt(card.instanceId, aimOf(card.instanceId, triggered), { snapshot, layout, outcome }) })];
+    });
+    if (sources.length > 0) {
+      this.#moments.push(new TriggerFlare({ sources, animation: this.#animation }));
+    }
+  }
+
+  /**
+   * Where an ability's rune kindles: a spell over the middle of the table,
+   * a creature where it stands (or where it last stood), else over its
+   * controller's seat.
+   * @param {CardView} card
+   * @param {BoardLayout} layout
+   */
+  #flareOriginFor(card, layout) {
+    if (card.type === CardType.SPELL) {
+      return centreOf(layout.banner);
+    }
+    return this.#anchorFor(card.instanceId, layout, CENTRE) ?? this.#anchorFor(card.controllerId, layout, CENTRE);
   }
 
   /**
@@ -385,71 +513,101 @@ export class MatchPresenter {
   }
 
   /**
-   * Holds back what a revealed cast did until it strikes: its effects on the
-   * board, and each player's life as it stood before the cast moved it.
-   * @param {PendingReveal} pending
-   * @param {readonly GameEvent[]} effects the events that followed the cast
-   * @param {BoardLayout} layout
-   */
-  #holdEffects(pending, effects, layout) {
-    for (const event of effects) {
-      pending.release.push(...this.#effectsOf(event, layout, new Map()));
-      const playerId = /** @type {string} */ (event.playerId);
-      if (event.type === GameEventType.LIFE_CHANGED && !pending.lives.has(playerId)) {
-        pending.lives.set(playerId, /** @type {number} */ (event.life) - /** @type {number} */ (event.delta));
-      }
-    }
-  }
-
-  /**
-   * Where the spell's targets stand and what they are called, fixed now
-   * rather than read later: a creature it kills is already on its way off
-   * the board, and gone from the layout within the second.
-   * @param {GameEvent} event
+   * Where a cast's or an ability's targets stand and what they are called,
+   * fixed now rather than read later: a creature it kills is on its way off
+   * the board by the time the beams strike.
+   * @param {readonly string[]} targetIds
    * @param {Snapshot} snapshot
    * @param {BoardLayout} layout
    * @returns {readonly import("./CastReveal.js").CastTarget[]}
    */
-  #targetsOf(event, snapshot, layout) {
-    const ids = /** @type {readonly string[]} */ (event.targetIds ?? []);
-    return Object.freeze(
-      ids.flatMap((id) => {
-        const anchor = this.#anchorFor(id, layout, CENTRE);
-        const name = nameOf(id, snapshot);
-        return anchor === null || name === null ? [] : [Object.freeze({ ...anchor, name })];
-      }),
-    );
+  #targetsOf(targetIds, snapshot, layout) {
+    return targetIds.flatMap((id) => {
+      const anchor = this.#anchorFor(id, layout, CENTRE);
+      const name = nameOf(id, snapshot);
+      return anchor === null || name === null ? [] : [Object.freeze({ ...anchor, name })];
+    });
   }
 
   /**
-   * What an event shows on the board — its floating number, the flash of a
-   * struck card, the pulse of a life total — each ready to be let loose now
-   * or when a cast strikes. Anchored now: a creature it kills is off the
-   * board by the time a held effect is released.
+   * Where the beams of a cast or an ability go: to what it was aimed at,
+   * but for a player hit in one of their piles, to the pile — and for a
+   * random discard, to the very cards it takes, drawn by a crosshair.
+   * @param {string} sourceId the card whose cast or ability it is
+   * @param {Aim} aim
+   * @param {{ snapshot: Snapshot, layout: BoardLayout, outcome: readonly GameEvent[] }} context
+   * @returns {{ targets: readonly import("./CastReveal.js").CastTarget[], roulette: TargetRoulette | null }}
+   */
+  #aimedAt(sourceId, aim, { snapshot, layout, outcome }) {
+    const piles = [...aim.piles].map(([playerId, pile]) => this.#pileAim({ sourceId, playerId, pile }, { snapshot, layout, outcome }));
+    return Object.freeze({
+      targets: Object.freeze([...this.#targetsOf(aim.ids, snapshot, layout), ...piles.flatMap((entry) => entry.targets)]),
+      roulette: piles.find((entry) => entry.roulette !== null)?.roulette ?? null,
+    });
+  }
+
+  /**
+   * A player's pile as a target. A discard whose cards are known goes to
+   * those cards, through a crosshair that draws them from the whole hand;
+   * one that takes nothing, to every card in the hand, named once under the
+   * middle one; a mill, to the deck.
+   * @param {{ sourceId: string, playerId: string, pile: string }} aim `pile`: a HudStack
+   * @param {{ snapshot: Snapshot, layout: BoardLayout, outcome: readonly GameEvent[] }} context
+   * @returns {{ targets: import("./CastReveal.js").CastTarget[], roulette: TargetRoulette | null }}
+   */
+  #pileAim({ sourceId, playerId, pile }, { snapshot, layout, outcome }) {
+    const seat = seatOf(layout, playerId);
+    const player = snapshot.players.find((candidate) => candidate.id === playerId);
+    if (seat === null || player === undefined) {
+      return { targets: [], roulette: null };
+    }
+    const label = `${player.name}'s ${pile}`;
+    const hidden = seat.handSlots.length > 0;
+    const hand = hidden ? [] : (player.hand ?? []).filter((card) => layout.cards[card.instanceId] !== undefined);
+    const slots = hidden ? seat.handSlots : hand.map((card) => layout.cards[card.instanceId]);
+    if (pile !== HudStack.HAND || slots.length === 0) {
+      return { targets: [Object.freeze({ ...hudStackCentre(seat.hud, pile), name: label })], roulette: null };
+    }
+    const candidates = slots.map((slot) => Object.freeze(centreOf(slot)));
+    const doomed = outcome.filter((event) => event.type === GameEventType.CARD_DISCARDED && event.playerId === playerId).map((event) => /** @type {string} */ (event.instanceId));
+    const picks = hidden ? drawBacks(doomed, slots.length) : doomed.map((id) => hand.findIndex((card) => card.instanceId === id)).filter((index) => index !== -1);
+    if (picks.length === 0) {
+      const named = Math.floor((candidates.length - 1) / 2);
+      return { targets: candidates.map((point, index) => Object.freeze({ ...point, name: index === named ? label : "" })), roulette: null };
+    }
+    if (hidden) {
+      doomed.forEach((id, index) => this.#doomedBacks.set(id, slots[picks[index]]));
+    }
+    /** A card of my own hand by its name; a hidden hand's have none yet, so the hand is named, once. */
+    const targetName = (/** @type {number} */ index, /** @type {number} */ order) => {
+      if (!hidden) {
+        return hand[index].name;
+      }
+      return order === 0 ? label : "";
+    };
+    const targets = picks.map((index, order) => Object.freeze({ ...candidates[index], name: targetName(index, order) }));
+    return { targets, roulette: new TargetRoulette({ candidates, picks, seed: `${sourceId}:${doomed.join(",")}`, animation: this.#animation }) };
+  }
+
+  /**
+   * What an event shows on the board: its floating number, the flash of a
+   * struck card, the pulse of a life total.
    * @param {GameEvent} event
    * @param {BoardLayout} layout
    * @param {Map<string, number>} impacts when blows struck in combat land, by what they struck
-   * @returns {(() => void)[]}
    */
-  #effectsOf(event, layout, impacts) {
-    /** @type {(() => void)[]} */
-    const shows = [];
+  #showEffectsOf(event, layout, impacts) {
     const subject = typeof event.targetId === "string" ? event.targetId : event.playerId;
     const delayMs = typeof subject === "string" ? impacts.get(subject) ?? 0 : 0;
     const spec = this.#floatSpecFor(event, layout);
     if (spec !== null) {
-      shows.push(() => this.#pushFloat(spec, delayMs));
+      this.#pushFloat(spec, delayMs);
     }
     const struck = event.type === GameEventType.DAMAGE_DEALT && typeof event.targetId === "string" ? this.#visuals.get(event.targetId) : undefined;
-    if (struck !== undefined) {
-      shows.push(() => struck.hit(delayMs, this.#animation.longMs * FLASH_LONG));
-    }
+    struck?.hit(delayMs, this.#animation.longMs * FLASH_LONG);
     if (event.type === GameEventType.LIFE_CHANGED && typeof event.playerId === "string" && event.delta !== 0) {
-      const playerId = event.playerId;
-      const delta = Number(event.delta);
-      shows.push(() => this.#kicks.set(playerId, { delta, ageMs: -delayMs, durationMs: this.#animation.longMs * KICK_LONG }));
+      this.#kicks.set(event.playerId, { delta: Number(event.delta), ageMs: -delayMs, durationMs: this.#animation.longMs * KICK_LONG });
     }
-    return shows;
   }
 
   /**
@@ -523,12 +681,78 @@ const FLOAT_BUILDERS = Object.freeze({
 });
 
 /**
- * A card played by `opponentId` that did not land on the battlefield: a spell.
+ * A card played that did not land on the battlefield: a spell.
  * @param {Readonly<Record<string, unknown>>} event
- * @param {string} opponentId
  */
-function isOpponentCast(event, opponentId) {
-  return event.type === GameEventType.CARD_PLAYED && event.playerId === opponentId && event.zone !== ZoneType.BATTLEFIELD;
+function isSpellCast(event) {
+  return event.type === GameEventType.CARD_PLAYED && event.zone !== ZoneType.BATTLEFIELD;
+}
+
+/**
+ * @typedef {{ ids: string[], piles: Map<string, string> }} Aim what a card was aimed at, each once:
+ *   `piles` the players hit in one of their piles (by id, the HudStack), `ids` everything else
+ */
+
+/**
+ * What a card was aimed at as it was played and as its abilities were announced.
+ * @param {string} instanceId
+ * @param {readonly Readonly<Record<string, unknown>>[]} events
+ * @returns {Aim}
+ */
+function aimOf(instanceId, events) {
+  const aiming = events.filter((event) => (event.type === GameEventType.CARD_PLAYED && event.instanceId === instanceId) || (event.type === GameEventType.ABILITY_TRIGGERED && event.sourceId === instanceId));
+  /** @type {Map<string, string>} */
+  const piles = new Map();
+  for (const event of aiming) {
+    const pile = event.type === GameEventType.ABILITY_TRIGGERED ? PILE_EFFECTS[/** @type {string} */ (event.effect)] : undefined;
+    if (pile !== undefined) {
+      /** @type {readonly string[]} */ (event.targetIds ?? []).forEach((id) => piles.set(id, pile));
+    }
+  }
+  const ids = new Set(aiming.flatMap((event) => /** @type {readonly string[]} */ (event.targetIds ?? [])));
+  return { ids: [...ids].filter((id) => !piles.has(id)), piles };
+}
+
+/**
+ * Which backs of a hidden hand the cards a random discard takes are shown to
+ * come out of: distinct, spread as chance would have it, and the same every
+ * time for the same cards.
+ * @param {readonly string[]} doomed the discarded cards' ids, in order
+ * @param {number} backs how many backs the hand shows
+ * @returns {number[]} one index into the backs per card, while there are backs left
+ */
+function drawBacks(doomed, backs) {
+  const free = Array.from({ length: backs }, (_, index) => index);
+  const draws = unitSequence(hashString(doomed.join(",")), doomed.length);
+  return doomed.slice(0, backs).map((_, index) => free.splice(Math.floor(draws[index] * free.length), 1)[0]);
+}
+
+/**
+ * @param {BoardLayout} layout
+ * @param {unknown} playerId
+ * @returns {import("./BoardLayout.js").SeatLayout | null}
+ */
+function seatOf(layout, playerId) {
+  return [layout.me, layout.opponent].find((seat) => seat.id === playerId) ?? null;
+}
+
+/**
+ * `card` drawn a little way out of its hand, toward the middle of the table.
+ * @param {Rect} card
+ * @param {Rect} banner the strip between the battlefields
+ * @returns {Rect}
+ */
+function pulledOut(card, banner) {
+  const towardTable = Math.sign(banner.y + banner.height / 2 - (card.y + card.height / 2));
+  return { ...card, y: card.y + towardTable * PULL_OUT };
+}
+
+/**
+ * @param {{ x: number, y: number }} point
+ * @returns {Rect} an empty rectangle at `point`
+ */
+function pointAt(point) {
+  return { ...point, width: 0, height: 0 };
 }
 
 /**
@@ -559,18 +783,11 @@ function findCard(snapshot, instanceId) {
 }
 
 /**
- * The path a cast travels: out of the opponent's hand, up to the banner
- * strip — the free band between the two battlefields — and down into their
- * graveyard, which the HUD stands for, as it does for every card that leaves.
- * @param {BoardLayout} layout
- * @returns {{ from: Rect, at: Rect, to: Rect }}
+ * @param {Rect} area
+ * @returns {{ x: number, y: number }}
  */
-function revealPathFor(layout) {
-  return {
-    from: centredOn(layout.opponent.hand, CARD_SIZE.back),
-    at: centredOn(layout.banner, REVEAL_SIZE),
-    to: layout.opponent.hud,
-  };
+function centreOf(area) {
+  return { x: area.x + area.width / 2, y: area.y + area.height / 2 };
 }
 
 /**

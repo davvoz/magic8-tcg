@@ -18,7 +18,7 @@ export class FakeGradient {
 }
 
 /** Style properties saved and restored by save()/restore(), like the real context. */
-const STATE_PROPERTIES = Object.freeze(["fillStyle", "strokeStyle", "lineWidth", "lineCap", "lineJoin", "font", "textAlign", "textBaseline", "globalAlpha", "shadowColor", "shadowBlur"]);
+const STATE_PROPERTIES = Object.freeze(["fillStyle", "strokeStyle", "lineWidth", "lineCap", "lineJoin", "font", "textAlign", "textBaseline", "globalAlpha", "globalCompositeOperation", "shadowColor", "shadowBlur"]);
 
 /** Records every drawing call; measureText returns 8px per character; save/restore keep a real state stack. */
 export class FakeContext2D {
@@ -35,6 +35,7 @@ export class FakeContext2D {
   textAlign = "start";
   textBaseline = "alphabetic";
   globalAlpha = 1;
+  globalCompositeOperation = "source-over";
   shadowColor = "rgba(0, 0, 0, 0)";
   shadowBlur = 0;
 

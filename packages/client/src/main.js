@@ -59,6 +59,7 @@ import { SceneId } from "./rendering/scenes/sceneIds.js";
 import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
 import { CoinArt } from "./rendering/board/CoinArt.js";
 import { TableArt, TablePiece } from "./rendering/images/TableArt.js";
+import { UiArt, UiPiece } from "./rendering/images/UiArt.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 
@@ -99,6 +100,28 @@ const COIN_ART = Object.freeze({
 
 /** The painted table, in ART_DIRECTORY: the match mat, the card back (portrait, near card proportions) and the panel stone. */
 const TABLE_ART_FILES = Object.freeze({ [TablePiece.MAT]: "Tappeto.jpg", [TablePiece.CARD_BACK]: "Dorso.jpg", [TablePiece.PANEL]: "Texture.jpg" });
+/**
+ * The painted menus, in ART_DIRECTORY (gold on black, 1168×784 or 784×1168),
+ * and where things are in each image, as fractions of it (measured on these
+ * files: regenerating one means measuring it again).
+ */
+const UI_ART = Object.freeze({
+  files: Object.freeze({
+    [UiPiece.BACKDROP]: "Sfondo_Menu.jpg",
+    [UiPiece.CORNER]: "Angolo_decorativo_pannelli.jpg",
+    [UiPiece.DIVIDER]: "DIVISORE_TITOLI.jpg",
+    [UiPiece.BUTTON_PRIMARY]: "BOTTONE_PRIMARIO.jpg",
+    [UiPiece.BUTTON_SECONDARY]: "BOTTONE_SECONDARIO.jpg",
+  }),
+  layout: Object.freeze({
+    corner: Object.freeze({ extent: Object.freeze({ x: 0.0485, y: 0.0274, width: 0.8954, height: 0.9015 }), lines: Object.freeze({ x: 0.1046, y: 0.0702 }) }),
+    divider: Object.freeze({ x: 0.1678, y: 0.1684, width: 0.6644, height: 0.6531 }),
+    buttons: Object.freeze({
+      primary: Object.freeze({ plate: Object.freeze({ x: 0.0248, y: 0.2653, width: 0.9503, height: 0.4349 }), caps: Object.freeze({ left: 0.2351, right: 0.2369 }), radius: 0.235 }),
+      secondary: Object.freeze({ plate: Object.freeze({ x: 0.0411, y: 0.2857, width: 0.9178, height: 0.4145 }), caps: Object.freeze({ left: 0.2071, right: 0.208 }), radius: 0.209 }),
+    }),
+  }),
+});
 
 /** Theme used only to render the error screen when the real theme cannot be loaded. */
 const FALLBACK_THEME_RAW = Object.freeze({
@@ -242,6 +265,14 @@ async function boot() {
     onLoaded: () => presentation?.loop.requestRender(),
     logger,
   });
+  // The menu backdrop, panel corners, divider medallion and button plates; drawn procedurally until ready.
+  const uiArt = new UiArt({
+    urls: Object.fromEntries(Object.entries(UI_ART.files).map(([piece, file]) => [piece, `${ART_DIRECTORY}${file}`])),
+    layout: UI_ART.layout,
+    loadImage: loadBrowserImage,
+    onLoaded: () => presentation?.loop.requestRender(),
+    logger,
+  });
 
   const localStore = new LocalStorageStore(globalThis.localStorage);
   const storageAvailable = localStore.isAvailable();
@@ -326,7 +357,7 @@ async function boot() {
     ...rarities,
   });
 
-  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt }));
+  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt }));
   registerScenes(sceneManager, app);
   // A notification that arrives shows as a toast on any screen; a click opens the feed.
   const toasts = new ToastLayer({ viewport: theme.value.layout, onOpen: () => sceneManager.navigate(SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
@@ -344,6 +375,8 @@ async function boot() {
   void coinArt.preload();
   // Small and seen everywhere (the menu's card fan, every match): fetched straight away.
   void tableArt.preload();
+  // The menus are the first thing on screen: fetched straight away too.
+  void uiArt.preload();
 }
 
 /**

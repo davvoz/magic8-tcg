@@ -21,6 +21,10 @@ const ORB_RADIUS = 7;
 const ORB_GAP = 4;
 const MAX_ORBS = 12;
 const STACK_ICON = Object.freeze({ width: 18, height: 24 });
+/** The small stacks along the foot of the plate, in drawing order. */
+export const HudStack = Object.freeze({ HAND: "hand", DECK: "deck", GRAVE: "grave" });
+/** @type {readonly string[]} */
+const STACKS = Object.freeze([HudStack.HAND, HudStack.DECK, HudStack.GRAVE]);
 const HALO_BLUR = 22;
 const SEAT_TAG = "YOU";
 /** A life total that just moved: how much the crystal swells, how far its ring spreads (in radii), and the shake of a blow (px, swings, and the share of the pulse it lasts). */
@@ -182,15 +186,11 @@ export class PlayerNode extends UiNode {
   #paintCounts(context, theme) {
     const area = this.bounds;
     const { colors } = theme;
-    const y = area.y + area.height - PAD - STACK_ICON.height;
-    const entries = [
-      { label: "hand", value: this.player.handSize },
-      { label: "deck", value: this.player.librarySize },
-      { label: "grave", value: this.player.graveyard.length },
-    ];
-    const column = (area.width - 2 * PAD) / entries.length;
-    entries.forEach((entry, index) => {
-      const x = area.x + PAD + index * column;
+    const values = { [HudStack.HAND]: this.player.handSize, [HudStack.DECK]: this.player.librarySize, [HudStack.GRAVE]: this.player.graveyard.length };
+    const entries = STACKS.map((label) => ({ label, value: values[label] }));
+    const column = stackColumn(area);
+    entries.forEach((entry) => {
+      const { x, y } = stackIcon(area, entry.label);
       drawCardStackIcon(context, { x, y, width: STACK_ICON.width, height: STACK_ICON.height }, { fill: shade(colors.panelDark, -0.3), stroke: withAlpha(colors.accent, 0.6), layers: Math.min(4, Math.max(1, entry.value)) });
       drawTextInRect(context, String(entry.value), { x: x + STACK_ICON.width + 6, y, width: column - STACK_ICON.width - 6, height: STACK_ICON.height / 2 + 2 }, { font: fontFor(theme, "small", "bold"), color: colors.text, align: "left" });
       drawTextInRect(context, entry.label, { x: x + STACK_ICON.width + 6, y: y + STACK_ICON.height / 2, width: column - STACK_ICON.width - 6, height: STACK_ICON.height / 2 }, { font: fontFor(theme, "micro"), color: colors.textMuted, align: "left" });
@@ -204,6 +204,32 @@ export class PlayerNode extends UiNode {
     }
     return this.focused || (this.hovered && this.enabled) ? theme.colors.focus : null;
   }
+}
+
+/** @param {import("@magic8/engine/shared/geometry.js").Rect} hud */
+function stackColumn(hud) {
+  return (hud.width - 2 * PAD) / STACKS.length;
+}
+
+/**
+ * The top-left corner of one of the plate's stack icons.
+ * @param {import("@magic8/engine/shared/geometry.js").Rect} hud
+ * @param {string} stack a HudStack
+ */
+function stackIcon(hud, stack) {
+  return { x: hud.x + PAD + STACKS.indexOf(stack) * stackColumn(hud), y: hud.y + hud.height - PAD - STACK_ICON.height };
+}
+
+/**
+ * Where one of the plate's stacks (hand, deck, grave) sits on a HUD: what
+ * mills a library is aimed at the deck, and milled cards come out of it.
+ * @param {import("@magic8/engine/shared/geometry.js").Rect} hud
+ * @param {string} stack a HudStack
+ * @returns {{ x: number, y: number }}
+ */
+export function hudStackCentre(hud, stack) {
+  const { x, y } = stackIcon(hud, stack);
+  return { x: x + STACK_ICON.width / 2, y: y + STACK_ICON.height / 2 };
 }
 
 /**

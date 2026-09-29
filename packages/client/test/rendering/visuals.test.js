@@ -12,6 +12,7 @@ import { CardNode } from "../../src/rendering/board/CardNode.js";
 import { CARD_SIZE } from "../../src/rendering/board/BoardLayout.js";
 import { CastReveal } from "../../src/rendering/board/CastReveal.js";
 import { EffectsNode } from "../../src/rendering/board/EffectsNode.js";
+import { TriggerFlare } from "../../src/rendering/board/TriggerFlare.js";
 import { TurnBanner } from "../../src/rendering/board/TurnBanner.js";
 import { GameOverNode } from "../../src/rendering/board/GameOverNode.js";
 import { GameOverMood, GameOverSequence } from "../../src/rendering/board/GameOverSequence.js";
@@ -278,6 +279,36 @@ describe("cast reveal", () => {
     const idle = new FakeContext2D();
     new EffectsNode({ presenter: { leavingVisuals: [], floats: [], cardFor: () => null, reveal: null }, layout, blocks: [] }).draw(idle, theme);
     assert.equal(after.calls.length, idle.calls.length, "and leaves nothing behind: the overlay draws what an empty one draws");
+  });
+});
+
+describe("trigger flare", () => {
+  it("kindles a rune over each source, names it, beams to its targets and leaves nothing behind", () => {
+    const creature = content.catalog.all().find((definition) => !definition.isSpell);
+    const card = { ...creature, instanceId: "c7", damage: 0, summoningSick: false, exhausted: false };
+    const flare = new TriggerFlare({ sources: [{ card, origin: { x: 800, y: 600 }, targets: [{ x: 800, y: 120, name: "Bob" }] }], animation: theme.animation });
+    const layout = { width: 1600, height: 900, cards: {} };
+    const node = new EffectsNode({ presenter: fakePresenter(flare), layout, blocks: [] });
+    const seen = { names: 0, marks: 0, struck: false };
+    for (let frames = 0; frames < 200 && !flare.isDone; frames += 1) {
+      const context = new FakeContext2D();
+      node.draw(context, theme);
+      assertBalanced(context);
+      assertFinite(context);
+      seen.names += context.texts.includes(creature.name) ? 1 : 0;
+      seen.marks += context.texts.includes("Bob") ? 1 : 0;
+      seen.struck ||= flare.hasStruck;
+      flare.update(theme.animation.shortMs / 2);
+    }
+    assert.ok(seen.names > 0, "the source is named over its rune");
+    assert.ok(seen.marks > 0, "the target once the beam reaches it");
+    assert.equal(seen.struck, true, "it strikes before it fades");
+    assert.equal(flare.isDone, true);
+    const after = new FakeContext2D();
+    node.draw(after, theme);
+    const idle = new FakeContext2D();
+    new EffectsNode({ presenter: { leavingVisuals: [], floats: [], cardFor: () => null, moment: null }, layout, blocks: [] }).draw(idle, theme);
+    assert.equal(after.calls.length, idle.calls.length, "the overlay draws what an empty one draws");
   });
 });
 

@@ -22,6 +22,8 @@ import { CardFaceProfile, cardFaceLayout, statusTextFor, typeLineFor } from "../
 import { drawCard } from "../../src/rendering/cards/CardRenderer.js";
 import { MatchPresenter } from "../../src/rendering/board/MatchPresenter.js";
 import { CastReveal } from "../../src/rendering/board/CastReveal.js";
+import { TriggerFlare } from "../../src/rendering/board/TriggerFlare.js";
+import { HudStack, hudStackCentre } from "../../src/rendering/board/PlayerNode.js";
 import { TurnBanner } from "../../src/rendering/board/TurnBanner.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MatchScene } from "../../src/rendering/scenes/MatchScene.js";
@@ -370,7 +372,7 @@ describe("MatchPresenter", () => {
     session.start();
     const presenter = new MatchPresenter(theme.animation);
     const first = session.snapshotFor(P1);
-    presenter.apply(first, [], computeBoardLayout(first, P1, SIZE), false);
+    presenter.apply(first, [], computeBoardLayout(first, P1, SIZE), { animate: false });
     const bolt = id(P1, ZoneType.HAND, 0);
     const hound = id(P2, ZoneType.BATTLEFIELD, 0);
     assert.equal(presenter.isAnimating, false, "first display snaps into place");
@@ -437,8 +439,9 @@ describe("MatchScene on the board", () => {
     tapNode(cardNamed(scene, "Cinder Hound"));
     const p2 = session.snapshotFor(P1).players.find((player) => player.id === P2);
     assert.equal(p2.battlefield.length, 0, "hound died");
-    assert.equal(cardNamed(scene, "Cinder Hound"), null, "no longer a node");
-    assert.equal(scene.presenter.leavingVisuals.length, 2, "hound and bolt are fading out");
+    assert.ok(cardNamed(scene, "Cinder Hound"), "but stands until the bolt is seen to strike it");
+    advancer(scene)(() => cardNamed(scene, "Cinder Hound") === null, "the bolt strikes");
+    assert.equal(scene.presenter.visualFor(p2.graveyard.find((card) => card.name === "Cinder Hound").instanceId)?.isLeaving, true, "the hound fades out");
   });
 
   it("declares attackers by tapping creatures and confirming, then the AI replies", async () => {
@@ -488,16 +491,23 @@ describe("MatchScene on the board", () => {
     assert.ok(texts.includes("Bob casts"), "so is the caption");
     assert.ok(texts.some((text) => text.includes("Bob cast Ember Bolt on")), "log names the spell and its target");
 
+    const parked = centreOf(reveal.frame);
+    assert.deepEqual(parked, centreOf(layout.banner), "held in the middle of the table");
+    const read = advanceTo(() => {
+      assert.deepEqual(centreOf(reveal.frame), parked, "it does not drift while it is read");
+      assert.ok(cardNamed(scene, "Cinder Hound"), "and nothing has happened to its target yet");
+      return reveal.frame.ring > 0;
+    }, "throws its rune");
+    assert.ok(read > 1000, `held still for ${read}ms before it aims, long enough to read`);
+    assert.equal(reveal.frame.strike, 0, "the beam has not left yet");
+
     advanceTo(() => reveal.frame.strike === 1, "struck its target");
     assert.equal(reveal.frame.ring, 1, "the rune has spread by then");
     assert.ok(rendered(scene).includes("Cinder Hound"), "and the target is named where the beam lands");
-
-    const parked = centreOf(reveal.frame);
-    assert.deepEqual(parked, centreOf(layout.banner), "held in the middle of the table");
-    scene.update(400);
-    assert.deepEqual(centreOf(reveal.frame), parked, "and still there a moment later: it does not drift while it is read");
-    const held = 400 + advanceTo(() => reveal.frame.glow < 1, "began to sink");
-    assert.ok(held > 1000, `held still for ${held}ms once struck, long enough to read`);
+    scene.update(40);
+    assert.equal(cardNamed(scene, "Cinder Hound"), null, "which falls as it is struck");
+    assert.deepEqual(centreOf(reveal.frame), parked, "while the card lingers over the table");
+    advanceTo(() => reveal.frame.glow < 1, "began to sink");
     advanceTo(() => scene.presenter.reveal === null, "gone");
   });
 
@@ -768,20 +778,190 @@ describe("MatchScene on the board", () => {
     assert.equal(titan.isAnimating, false);
   });
 
-  it("lets a spell's damage show at once: a spell does not lunge", async () => {
+  it("carries my spell face-up to the middle of the table, strikes from there, and only then sinks it into my graveyard", async () => {
     const { scene, session, id } = await sceneFor({ p1: { hand: ["ember_bolt"], resources: 2 }, p2: { battlefield: ["cinder_hound"] } });
     const hound = id(P2, ZoneType.BATTLEFIELD, 0);
-    const bolt = scene.presenter.visualFor(id(P1, ZoneType.HAND, 0));
-    const held = { ...bolt.state };
+    const bolt = id(P1, ZoneType.HAND, 0);
+    const inHand = { ...scene.presenter.visualFor(bolt).state };
     const standing = { ...scene.presenter.visualFor(hound).state };
     tapNode(cardNamed(scene, "Ember Bolt"));
     tapNode(cardNamed(scene, "Cinder Hound"));
     await session.whenIdle();
-    assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-3" && float.progress === 0), "the number is up straight away");
+    const cast = scene.presenter.moment;
+    assert.ok(cast instanceof CastReveal, "my spell is played out too");
+    assert.equal(cast.caption, "You cast");
+    assert.equal(scene.presenter.visualFor(bolt), null, "the card travels as the cast, not also into the graveyard");
+    assert.deepEqual(centreOf(cast.frame), centreOf(inHand), "leaving from where it was in my hand");
+    assert.equal(cast.frame.turn, 1, "face up: I know what I cast");
+    assert.deepEqual(cast.targets.map((target) => target.name), ["Cinder Hound"]);
+    const layout = computeBoardLayout(session.snapshotFor(P1), P1, SIZE);
+    const advanceTo = advancer(scene, 16);
+    advanceTo(() => {
+      const struck = scene.presenter.floats.length > 0;
+      assert.ok(struck || cast.frame.strike < 1, "nothing shows until the beam arrives");
+      assert.ok(struck || scene.presenter.visualFor(hound).state.width === standing.width, "the hound stands until then");
+      return struck;
+    }, "the bolt strikes");
+    assert.equal(cast.hasStruck, true);
+    assert.deepEqual(centreOf(cast.frame), centreOf(layout.banner), "still held over the table as it strikes");
+    assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-3" && float.progress === 0), "the number is up the instant it strikes: a spell does not lunge");
     scene.update(theme.animation.shortMs);
     assert.ok(scene.presenter.visualFor(hound).flash > 0, "and the hound is lit by the blow");
     assert.ok(scene.presenter.visualFor(hound).state.width < standing.width, "and already on its way out");
-    assert.ok(bolt.state.width < held.width, "the spell itself shrinks straight into the graveyard");
+    assert.equal(cast.frame.glow, 1, "while the card lingers, beams still lit");
+    advanceTo(() => cast.frame.glow < 1, "then it sinks");
+    const hud = centreOf(layout.me.hud);
+    advanceTo(() => scene.presenter.moment === null, "into my graveyard");
+    assert.ok(Math.abs(centreOf(cast.frame).x - hud.x) < 1 && Math.abs(centreOf(cast.frame).y - hud.y) < 1, "which my seat stands for");
+  });
+
+  it("plays out a chain link by link: the AI's cast, then the creature it kills, then what that creature's death sets off", async () => {
+    const { scene, session } = await sceneFor({ p1: { battlefield: ["ember_zealot"] }, p2: { hand: ["ember_bolt"], resources: 2 } });
+    scene.onKey(key("e"));
+    await session.whenIdle();
+    const final = session.snapshotFor(null);
+    assert.equal(final.players[0].battlefield.length, 0, "the bolt killed the zealot");
+    assert.equal(final.players[1].life, 19, "whose death burned Bob");
+    const advanceTo = advancer(scene, 16);
+    advanceTo(() => scene.presenter.reveal !== null, "the cast comes up in its turn");
+    const reveal = scene.presenter.reveal;
+    assert.ok(cardNamed(scene, "Ember Zealot"), "the zealot stands while the card turns over");
+    assert.equal(byId(scene, P2).lifeShown(), 20);
+
+    advanceTo(() => reveal.hasStruck, "the bolt strikes");
+    scene.update(16);
+    assert.equal(cardNamed(scene, "Ember Zealot"), null, "the zealot falls as it is struck");
+    assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-3"));
+    assert.equal(byId(scene, P2).lifeShown(), 20, "but its death has not gone off yet");
+    assert.ok(!scene.presenter.floats.some((float) => float.spec.text === "-1"));
+
+    advanceTo(() => scene.presenter.moment instanceof TriggerFlare, "the zealot's death goes off once the cast is read");
+    const flare = scene.presenter.moment;
+    assert.deepEqual(flare.sources.map((source) => [source.card.name, source.targets.map((target) => target.name)]), [["Ember Zealot", ["Bob"]]]);
+    assert.equal(byId(scene, P2).lifeShown(), 20, "Bob untouched while its rune kindles");
+    advanceTo(() => flare.hasStruck, "its beam strikes Bob");
+    scene.update(16);
+    assert.equal(byId(scene, P2).lifeShown(), 19, "Bob burns as it lands");
+    assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-1"), "with its number");
+    settle(scene);
+  });
+
+  it("draws a random discard with a crosshair that hunts across the hand and locks on the cards that go, which then come up out of those very backs", async () => {
+    const { scene, session } = await sceneFor({ p1: { hand: ["mind_rot"], resources: 2 }, p2: { hand: ["ember_imp", "lava_brute", "scrap_golem", "cinder_hound"] } });
+    const layout = computeBoardLayout(session.snapshotFor(P1), P1, SIZE);
+    const backs = layout.opponent.handSlots.map(centreOf);
+    tapNode(cardNamed(scene, "Mind Rot"));
+    const after = session.snapshotFor(P1).players[1];
+    assert.equal(after.handSize, 2, "two cards discarded");
+    const discarded = after.graveyard.map((card) => card.instanceId);
+    scene.update(16);
+    const cast = scene.presenter.moment;
+    assert.ok(cast instanceof CastReveal);
+    const { roulette } = cast;
+    assert.ok(roulette, "a random discard draws its cards");
+    assert.equal(cast.targets.length, 2, "the beams go to the two cards that go, not to Bob nor to every card");
+    assert.deepEqual(roulette.picked, cast.targets.map(({ x, y }) => ({ x, y })), "which are where the crosshair ends");
+    assert.ok(roulette.picked.every((point) => backs.some((back) => back.x === point.x && back.y === point.y)), "each on a back in Bob's hand");
+    assert.notDeepEqual(roulette.picked[0], roulette.picked[1], "two different cards");
+    assert.deepEqual(cast.targets.map((target) => target.name), ["Bob's hand", ""], "named once");
+
+    const visited = new Set();
+    const advanceTo = advancer(scene, 16);
+    advanceTo(() => cast.frame.seek > 0, "the crosshair sets off once the rune has spread");
+    let lockedFirst = null;
+    advanceTo(() => {
+      const { point, locked } = roulette.at(cast.frame.seek * roulette.durationMs);
+      visited.add(`${Math.round(point.x)}`);
+      lockedFirst ??= locked.length === 1 && cast.frame.seek < 1 ? cast.frame.seek : null;
+      assert.equal(cast.frame.strike, 0, "no beam strikes while it hunts");
+      return cast.frame.seek === 1;
+    }, "the draw ends");
+    assert.ok(visited.size >= 3, `it hunts across the hand (${visited.size} places)`);
+    assert.ok(lockedFirst !== null, "one card locks before the other");
+    assert.deepEqual(roulette.at(roulette.durationMs).locked, roulette.picked, "then both are locked");
+    assert.deepEqual(roulette.at(roulette.durationMs).point, roulette.picked[1], "the crosshair resting on the last");
+    assert.ok(discarded.every((id) => cardNamed(scene, id) === null && scene.presenter.visualFor(id) === null), "nothing discarded yet");
+
+    advanceTo(() => cast.hasStruck, "the rot strikes");
+    scene.update(16);
+    const surfacing = discarded.map((id) => scene.presenter.visualFor(id));
+    assert.ok(surfacing.every((visual) => visual?.isLeaving), "the discarded cards are on their way");
+    assert.ok(surfacing.every((visual) => visual.state.width < CARD_SIZE.battlefield.width), "coming up out of the hand");
+    const risenFrom = surfacing.map((visual) => visual.state);
+    assert.ok(
+      roulette.picked.every((pick) => risenFrom.some((state) => Math.abs(state.x + state.width / 2 - pick.x) < CARD_SIZE.battlefield.width / 2)),
+      "each out of the back the crosshair locked on",
+    );
+    assert.ok(surfacing.every((visual) => visual.faceDown), "face down: they come out as the backs they were");
+    const [first, second] = surfacing;
+    const names = after.graveyard.map((card) => card.name);
+    const hidden = () => {
+      const texts = rendered(scene);
+      assert.ok(!names.some((name) => texts.includes(name)), "and never show their faces");
+    };
+    advanceTo(() => surfacing.every((visual) => visual.state.y > layout.opponent.handSlots[0].y), "both pulled out of the hand, toward the table");
+    advanceTo(() => (hidden(), first.state.width === CARD_SIZE.battlefield.width), "the first comes up");
+    assert.ok(second.state.width < CARD_SIZE.battlefield.width, "while the second still waits");
+    advanceTo(() => (hidden(), second.state.width === CARD_SIZE.battlefield.width), "then the second comes up");
+    assert.ok(first.state.width < CARD_SIZE.battlefield.width, "once the first is on its way to the graveyard");
+    assert.ok(surfacing.every((visual) => visual.faceDown), "still backs");
+    advanceTo(() => discarded.every((id) => scene.presenter.visualFor(id) === null), "then both are gone to the graveyard");
+    settle(scene);
+  });
+
+  it("draws the AI's discard from my hand, locking on the cards I lose, named", async () => {
+    const { scene, session } = await sceneFor({ p1: { hand: ["ember_imp", "lava_brute", "scrap_golem"] }, p2: { hand: ["mind_rot"], resources: 2 } });
+    scene.onKey(key("e"));
+    await session.whenIdle();
+    const lost = session.snapshotFor(P1).players[0].graveyard.map((card) => card.name);
+    assert.equal(lost.length, 2);
+    const advanceTo = advancer(scene, 16);
+    advanceTo(() => scene.presenter.reveal !== null, "the cast comes up in its turn");
+    const { reveal } = scene.presenter;
+    assert.ok(reveal.roulette, "the draw is shown");
+    assert.deepEqual(reveal.targets.map((target) => target.name).sort(), [...lost].sort(), "and ends on the very cards I lose, by name");
+    assert.ok(!reveal.targets.some((target) => target.name === "Alice"), "not on me");
+    advancer(scene, 40, 20000)(() => !scene.isBusy, "the board settles");
+  });
+
+  it("aims a mill at the deck, and lets the milled cards be seen on their way to the graveyard", async () => {
+    const { scene, session } = await sceneFor({ p1: { hand: ["mind_drain"], resources: 2 }, p2: {} });
+    const layout = computeBoardLayout(session.snapshotFor(P1), P1, SIZE);
+    tapNode(cardNamed(scene, "Mind Drain"));
+    const milled = session.snapshotFor(P1).players[1].graveyard.map((card) => card.instanceId);
+    assert.equal(milled.length, 4);
+    scene.update(16);
+    const flare = scene.presenter.moment;
+    assert.deepEqual(flare.targets, [{ ...hudStackCentre(layout.opponent.hud, HudStack.DECK), name: "Bob's deck" }], "the beam goes to Bob's deck");
+    const advanceTo = advancer(scene, 16);
+    advanceTo(() => flare.hasStruck, "the drain strikes");
+    scene.update(16);
+    assert.ok(milled.every((id) => scene.presenter.visualFor(id)?.isLeaving), "each milled card comes up out of the deck");
+    advanceTo(() => milled.every((id) => scene.presenter.visualFor(id) === null), "and goes to the graveyard");
+    settle(scene);
+  });
+
+  it("lets a creature land before what it does on arrival goes off", async () => {
+    const { scene, session } = await sceneFor({ p1: { hand: ["magma_hurler"], resources: 4 }, p2: { battlefield: ["cinder_hound"] } });
+    const hound = cardNamed(scene, "Cinder Hound").card.instanceId;
+    tapNode(cardNamed(scene, "Magma Hurler"));
+    tapNode(cardNamed(scene, "Cinder Hound"));
+    assert.equal(session.snapshotFor(null).players[1].battlefield.length, 0, "the hurler's blast killed the hound");
+    const hurler = scene.presenter.visualFor(cardNamed(scene, "Magma Hurler").card.instanceId);
+    assert.equal(hurler.isMoving, true, "the hurler is landing");
+    const flare = scene.presenter.moment;
+    assert.ok(flare instanceof TriggerFlare);
+    const advanceTo = advancer(scene, 16);
+    advanceTo(() => {
+      assert.ok(!hurler.isMoving || flare.frame.alpha === 0, "its ability waits for it to land");
+      return !hurler.isMoving;
+    }, "landed");
+    assert.ok(cardNamed(scene, "Cinder Hound"), "and the hound still stands");
+    advanceTo(() => flare.hasStruck, "the blast strikes");
+    scene.update(16);
+    assert.equal(cardNamed(scene, "Cinder Hound"), null, "the hound falls");
+    assert.equal(scene.presenter.visualFor(hound)?.isLeaving, true);
+    settle(scene);
   });
 
   it("holds moves back while the board plays out what happened: cards and buttons go quiet, then come back", async () => {

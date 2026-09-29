@@ -28,6 +28,12 @@
  * with the state it led to and shown only once the board has finished
  * showing the one before: every move is seen, one after another.
  *
+ * Within an update, what a move set off is played link by link (StepBeats):
+ * a cast, then — once its beams strike — what it did; a creature dying,
+ * then — once the rune of its death ability strikes — what that did. Each
+ * beat is laid out from the state as it stood at that point, so nothing is
+ * on the board before the card that caused it has been seen to act.
+ *
  * When the match ends, the blow that ended it plays out first, then the end
  * itself (GameOverSequence, drawn by GameOverNode over the board): the
  * fallen crystal breaks, the table darkens, the outcome comes down. Only
@@ -49,6 +55,7 @@ import { GameOverMood, GameOverSequence } from "../board/GameOverSequence.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
 import { PlayerNode, lifeCrystalCentre } from "../board/PlayerNode.js";
+import { splitIntoBeats } from "../board/StepBeats.js";
 import { describeEvent } from "../board/eventLog.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { drawTableBackdrop } from "../ui/backdrop.js";
@@ -62,7 +69,7 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const MAX_LOG_LINES = 12;
-/** Updates allowed to wait their turn; past this the oldest are shown at once, unanimated, so a fast match cannot leave the board far behind. */
+/** Updates allowed to wait their turn (however many beats each has); past this the oldest are shown at once, unanimated, so a fast match cannot leave the board far behind. */
 const MAX_BACKLOG = 6;
 const TOSS_BANNER = "Coin toss · who plays first?";
 const LOG_LINE_HEIGHT = 22;
@@ -75,7 +82,9 @@ const INVITING = new Set([Highlight.PLAYABLE, Highlight.TARGETABLE]);
 
 /**
  * @typedef {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} Snapshot
- * @typedef {Readonly<{ snapshot: Snapshot, events: readonly Readonly<Record<string, unknown>>[] }>} Step one update as the board shows it: the state a move led to, and what happened on the way
+ * @typedef {Readonly<{ snapshot: Snapshot, events: readonly Readonly<Record<string, unknown>>[], outcome?: readonly Readonly<Record<string, unknown>>[], chained: boolean }>} Step one beat of an update as the board shows it: the state
+ *   it led to, and what happened on the way; `outcome`, what it announces is going to do (the next beat's events);
+ *   `chained` when it carries on from the beat before, and is shown once what that one announced has struck
  */
 
 export class MatchScene extends Scene {
@@ -109,8 +118,10 @@ export class MatchScene extends Scene {
   #submitting = false;
   /** Whether the widgets were last built with play held back, so the tree is rebuilt when that changes. */
   #builtBusy = false;
-  /** Updates that arrived while the board was still showing an earlier one, oldest first. @type {Step[]} */
+  /** Beats that arrived while the board was still showing an earlier one, oldest first. @type {Step[]} */
   #backlog = [];
+  /** The state the latest update led to: the next one is staged from it. @type {Snapshot | null} */
+  #taken = null;
   /** The end of the match being played out, before the result is offered; null until the match ends. @type {GameOverSequence | null} */
   #ending = null;
 
@@ -146,7 +157,8 @@ export class MatchScene extends Scene {
     const toss = session.openingToss;
     this.#coinFlip = toss === null ? null : new CoinFlip({ toss, animation: this.services.theme.animation });
     this.#unsubscribe = session.subscribe((update) => this.#onUpdate(update));
-    this.#show({ snapshot: session.snapshotFor(this.#playerId), events: [] }, false);
+    this.#taken = session.snapshotFor(this.#playerId);
+    this.#show({ snapshot: this.#taken, events: [], chained: false }, false);
     if (this.#coinFlip === null) {
       this.#begin();
     }
@@ -184,18 +196,26 @@ export class MatchScene extends Scene {
     return this.#ending !== null && !this.#ending.isDone;
   }
 
-  /** Whether the board may move on to the next update: nothing left to play out from the last one, and no coin in the air. */
-  get #readyForStep() {
-    return !this.isTossing && !this.#presenter.isBusy;
+  /**
+   * Whether the board may move on to `step`, with no coin in the air: to the
+   * next beat of an update once what the last one announced has struck, to
+   * the next update once nothing is left to play out from the last one.
+   * @param {Step} step
+   */
+  #readyFor(step) {
+    if (this.isTossing) {
+      return false;
+    }
+    return step.chained ? this.#presenter.hasStruck : !this.#presenter.isBusy;
   }
 
   /**
-   * Shows the oldest waiting update once the board is ready for it.
+   * Shows the oldest waiting beat once the board is ready for it.
    * @returns {boolean} whether one was shown
    */
   #showNextStep() {
     const next = this.#backlog[0];
-    if (next === undefined || !this.#readyForStep) {
+    if (next === undefined || !this.#readyFor(next)) {
       return false;
     }
     this.#backlog.shift();
@@ -324,14 +344,18 @@ export class MatchScene extends Scene {
       return;
     }
     // Taken now: the session tells its listeners straight after each move, while its state is still the one that move led to.
-    const step = Object.freeze({ snapshot: this.#session.snapshotFor(this.#playerId), events: this.#session.eventsFor(update.events, this.#playerId) });
-    if (this.#backlog.length === 0 && this.#readyForStep) {
-      this.#show(step, true);
-      return;
+    const snapshot = this.#session.snapshotFor(this.#playerId);
+    const beats = splitIntoBeats(this.#taken, snapshot, this.#session.eventsFor(update.events, this.#playerId));
+    this.#taken = snapshot;
+    const steps = beats.map((beat, index) => Object.freeze({ ...beat, chained: index > 0 }));
+    if (this.#backlog.length === 0 && this.#readyFor(steps[0])) {
+      this.#show(/** @type {Step} */ (steps.shift()), true);
     }
-    this.#backlog.push(step);
-    while (this.#backlog.length > MAX_BACKLOG) {
-      this.#show(/** @type {Step} */ (this.#backlog.shift()), false);
+    this.#backlog.push(...steps);
+    while (this.#backlog.filter((step) => !step.chained).length > MAX_BACKLOG) {
+      do {
+        this.#show(/** @type {Step} */ (this.#backlog.shift()), false);
+      } while (this.#backlog[0]?.chained === true);
     }
   }
 
@@ -340,13 +364,13 @@ export class MatchScene extends Scene {
    * @param {Step} step
    * @param {boolean} animate
    */
-  #show({ snapshot, events }, animate) {
+  #show({ snapshot, events, outcome = [] }, animate) {
     if (this.#session === null || this.#interaction === null) {
       return;
     }
     this.#snapshot = snapshot;
     this.#layout = computeBoardLayout(snapshot, this.#playerId, this.services.viewport);
-    this.#presenter.apply(snapshot, events, this.#layout, animate);
+    this.#presenter.apply(snapshot, events, this.#layout, { animate, outcome });
     const lines = events.map((event) => describeEvent(event, snapshot)).filter((line) => line !== null);
     this.#log = [...this.#log, ...lines].slice(-MAX_LOG_LINES);
     this.#interaction.sync(snapshot);
@@ -485,7 +509,7 @@ export class MatchScene extends Scene {
       if (player === undefined) {
         continue;
       }
-      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeShown: () => this.#presenter.lifeFor(player), lifeKick: () => this.#presenter.lifeKickFor(player.id) }));
+      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeKick: () => this.#presenter.lifeKickFor(player.id) }));
     }
   }
 

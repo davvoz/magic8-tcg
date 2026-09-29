@@ -1,17 +1,23 @@
 /**
  * The shared scene background: a deep radial glow, a vignette and a
  * deterministic scatter of faint motes, so every screen sits in the same
- * space instead of on a flat colour. The match is played on the painted
- * mat instead (Theme.tableArt) once its image is ready. Pure drawing; no state.
+ * space instead of on a flat colour; under them, once its image is ready,
+ * the painted menu backdrop (Theme.uiArt). The match is played on the
+ * painted mat instead (Theme.tableArt). Pure drawing; no state.
  */
 import { hashString, unitSequence } from "@magic8/engine/shared/hash.js";
 import { TablePiece } from "../images/TableArt.js";
+import { UiPiece } from "../images/UiArt.js";
 import { withAlpha } from "../theme/color.js";
-import { drawImageCover, radialGradient } from "./drawing.js";
+import { coverCrop, drawImageCover, radialGradient } from "./drawing.js";
 
 const MOTE_COUNT = 70;
 const MOTE_VALUES_PER_ITEM = 3;
 const VIGNETTE_INNER = 0.55;
+/** The glow at the centre and at the vignette's inner ring: strong on the plain colour, a tint over the painted backdrop. */
+const GLOW_ALPHA = Object.freeze({ plain: Object.freeze({ center: 0.95, ring: 0.25 }), painted: Object.freeze({ center: 0.3, ring: 0.06 }) });
+/** How much the painted backdrop may be stretched out of its proportions instead of cropped. */
+const MAX_SQUEEZE = 1.12;
 
 /**
  * @param {CanvasRenderingContext2D} context
@@ -24,12 +30,18 @@ export function drawSceneBackdrop(context, theme, bounds, { glowKey = "backgroun
   const glow = colors[glowKey] ?? colors.backgroundGlow;
   const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height * 0.42 };
   const radius = Math.max(bounds.width, bounds.height) * 0.75;
+  const art = theme.uiArt?.imageFor(UiPiece.BACKDROP) ?? null;
   context.save();
   context.fillStyle = colors.background;
   context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
+  if (art !== null) {
+    drawArtBackdrop(context, art, bounds);
+  }
+  // Over the painted backdrop the glow only tints it, keeping each scene's colour.
+  const glowAlpha = art === null ? GLOW_ALPHA.plain : GLOW_ALPHA.painted;
   context.fillStyle = radialGradient(context, center, radius, [
-    [0, withAlpha(glow, 0.95)],
-    [VIGNETTE_INNER, withAlpha(glow, 0.25)],
+    [0, withAlpha(glow, glowAlpha.center)],
+    [VIGNETTE_INNER, withAlpha(glow, glowAlpha.ring)],
     [1, withAlpha(colors.letterbox, 0.65)],
   ]);
   context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
@@ -62,6 +74,26 @@ export function drawTableBackdrop(context, theme, bounds) {
   ]);
   context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
   context.restore();
+}
+
+/**
+ * The painted menu backdrop over the whole screen. Its framed edges matter,
+ * so rather than cropping them all away to fit the screen's proportions it
+ * is squeezed a little (at most MAX_SQUEEZE) and only the rest is cropped.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../images/ImageCache.js").LoadedImage} art
+ * @param {import("@magic8/engine/shared/geometry.js").Rect} bounds
+ */
+function drawArtBackdrop(context, art, bounds) {
+  const imageAspect = art.width / art.height;
+  const screenAspect = bounds.width / bounds.height;
+  const squeeze = Math.min(MAX_SQUEEZE, Math.max(imageAspect, screenAspect) / Math.min(imageAspect, screenAspect));
+  // Crop to proportions `squeeze` closer to the image's own, then stretch that into the screen.
+  const target = imageAspect < screenAspect ? { width: bounds.width, height: bounds.height * squeeze } : { width: bounds.width * squeeze, height: bounds.height };
+  const crop = coverCrop(art, target, [0.5, 0.5]);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(art.source, crop.x, crop.y, crop.width, crop.height, bounds.x, bounds.y, bounds.width, bounds.height);
 }
 
 /**

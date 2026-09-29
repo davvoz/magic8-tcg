@@ -1,4 +1,5 @@
 import { TablePiece } from "../images/TableArt.js";
+import { inPixels, UiPiece } from "../images/UiArt.js";
 import { bevelRoundedRect, drawImageCover, fillRoundedRect, insetRect, roundedRectPath, verticalGradient } from "./drawing.js";
 import { UiNode } from "./UiNode.js";
 import { shade, withAlpha } from "../theme/color.js";
@@ -6,13 +7,23 @@ import { shade, withAlpha } from "../theme/color.js";
 const RIM_INSET = 4;
 /** How much of the painted stone shows through a textured panel's colour, and how dark its foot gets. */
 const STONE = Object.freeze({ alpha: 0.45, footShade: 0.55 });
+/**
+ * The painted corners: where their lines run (from the panel's edge), their
+ * largest and smallest scale, how far along each side they may reach (a
+ * fraction of it) and how strongly they show. Kept small: titles sit in the
+ * top-left corner.
+ */
+const CORNER = Object.freeze({ inset: 6, maxScale: 0.12, minScale: 0.07, reach: 0.42, alpha: 0.85 });
+/** Top-left, top-right, bottom-left, bottom-right. */
+const CORNER_FLIPS = Object.freeze([[1, 1], [-1, 1], [1, -1], [-1, -1]]);
 
 /**
  * A bordered box; a container for other widgets. Drawn as a slab with a
  * vertical gradient, a bevel and a thin inner rim, in the theme's panel
  * colours by default; `fillKey`/`strokeKey` select other theme tokens
  * (`strokeKey: null` drops the border). A `textured` panel is cut from the
- * painted stone (Theme.tableArt) once its image is ready.
+ * painted stone (Theme.tableArt) once its image is ready; any other panel
+ * large enough is dressed with the painted gold corners (Theme.uiArt).
  */
 export class Panel extends UiNode {
   /** @type {{ fillKey: string, strokeKey: string | null, textured: boolean }} */
@@ -42,7 +53,48 @@ export class Panel extends UiNode {
     }
     bevelRoundedRect(context, area, { light: withAlpha("#ffffff", 0.08), dark: withAlpha("#000000", 0.5), radius });
     fillRoundedRect(context, insetRect(area, RIM_INSET), { stroke: withAlpha(theme.colors.accent, 0.12), radius: Math.max(0, radius - RIM_INSET), lineWidth: 1 });
+    if (!this.style.textured) {
+      paintCorners(context, theme, area);
+    }
   }
+}
+
+/**
+ * The painted gold corner (Theme.uiArt) in each corner of a large panel,
+ * mirrored, its lines laid along the rim. Sized to the panel, never beyond
+ * CORNER.maxScale nor so far that opposite corners meet; a panel too small
+ * for a legible corner gets none, and so does every panel while the image
+ * is not ready.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {import("@magic8/engine/shared/geometry.js").Rect} area
+ */
+function paintCorners(context, theme, area) {
+  const art = theme.uiArt;
+  const image = art?.imageFor(UiPiece.CORNER) ?? null;
+  if (art === undefined || image === null) {
+    return;
+  }
+  const extent = inPixels(art.layout.corner.extent, image);
+  const lines = { x: art.layout.corner.lines.x * image.width, y: art.layout.corner.lines.y * image.height };
+  const reach = { x: extent.x + extent.width - lines.x, y: extent.y + extent.height - lines.y };
+  const scale = Math.min(CORNER.maxScale, (CORNER.reach * area.width) / reach.x, (CORNER.reach * area.height) / reach.y);
+  if (scale < CORNER.minScale) {
+    return;
+  }
+  context.save();
+  context.globalCompositeOperation = "screen";
+  context.globalAlpha = CORNER.alpha;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  for (const [flipX, flipY] of CORNER_FLIPS) {
+    context.save();
+    context.translate(flipX > 0 ? area.x + CORNER.inset : area.x + area.width - CORNER.inset, flipY > 0 ? area.y + CORNER.inset : area.y + area.height - CORNER.inset);
+    context.scale(flipX * scale, flipY * scale);
+    context.drawImage(image.source, extent.x, extent.y, extent.width, extent.height, extent.x - lines.x, extent.y - lines.y, extent.width, extent.height);
+    context.restore();
+  }
+  context.restore();
 }
 
 /**

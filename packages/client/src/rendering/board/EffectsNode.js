@@ -1,8 +1,8 @@
 /**
  * Transient overlay drawn above the cards: block arrows, cards on their
  * way to the graveyard, floating damage/heal numbers, and the moment
- * playing over the table — the card the opponent just cast, or the banner
- * of a new turn. It reads the presenter and the layout every frame and
+ * playing over the table — the card the opponent just cast, the rune of an
+ * ability going off, or the banner of a new turn. It reads the presenter and the layout every frame and
  * holds no state of its own.
  */
 import { paintRuneCircle } from "../cards/CardArt.js";
@@ -14,6 +14,7 @@ import { drawArrow } from "../ui/shapes.js";
 import { UiNode } from "../ui/UiNode.js";
 import { CastReveal } from "./CastReveal.js";
 import { floatOffset } from "./MatchPresenter.js";
+import { TriggerFlare } from "./TriggerFlare.js";
 import { TurnBanner } from "./TurnBanner.js";
 
 const ARROW_WIDTH = 5;
@@ -29,7 +30,15 @@ const CAST_RUNE = Object.freeze({ from: 0.5, to: 1.35, rays: 8, blur: 18 });
 const CAST_CARD = Object.freeze({ haloBlur: 36, haloAlpha: 0.55, gleamUntil: 0.35, gleamWidth: 3, gleamBlur: 24 });
 const CAST_CAPTION = Object.freeze({ font: 22, gap: 12, height: 30, spread: 70 });
 /** The beam to each target, the rune that marks it and the name under it. */
+/**
+ * A random discard's crosshair: its ring, the ticks that cross it (from
+ * `tickFrom` to `tickTo` times the radius), how fast it turns while it
+ * hunts, and the thin beam that follows it from the card.
+ */
+const CROSSHAIR = Object.freeze({ radius: 24, lockedRadius: 30, tickFrom: 0.45, tickTo: 1.4, width: 3, blur: 14, turnMs: 900, beamWidth: 2, beamAlpha: 0.55, lockedFill: 0.22 });
 const CAST_TARGET = Object.freeze({ beamWidth: 3, beamBlur: 16, markRadius: 26, markRays: 8, markFrom: 0.55, nameFont: 15, nameGap: 8, nameHeight: 20, nameSpread: 80 });
+/** An ability going off: its rune (in px, spreading from `from` to `to` times `radius`) and the card's name over it. */
+const FLARE = Object.freeze({ radius: 34, from: 0.8, to: 2.2, rays: 8, blur: 18, nameFont: 17, nameGap: 10, nameHeight: 24, nameSpread: 110 });
 /** The turn banner: the band of light, the words on it (sliding in from `slide` of the board's width) and the turn number under them. */
 const TURN = Object.freeze({ bandHeight: 150, edge: 2, font: 64, glowBlur: 24, slide: 0.18, dim: 0.35, captionFont: 18, captionGap: 6, captionHeight: 24 });
 
@@ -65,13 +74,15 @@ export class EffectsNode extends UiNode {
     for (const visual of this.#presenter.leavingVisuals) {
       const card = this.#presenter.cardFor(visual.instanceId);
       if (card !== null) {
-        drawCard(context, theme, card, { ...visual.state, flash: visual.flash });
+        paintLeavingCard(context, theme, card, visual);
       }
     }
     this.#paintFloats(context, theme);
     const moment = this.#presenter.moment;
     if (moment instanceof CastReveal) {
       this.#paintReveal(context, theme, moment);
+    } else if (moment instanceof TriggerFlare) {
+      paintFlare(context, theme, moment);
     } else if (moment instanceof TurnBanner) {
       this.#paintTurnBanner(context, theme, moment);
     }
@@ -135,6 +146,10 @@ export class EffectsNode extends UiNode {
     this.#paintCastLight(context, theme, tones, { frame, centre });
     paintCastRune(context, tones, { frame, centre });
     paintCastBeams(context, tones, { frame, origin, targets });
+    const { roulette } = reveal;
+    if (roulette !== null) {
+      paintCrosshair(context, theme, tones, { frame, origin, roulette, elapsedMs: frame.seek * roulette.durationMs });
+    }
     paintCastCard(context, theme, card, { frame, centre, tones });
     paintCastCaption(context, theme, caption, frame);
     paintCastMarks(context, theme, tones, { frame, targets });
@@ -211,6 +226,61 @@ export class EffectsNode extends UiNode {
 }
 
 /**
+ * A card on its way to the graveyard; one that left a pile nobody may look
+ * into — a hidden hand, the deck — as its back.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {import("@magic8/engine/domain/game/GameSnapshot.js").CardView} card
+ * @param {import("../cards/CardVisual.js").CardVisual} visual
+ */
+function paintLeavingCard(context, theme, card, visual) {
+  if (!visual.faceDown) {
+    drawCard(context, theme, card, { ...visual.state, flash: visual.flash });
+    return;
+  }
+  context.save();
+  context.globalAlpha = visual.state.alpha;
+  drawCardBack(context, theme, visual.state);
+  context.restore();
+}
+
+/**
+ * Abilities going off: over each card they come from, its rune kindles and
+ * spreads, its name hangs above it, and beams reach out to its targets.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {TriggerFlare} flare
+ */
+function paintFlare(context, theme, flare) {
+  const { frame } = flare;
+  const fade = frame.alpha * frame.glow;
+  if (fade <= 0) {
+    return;
+  }
+  for (const { card, origin, targets, roulette } of flare.sources) {
+    const tones = factionTones(theme, card.faction);
+    paintCastBeams(context, tones, { frame, origin, targets });
+    if (roulette) {
+      paintCrosshair(context, theme, tones, { frame, origin, roulette, elapsedMs: flare.seekMs });
+    }
+    context.save();
+    context.globalAlpha = fade;
+    context.shadowColor = withAlpha(tones.light, 0.9);
+    context.shadowBlur = FLARE.blur;
+    paintRuneCircle(context, origin, FLARE.radius, { rays: FLARE.rays, color: tones.light });
+    context.globalAlpha = fade * (1 - frame.ring);
+    paintRuneCircle(context, origin, FLARE.radius * (FLARE.from + (FLARE.to - FLARE.from) * frame.ring), { rays: FLARE.rays, color: tones.light });
+    context.restore();
+    const box = { x: origin.x - FLARE.nameSpread, y: origin.y - FLARE.radius - FLARE.nameGap - FLARE.nameHeight, width: 2 * FLARE.nameSpread, height: FLARE.nameHeight };
+    context.save();
+    context.globalAlpha = fade;
+    drawOutlinedText(context, card.name, box, { font: displayFont(theme, FLARE.nameFont), color: theme.colors.accentLight, outline: withAlpha(theme.colors.letterbox, 0.9), outlineWidth: 4, glow: withAlpha(tones.light, 0.8), glowBlur: 12 });
+    context.restore();
+    paintCastMarks(context, theme, tones, { frame, targets });
+  }
+}
+
+/**
  * The spell's own rune, spreading out from under the card and fading as it
  * goes: the same sigil the card's art carries.
  * @param {CanvasRenderingContext2D} context
@@ -238,7 +308,7 @@ function paintCastRune(context, tones, { frame, centre }) {
  * Drawn under the card, so it seems to come from behind it.
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").FactionTones} tones
- * @param {{ frame: import("./CastReveal.js").RevealFrame, origin: { x: number, y: number }, targets: readonly import("./CastReveal.js").CastTarget[] }} at
+ * @param {{ frame: Pick<import("./CastReveal.js").RevealFrame, "alpha" | "glow" | "strike">, origin: { x: number, y: number }, targets: readonly import("./CastReveal.js").CastTarget[] }} at
  */
 function paintCastBeams(context, tones, { frame, origin, targets }) {
   const fade = frame.alpha * frame.glow;
@@ -262,13 +332,75 @@ function paintCastBeams(context, tones, { frame, origin, targets }) {
 }
 
 /**
- * Where each beam lands: the spell's rune again, small, over whatever was
- * targeted, with its name under it — the creature may already have died and
- * left the board, and the name is what still answers "on what?".
+ * A random discard drawing its cards: once the rune has spread, a crosshair
+ * hunts across the hand with a thin beam of the spell's light trailing it
+ * from the card, and each card it settles on stays marked, locked, until
+ * the beams strike them all.
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").Theme} theme
  * @param {import("../theme/Theme.js").FactionTones} tones
- * @param {{ frame: import("./CastReveal.js").RevealFrame, targets: readonly import("./CastReveal.js").CastTarget[] }} at
+ * @param {{ frame: { alpha: number, glow: number, ring: number, strike: number }, origin: { x: number, y: number }, roulette: import("./TargetRoulette.js").TargetRoulette, elapsedMs: number }} at
+ */
+function paintCrosshair(context, theme, tones, { frame, origin, roulette, elapsedMs }) {
+  const fade = frame.alpha * frame.glow;
+  if (fade <= 0 || frame.ring < 1 || frame.strike >= 1) {
+    return;
+  }
+  const { point, locked } = roulette.at(elapsedMs);
+  const color = theme.colors.danger;
+  context.save();
+  context.globalAlpha = fade;
+  context.lineCap = "round";
+  context.shadowColor = withAlpha(tones.light, 0.9);
+  context.shadowBlur = CROSSHAIR.blur;
+  context.strokeStyle = withAlpha(tones.light, CROSSHAIR.beamAlpha);
+  context.lineWidth = CROSSHAIR.beamWidth;
+  context.beginPath();
+  context.moveTo(origin.x, origin.y);
+  context.lineTo(point.x, point.y);
+  context.stroke();
+  context.shadowColor = withAlpha(color, 0.9);
+  for (const card of locked) {
+    context.fillStyle = withAlpha(color, CROSSHAIR.lockedFill);
+    context.beginPath();
+    context.arc(card.x, card.y, CROSSHAIR.lockedRadius, 0, Math.PI * 2);
+    context.fill();
+    strokeReticle(context, card, { radius: CROSSHAIR.lockedRadius, angle: Math.PI / 4, color });
+  }
+  strokeReticle(context, point, { radius: CROSSHAIR.radius, angle: elapsedMs / CROSSHAIR.turnMs, color });
+  context.restore();
+}
+
+/**
+ * A ring crossed by four ticks, turned by `angle`.
+ * @param {CanvasRenderingContext2D} context
+ * @param {{ x: number, y: number }} centre
+ * @param {{ radius: number, angle: number, color: string }} style
+ */
+function strokeReticle(context, centre, { radius, angle, color }) {
+  context.strokeStyle = color;
+  context.lineWidth = CROSSHAIR.width;
+  context.beginPath();
+  context.arc(centre.x, centre.y, radius, 0, Math.PI * 2);
+  context.stroke();
+  for (let tick = 0; tick < 4; tick += 1) {
+    const direction = angle + (tick * Math.PI) / 2;
+    context.beginPath();
+    context.moveTo(centre.x + Math.cos(direction) * radius * CROSSHAIR.tickFrom, centre.y + Math.sin(direction) * radius * CROSSHAIR.tickFrom);
+    context.lineTo(centre.x + Math.cos(direction) * radius * CROSSHAIR.tickTo, centre.y + Math.sin(direction) * radius * CROSSHAIR.tickTo);
+    context.stroke();
+  }
+}
+
+/**
+ * Where each beam lands: the spell's rune again, small, over whatever was
+ * targeted, with its name under it — the creature may already have died and
+ * left the board, and the name is what still answers "on what?". A pile
+ * aimed at card by card (a hand) is named once, under the middle card.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {import("../theme/Theme.js").FactionTones} tones
+ * @param {{ frame: Pick<import("./CastReveal.js").RevealFrame, "alpha" | "glow" | "strike">, targets: readonly import("./CastReveal.js").CastTarget[] }} at
  */
 function paintCastMarks(context, theme, tones, { frame, targets }) {
   const arrived = (frame.strike - CAST_TARGET.markFrom) / (1 - CAST_TARGET.markFrom);
@@ -282,6 +414,9 @@ function paintCastMarks(context, theme, tones, { frame, targets }) {
     context.shadowColor = withAlpha(tones.light, 0.9);
     context.shadowBlur = CAST_TARGET.beamBlur;
     paintRuneCircle(context, target, CAST_TARGET.markRadius, { rays: CAST_TARGET.markRays, color: tones.light });
+    if (target.name === "") {
+      continue;
+    }
     const box = { x: target.x - CAST_TARGET.nameSpread, y: target.y + CAST_TARGET.markRadius + CAST_TARGET.nameGap, width: 2 * CAST_TARGET.nameSpread, height: CAST_TARGET.nameHeight };
     drawOutlinedText(context, target.name, box, { font: displayFont(theme, CAST_TARGET.nameFont), color: theme.colors.accentLight, outline: withAlpha(theme.colors.letterbox, 0.9), outlineWidth: 4, glow: withAlpha(tones.light, 0.8), glowBlur: 10 });
   }
