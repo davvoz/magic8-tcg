@@ -14,8 +14,9 @@
  * life a later beat takes is still there. That state is staged from what
  * the events say happened, never guessed from differences: whatever later
  * beats still change is the previous state carried forward by the events
- * so far; everything else is already as the final state has it. The last
- * beat is the final state itself.
+ * so far; everything else is already as the final state has it. A creature
+ * whose death is announced stays standing through that announcement. The
+ * last beat is the final state itself.
  */
 import { GameEventType } from "@magic8/engine/domain/game/GameEventType.js";
 import { ZoneType } from "@magic8/engine/domain/game/ZoneType.js";
@@ -69,10 +70,24 @@ export function splitIntoBeats(previous, snapshot, events) {
   return Object.freeze(
     groups.map((group, index) => {
       end += group.length;
-      const staged = index === groups.length - 1 ? snapshot : stage(previous, snapshot, events.slice(0, end), events.slice(end));
+      const lingering = lingeringDeaths(group);
+      const done = events.slice(0, end).filter((event) => !lingering.has(event));
+      const staged = index === groups.length - 1 ? snapshot : stage(previous, snapshot, done, [...lingering, ...events.slice(end)]);
       return Object.freeze({ snapshot: staged, events: Object.freeze(group), outcome: Object.freeze(groups[index + 1] ?? []) });
     }),
   );
+}
+
+/**
+ * The deaths in a beat that set off an ability announced in it: the creature
+ * stays where it stood until the next beat, so the rune kindles over it and
+ * the beams leave from it, and only then does it go to the graveyard.
+ * @param {readonly GameEvent[]} group
+ * @returns {Set<GameEvent>}
+ */
+function lingeringDeaths(group) {
+  const sources = new Set(group.filter(isAnnouncement).map((event) => event.sourceId));
+  return new Set(group.filter((event) => event.type === GameEventType.CREATURE_DIED && sources.has(event.instanceId)));
 }
 
 /**

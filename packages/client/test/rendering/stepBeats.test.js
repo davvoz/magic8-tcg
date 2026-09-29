@@ -48,12 +48,16 @@ describe("StepBeats", () => {
     assert.equal(seat(cast.snapshot, P1).life, 20);
 
     assert.deepEqual(types(struck), [GameEventType.DAMAGE_DEALT, GameEventType.CREATURE_DIED, GameEventType.ABILITY_TRIGGERED], "the bolt strikes, the zealot dies, its death is announced");
-    assert.deepEqual(seat(struck.snapshot, P2).battlefield, [], "the zealot is gone");
-    assert.ok(seat(struck.snapshot, P2).graveyard.some((card) => card.instanceId === zealot), "to the graveyard");
-    assert.equal(seat(struck.snapshot, P1).life, 20, "but Alice is not burned yet");
+    const dying = seat(struck.snapshot, P2).battlefield;
+    assert.deepEqual(dying.map((card) => card.instanceId), [zealot], "the zealot stands while its death is announced");
+    assert.ok(dying[0].damage > 0, "struck by the bolt");
+    assert.ok(!seat(struck.snapshot, P2).graveyard.some((card) => card.instanceId === zealot), "not yet in the graveyard");
+    assert.equal(seat(struck.snapshot, P1).life, 20, "and Alice is not burned yet");
 
     assert.equal(burned.snapshot, after, "the last beat is the final state itself");
     assert.ok(types(burned).includes(GameEventType.LIFE_CHANGED));
+    assert.deepEqual(seat(burned.snapshot, P2).battlefield, [], "then the zealot is gone");
+    assert.ok(seat(burned.snapshot, P2).graveyard.some((card) => card.instanceId === zealot), "to the graveyard");
   });
 
   it("keeps a damaged survivor at full health until the blow that damages it", () => {

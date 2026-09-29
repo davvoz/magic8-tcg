@@ -862,7 +862,7 @@ describe("MatchScene on the board", () => {
 
     advanceTo(() => reveal.hasStruck, "the bolt strikes");
     scene.update(16);
-    assert.equal(cardNamed(scene, "Ember Zealot"), null, "the zealot falls as it is struck");
+    assert.ok(cardNamed(scene, "Ember Zealot"), "the zealot, struck, stands while its death is announced");
     assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-3"));
     assert.equal(byId(scene, P2).lifeShown(), 20, "but its death has not gone off yet");
     assert.ok(!scene.presenter.floats.some((float) => float.spec.text === "-1"));
@@ -871,8 +871,10 @@ describe("MatchScene on the board", () => {
     const flare = scene.presenter.moment;
     assert.deepEqual(flare.sources.map((source) => [source.card.name, source.targets.map((target) => target.name)]), [["Ember Zealot", ["Bob"]]]);
     assert.equal(byId(scene, P2).lifeShown(), 20, "Bob untouched while its rune kindles");
+    assert.ok(cardNamed(scene, "Ember Zealot"), "over the zealot, still standing");
     advanceTo(() => flare.hasStruck, "its beam strikes Bob");
     scene.update(16);
+    assert.equal(cardNamed(scene, "Ember Zealot"), null, "only then does the zealot fall");
     assert.equal(byId(scene, P2).lifeShown(), 19, "Bob burns as it lands");
     assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-1"), "with its number");
     settle(scene);
