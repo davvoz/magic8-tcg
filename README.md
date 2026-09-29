@@ -10,6 +10,7 @@ Multiplayer collectible card game built on the magic8 rules engine (forked with 
 
 | | |
 |---|---|
+| [Panoramica funzionale](docs/tcg/panoramica-funzionale.md) | The game and its ecosystem, functionally: rules, game modes, collection, shop, trades, market, ranked, what goes on-chain |
 | [00 — Analisi](docs/tcg/00-analisi.md) | What the magic8 engine gives us, what the existing STEEM projects teach, what in the brief had to change |
 | [01 — Architettura](docs/tcg/01-architettura.md) | Bounded contexts, packages, layers, blockchain ports, domain model, main flows |
 | [02 — Protocollo multiplayer e API](docs/tcg/02-protocollo-multiplayer.md) | HTTP API, WebSocket protocol, concurrency, reconnection, timers |
