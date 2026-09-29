@@ -1,3 +1,5 @@
+import { PANEL_INSET } from "../../ui/Panel.js";
+
 /**
  * Fixed layout of the deck builder in logical units (1600×900 design
  * space). Both views share the header and the two columns.
@@ -9,7 +11,8 @@ export const COLUMNS = Object.freeze({
   left: Object.freeze({ x: 60, width: 700 }),
   right: Object.freeze({ x: 800, width: 740 }),
 });
-export const INSET = 20;
+/** Padding inside the column panels, clear of their painted corners. */
+export const INSET = PANEL_INSET;
 export const ROW = Object.freeze({ height: 56, gap: 8 });
 export const ACTION = Object.freeze({ width: 90, small: 56, gap: 10 });
 export const INSPECT = Object.freeze({ width: 900, height: 620, card: Object.freeze({ width: 380, height: 560 }) });

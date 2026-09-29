@@ -5,9 +5,10 @@
 import { Button } from "./Button.js";
 import { Label } from "./Label.js";
 import { Modal } from "./Modal.js";
+import { PANEL_INSET } from "./Panel.js";
 
 const SIZE = Object.freeze({ width: 640, height: 260 });
-const INSET = 20;
+const INSET = PANEL_INSET;
 const BUTTON_HEIGHT = 52;
 const BUTTON_GAP = 14;
 

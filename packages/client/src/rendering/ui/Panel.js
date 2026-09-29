@@ -16,6 +16,13 @@ const STONE = Object.freeze({ alpha: 0.45, footShade: 0.55 });
 const CORNER = Object.freeze({ inset: 6, maxScale: 0.12, minScale: 0.07, reach: 0.42, alpha: 0.85 });
 /** Top-left, top-right, bottom-left, bottom-right. */
 const CORNER_FLIPS = Object.freeze([[1, 1], [-1, 1], [1, -1], [-1, -1]]);
+/**
+ * How far a panel's content keeps from its sides so that none of it sits on
+ * the painted corners: at CORNER.maxScale their scrolls reach about 34
+ * units along each side, thinning towards the rim (measured on the corner
+ * image: regenerating it means measuring it again).
+ */
+export const PANEL_INSET = 34;
 
 /**
  * A bordered box; a container for other widgets. Drawn as a slab with a

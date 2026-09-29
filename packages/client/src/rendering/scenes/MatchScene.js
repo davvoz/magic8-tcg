@@ -64,7 +64,7 @@ import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
 import { Label } from "../ui/Label.js";
 import { Modal } from "../ui/Modal.js";
-import { Panel } from "../ui/Panel.js";
+import { Panel, PANEL_INSET } from "../ui/Panel.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
@@ -77,7 +77,7 @@ const TOSS_BANNER = "Coin toss · who plays first?";
 const SIDEBAR = Object.freeze({ inset: 12, buttonHeight: 48, gap: 8, titleHeight: 36, phaseHeight: 26, promptTop: 84, promptHeight: 64, buttonsTop: 156 });
 const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
 const GAME_OVER = Object.freeze({ width: 720, height: 320 });
-const INSPECT = Object.freeze({ width: 440, height: 640, card: Object.freeze({ width: 380, height: 540 }) });
+const INSPECT = Object.freeze({ width: 448, height: 640, card: Object.freeze({ width: 380, height: 540 }) });
 /** Marks that invite a tap, dropped while moves are held back. @type {ReadonlySet<string>} */
 const INVITING = new Set([Highlight.PLAYABLE, Highlight.TARGETABLE]);
 
@@ -697,15 +697,15 @@ export class MatchScene extends Scene {
     const { viewport } = this.services;
     const modal = new Modal({ id: "gameOver", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: GAME_OVER.width, panelHeight: GAME_OVER.height, onDismiss: () => this.closeModal() });
     const { panel } = modal;
-    const width = GAME_OVER.width - 40;
+    const width = GAME_OVER.width - 2 * PANEL_INSET;
     const victory = this.#spectating || snapshot.winnerId === this.#playerId;
-    panel.add(new Label({ x: 20, y: 40, width, height: 90, text: outcomeFor(snapshot, this.#viewer()), size: "title", weight: "bold", colorKey: victory ? "accentLight" : "danger", glow: true }));
-    panel.add(new Label({ x: 20, y: 140, width, height: 30, text: reasonFor(snapshot), size: "body", colorKey: "textMuted" }));
+    panel.add(new Label({ x: PANEL_INSET, y: 40, width, height: 90, text: outcomeFor(snapshot, this.#viewer()), size: "title", weight: "bold", colorKey: victory ? "accentLight" : "danger", glow: true }));
+    panel.add(new Label({ x: PANEL_INSET, y: 140, width, height: 30, text: reasonFor(snapshot), size: "body", colorKey: "textMuted" }));
     const third = (width - 2 * 14) / 3;
     const y = GAME_OVER.height - 20 - 52;
-    panel.add(new Button({ id: "gameOver.again", x: 20, y, width: third, height: 52, text: this.#spectating ? "Watch another" : "Play again", variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
-    panel.add(new Button({ id: "gameOver.menu", x: 20 + third + 14, y, width: third, height: 52, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
-    panel.add(new Button({ id: "gameOver.board", x: 20 + 2 * (third + 14), y, width: third, height: 52, text: "View board", onActivate: () => this.closeModal() }));
+    panel.add(new Button({ id: "gameOver.again", x: PANEL_INSET, y, width: third, height: 52, text: this.#spectating ? "Watch another" : "Play again", variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
+    panel.add(new Button({ id: "gameOver.menu", x: PANEL_INSET + third + 14, y, width: third, height: 52, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
+    panel.add(new Button({ id: "gameOver.board", x: PANEL_INSET + 2 * (third + 14), y, width: third, height: 52, text: "View board", onActivate: () => this.closeModal() }));
     this.openModal(modal);
   }
 

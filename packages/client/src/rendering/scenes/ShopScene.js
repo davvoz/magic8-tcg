@@ -41,7 +41,7 @@ import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "shop.list";
 const LINE = 28;
-const TABS = Object.freeze({ top: 14, height: 46, gap: 8 });
+const TABS = Object.freeze({ top: 20, height: 40, gap: 8 });
 const FILTER_TOP = 72;
 const LIST_TOP = Object.freeze({ plain: 76, filtered: FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12 });
 const PRICE_WIDTH = 170;

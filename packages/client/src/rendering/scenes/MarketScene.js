@@ -35,7 +35,7 @@ import { SceneId } from "./sceneIds.js";
 const DAY = 24 * 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
 const LINE = 30;
-const TABS = Object.freeze({ top: 14, height: 46, gap: 8 });
+const TABS = Object.freeze({ top: 20, height: 40, gap: 8 });
 const SORTS = Object.freeze({ top: 70, height: 38, gap: 6 });
 const FILTER_TOP = SORTS.top + SORTS.height + 10;
 const LIST_TOP = FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12;
