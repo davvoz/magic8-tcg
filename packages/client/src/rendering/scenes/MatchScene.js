@@ -44,6 +44,7 @@ import { ControllerKind } from "../../application/match/PlayerController.contrac
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
 import { KeyMap, isKey } from "../../input/KeyMap.js";
 import { Highlight, InteractionMode, MatchInteraction } from "../../input/interaction/MatchInteraction.js";
+import { BattleLogNode, createLogScroll } from "../board/BattleLogNode.js";
 import { BoardNode } from "../board/BoardNode.js";
 import { CardNode } from "../board/CardNode.js";
 import { ClockNode } from "../board/ClockNode.js";
@@ -56,7 +57,7 @@ import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
 import { PlayerNode, lifeCrystalCentre } from "../board/PlayerNode.js";
 import { splitIntoBeats } from "../board/StepBeats.js";
-import { describeEvent } from "../board/eventLog.js";
+import { LogKind, describeEvent } from "../board/eventLog.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { drawTableBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -68,11 +69,11 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
-const MAX_LOG_LINES = 12;
+/** The whole match, in practice; the log scrolls. */
+const MAX_LOG_ENTRIES = 200;
 /** Updates allowed to wait their turn (however many beats each has); past this the oldest are shown at once, unanimated, so a fast match cannot leave the board far behind. */
 const MAX_BACKLOG = 6;
 const TOSS_BANNER = "Coin toss · who plays first?";
-const LOG_LINE_HEIGHT = 22;
 const SIDEBAR = Object.freeze({ inset: 12, buttonHeight: 48, gap: 8, titleHeight: 36, phaseHeight: 26, promptTop: 84, promptHeight: 64, buttonsTop: 156 });
 const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
 const GAME_OVER = Object.freeze({ width: 720, height: 320 });
@@ -106,8 +107,10 @@ export class MatchScene extends Scene {
   #snapshot = null;
   /** @type {import("../board/BoardLayout.js").BoardLayout | null} */
   #layout = null;
-  /** @type {string[]} */
+  /** @type {import("../board/eventLog.js").LogEntry[]} */
   #log = [];
+  /** Where the log is scrolled to, kept across rebuilds. */
+  #logScroll = createLogScroll();
   #gameOverShown = false;
   /** The opening coin toss being played, null once it is over (or when there was none). @type {CoinFlip | null} */
   #coinFlip = null;
@@ -153,6 +156,7 @@ export class MatchScene extends Scene {
     this.#ending = null;
     this.#backlog = [];
     this.#log = [];
+    this.#logScroll = createLogScroll();
     this.#interaction = new MatchInteraction(this.#playerId);
     const toss = session.openingToss;
     this.#coinFlip = toss === null ? null : new CoinFlip({ toss, animation: this.services.theme.animation });
@@ -371,8 +375,8 @@ export class MatchScene extends Scene {
     this.#snapshot = snapshot;
     this.#layout = computeBoardLayout(snapshot, this.#playerId, this.services.viewport);
     this.#presenter.apply(snapshot, events, this.#layout, { animate, outcome });
-    const lines = events.map((event) => describeEvent(event, snapshot)).filter((line) => line !== null);
-    this.#log = [...this.#log, ...lines].slice(-MAX_LOG_LINES);
+    const entries = events.map((event) => describeEvent(event, snapshot)).filter((entry) => entry !== null);
+    this.#log = [...this.#log, ...entries].slice(-MAX_LOG_ENTRIES);
     this.#interaction.sync(snapshot);
     this.#rebuild();
     this.#maybeShowGameOver();
@@ -437,7 +441,7 @@ export class MatchScene extends Scene {
   /** @param {import("@magic8/engine/shared/Result.js").Result<unknown>} result */
   #onSubmitted(result) {
     if (!result.ok) {
-      this.#log = [...this.#log, `Rejected: ${result.error.message}`].slice(-MAX_LOG_LINES);
+      this.#log = [...this.#log, { text: `Rejected: ${result.error.message}`, kind: LogKind.REJECTED }].slice(-MAX_LOG_ENTRIES);
       this.#interaction?.cancel();
       this.#rebuild();
     }
@@ -658,12 +662,7 @@ export class MatchScene extends Scene {
     const width = log.width - 2 * LOG.inset;
     panel.add(new Label({ x: LOG.inset, y: LOG.inset, width, height: LOG.headerHeight, text: "Battle log", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
     const top = LOG.inset + LOG.headerHeight;
-    const capacity = Math.max(0, Math.floor((log.height - top - LOG.inset) / LOG_LINE_HEIGHT));
-    const lines = this.#log.slice(-capacity);
-    lines.forEach((line, index) => {
-      const latest = index === lines.length - 1;
-      panel.add(new Label({ x: LOG.inset, y: top + index * LOG_LINE_HEIGHT, width, height: LOG_LINE_HEIGHT, text: line, size: "small", colorKey: latest ? "text" : "textMuted", align: "left", fit: true }));
-    });
+    panel.add(new BattleLogNode({ id: "log.entries", x: LOG.inset, y: top, width, height: Math.max(0, log.height - top - LOG.inset), entries: this.#log, view: this.#logScroll }));
   }
 
   #confirm() {

@@ -1,12 +1,48 @@
 /**
- * Human-readable one-liners for engine events, for the match log. Ids are
- * resolved against the current snapshot; cards that already left the
- * board fall back to their id.
+ * Human-readable entries for engine events, for the match log, each tagged
+ * with a kind so the log can tell them apart at a glance. Ids are resolved
+ * against the current snapshot; cards that already left the board fall back
+ * to their id.
  */
 import { GameEventType } from "@magic8/engine/domain/game/GameEventType.js";
 import { ZoneType } from "@magic8/engine/domain/game/ZoneType.js";
 
+/** What a log entry is about; the battle log colours entries by it. */
+export const LogKind = Object.freeze({
+  TURN: "turn",
+  PLAY: "play",
+  COMBAT: "combat",
+  DAMAGE: "damage",
+  LOSS: "loss",
+  HEAL: "heal",
+  END: "end",
+  REJECTED: "rejected",
+});
+
+/**
+ * @typedef {typeof LogKind[keyof typeof LogKind]} LogKindValue
+ * @typedef {Readonly<{ text: string, kind: LogKindValue }>} LogEntry
+ */
 /** @typedef {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} Snapshot */
+
+/** @type {Readonly<Record<string, LogKindValue>>} */
+const KINDS = Object.freeze({
+  [GameEventType.CARD_PLAYED]: LogKind.PLAY,
+  [GameEventType.ATTACKERS_DECLARED]: LogKind.COMBAT,
+  [GameEventType.BLOCKERS_DECLARED]: LogKind.COMBAT,
+  [GameEventType.DAMAGE_DEALT]: LogKind.DAMAGE,
+  [GameEventType.CREATURE_SACRIFICED]: LogKind.LOSS,
+  [GameEventType.CREATURE_DESTROYED]: LogKind.LOSS,
+  [GameEventType.CARD_RETURNED]: LogKind.LOSS,
+  [GameEventType.CARD_MILLED]: LogKind.LOSS,
+  [GameEventType.CREATURE_DIED]: LogKind.LOSS,
+  [GameEventType.CARD_DISCARDED]: LogKind.LOSS,
+  [GameEventType.HEALED]: LogKind.HEAL,
+  [GameEventType.FATIGUE_DAMAGE]: LogKind.DAMAGE,
+  [GameEventType.TURN_STARTED]: LogKind.TURN,
+  [GameEventType.PLAYER_CONCEDED]: LogKind.END,
+  [GameEventType.GAME_ENDED]: LogKind.END,
+});
 
 /** @type {Readonly<Record<string, (event: Readonly<Record<string, unknown>>, names: (id: unknown) => string) => string>>} */
 const DESCRIBERS = Object.freeze({
@@ -41,14 +77,15 @@ const DESCRIBERS = Object.freeze({
 /**
  * @param {Readonly<Record<string, unknown>>} event
  * @param {Snapshot} snapshot
- * @returns {string | null} null for events that are not worth a log line
+ * @returns {LogEntry | null} null for events that are not worth a log line
  */
 export function describeEvent(event, snapshot) {
-  const describe = DESCRIBERS[/** @type {string} */ (event.type)];
+  const type = /** @type {string} */ (event.type);
+  const describe = DESCRIBERS[type];
   if (describe === undefined) {
     return null;
   }
-  return describe(event, (id) => nameOf(id, snapshot));
+  return Object.freeze({ text: describe(event, (id) => nameOf(id, snapshot)), kind: KINDS[type] });
 }
 
 /**

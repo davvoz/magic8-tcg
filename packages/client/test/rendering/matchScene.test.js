@@ -87,6 +87,8 @@ const rendered = (scene) => {
   scene.render(context);
   return context.texts;
 };
+/** Everything drawn, joined, so a log entry wrapped over several lines still reads as one. */
+const drawnText = (scene) => rendered(scene).join(" ");
 const key = (name) => ({ type: "keydown", key: name, repeat: false });
 const centreOf = (area) => ({ x: area.x + area.width / 2, y: area.y + area.height / 2 });
 /** Steps the scene through the end of the match until the result is offered. */
@@ -417,7 +419,7 @@ describe("MatchScene on the board", () => {
     assert.ok(brute.bounds.y > cardNamed(scene, "Ember Imp").bounds.y, "my hand is below the opponent's creatures");
     tapNode(brute);
     assert.equal(session.snapshotFor(P1).players[0].battlefield[0].instanceId, id(P1, ZoneType.HAND, 0));
-    assert.ok(rendered(scene).some((text) => text.includes("Alice played Lava Brute")), "log from session events");
+    assert.ok(drawnText(scene).includes("Alice played Lava Brute"), "log from session events");
     assert.equal(scene.presenter.isAnimating, true, "the card tweens from the hand to the battlefield");
     assert.equal(scene.update(16), true);
     assert.equal(scene.update(10000), true, "final frame of the tween");
@@ -458,7 +460,7 @@ describe("MatchScene on the board", () => {
     const snapshot = session.snapshotFor(null);
     assert.equal(snapshot.phase, GamePhase.MAIN_2, "AI declared (no) blockers and damage resolved");
     assert.equal(snapshot.players[1].life, 14);
-    assert.ok(rendered(scene).some((text) => text.includes("deals 6")), "log line (ellipsized to the sidebar width)");
+    assert.ok(drawnText(scene).includes("Blazing Titan deals 6 to Bob"), "log entry, wrapped in full");
     assert.ok(scene.presenter.floats.some((float) => float.spec.text === "-6"));
   });
 
@@ -489,7 +491,7 @@ describe("MatchScene on the board", () => {
     const texts = rendered(scene);
     assert.ok(texts.includes("Ember Bolt"), "the face is drawn");
     assert.ok(texts.includes("Bob casts"), "so is the caption");
-    assert.ok(texts.some((text) => text.includes("Bob cast Ember Bolt on")), "log names the spell and its target");
+    assert.ok(texts.join(" ").includes("Bob cast Ember Bolt on Cinder Hound"), "log names the spell and its target");
 
     const parked = centreOf(reveal.frame);
     assert.deepEqual(parked, centreOf(layout.banner), "held in the middle of the table");
@@ -726,6 +728,36 @@ describe("MatchScene on the board", () => {
     settle(scene);
     assert.ok(rendered(scene).some((text) => text.startsWith("Turn 4 · Opponent's turn")));
     assert.equal(scene.interaction.mode, InteractionMode.BLOCKERS, "the AI's imp attacks; the board asks for blockers");
+  });
+
+  it("scrolls the battle log with the wheel, keeps the position across updates and follows new entries at the bottom", async () => {
+    const { scene, session } = await sceneFor({ p1: { life: 60, library: [] }, p2: { life: 60, library: [] } });
+    const log = () => byId(scene, "log.entries");
+    /** The log lays itself out when drawn, so draw before asking how far it scrolls. */
+    const overflowing = () => rendered(scene).length > 0 && log().maxScrollY > 0;
+    for (let turn = 0; turn < 12 && !overflowing(); turn += 1) {
+      scene.onKey(key("e"));
+      await session.whenIdle();
+      settle(scene);
+    }
+    assert.ok(overflowing(), "the log outgrew its panel");
+    assert.equal(log().scrollY, log().maxScrollY, "showing the newest entries");
+
+    scene.onPointer({ type: "wheel", ...centreOf(log().bounds), deltaY: -60 });
+    const scrolled = log().scrollY;
+    assert.equal(scrolled, log().maxScrollY - 60, "the wheel scrolls it back");
+    scene.onKey(key("e"));
+    await session.whenIdle();
+    settle(scene);
+    rendered(scene);
+    assert.equal(log().scrollY, scrolled, "a rebuild keeps the scrolled-up position");
+
+    scene.onPointer({ type: "wheel", ...centreOf(log().bounds), deltaY: 10000 });
+    scene.onKey(key("e"));
+    await session.whenIdle();
+    settle(scene);
+    rendered(scene);
+    assert.equal(log().scrollY, log().maxScrollY, "back at the bottom it follows new entries");
   });
 
   it("inspects any card on right-click or I, even the opponent's, and offers Play again at the end", async () => {
