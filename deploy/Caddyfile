@@ -1,0 +1,10 @@
+# TLS certificates come from Let's Encrypt automatically.
+# Caddy writes the client address into X-Forwarded-For, where the server
+# (M8_TRUST_PROXY=true) reads it. WebSockets on /ws pass through as they are.
+{$M8_DOMAIN} {
+	reverse_proxy app:8080 {
+		# While the app restarts during a deploy, requests wait for it instead of failing.
+		lb_try_duration 30s
+		lb_try_interval 500ms
+	}
+}

@@ -1,0 +1,17 @@
+# The production image on this computer: app + PostgreSQL over plain http on
+# http://localhost:8081, no Caddy. It does not read .env (the development keys
+# stay out: nothing is published on chain). Usage: npm run docker:up / docker:down
+name: magic8-local
+
+services:
+  app:
+    env_file: !reset []
+    environment:
+      M8_PUBLIC_ORIGIN: http://localhost:8081
+      M8_TRUST_PROXY: "false"
+      M8_LOG_FORMAT: pretty
+    ports:
+      - "8081:8080"
+
+  caddy:
+    profiles: [proxy]

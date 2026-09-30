@@ -8,3 +8,11 @@ Thumbs.db
 
 # local development database (PGlite)
 .data/
+
+# local agent/tooling config
+.agents/
+.claude/
+
+# database dumps made by deploy/backup.sh on the server
+/backups/
+deploy/README.md

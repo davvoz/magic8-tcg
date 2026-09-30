@@ -22,6 +22,9 @@
     "check": "npm run lint && npm run typecheck && npm test",
     "serve": "node tools/dev-server.js",
     "start": "npm start -w @magic8/server",
+    "docker:up": "docker compose -f docker-compose.yml -f deploy/compose.local.yml --env-file deploy/local.env up --build -d --wait",
+    "docker:logs": "docker compose -f docker-compose.yml -f deploy/compose.local.yml --env-file deploy/local.env logs -f app",
+    "docker:down": "docker compose -f docker-compose.yml -f deploy/compose.local.yml --env-file deploy/local.env down",
     "simulate": "npm run simulate -w @magic8/client --"
   },
   "devDependencies": {

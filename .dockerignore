@@ -1,0 +1,15 @@
+# Only what the server needs at run time goes into the image (see Dockerfile).
+**/node_modules
+**/coverage
+**/test
+.git
+.github
+.data
+.env
+.env.*
+.agents
+.claude
+backups
+deploy
+docs
+README.md

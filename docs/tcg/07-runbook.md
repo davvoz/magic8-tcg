@@ -9,7 +9,7 @@
 - un PostgreSQL gestito o proprio (≥ 15), con backup;
 - un reverse proxy con TLS davanti al server (nginx, Caddy, il bilanciatore del provider). Deve inoltrare i WebSocket su `/ws` e **aggiungere** l'indirizzo del client in fondo a `X-Forwarded-For`.
 
-Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio).
+Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio). Con Docker (server, PostgreSQL e Caddy in un unico compose, deploy da GitHub Actions): [deploy/README.md](../../deploy/README.md).
 
 | Variabile | Obbligatoria | Cosa |
 |---|---|---|
