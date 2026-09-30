@@ -20,8 +20,7 @@ main() {
   git checkout --quiet --detach "$target"
   APP_TAG=$tag docker compose build app
 
-  docker compose up -d --wait db caddy
-  docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+  docker compose up -d --wait db
   sh deploy/backup.sh "pre-$tag"
 
   if APP_TAG=$tag docker compose up -d --no-deps --wait --wait-timeout 90 app; then

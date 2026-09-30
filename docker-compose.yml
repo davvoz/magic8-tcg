@@ -1,7 +1,7 @@
-# Production stack: game server, PostgreSQL, Caddy (TLS and reverse proxy).
-# Configuration comes from .env next to this file (template:
-# deploy/production.env.example); deploy/README.md explains the setup.
-# Only Caddy is reachable from outside.
+# Production stack: game server and PostgreSQL. The host's nginx terminates
+# TLS and forwards to the app on 127.0.0.1 (deploy/nginx.conf); nothing here is
+# reachable from outside. Configuration comes from .env next to this file
+# (template: deploy/production.env.example); deploy/README.md explains the setup.
 
 x-logging: &logging
   driver: json-file
@@ -21,6 +21,8 @@ services:
       M8_PUBLIC_ORIGIN: https://${M8_DOMAIN:?set M8_DOMAIN in .env}
       M8_DATABASE_URL: postgres://magic8:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/magic8
       M8_TRUST_PROXY: "true"
+    ports:
+      - "127.0.0.1:${M8_HOST_PORT:-8090}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -52,23 +54,5 @@ services:
       retries: 5
     logging: *logging
 
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    environment:
-      M8_DOMAIN: ${M8_DOMAIN:?set M8_DOMAIN in .env}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      # The directory, not the file: git checkout replaces the file, and a file mount would keep showing the old one.
-      - ./deploy:/etc/caddy:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    logging: *logging
-
 volumes:
   pgdata:
-  caddy_data:
-  caddy_config:
