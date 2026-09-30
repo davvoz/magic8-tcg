@@ -73,6 +73,14 @@ describe("BasicAiController — main phase", () => {
     assert.deepEqual(ai.decide(engine.getSnapshot(P1)), endPhase(P1), "full life, no wounded ally: healing is wasted");
   });
 
+  it("keeps harmful spells in hand when they could only hit its own creatures", () => {
+    const selfOnly = createScenario({ p1: { hand: ["quick_strike"], battlefield: ["ember_imp", "cinder_hound"], resources: 1 } });
+    assert.deepEqual(ai.decide(selfOnly.engine.getSnapshot(P1)), endPhase(P1), "no enemy creature: Quick Strike would kill its own");
+
+    const withEnemy = createScenario({ p1: { hand: ["quick_strike"], battlefield: ["ember_imp"], resources: 1 }, p2: { battlefield: ["iron_colossus"] } });
+    assert.deepEqual(ai.decide(withEnemy.engine.getSnapshot(P1)).targets, [withEnemy.id(P2, BF)], "an enemy it cannot kill still beats its own imp");
+  });
+
   it("ends the phase in MAIN_1 and the turn in MAIN_2 when nothing is playable", () => {
     const { engine } = createScenario({ p1: { hand: ["blazing_titan"], resources: 1 } });
     assert.deepEqual(ai.decide(engine.getSnapshot(P1)), endPhase(P1));

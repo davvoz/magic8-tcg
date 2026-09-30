@@ -10,7 +10,8 @@
  *   most expensive playable card, then move on. Damage goes to the face when
  *   that is lethal, else where it kills, removal (destroy, bounce) on the
  *   strongest enemy creature, buffs on the strongest ally. Healing spells
- *   stay in hand while nothing of its own is hurt.
+ *   stay in hand while nothing of its own is hurt, harmful spells while
+ *   they could only hit its own side.
  * - Attack with creatures that cannot be blocked and killed for free; attack
  *   with everything when unblocked damage would be lethal.
  * - Block to kill an attacker and survive, to trade evenly, or to chump when
@@ -38,6 +39,8 @@ const SACRIFICE = "sacrifice";
 const MODIFY_STATS = "modify_stats";
 /** Removal aimed at enemy creatures regardless of their health. */
 const REMOVAL = Object.freeze(["destroy", "return_to_hand"]);
+/** Effects that hurt whatever they target. */
+const HARMFUL = Object.freeze([DAMAGE, DRAIN, ...REMOVAL]);
 
 export class BasicAiController {
   kind = ControllerKind.AI;
@@ -113,7 +116,9 @@ function boardFor(snapshot, me) {
  * @returns {CardView | undefined}
  */
 function chooseCard(playable, legalMoves, board) {
-  const byCost = [...playable].filter((card) => !isWastedHeal(card, legalMoves.targetOptions[card.instanceId], board)).sort((a, b) => b.cost - a.cost);
+  const byCost = [...playable]
+    .filter((card) => !isWastedHeal(card, legalMoves.targetOptions[card.instanceId], board) && !isSelfHarm(card, legalMoves.targetOptions[card.instanceId], board))
+    .sort((a, b) => b.cost - a.cost);
   return byCost.find((card) => faceDamage(card, legalMoves.targetOptions[card.instanceId], board) >= board.enemy.life) ?? byCost[0];
 }
 
@@ -136,6 +141,26 @@ function isWastedHeal(card, targetOptions, board) {
   const selfHealsItself = abilities.some((ability) => ability.target !== null && isAutomaticTarget(ability.target) && ability.target.owner === TargetOwner.ALLY);
   const reachesWounded = targetOptions.some((options) => options.some((id) => wounded.has(id)));
   return !(reachesWounded || (selfHealsItself && wounded.has(board.me.id)));
+}
+
+/**
+ * A harmful spell with no enemy to aim at would land on the AI's own side
+ * (e.g. Quick Strike with only friendly creatures on the battlefield).
+ * @param {CardView} card
+ * @param {readonly (readonly string[])[]} targetOptions
+ * @param {Board} board
+ */
+function isSelfHarm(card, targetOptions, board) {
+  if (card.type !== CardType.SPELL) {
+    return false;
+  }
+  const enemyIds = new Set([board.enemy.id, ...board.enemy.battlefield.map((creature) => creature.instanceId)]);
+  return playerTargetedAbilities(card).some((ability, index) => isHarmful(ability) && !(targetOptions[index] ?? []).some((id) => enemyIds.has(id)));
+}
+
+/** @param {import("@magic8/engine/domain/game/GameSnapshot.js").AbilityView} ability */
+function isHarmful(ability) {
+  return HARMFUL.includes(ability.effect) || (ability.effect === MODIFY_STATS && isDebuff(ability.params));
 }
 
 /**
