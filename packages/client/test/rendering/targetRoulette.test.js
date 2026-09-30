@@ -65,7 +65,7 @@ describe("TargetRoulette", () => {
       animation: theme.animation,
       holdMs: 0,
     });
-    const node = new EffectsNode({ presenter: { leavingVisuals: [], floats: [], cardFor: () => null, get moment() { return reveal.isDone ? null : reveal; } }, layout: { width: 1600, height: 900, cards: {} }, blocks: [] });
+    const node = new EffectsNode({ presenter: { leavingVisuals: [], floats: [], breakthroughs: [], cardFor: () => null, get moment() { return reveal.isDone ? null : reveal; } }, layout: { width: 1600, height: 900, cards: {} }, blocks: [] });
     const arcsNear = (context) => context.calls.filter((call) => call.method === "arc" && call.args[1] === 50).length;
     let hunting = 0;
     let afterStrike = 0;

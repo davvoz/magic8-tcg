@@ -5,7 +5,9 @@
  * graveyard), short-lived floating texts for damage and healing, the
  * reveal of a spell the opponent cast (which never reaches the board) and
  * the flare of every other ability that goes off. A blow struck in combat
- * shows where it lands once the attacker's lunge arrives. A banner marks
+ * shows where it lands once the attacker's lunge arrives; damage that
+ * tramples over a blocker is aimed at the defending player by a crosshair
+ * and lands on them once it locks (a breakthrough). A banner marks
  * each new turn; banners, casts and flares play one after another, never
  * over each other.
  *
@@ -23,7 +25,7 @@ import { ZoneType } from "@magic8/engine/domain/game/ZoneType.js";
 import { CardVisual, blowLandsAfter } from "../cards/CardVisual.js";
 import { CARD_SIZE, slotsFor } from "./BoardLayout.js";
 import { CastReveal } from "./CastReveal.js";
-import { HudStack, hudStackCentre } from "./PlayerNode.js";
+import { HudStack, hudStackCentre, lifeCrystalCentre } from "./PlayerNode.js";
 import { TargetRoulette } from "./TargetRoulette.js";
 import { TriggerFlare } from "./TriggerFlare.js";
 import { TurnBanner } from "./TurnBanner.js";
@@ -50,6 +52,14 @@ const CENTRE = 1 / 2;
 /** How long a struck card stays lit, and a life crystal keeps pulsing, as multiples of the long duration. */
 const FLASH_LONG = 0.8;
 const KICK_LONG = 1.2;
+/**
+ * Damage trampling over a blocker, once the blow on the blocker lands: the
+ * crosshair closing on the defending player's life crystal until it locks
+ * (`aim`, long durations), the beam crossing from the blocker (`strike`,
+ * short durations) — the blow lands on the player as it arrives — and the
+ * lock lingering as it fades (`fade`, long durations).
+ */
+const BREAKTHROUGH = Object.freeze({ aim: 0.7, strike: 1, fade: 0.6 });
 /** How long a discarded or milled card is held up, as a multiple of the long duration: long enough to read a face, shorter for a back. */
 const SURFACE_HOLD = Object.freeze({ face: 1.2, back: 0.6 });
 /** How far a discarded card is pulled out of the hand, toward the table, before it comes up. */
@@ -67,6 +77,11 @@ const PILE_LEAVES = new Set([GameEventType.CARD_DISCARDED, GameEventType.CARD_MI
  * @typedef {Readonly<{ text: string, colorKey: string, x: number, y: number }>} FloatSpec
  * @typedef {{ spec: FloatSpec, ageMs: number, durationMs: number }} Float `ageMs` starts below 0 while the blow it marks is still on its way
  * @typedef {{ delta: number, ageMs: number, durationMs: number }} Kick a life total that just moved, pulsing; `ageMs` as for a Float
+ * @typedef {Readonly<{ x: number, y: number }>} Point
+ * @typedef {{ from: Point, to: Point, radius: number, ageMs: number, aimMs: number, strikeMs: number, fadeMs: number }} Breakthrough
+ *   trample damage on its way from a blocker to the player behind it; `ageMs` as for a Float, 0 when the blow on the blocker lands
+ * @typedef {Readonly<{ from: Point, to: Point, radius: number, aim: number, strike: number, alpha: number, elapsedMs: number }>} BreakthroughFrame
+ *   `aim` and `strike` run 0 → 1 (the crosshair closing and locking, then the beam crossing), `alpha` fades it out
  * @typedef {CastReveal | TriggerFlare | TurnBanner} Moment
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
  * @typedef {import("./BoardLayout.js").BoardLayout} BoardLayout
@@ -92,6 +107,8 @@ export class MatchPresenter {
   #floats = [];
   /** Life totals that just moved, by player id. @type {Map<string, Kick>} */
   #kicks = new Map();
+  /** @type {Breakthrough[]} */
+  #breakthroughs = [];
   /**
    * The moments played one after another over the table — the opponent's
    * casts, abilities going off and the turn banners — oldest first; only the first runs.
@@ -115,6 +132,24 @@ export class MatchPresenter {
    */
   get floats() {
     return this.#floats.map((float) => ({ spec: float.spec, progress: float.ageMs / float.durationMs }));
+  }
+
+  /** @returns {readonly BreakthroughFrame[]} trample damage crossing to the player behind a blocker, once the blow on the blocker has landed */
+  get breakthroughs() {
+    return this.#breakthroughs
+      .filter((breakthrough) => breakthrough.ageMs >= 0)
+      .map(({ from, to, radius, ageMs, aimMs, strikeMs, fadeMs }) => {
+        const fading = ageMs - aimMs - strikeMs;
+        return Object.freeze({
+          from,
+          to,
+          radius,
+          aim: Math.min(1, ageMs / aimMs),
+          strike: Math.min(1, Math.max(0, (ageMs - aimMs) / strikeMs)),
+          alpha: fading <= 0 ? 1 : Math.max(0, 1 - fading / fadeMs),
+          elapsedMs: ageMs,
+        });
+      });
   }
 
   /** @returns {CastReveal | null} the next of the opponent's casts to be played out — running, or waiting behind a turn banner */
@@ -255,14 +290,48 @@ export class MatchPresenter {
    */
   #impactsOf(events) {
     const landsAfter = blowLandsAfter(this.#animation.shortMs);
+    const trampled = this.#trampledIn(events);
     /** @type {Map<string, number>} */
     const impacts = new Map();
     for (const event of events) {
       if (event.type === GameEventType.DAMAGE_DEALT && typeof event.targetId === "string" && this.#canStrike(event.sourceId)) {
-        impacts.set(event.targetId, landsAfter);
+        const breaksThrough = trampled.get(/** @type {string} */ (event.sourceId))?.playerId === event.targetId;
+        impacts.set(event.targetId, landsAfter + (breaksThrough ? this.#breakthroughMs().aimMs + this.#breakthroughMs().strikeMs : 0));
       }
     }
     return impacts;
+  }
+
+  /**
+   * The attackers whose damage trampled over their blockers: a creature that
+   * struck a creature and then a player in the same blow. By the attacker's
+   * id: the last creature it struck, and the player behind it.
+   * @param {readonly GameEvent[]} events
+   * @returns {Map<string, { blockerId: string, playerId: string }>}
+   */
+  #trampledIn(events) {
+    /** @type {Map<string, string>} */
+    const lastStruck = new Map();
+    /** @type {Map<string, { blockerId: string, playerId: string }>} */
+    const trampled = new Map();
+    for (const event of events) {
+      if (event.type !== GameEventType.DAMAGE_DEALT || typeof event.sourceId !== "string" || typeof event.targetId !== "string" || !this.#canStrike(event.sourceId)) {
+        continue;
+      }
+      const struck = lastStruck.get(event.sourceId);
+      if (this.#cards.has(event.targetId)) {
+        lastStruck.set(event.sourceId, event.targetId);
+      } else if (struck !== undefined) {
+        trampled.set(event.sourceId, { blockerId: struck, playerId: event.targetId });
+      }
+    }
+    return trampled;
+  }
+
+  /** How long each part of a breakthrough takes. */
+  #breakthroughMs() {
+    const { shortMs, longMs } = this.#animation;
+    return { aimMs: longMs * BREAKTHROUGH.aim, strikeMs: shortMs * BREAKTHROUGH.strike, fadeMs: longMs * BREAKTHROUGH.fade };
   }
 
   /**
@@ -290,6 +359,7 @@ export class MatchPresenter {
       this.#showEffectsOf(event, layout, impacts);
     }
     this.#enqueueNudges(events, layout);
+    this.#enqueueBreakthroughs(events, layout);
     this.#enqueueTurnBanners(events);
     this.#enqueueFlare(events.filter((event) => event.type === GameEventType.ABILITY_TRIGGERED && event.sourceId !== revealedId), snapshot, layout, outcome);
   }
@@ -315,6 +385,13 @@ export class MatchPresenter {
       this.#floats = this.#floats.filter((float) => float.ageMs < float.durationMs);
       changed = true;
     }
+    if (this.#breakthroughs.length > 0) {
+      for (const breakthrough of this.#breakthroughs) {
+        breakthrough.ageMs += dtMs;
+      }
+      this.#breakthroughs = this.#breakthroughs.filter((breakthrough) => breakthrough.ageMs < breakthrough.aimMs + breakthrough.strikeMs + breakthrough.fadeMs);
+      changed = true;
+    }
     if (this.#kicks.size > 0) {
       for (const [playerId, kick] of this.#kicks) {
         kick.ageMs += dtMs;
@@ -328,7 +405,7 @@ export class MatchPresenter {
   }
 
   get isAnimating() {
-    return this.#floats.length > 0 || this.#kicks.size > 0 || this.#moments.length > 0 || [...this.#visuals.values()].some((visual) => visual.isAnimating);
+    return this.#floats.length > 0 || this.#kicks.size > 0 || this.#breakthroughs.length > 0 || this.#moments.length > 0 || [...this.#visuals.values()].some((visual) => visual.isAnimating);
   }
 
   /**
@@ -637,20 +714,45 @@ export class MatchPresenter {
   }
 
   /**
-   * A creature that dealt damage attacks its target: draws back, lunges and returns.
+   * A creature that dealt damage attacks its target: draws back, lunges and
+   * returns. One lunge per blow, at the first thing it strikes: what
+   * tramples on to the player behind a blocker goes as a breakthrough.
    * @param {readonly GameEvent[]} events
    * @param {BoardLayout} layout
    */
   #enqueueNudges(events, layout) {
+    /** @type {Set<string>} */
+    const lunged = new Set();
     for (const event of events) {
       if (event.type !== GameEventType.DAMAGE_DEALT || typeof event.targetId !== "string" || !this.#canStrike(event.sourceId)) {
         continue;
       }
-      const source = /** @type {CardVisual} */ (this.#visuals.get(/** @type {string} */ (event.sourceId)));
+      const sourceId = /** @type {string} */ (event.sourceId);
       const target = this.#anchorFor(event.targetId, layout);
-      if (target !== null) {
-        source.nudgeToward(target, this.#animation.shortMs);
+      if (target !== null && !lunged.has(sourceId)) {
+        lunged.add(sourceId);
+        /** @type {CardVisual} */ (this.#visuals.get(sourceId)).nudgeToward(target, this.#animation.shortMs);
       }
+    }
+  }
+
+  /**
+   * Trample damage: as the blow on the blocker lands, a crosshair closes on
+   * the life crystal of the player behind it and locks, then a beam crosses
+   * from the blocker and the damage lands on the player.
+   * @param {readonly GameEvent[]} events
+   * @param {BoardLayout} layout
+   */
+  #enqueueBreakthroughs(events, layout) {
+    const landsAfter = blowLandsAfter(this.#animation.shortMs);
+    for (const { blockerId, playerId } of this.#trampledIn(events).values()) {
+      const from = this.#anchorFor(blockerId, layout, CENTRE);
+      const seat = seatOf(layout, playerId);
+      if (from === null || seat === null) {
+        continue;
+      }
+      const crystal = lifeCrystalCentre(seat.hud);
+      this.#breakthroughs.push({ from, to: { x: crystal.x, y: crystal.y }, radius: crystal.radius, ageMs: -landsAfter, ...this.#breakthroughMs() });
     }
   }
 

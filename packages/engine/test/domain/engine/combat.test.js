@@ -157,6 +157,106 @@ describe("blocking and damage", () => {
   });
 });
 
+describe("trample", () => {
+  /** P1 attacks with its first creature, P2 blocks with its first; returns the damage result. */
+  function attackIntoBlock(engine, id) {
+    toCombat(engine);
+    engine.execute(declareAttackers(P1, [id(P1, BF)]));
+    const result = engine.execute(declareBlockers(P2, [{ attackerId: id(P1, BF), blockerId: id(P2, BF) }]));
+    assert.equal(result.ok, true, JSON.stringify(result));
+    return result;
+  }
+
+  it("damage beyond what kills the blocker hits the defending player", () => {
+    // Molten Rhino 5/4 trample blocked by Scrap Golem 1/2: golem takes 2 and dies, 5 - 2 = 3 goes through.
+    const { engine, id } = createScenario({ p1: { battlefield: ["molten_rhino"] }, p2: { battlefield: ["scrap_golem"] } });
+    const result = attackIntoBlock(engine, id);
+    assert.equal(player(engine, P2).battlefield.length, 0);
+    assert.equal(player(engine, P2).life, 17);
+    assert.equal(creatureOn(engine, P1, id(P1, BF)).health, 3);
+    const dealtByRhino = eventsOfType(result.value.events, GameEventType.DAMAGE_DEALT).filter((hit) => hit.sourceId === id(P1, BF));
+    assert.deepEqual(dealtByRhino.map((hit) => [hit.targetId, hit.amount]), [[id(P2, BF), 2], [P2, 3]]);
+    assert.deepEqual(eventsOfType(result.value.events, GameEventType.LIFE_CHANGED).map((event) => event.delta), [-3]);
+  });
+
+  it("nothing goes through when the blocker survives or takes exactly lethal damage", () => {
+    // Charging Ram 3/3 trample: Steel Sentinel 1/4 survives; Wandering Sellsword 3/3 dies with nothing left over.
+    for (const blocker of ["steel_sentinel", "wandering_sellsword"]) {
+      const { engine, id } = createScenario({ p1: { battlefield: ["charging_ram"] }, p2: { battlefield: [blocker] } });
+      const result = attackIntoBlock(engine, id);
+      assert.equal(player(engine, P2).life, 20, blocker);
+      assert.equal(eventsOfType(result.value.events, GameEventType.LIFE_CHANGED).length, 0, blocker);
+    }
+  });
+
+  it("counts the blocker's remaining health, not its printed health", () => {
+    // Stone Guardian 3/5 hit by Quick Strike for 2 needs only 3 more: Molten Rhino 5/4 tramples over for 2.
+    const { engine, id } = createScenario({ p1: { battlefield: ["molten_rhino"], hand: ["quick_strike"] }, p2: { battlefield: ["stone_guardian"] } });
+    assert.equal(engine.execute(playCard(P1, id(P1, HAND), [id(P2, BF)])).ok, true);
+    attackIntoBlock(engine, id);
+    assert.equal(player(engine, P2).battlefield.length, 0);
+    assert.equal(player(engine, P2).life, 18);
+  });
+
+  it("trample damage can end the game", () => {
+    const { engine, id } = createScenario({ p1: { battlefield: ["thunderhoof_mammoth"] }, p2: { battlefield: ["scrap_golem"], life: 4 } });
+    attackIntoBlock(engine, id);
+    assert.equal(view(engine).isOver, true);
+    assert.equal(view(engine).winnerId, P1);
+  });
+
+  it("with multiple blockers, each takes lethal damage and the rest hits the player", () => {
+    const rules = rulesWith({ combat: { blockersEnabled: true, summoningSickness: true, maxBlockersPerAttacker: 2 } });
+    // Thunderhoof Mammoth 6/6 blocked by Ember Imp 2/1 and Scrap Golem 1/2: imp takes 1, golem 2, P2 takes 3.
+    const { engine, id } = createScenario({ rules, p1: { battlefield: ["thunderhoof_mammoth"] }, p2: { battlefield: ["ember_imp", "scrap_golem"] } });
+    toCombat(engine);
+    const mammoth = id(P1, BF);
+    engine.execute(declareAttackers(P1, [mammoth]));
+    const result = engine.execute(
+      declareBlockers(P2, [
+        { attackerId: mammoth, blockerId: id(P2, BF, 0) },
+        { attackerId: mammoth, blockerId: id(P2, BF, 1) },
+      ]),
+    );
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(player(engine, P2).battlefield.length, 0);
+    assert.equal(player(engine, P2).life, 17);
+    const dealtByMammoth = eventsOfType(result.value.events, GameEventType.DAMAGE_DEALT).filter((hit) => hit.sourceId === mammoth);
+    assert.deepEqual(dealtByMammoth.map((hit) => hit.amount), [1, 2, 3]);
+  });
+});
+
+describe("vigilance", () => {
+  it("a vigilant attacker is not exhausted and can block on the opponent's turn", () => {
+    // Rune Warden 3/4 vigilance attacks for 3, then blocks Cinder Hound 3/1 and kills it.
+    const { engine, id } = createScenario({ p1: { battlefield: ["rune_warden"] }, p2: { battlefield: ["cinder_hound"] } });
+    const warden = id(P1, BF);
+    const hound = id(P2, BF);
+    toCombat(engine);
+    engine.execute(declareAttackers(P1, [warden]));
+    assert.equal(creatureOn(engine, P1, warden).exhausted, false, "not exhausted once declared");
+    engine.execute(declareBlockers(P2, []));
+    assert.equal(player(engine, P2).life, 17);
+    assert.equal(creatureOn(engine, P1, warden).exhausted, false);
+    engine.execute(endTurn(P1));
+    engine.execute(endPhase(P2));
+    engine.execute(declareAttackers(P2, [hound]));
+    assert.deepEqual(engine.getLegalMoves(P1).blockerIds, [warden]);
+    assert.equal(engine.execute(declareBlockers(P1, [{ attackerId: hound, blockerId: warden }])).ok, true);
+    assert.equal(player(engine, P2).battlefield.length, 0);
+    assert.equal(creatureOn(engine, P1, warden).health, 1);
+    assert.equal(player(engine, P1).life, 20);
+  });
+
+  it("only the vigilant attackers stay ready", () => {
+    const { engine, id } = createScenario({ p1: { battlefield: ["village_militia", "ember_imp"] } });
+    toCombat(engine);
+    engine.execute(declareAttackers(P1, [id(P1, BF, 0), id(P1, BF, 1)]));
+    assert.equal(creatureOn(engine, P1, id(P1, BF, 0)).exhausted, false);
+    assert.equal(creatureOn(engine, P1, id(P1, BF, 1)).exhausted, true);
+  });
+});
+
 describe("rule variants", () => {
   it("multiple blockers: damage is assigned lethally in order, the remainder to the last", () => {
     const rules = rulesWith({ combat: { blockersEnabled: true, summoningSickness: true, maxBlockersPerAttacker: 2 } });

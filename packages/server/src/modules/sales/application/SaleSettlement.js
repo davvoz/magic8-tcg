@@ -179,7 +179,10 @@ export class SaleSettlement {
         if (problem === null) {
           return this.#detect(purchase, transfer, batch.cursor);
         }
-        await this.#noteProblem(purchase, transfer, problem);
+        // Each read re-covers a few entries before the cursor (HISTORY_OVERLAP): a problem already noted is not told again.
+        if (problem !== purchase.problem) {
+          await this.#noteProblem(purchase, transfer, problem);
+        }
       }
       if (batch.cursor === cursor) {
         break;

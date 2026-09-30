@@ -83,6 +83,16 @@
     "caravan_guard": { "file": "caravan_guard.jpg", "focus": [0.5, 0.3] },
     "traveling_merchant": { "file": "traveling_merchant.jpg", "focus": [0.5, 0.3] },
     "quick_strike": { "file": "quick_strike.jpg", "focus": [0.5, 0.3] },
-    "mending_herbs": { "file": "mending_herbs.jpg", "focus": [0.5, 0.3] }
+    "mending_herbs": { "file": "mending_herbs.jpg", "focus": [0.5, 0.3] },
+    "charging_ram": { "file": "charging_ram.jpg", "focus": [0.5, 0.3] },
+    "thunderhoof_mammoth": { "file": "thunderhoof_mammoth.jpg", "focus": [0.5, 0.3] },
+    "molten_rhino": { "file": "molten_rhino.jpg", "focus": [0.5, 0.3] },
+    "siege_ram": { "file": "siege_ram.jpg", "focus": [0.5, 0.3] },
+    "rampaging_ogre": { "file": "rampaging_ogre.jpg", "focus": [0.5, 0.3] },
+    "village_militia": { "file": "village_militia.jpg", "focus": [0.5, 0.3] },
+    "rampart_automaton": { "file": "rampart_automaton.jpg", "focus": [0.5, 0.3] },
+    "rune_warden": { "file": "rune_warden.jpg", "focus": [0.5, 0.3] },
+    "tomb_knight": { "file": "tomb_knight.jpg", "focus": [0.5, 0.3] },
+    "oakheart_warden": { "file": "oakheart_warden.jpg", "focus": [0.5, 0.3] }
   }
 }

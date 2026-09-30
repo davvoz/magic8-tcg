@@ -23,7 +23,7 @@ import { drawCard } from "../../src/rendering/cards/CardRenderer.js";
 import { MatchPresenter } from "../../src/rendering/board/MatchPresenter.js";
 import { CastReveal } from "../../src/rendering/board/CastReveal.js";
 import { TriggerFlare } from "../../src/rendering/board/TriggerFlare.js";
-import { HudStack, hudStackCentre } from "../../src/rendering/board/PlayerNode.js";
+import { HudStack, hudStackCentre, lifeCrystalCentre } from "../../src/rendering/board/PlayerNode.js";
 import { TurnBanner } from "../../src/rendering/board/TurnBanner.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MatchScene } from "../../src/rendering/scenes/MatchScene.js";
@@ -808,6 +808,55 @@ describe("MatchScene on the board", () => {
     scene.update(shortMs * 2);
     assert.deepEqual(titan.state, home, "and back home");
     assert.equal(titan.isAnimating, false);
+  });
+
+  it("tramples: lunges only at the blocker, then a crosshair locks on the player behind it and the rest of the damage lands there", async () => {
+    // Molten Rhino 5/4 trample into 5 life: the AI chumps with Scrap Golem 1/2, 3 goes through.
+    const { scene, session, id } = await sceneFor({ p1: { battlefield: ["molten_rhino"] }, p2: { battlefield: ["scrap_golem"], life: 5 } });
+    const golem = id(P2, ZoneType.BATTLEFIELD, 0);
+    const layout = computeBoardLayout(session.snapshotFor(P1), P1, SIZE);
+    const golemAt = centreOf(layout.cards[golem]);
+    tapNode(byId(scene, "endPhase"));
+    tapNode(cardNamed(scene, "Molten Rhino"));
+    tapNode(byId(scene, "confirm"));
+    await session.whenIdle();
+    assert.equal(session.snapshotFor(P1).players.find((player) => player.id === P2).life, 2, "blocked, and 3 still got through");
+    const rhino = scene.presenter.visualFor(cardNamed(scene, "Molten Rhino").id);
+    const home = centreOf(rhino.state);
+    const { shortMs, longMs } = theme.animation;
+    const shown = () => scene.presenter.floats.filter((float) => float.progress >= 0).map((float) => float.spec.text);
+    assert.deepEqual(scene.presenter.breakthroughs, [], "nothing crosses before the blow on the blocker lands");
+
+    advancer(scene, 8)(() => shown().includes("-2"), "the blow on the blocker lands");
+    const lunge = centreOf(rhino.state);
+    const towards = (point) => Math.atan2(point.y - home.y, point.x - home.x);
+    assert.ok(Math.abs(towards(lunge) - towards(golemAt)) < 0.05, "the lunge goes at the blocker, not at the player");
+    assert.ok(!shown().includes("-3"), "the rest is still on its way");
+    assert.equal(scene.presenter.lifeKickFor(P2), null);
+    const [aiming] = scene.presenter.breakthroughs;
+    const crystal = lifeCrystalCentre(layout.opponent.hud);
+    assert.deepEqual(aiming.to, { x: crystal.x, y: crystal.y }, "the crosshair closes on the defender's life crystal");
+    assert.ok(aiming.aim < 0.1 && aiming.strike === 0);
+    const drawn = () => {
+      const context = new FakeContext2D();
+      scene.render(context);
+      const count = (method) => context.calls.filter((call) => call.method === method).length;
+      assert.equal(count("save"), count("restore"), "save/restore balanced");
+      assert.ok(context.calls.every((call) => call.args.every((arg) => typeof arg !== "number" || Number.isFinite(arg))), "no NaN reaches the canvas");
+      return context;
+    };
+    assert.ok(drawn().calls.some((call) => call.method === "setLineDash"), "the line of aim is drawn");
+
+    scene.update(longMs * 0.7);
+    assert.equal(scene.presenter.breakthroughs[0].aim, 1, "locked");
+    drawn();
+    assert.ok(!shown().includes("-3"));
+    scene.update(shortMs);
+    assert.equal(scene.presenter.breakthroughs[0].strike, 1, "the beam arrives");
+    assert.ok(shown().includes("-3"), "and the damage lands on the player");
+    assert.ok(scene.presenter.lifeKickFor(P2).delta < 0);
+    drawn();
+    advancer(scene)(() => scene.presenter.breakthroughs.length === 0, "it fades out");
   });
 
   it("carries my spell face-up to the middle of the table, strikes from there, and only then sinks it into my graveyard", async () => {

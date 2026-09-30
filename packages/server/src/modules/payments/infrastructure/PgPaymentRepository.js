@@ -165,17 +165,30 @@ export class PgPaymentRepository {
     return row === null ? null : this.findRefund(id);
   }
 
+  /**
+   * @param {string} name
+   * @returns {Promise<import("../application/ports.js").HistoryPosition | null>} sinceBlock is null for a cursor saved before it was kept
+   */
   async getCursor(name) {
     const row = await this.#db.maybeOne("SELECT position FROM chain_cursors WHERE name = $1", [name]);
-    return row === null ? null : Number(row.position.index);
+    return row === null ? null : Object.freeze({ cursor: Number(row.position.index), sinceBlock: typeof row.position.block === "number" ? row.position.block : null });
   }
 
+  /**
+   * Moves forward only: a later index, or the same one with a later block.
+   * @param {string} name
+   * @param {string} network
+   * @param {import("../application/ports.js").HistoryPosition} position
+   * @param {number} at
+   */
   async setCursor(name, network, position, at) {
     await this.#db.query(
       `INSERT INTO chain_cursors (name, network, position, updated_at) VALUES ($1, $2, $3, $4)
        ON CONFLICT (name) DO UPDATE SET position = $3, updated_at = $4
-       WHERE (chain_cursors.position->>'index')::bigint < ($3::jsonb->>'index')::bigint`,
-      [name, network, JSON.stringify({ index: position }), toTimestamp(at)],
+       WHERE (chain_cursors.position->>'index')::bigint < ($3::jsonb->>'index')::bigint
+          OR ((chain_cursors.position->>'index')::bigint = ($3::jsonb->>'index')::bigint
+              AND COALESCE((chain_cursors.position->>'block')::bigint, -1) < COALESCE(($3::jsonb->>'block')::bigint, -1))`,
+      [name, network, JSON.stringify(position.sinceBlock === null ? { index: position.cursor } : { index: position.cursor, block: position.sinceBlock }), toTimestamp(at)],
     );
   }
 }

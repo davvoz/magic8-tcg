@@ -70,13 +70,13 @@ describe("ContentService", () => {
     const result = await loadContent(new StaticContentSource(thin), effects);
     assert.equal(result.ok, false);
     assert.equal(result.error.code, ContentError.INVALID);
-    assert.match(result.error.message, /faction "ember" has 23 eligible cards; 23 × 1 copies cannot reach the minimum deck size of 30/);
+    assert.match(result.error.message, /faction "ember" has 26 eligible cards; 26 × 1 copies cannot reach the minimum deck size of 30/);
   });
 
   it("produces a frozen bundle with catalog, rules and precon decks", () => {
     assert.ok(Object.isFrozen(content));
     assert.equal(content.preconDecks.length, 10);
-    assert.equal(content.catalog.size, 83);
+    assert.equal(content.catalog.size, 93);
     assert.equal(content.gameRules.startingLife, 20);
   });
 });

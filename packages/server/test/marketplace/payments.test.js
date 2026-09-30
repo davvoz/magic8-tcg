@@ -7,6 +7,9 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it } from "node:test";
 
+import { AuditTrail } from "../../src/kernel/audit/AuditTrail.js";
+import { reopenOrder } from "../../src/maintenance/reopenOrder.js";
+import { PgAuditStore } from "../../src/platform/audit/PgAuditStore.js";
 import { buildTestApp, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
 
@@ -171,6 +174,34 @@ describe("payments", () => {
     pay(order);
     setup.ledger.finalize();
     assert.equal((await settle()).verified, 1);
+  });
+
+  it("reopens an order that expired while its payment went unseen; the payment then fulfils it as usual", async () => {
+    // 2026-09-30: the transfer was on chain in time, the watcher missed it, the order expired.
+    const order = await place(aliceClient, "single_pyre_drake");
+    const { txId } = pay(order);
+    setup.clock.advance(3 * 60 * MINUTE);
+    assert.ok((await setup.app.marketplace.expireDue()) >= 1);
+    assert.equal(await status(aliceClient, order.id), "EXPIRED");
+
+    const deps = { database: setup.database, audit: new AuditTrail({ store: new PgAuditStore(setup.database), clock: setup.clock }), clock: setup.clock };
+    const pending = await place(bobClient, "single_pyre_drake");
+    assert.equal((await reopenOrder(deps, { orderId: pending.id, reason: "test" })).reopened, false, "only an expired order");
+    assert.equal((await reopenOrder(deps, { orderId: order.id, reason: " " })).reopened, false, "a reason is required");
+    assert.deepEqual(await reopenOrder(deps, { orderId: order.id, reason: "payment missed by the watcher" }), { reopened: true, problem: null });
+    assert.equal(await status(aliceClient, order.id), "PAYMENT_PENDING");
+    assert.equal((await reopenOrder(deps, { orderId: order.id, reason: "again" })).reopened, false, "once");
+
+    await setup.app.marketplace.expireDue();
+    assert.equal(await status(aliceClient, order.id), "PAYMENT_PENDING", "a fresh deadline");
+    setup.ledger.finalize();
+    assert.equal((await settle()).verified, 1, "sent before the original deadline, so it pays the order");
+    await setup.app.fulfilment.fulfilVerified();
+    assert.equal(await status(aliceClient, order.id), "FULFILLED");
+    assert.equal((await paymentsOf(txId))[0].order_id, order.id);
+    const audit = await setup.database.rows("SELECT action, actor_kind FROM audit_logs WHERE target_id = $1 ORDER BY seq", [order.id]);
+    assert.deepEqual(audit.map((row) => row.action), ["marketplace.order_created", "marketplace.order_reopened", "marketplace.payment_verified", "marketplace.order_fulfilled"]);
+    assert.equal(audit[1].actor_kind, "admin");
   });
 
   it("looks for the payment sooner on a hint, without trusting the hint", async () => {

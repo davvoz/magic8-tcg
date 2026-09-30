@@ -29,7 +29,7 @@ Ogni giocatore parte con **20 punti vita**. Perde chi scende a 0 o meno. Se entr
 | **Creatura** | Resta sul campo. Ha un **costo**, un **attacco** e una **salute**. Attacca, blocca e può avere abilità. |
 | **Magia** | Si gioca, produce il suo effetto e va nel cimitero. |
 
-**Fazioni:** Ember (fuoco, danni diretti), Iron (costrutti robusti), Shadow (drenaggio, morte, cimitero), Verdant (natura, cure, creature grandi), Arcane (controllo, pescate, rimandare in mano), più le **neutrali**. Il catalogo base (edizione `core-1`) ha 83 carte: 59 creature e 24 magie, 15 per fazione e 8 neutrali.
+**Fazioni:** Ember (fuoco, danni diretti), Iron (costrutti robusti), Shadow (drenaggio, morte, cimitero), Verdant (natura, cure, creature grandi), Arcane (controllo, pescate, rimandare in mano), più le **neutrali**. Il catalogo base (edizione `core-1`) ha 93 carte: 69 creature e 24 magie (Ember 16, Iron 17, Shadow 16, Verdant 18, Arcane 16, neutrali 10).
 
 **Rarità:** comune, non comune, rara, epica, leggendaria. Oggi rispecchiano grosso modo il costo (le leggendarie costano 7) e sono **provvisorie**.
 
@@ -69,9 +69,10 @@ Il giocatore di turno può chiudere una fase o l'intero turno quando vuole.
 ### 2.7 Il combattimento
 
 - Una creatura appena giocata **non può attaccare** in quel turno, salvo che abbia **Rapidità** (*Haste*).
-- Una creatura che attacca resta **esausta** fino al proprio turno successivo: quindi **non può bloccare** nel turno dell'avversario.
+- Una creatura che attacca resta **esausta** fino al proprio turno successivo: quindi **non può bloccare** nel turno dell'avversario. Fa eccezione chi ha **Vigilanza** (*Vigilance*): attaccare non la rende esausta, quindi può anche bloccare.
 - Ogni creatura non esausta del difensore può bloccare **un solo** attaccante, e ogni attaccante può essere bloccato da **una sola** creatura.
 - Attaccante e bloccante si infliggono danni a vicenda pari al proprio attacco. Un attaccante non bloccato colpisce il giocatore.
+- Un attaccante con **Sfondare** (*Trample*) bloccato infligge al bloccante solo i danni che bastano a ucciderlo; il resto colpisce il giocatore (5 di attacco contro un bloccante con 2 di salute: 2 al bloccante, 3 al giocatore). Se il bloccante sopravvive, al giocatore non arriva niente.
 - **I danni restano**: una creatura ferita non guarisce a fine turno, solo con effetti di cura. Muore quando i danni raggiungono la sua salute.
 
 ### 2.8 Abilità ed effetti
@@ -91,7 +92,7 @@ Le abilità scattano in quattro momenti: quando la creatura **entra in campo**, 
 | Rimanda in mano | Riporta una creatura in mano al suo proprietario |
 | Sacrifica | Manda nel cimitero una propria creatura, come se morisse (le sue abilità "alla morte" scattano) |
 
-L'unica parola chiave oggi è **Rapidità**.
+Le parole chiave sono tre: **Rapidità** (*Haste*), **Sfondare** (*Trample*) e **Vigilanza** (*Vigilance*). Hanno Sfondare Charging Ram, Thunderhoof Mammoth (Verdant), Molten Rhino (Ember), Siege Ram (Iron) e Rampaging Ogre (neutrale). Hanno Vigilanza Village Militia (neutrale), Rampart Automaton (Iron), Rune Warden (Arcane), Tomb Knight (Shadow) e Oakheart Warden (Verdant).
 
 ### 2.9 Limiti
 

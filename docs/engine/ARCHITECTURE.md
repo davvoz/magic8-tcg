@@ -486,7 +486,7 @@ stateDiagram-v2
 | Effect | `{ "effect": "deal_damage", "params": { "amount": 3 } }` | `EffectRegistry.get(type).validateParams(params)` at catalog load |
 | Target | `{ "kind": "creature" \| "player" \| "creature_or_player", "owner": "any" \| "enemy" \| "ally", "count": 1 }` | `TargetSpec` at load; `TargetResolver` at command time |
 | Condition (later) | small closed set: `{ "type": "controls_min_creatures", "value": 3 }` | per-condition validator |
-| Keyword | `["haste"]` | closed enum |
+| Keyword | `["haste"]`, `["trample"]`, `["vigilance"]` | closed enum |
 
 **What data can do:** any combination of the above, new cards, new decks, balance changes, new preconstructed decks, rules tuning.
 
@@ -1172,3 +1172,19 @@ The match log now says `cast` instead of `played` for a card that did not go to 
 **Balance,** 2250 games either side of the change: spread 40.2–60.4% → 40.9–58.7%, first seat 67.1% → 67.9%, 17.1 turns. It gives back most of what 2026-09-22 took: Verdant Grove 45.6% → 49.3%, Wild Hunt 51.6% → 52.9%, Arcane Conclave 60.4% → 58.7%.
 
 **Tests:** `playCard.test.js` (Forge Warden alone enters, buffs nobody, fires no `ABILITY_TRIGGERED`, and refuses target ids; Bone Colossus still may not eat itself), `arcaneEffects.test.js` (Spellbinder against an empty board is a 1/2), `matchScene.test.js` (tapping it plays it on the first tap with no targets, next to the retained guard that Bone Colossus is not tappable at all), `cards.test.js` (`mandatory` defaults to false, rejects a non-boolean, and is refused on automatic or non-play abilities). 427 tests and lint pass.
+
+### Keyword — trample (2026-09-30)
+
+A second keyword, `trample` (`Keyword.TRAMPLE`), interpreted by `CombatSystem.exchangeDamage`. A blocked attacker with trample assigns each blocker, in declaration order, only lethal damage (its remaining health, not its printed one) and hits the defending player with what is left, through the same `hitPlayer` path as an unblocked attacker (`DAMAGE_DEALT` to the player, then `LIFE_CHANGED`), after all the blockers have struck back. A blocker that survives, or takes exactly lethal damage, lets nothing through. Without trample the last blocker still takes the whole remainder, as before.
+
+Cards (5, none in a precon deck yet): Charging Ram (verdant, 3, 3/3, common), Thunderhoof Mammoth (verdant, 6, 6/6, rare), Molten Rhino (ember, 5, 5/4, uncommon), Siege Ram (iron, 4, 3/5, uncommon), Rampaging Ogre (neutral, 5, 4/5, uncommon). Rarities are in `rarities.json`, illustration prompts in `data/art/prompts.md`, art in `illustrations.json` (the generated 3:2 PNGs cropped to 1344 × 768 JPG like the rest; Siege Ram's crop drops a generator watermark from the top edge).
+
+**Tests:** `combat.test.js` — the 5-into-2 case (2 to the blocker, 3 to the player), a surviving and an exactly-killed blocker (nothing through), a pre-damaged blocker, trample damage ending the game, and two blockers under `maxBlockersPerAttacker: 2`.
+
+### Keyword — vigilance (2026-09-30)
+
+A third keyword, `vigilance` (`Keyword.VIGILANCE`), interpreted by `DeclareAttackersHandler`: a declared attacker is exhausted unless it has vigilance, so it stays a legal blocker through the opponent's turn. Nothing else changes — there is one combat per turn, so staying ready never lets a creature attack twice, and the client reads `exhausted` from snapshots, so it needs no change.
+
+Cards (5, none in a precon deck yet): Village Militia (neutral, 2, 2/2, common), Rampart Automaton (iron, 3, 2/4, common), Rune Warden (arcane, 4, 3/4, uncommon), Tomb Knight (shadow, 5, 4/5, uncommon), Oakheart Warden (verdant, 6, 5/7, rare). Rarities in `rarities.json`, prompts in `data/art/prompts.md`, art in `illustrations.json` (Rampart Automaton's 3:2 original cropped to 1344 × 768 like the rest).
+
+**Tests:** `combat.test.js` — a vigilant attacker stays ready, then blocks and kills on the opponent's turn; in a mixed attack only the vigilant creature stays ready.

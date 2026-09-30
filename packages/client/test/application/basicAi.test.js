@@ -81,6 +81,22 @@ describe("BasicAiController — main phase", () => {
     assert.deepEqual(ai.decide(withEnemy.engine.getSnapshot(P1)).targets, [withEnemy.id(P2, BF)], "an enemy it cannot kill still beats its own imp");
   });
 
+  it("sacrifices only a creature worth at most half of what the card brings", () => {
+    const even = createScenario({ p1: { hand: ["bone_colossus"], battlefield: ["bone_colossus"], resources: 5 } });
+    assert.deepEqual(ai.decide(even.engine.getSnapshot(P1)), endPhase(P1), "a healthy colossus for another colossus is no gain");
+
+    const fodder = createScenario({ p1: { hand: ["bone_colossus"], battlefield: ["iron_colossus", "bulwark_engine", "flame_scout"], resources: 5 } });
+    const decision = ai.decide(fodder.engine.getSnapshot(P1));
+    assert.equal(decision.cardId, fodder.id(P1, HAND));
+    assert.deepEqual(decision.targets, [fodder.id(P1, BF, 2)], "the 2/2 scout, not the 0/7 wall");
+
+    const keep = createScenario({ p1: { hand: ["dark_bargain"], battlefield: ["clockwork_knight"], resources: 1 } });
+    assert.deepEqual(ai.decide(keep.engine.getSnapshot(P1)), endPhase(P1), "a 4/4 is worth more than two cards");
+
+    const bargain = createScenario({ p1: { hand: ["dark_bargain"], battlefield: ["clockwork_knight", "kindling_sprite"], resources: 1 } });
+    assert.deepEqual(ai.decide(bargain.engine.getSnapshot(P1)).targets, [bargain.id(P1, BF, 1)]);
+  });
+
   it("ends the phase in MAIN_1 and the turn in MAIN_2 when nothing is playable", () => {
     const { engine } = createScenario({ p1: { hand: ["blazing_titan"], resources: 1 } });
     assert.deepEqual(ai.decide(engine.getSnapshot(P1)), endPhase(P1));

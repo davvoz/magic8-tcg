@@ -5,11 +5,15 @@
  * definition of legality.
  *
  * Slice rules: attackers become exhausted when declared and stay so until
- * their controller's next turn (so they cannot block meanwhile); a blocker
+ * their controller's next turn (so they cannot block meanwhile), unless they
+ * have vigilance; a blocker
  * blocks exactly one attacker; unblocked attackers hit the defending player;
  * a blocked attacker splits its damage across its blockers in declaration
  * order, lethal to each before moving on, and takes damage from all of them.
+ * An attacker with trample gives each blocker only lethal damage and hits
+ * the defending player with the rest.
  */
+import { Keyword } from "../effects/Keyword.js";
 import { GameEventType } from "../game/GameEventType.js";
 
 /**
@@ -88,7 +92,7 @@ export function resolveCombatDamage(state, context) {
     if (state.combat.blockersOf(attackerId).length === 0) {
       hitPlayer(card, defender, context);
     } else {
-      exchangeDamage(card, blockers, context);
+      exchangeDamage(card, blockers, defender, context);
     }
   }
   state.combat.clear();
@@ -98,9 +102,10 @@ export function resolveCombatDamage(state, context) {
  * @param {import("../cards/CardInstance.js").CardInstance} attacker
  * @param {import("../game/Player.js").Player} defender
  * @param {import("../commands/CommandHandler.contract.js").ExecutionContext} context
+ * @param {number} [amount] defaults to the attacker's full attack
  */
-function hitPlayer(attacker, defender, context) {
-  const lost = defender.loseLife(attacker.attack);
+function hitPlayer(attacker, defender, context, amount = attacker.attack) {
+  const lost = defender.loseLife(amount);
   context.events.emit(GameEventType.DAMAGE_DEALT, { sourceId: attacker.instanceId, targetId: defender.id, amount: lost });
   context.events.emit(GameEventType.LIFE_CHANGED, { playerId: defender.id, life: defender.life, delta: -lost });
 }
@@ -108,12 +113,14 @@ function hitPlayer(attacker, defender, context) {
 /**
  * @param {import("../cards/CardInstance.js").CardInstance} attacker
  * @param {readonly import("../cards/CardInstance.js").CardInstance[]} blockers
+ * @param {import("../game/Player.js").Player} defender
  * @param {import("../commands/CommandHandler.contract.js").ExecutionContext} context
  */
-function exchangeDamage(attacker, blockers, context) {
+function exchangeDamage(attacker, blockers, defender, context) {
+  const tramples = attacker.definition.hasKeyword(Keyword.TRAMPLE);
   let remaining = attacker.attack;
   blockers.forEach((blocker, index) => {
-    const isLast = index === blockers.length - 1;
+    const isLast = !tramples && index === blockers.length - 1;
     const amount = isLast ? remaining : Math.min(remaining, Math.max(0, blocker.health));
     remaining -= amount;
     const applied = blocker.takeDamage(amount);
@@ -121,4 +128,7 @@ function exchangeDamage(attacker, blockers, context) {
     const returned = attacker.takeDamage(blocker.attack);
     context.events.emit(GameEventType.DAMAGE_DEALT, { sourceId: blocker.instanceId, targetId: attacker.instanceId, amount: returned, remainingHealth: attacker.health });
   });
+  if (tramples && remaining > 0) {
+    hitPlayer(attacker, defender, context, remaining);
+  }
 }

@@ -206,14 +206,24 @@ export class SteemBlockchainProvider {
    * @param {string} account
    */
   async getLatestHistoryIndex(account) {
+    return (await this.getLatestHistoryEntry(account))?.index ?? -1;
+  }
+
+  /**
+   * An account's newest history entry, null when it has none. Its index and
+   * block come from the same node.
+   * @param {string} account
+   * @returns {Promise<HistoryEntry | null>}
+   */
+  async getLatestHistoryEntry(account) {
     if (!isValidAccountName(account)) {
-      throw new RangeError("getLatestHistoryIndex: invalid account");
+      throw new RangeError("getLatestHistoryEntry: invalid account");
     }
     const raw = await this.#rpc.call("condenser_api.get_account_history", [account, -1, 1]);
     if (!Array.isArray(raw) || raw.length > 2) {
       throw new ChainDataError("get_account_history: expected a bounded array");
     }
-    return raw.length === 0 ? -1 : parseHistoryEntry(raw[raw.length - 1], "history").index;
+    return raw.length === 0 ? null : parseHistoryEntry(raw[raw.length - 1], "history");
   }
 
   /**

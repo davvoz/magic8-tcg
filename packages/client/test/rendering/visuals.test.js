@@ -36,7 +36,7 @@ const content = await loadBundledContent();
 
 /** A presenter with nothing on the board but one cast playing out. */
 function fakePresenter(reveal) {
-  return { leavingVisuals: [], floats: [], cardFor: () => null, get moment() { return reveal.isDone ? null : reveal; } };
+  return { leavingVisuals: [], floats: [], breakthroughs: [], cardFor: () => null, get moment() { return reveal.isDone ? null : reveal; } };
 }
 
 /** No NaN or negative extent may reach the canvas: the flip passes through zero width. */
@@ -277,7 +277,7 @@ describe("cast reveal", () => {
     const after = new FakeContext2D();
     node.draw(after, theme);
     const idle = new FakeContext2D();
-    new EffectsNode({ presenter: { leavingVisuals: [], floats: [], cardFor: () => null, reveal: null }, layout, blocks: [] }).draw(idle, theme);
+    new EffectsNode({ presenter: { leavingVisuals: [], floats: [], breakthroughs: [], cardFor: () => null, reveal: null }, layout, blocks: [] }).draw(idle, theme);
     assert.equal(after.calls.length, idle.calls.length, "and leaves nothing behind: the overlay draws what an empty one draws");
   });
 });
@@ -307,7 +307,7 @@ describe("trigger flare", () => {
     const after = new FakeContext2D();
     node.draw(after, theme);
     const idle = new FakeContext2D();
-    new EffectsNode({ presenter: { leavingVisuals: [], floats: [], cardFor: () => null, moment: null }, layout, blocks: [] }).draw(idle, theme);
+    new EffectsNode({ presenter: { leavingVisuals: [], floats: [], breakthroughs: [], cardFor: () => null, moment: null }, layout, blocks: [] }).draw(idle, theme);
     assert.equal(after.calls.length, idle.calls.length, "the overlay draws what an empty one draws");
   });
 });
@@ -317,7 +317,7 @@ describe("turn banner", () => {
     const banner = new TurnBanner({ playerId: "p1", turnNumber: 7, animation: theme.animation });
     const layout = { width: 1600, height: 900, cards: {}, banner: { x: 300, y: 420, width: 1000, height: 56 } };
     const labels = [];
-    const node = new EffectsNode({ presenter: { leavingVisuals: [], floats: [], cardFor: () => null, get moment() { return banner.isDone ? null : banner; } }, layout, blocks: [], turnLabel: (playerId) => (labels.push(playerId), { text: "Your turn", mine: true }) });
+    const node = new EffectsNode({ presenter: { leavingVisuals: [], floats: [], breakthroughs: [], cardFor: () => null, get moment() { return banner.isDone ? null : banner; } }, layout, blocks: [], turnLabel: (playerId) => (labels.push(playerId), { text: "Your turn", mine: true }) });
     let shown = 0;
     for (let frames = 0; frames < 200 && !banner.isDone; frames += 1) {
       const context = new FakeContext2D();

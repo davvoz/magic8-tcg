@@ -11,7 +11,8 @@
  *   that is lethal, else where it kills, removal (destroy, bounce) on the
  *   strongest enemy creature, buffs on the strongest ally. Healing spells
  *   stay in hand while nothing of its own is hurt, harmful spells while
- *   they could only hit its own side.
+ *   they could only hit its own side, sacrifice cards while the cheapest
+ *   victim is worth more than half of what the card brings.
  * - Attack with creatures that cannot be blocked and killed for free; attack
  *   with everything when unblocked damage would be lethal.
  * - Block to kill an attacker and survive, to trade evenly, or to chump when
@@ -37,6 +38,9 @@ const DRAIN = "drain";
 const HEAL = "heal";
 const SACRIFICE = "sacrifice";
 const MODIFY_STATS = "modify_stats";
+const DRAW_CARD = "draw_card";
+/** What a drawn card is worth, in the attack + health currency of `value`. */
+const DRAWN_CARD_VALUE = 4;
 /** Removal aimed at enemy creatures regardless of their health. */
 const REMOVAL = Object.freeze(["destroy", "return_to_hand"]);
 /** Effects that hurt whatever they target. */
@@ -117,9 +121,18 @@ function boardFor(snapshot, me) {
  */
 function chooseCard(playable, legalMoves, board) {
   const byCost = [...playable]
-    .filter((card) => !isWastedHeal(card, legalMoves.targetOptions[card.instanceId], board) && !isSelfHarm(card, legalMoves.targetOptions[card.instanceId], board))
+    .filter((card) => !isWasted(card, legalMoves.targetOptions[card.instanceId], board))
     .sort((a, b) => b.cost - a.cost);
   return byCost.find((card) => faceDamage(card, legalMoves.targetOptions[card.instanceId], board) >= board.enemy.life) ?? byCost[0];
+}
+
+/**
+ * @param {CardView} card
+ * @param {readonly (readonly string[])[]} targetOptions
+ * @param {Board} board
+ */
+function isWasted(card, targetOptions, board) {
+  return isWastedHeal(card, targetOptions, board) || isSelfHarm(card, targetOptions, board) || isBadSacrifice(card, targetOptions, board);
 }
 
 /**
@@ -161,6 +174,35 @@ function isSelfHarm(card, targetOptions, board) {
 /** @param {import("@magic8/engine/domain/game/GameSnapshot.js").AbilityView} ability */
 function isHarmful(ability) {
   return HARMFUL.includes(ability.effect) || (ability.effect === MODIFY_STATS && isDebuff(ability.params));
+}
+
+/**
+ * A sacrifice pays off only when the victim is worth at most half of what
+ * the card brings (its own body plus the cards it draws): a healthy Bone
+ * Colossus is never traded for another one.
+ * @param {CardView} card
+ * @param {readonly (readonly string[])[]} targetOptions
+ * @param {Board} board
+ */
+function isBadSacrifice(card, targetOptions, board) {
+  const index = playerTargetedAbilities(card).findIndex((ability) => ability.effect === SACRIFICE);
+  if (index === -1) {
+    return false;
+  }
+  const victim = weakest(board.me.battlefield.filter((creature) => (targetOptions[index] ?? []).includes(creature.instanceId)));
+  return victim !== undefined && 2 * value(victim) > sacrificeGain(card);
+}
+
+/**
+ * @param {CardView} card
+ * @returns {number}
+ */
+function sacrificeGain(card) {
+  const body = card.type === CardType.CREATURE ? value(card) : 0;
+  const draws = playAbilities(card)
+    .filter((ability) => ability.effect === DRAW_CARD)
+    .reduce((sum, ability) => sum + Number(ability.params?.amount ?? 0), 0);
+  return body + draws * DRAWN_CARD_VALUE;
 }
 
 /**
@@ -314,11 +356,20 @@ function chooseDamageTarget(amount, { creatures, players, board }) {
 }
 
 /**
+ * Rough worth of a creature on the battlefield: its attack plus its current health.
+ * @param {CardView} creature
+ */
+function value(creature) {
+  return creature.attack + creature.health;
+}
+
+/**
+ * The creature worth least, the cheapest on ties.
  * @param {readonly CardView[]} creatures
  * @returns {CardView | undefined}
  */
 function weakest(creatures) {
-  return [...creatures].sort((a, b) => a.attack - b.attack || a.health - b.health)[0];
+  return [...creatures].sort((a, b) => value(a) - value(b) || a.cost - b.cost)[0];
 }
 
 /**

@@ -1,6 +1,7 @@
 /**
  * Transient overlay drawn above the cards: block arrows, cards on their
- * way to the graveyard, floating damage/heal numbers, and the moment
+ * way to the graveyard, trample damage crossing to the player behind a
+ * blocker, floating damage/heal numbers, and the moment
  * playing over the table — the card the opponent just cast, the rune of an
  * ability going off, or the banner of a new turn. It reads the presenter and the layout every frame and
  * holds no state of its own.
@@ -36,6 +37,13 @@ const CAST_CAPTION = Object.freeze({ font: 22, gap: 12, height: 30, spread: 70 }
  * hunts, and the thin beam that follows it from the card.
  */
 const CROSSHAIR = Object.freeze({ radius: 24, lockedRadius: 30, tickFrom: 0.45, tickTo: 1.4, width: 3, blur: 14, turnMs: 900, beamWidth: 2, beamAlpha: 0.55, lockedFill: 0.22 });
+/**
+ * Trample damage crossing to the player: the crosshair starts `from` times
+ * the life crystal's radius out and closes to `lockedGap` px outside it,
+ * turning until it locks; a dashed line of aim runs from the blocker until
+ * the beam strikes along it.
+ */
+const BREAKTHROUGH = Object.freeze({ from: 2.6, lockedGap: 10, aimAlpha: 0.45, dash: [8, 10], beamWidth: 5, beamBlur: 20 });
 const CAST_TARGET = Object.freeze({ beamWidth: 3, beamBlur: 16, markRadius: 26, markRays: 8, markFrom: 0.55, nameFont: 15, nameGap: 8, nameHeight: 20, nameSpread: 80 });
 /** An ability going off: its rune (in px, spreading from `from` to `to` times `radius`) and the card's name over it. */
 const FLARE = Object.freeze({ radius: 34, from: 0.8, to: 2.2, rays: 8, blur: 18, nameFont: 17, nameGap: 10, nameHeight: 24, nameSpread: 110 });
@@ -76,6 +84,9 @@ export class EffectsNode extends UiNode {
       if (card !== null) {
         paintLeavingCard(context, theme, card, visual);
       }
+    }
+    for (const breakthrough of this.#presenter.breakthroughs) {
+      paintBreakthrough(context, theme, breakthrough);
     }
     this.#paintFloats(context, theme);
     const moment = this.#presenter.moment;
@@ -368,6 +379,58 @@ function paintCrosshair(context, theme, tones, { frame, origin, roulette, elapse
     strokeReticle(context, card, { radius: CROSSHAIR.lockedRadius, angle: Math.PI / 4, color });
   }
   strokeReticle(context, point, { radius: CROSSHAIR.radius, angle: elapsedMs / CROSSHAIR.turnMs, color });
+  context.restore();
+}
+
+/**
+ * Trample damage on its way to the player behind a blocker: from where the
+ * blocker took the blow a dashed line of aim reaches the player's life
+ * crystal while a crosshair closes on it, turning; it locks, and a beam
+ * strikes along the line — the damage lands as it arrives.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {import("./MatchPresenter.js").BreakthroughFrame} breakthrough
+ */
+function paintBreakthrough(context, theme, { from, to, radius, aim, strike, alpha, elapsedMs }) {
+  if (alpha <= 0) {
+    return;
+  }
+  const color = theme.colors.danger;
+  const closing = 1 - (1 - aim) ** 3;
+  const locked = radius + BREAKTHROUGH.lockedGap;
+  const ring = locked * (BREAKTHROUGH.from - (BREAKTHROUGH.from - 1) * closing);
+  context.save();
+  context.globalAlpha = alpha;
+  context.lineCap = "round";
+  context.shadowColor = withAlpha(color, 0.9);
+  context.shadowBlur = CROSSHAIR.blur;
+  if (strike < 1) {
+    context.setLineDash(BREAKTHROUGH.dash);
+    context.strokeStyle = withAlpha(color, BREAKTHROUGH.aimAlpha * aim);
+    context.lineWidth = CROSSHAIR.beamWidth;
+    context.beginPath();
+    context.moveTo(from.x, from.y);
+    context.lineTo(to.x, to.y);
+    context.stroke();
+    context.setLineDash([]);
+  }
+  if (strike > 0) {
+    context.strokeStyle = color;
+    context.shadowBlur = BREAKTHROUGH.beamBlur;
+    context.lineWidth = BREAKTHROUGH.beamWidth;
+    context.beginPath();
+    context.moveTo(from.x, from.y);
+    context.lineTo(from.x + (to.x - from.x) * strike, from.y + (to.y - from.y) * strike);
+    context.stroke();
+    context.shadowBlur = CROSSHAIR.blur;
+  }
+  if (aim >= 1) {
+    context.fillStyle = withAlpha(color, CROSSHAIR.lockedFill);
+    context.beginPath();
+    context.arc(to.x, to.y, locked, 0, Math.PI * 2);
+    context.fill();
+  }
+  strokeReticle(context, to, { radius: ring, angle: aim >= 1 ? Math.PI / 4 : elapsedMs / CROSSHAIR.turnMs, color });
   context.restore();
 }
 

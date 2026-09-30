@@ -1,9 +1,11 @@
 /**
  * DECLARE_ATTACKERS: the active player chooses which ready creatures attack.
  * An empty declaration is equivalent to END_PHASE; combat is skipped.
+ * Attackers become exhausted, except those with vigilance.
  */
 import { fail, ok } from "../../../shared/Result.js";
 import { validateAttackers } from "../../combat/CombatSystem.js";
+import { Keyword } from "../../effects/Keyword.js";
 import { GameEventType } from "../../game/GameEventType.js";
 import { CommandError } from "../CommandError.js";
 import { CommandType } from "../CommandType.js";
@@ -27,7 +29,7 @@ export const declareAttackersHandler = Object.freeze({
       if (card === undefined) {
         throw new Error(`DeclareAttackersHandler: attacker "${id}" vanished`);
       }
-      card.exhausted = true;
+      card.exhausted = !card.definition.hasKeyword(Keyword.VIGILANCE);
     }
     state.combat.declareAttackers(attackerIds);
     context.events.emit(GameEventType.ATTACKERS_DECLARED, { playerId: player.id, attackerIds: Object.freeze([...attackerIds]) });

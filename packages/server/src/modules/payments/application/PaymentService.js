@@ -122,7 +122,7 @@ export class PaymentService {
   /**
    * @param {string} name
    * @param {string} network
-   * @param {number} position
+   * @param {import("./ports.js").HistoryPosition} position
    */
   saveCursor(name, network, position) {
     return this.#repository.setCursor(name, network, position, this.#clock.now());

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ChainDataError, Confirmation, SteemBlockchainProvider, SteemTransferPaymentProvider, formatSteemAsset, parseSteemAsset } from "../src/index.js";
+import { HISTORY_OVERLAP } from "../src/providers/SteemTransferPaymentProvider.js";
 
 const TX = "a1".repeat(20);
 const OTHER_TX = "b2".repeat(20);
@@ -16,6 +17,12 @@ function fakeRpc(answer) {
 /** A condenser history entry. */
 const entry = (index, op, { trx = TX, block = 100, opInTrx = 0, virtual = 0 } = {}) => [index, { trx_id: trx, block, trx_in_block: 0, op_in_trx: opInTrx, virtual_op: virtual, timestamp: TIME, op }];
 const transferOp = (from, to, amount, memo) => ["transfer", { from, to, amount, memo }];
+/** The end of the shop's history as api.moecki.online numbers it (one lower than api.steemit.com). */
+const MOECKI_HISTORY = Object.freeze([
+  entry(318, transferOp("alice", "shop", "29.000 STEEM", "m8tcg-older"), { block: 110026315 }),
+  entry(319, ["custom_json", { id: "m8tcg_receipt" }], { trx: OTHER_TX, block: 110026338 }),
+  entry(320, transferOp("alice", "shop", "3.500 STEEM", "m8tcg-new"), { block: 110035670 }),
+]);
 
 describe("STEEM assets", () => {
   it("parses only exact legacy asset strings", () => {
@@ -84,6 +91,7 @@ function node({ irreversible = 1000, blocks = {}, fails = false } = {}) {
     getBlock: async (num) => (blocks[num] === undefined ? null : { blockNum: num, time: 0, transactions: blocks[num].map((tx) => ({ txId: tx.txId, operations: tx.operations.map(([type, data]) => ({ type, data })) })) }),
     getAccountHistory: async () => [],
     getLatestHistoryIndex: async () => -1,
+    getLatestHistoryEntry: async () => null,
   };
 }
 
@@ -107,12 +115,43 @@ describe("SteemTransferPaymentProvider", () => {
         }).getAccountHistory("shop", 9, 10),
     };
     const provider = new SteemTransferPaymentProvider({ history, verifiers: [node(), node()] });
-    const { transfers, cursor } = await provider.incomingTransfers("shop", 9, 10);
+    const { transfers, cursor } = await provider.incomingTransfers("shop", 9, 100);
     assert.equal(cursor, 15);
     assert.deepEqual(transfers.map((transfer) => [transfer.from, transfer.asset, transfer.amount, transfer.memo]), [["alice", "STEEM", 1000, "m8tcg-a"], ["carol", "SBD", 500, ""]]);
     assert.equal(transfers[0].txId, TX);
     const empty = new SteemTransferPaymentProvider({ history: node(), verifiers: [node(), node()] });
-    assert.deepEqual(await empty.incomingTransfers("shop", 42, 10), { transfers: [], cursor: 42 }, "no news keeps the cursor");
+    assert.deepEqual(await empty.incomingTransfers("shop", 42, 100, 7), { transfers: [], cursor: 42, sinceBlock: 7 }, "no news keeps the position");
+  });
+
+  it("re-reads the entries before the cursor, so a node that numbers the history lower cannot hide a transfer", async () => {
+    // 2026-09-30: api.steemit.com lists one old operation twice, api.moecki.online once. The cursor (320, block 110026338)
+    // was saved from api.steemit.com, where 320 is the shop's last receipt; on api.moecki.online 320 is the next payment.
+    const { calls, rpc } = fakeRpc((method, [, start, limit]) => MOECKI_HISTORY.filter(([index]) => index >= start - limit && index <= start));
+    const provider = new SteemTransferPaymentProvider({ history: new SteemBlockchainProvider({ rpc }), verifiers: [node(), node()] });
+    const page = await provider.incomingTransfers("shop", 320, 100, 110026338);
+    assert.deepEqual(page.transfers.map((transfer) => transfer.memo), ["m8tcg-new"], "the older transfer, in an earlier block, is not read again");
+    assert.equal(page.cursor, 320, "the cursor never moves back");
+    assert.equal(page.sinceBlock, 110035670);
+    assert.ok(calls[0].params[1] - calls[0].params[2] <= 320 - HISTORY_OVERLAP, "the read starts before the cursor");
+    const unknownBlock = await provider.incomingTransfers("shop", 320, 100, null);
+    assert.deepEqual(unknownBlock.transfers.map((transfer) => transfer.memo), ["m8tcg-older", "m8tcg-new"], "without a block the whole overlap comes back");
+    await assert.rejects(provider.incomingTransfers("shop", 320, HISTORY_OVERLAP), RangeError, "a page must be longer than the overlap");
+  });
+
+  it("starts a new watcher after everything already in the history, whichever node answers", async () => {
+    // The position comes from a node that numbers the payment 321; the reads come from one that numbers it 320.
+    const steemitLatest = entry(321, transferOp("alice", "shop", "3.500 STEEM", "m8tcg-new"), { block: 110035670 });
+    const position = await new SteemTransferPaymentProvider({ history: new SteemBlockchainProvider({ rpc: fakeRpc(() => [steemitLatest]).rpc }), verifiers: [node(), node()] }).latestPosition("shop");
+    assert.deepEqual(position, { cursor: 321, sinceBlock: 110035671 });
+    const later = [...MOECKI_HISTORY, entry(321, transferOp("bob", "shop", "1.000 STEEM", "m8tcg-later"), { block: 110040000 })];
+    const moecki = new SteemTransferPaymentProvider({
+      history: new SteemBlockchainProvider({ rpc: fakeRpc((method, [, start, limit]) => later.filter(([index]) => index >= start - limit && index <= start)).rpc }),
+      verifiers: [node(), node()],
+    });
+    const page = await moecki.incomingTransfers("shop", position.cursor, 100, position.sinceBlock);
+    assert.deepEqual(page.transfers.map((transfer) => transfer.memo), ["m8tcg-later"], "only what reached the chain after the watcher started");
+    const empty = new SteemTransferPaymentProvider({ history: node(), verifiers: [node(), node()] });
+    assert.deepEqual(await empty.latestPosition("shop"), { cursor: -1, sinceBlock: 0 });
   });
 
   it("confirms only when two nodes see the same transfer below their irreversible block", async () => {

@@ -12,7 +12,8 @@
  * the audit log and logged as an error: a human must look at it.
  */
 const REFUND_MEMO = /^m8tcg refund ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
-const PAGE_SIZE = 500;
+/** api.steemit.com and most nodes refuse more than 100 history entries per call. */
+const PAGE_SIZE = 100;
 const MAX_PAGES = 10;
 const CONFIRM_BATCH = 50;
 
@@ -29,6 +30,8 @@ export class RefundWatcher {
   #audit;
   #clock;
   #logger;
+  /** Transfers already flagged by this process: each read re-covers a few entries before the cursor (HISTORY_OVERLAP). */
+  #flagged = new Set();
 
   /**
    * @param {{
@@ -65,22 +68,22 @@ export class RefundWatcher {
     const provider = /** @type {import("./ports.js").PaymentProvider} */ (this.#providers.get(network));
     const sender = this.#senderFor(network);
     const cursorName = `refunds:${network}:${sender}`;
-    let cursor = await this.#repository.getCursor(cursorName);
-    if (cursor === null) {
-      await this.#repository.setCursor(cursorName, network, await provider.latestCursor(sender), this.#clock.now());
+    let position = await this.#repository.getCursor(cursorName);
+    if (position === null) {
+      await this.#repository.setCursor(cursorName, network, await provider.latestPosition(sender), this.#clock.now());
       return 0;
     }
     let sent = 0;
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      const batch = await provider.outgoingTransfers(sender, cursor, PAGE_SIZE);
+      const batch = await provider.outgoingTransfers(sender, position.cursor, PAGE_SIZE, position.sinceBlock);
       for (const transfer of batch.transfers) {
         sent += (await this.#observe(transfer)) ? 1 : 0;
       }
-      if (batch.cursor === cursor) {
+      if (batch.cursor === position.cursor && batch.sinceBlock === position.sinceBlock) {
         break;
       }
-      cursor = batch.cursor;
-      await this.#repository.setCursor(cursorName, network, cursor, this.#clock.now());
+      position = { cursor: batch.cursor, sinceBlock: batch.sinceBlock };
+      await this.#repository.setCursor(cursorName, network, position, this.#clock.now());
     }
     return sent;
   }
@@ -146,6 +149,11 @@ export class RefundWatcher {
    * @param {Readonly<Record<string, unknown>>} details
    */
   async #flag(action, refundId, details) {
+    const key = `${action}:${refundId}:${String(details.txId)}`;
+    if (this.#flagged.has(key)) {
+      return;
+    }
+    this.#flagged.add(key);
     this.#logger.error(`refund transfer needs attention: ${action}`, { refund: refundId, ...details });
     await this.#audit.record({ actorKind: "system", action, targetKind: "refund", targetId: refundId, details });
   }

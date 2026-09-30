@@ -88,23 +88,24 @@ export class PaymentSettlement {
     const provider = this.#provider(network);
     const receiver = this.#receiverFor(network);
     const cursorName = `payments:${network}:${receiver}`;
-    let cursor = await this.#payments.cursor(cursorName);
-    if (cursor === null) {
+    let position = await this.#payments.cursor(cursorName);
+    if (position === null) {
       // First run: start after the shop's newest entry; no order can predate this server.
-      await this.#payments.saveCursor(cursorName, network, await provider.latestCursor(receiver));
+      await this.#payments.saveCursor(cursorName, network, await provider.latestPosition(receiver));
       return 0;
     }
     let recorded = 0;
     for (let page = 0; page < MAX_PAGES_PER_POLL; page += 1) {
-      const batch = await provider.incomingTransfers(receiver, cursor, PAGE_SIZE);
+      // A page re-reads a few entries before the cursor (nodes number the history differently); #accept records a transfer once.
+      const batch = await provider.incomingTransfers(receiver, position.cursor, PAGE_SIZE, position.sinceBlock);
       for (const transfer of batch.transfers) {
         recorded += (await this.#accept(transfer)) ? 1 : 0;
       }
-      if (batch.cursor === cursor) {
+      if (batch.cursor === position.cursor && batch.sinceBlock === position.sinceBlock) {
         break;
       }
-      cursor = batch.cursor;
-      await this.#payments.saveCursor(cursorName, network, cursor);
+      position = { cursor: batch.cursor, sinceBlock: batch.sinceBlock };
+      await this.#payments.saveCursor(cursorName, network, position);
     }
     return recorded;
   }

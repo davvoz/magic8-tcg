@@ -7,6 +7,16 @@
  *   a transfer that pays nothing still has to be seen, to be refunded.
  *   Transfers *from* the shop (refunds an operator sent with Keychain) are
  *   read the same way, from their own cursor.
+ *   History indexes are not the same on every node: api.steemit.com lists
+ *   some operations twice where api.moecki.online lists them once, so after
+ *   a failover the same index can name a later entry on one node than on the
+ *   other (2026-09-30: a paid order was never seen). Each read therefore
+ *   starts HISTORY_OVERLAP entries before the cursor and keeps, besides the
+ *   entries past the cursor, those of the overlap in blocks at or after
+ *   `sinceBlock` (the block of the last entry read): block numbers mean the
+ *   same thing on every node. The same transfer can so come back; whoever
+ *   records it must be idempotent (payments are keyed by transaction and
+ *   operation). The cursor never moves back.
  * - Confirmation: a transfer is final only when at least `quorum` distinct
  *   nodes, each asked directly, place it in a block at or below their last
  *   irreversible block, with exactly the same sender, receiver, amount and
@@ -15,7 +25,8 @@
  *
  * @typedef {Readonly<{ network: string, txId: string, opIndex: number, blockNum: number, time: number, from: string, to: string, asset: string, amount: number, memo: string }>} Transfer
  * @typedef {"IRREVERSIBLE" | "PENDING" | "MISSING"} Confirmation
- * @typedef {Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getHead" | "getBlock" | "getAccountHistory" | "getLatestHistoryIndex">} ChainReader
+ * @typedef {Pick<import("./SteemBlockchainProvider.js").SteemBlockchainProvider, "getHead" | "getBlock" | "getAccountHistory" | "getLatestHistoryIndex" | "getLatestHistoryEntry">} ChainReader
+ * @typedef {Readonly<{ transfers: readonly Transfer[], cursor: number, sinceBlock: number | null }>} TransferPage
  */
 import { isValidAccountName } from "../accountName.js";
 import { STEEM_ASSETS, parseSteemAsset } from "../assets.js";
@@ -25,6 +36,8 @@ export const Confirmation = Object.freeze({ IRREVERSIBLE: "IRREVERSIBLE", PENDIN
 
 const MAX_MEMO_LENGTH = 2048;
 const DEFAULT_QUORUM = 2;
+/** Entries re-read before the cursor, to cover nodes that number the history differently. */
+export const HISTORY_OVERLAP = 20;
 
 export class SteemTransferPaymentProvider {
   #history;
@@ -56,48 +69,73 @@ export class SteemTransferPaymentProvider {
   }
 
   /**
-   * Where a new watcher starts: after the shop's newest history entry.
-   * @param {string} receiver
+   * Where a new watcher starts: after the account's newest history entry.
+   * Only the index; a reader that cannot tell a skewed overlap entry from a
+   * new one (no `sinceBlock`) must only care about transfers it can
+   * recognise, as a sale does by its memo.
+   * @param {string} account
    */
-  latestCursor(receiver) {
-    return this.#history.getLatestHistoryIndex(receiver);
+  latestCursor(account) {
+    return this.#history.getLatestHistoryIndex(account);
   }
 
   /**
-   * Incoming transfers after `cursor`, oldest first, and the new cursor.
+   * Where a new watcher starts, with the block its first read may begin at:
+   * nothing in the history so far, whatever a node numbers it, is read.
+   * @param {string} account
+   * @returns {Promise<Readonly<{ cursor: number, sinceBlock: number }>>}
+   */
+  async latestPosition(account) {
+    const latest = await this.#history.getLatestHistoryEntry(account);
+    return Object.freeze(latest === null ? { cursor: -1, sinceBlock: 0 } : { cursor: latest.index, sinceBlock: latest.blockNum + 1 });
+  }
+
+  /**
+   * Incoming transfers after `cursor`, oldest first, and where to read next.
    * @param {string} receiver
    * @param {number} cursor
-   * @param {number} limit
-   * @returns {Promise<Readonly<{ transfers: readonly Transfer[], cursor: number }>>}
+   * @param {number} limit entries per read, overlap included; more than HISTORY_OVERLAP
+   * @param {number | null} [sinceBlock] from the previous page (or latestPosition); null keeps the whole overlap
+   * @returns {Promise<TransferPage>}
    */
-  incomingTransfers(receiver, cursor, limit) {
-    return this.#transfers(receiver, cursor, limit, (data) => data.to === receiver);
+  incomingTransfers(receiver, cursor, limit, sinceBlock = null) {
+    return this.#transfers(receiver, { cursor, limit, sinceBlock }, (data) => data.to === receiver);
   }
 
   /**
-   * Transfers sent by `sender` after `cursor`, oldest first, and the new cursor.
+   * Transfers sent by `sender` after `cursor`, oldest first, and where to read next.
    * @param {string} sender
    * @param {number} cursor
    * @param {number} limit
-   * @returns {Promise<Readonly<{ transfers: readonly Transfer[], cursor: number }>>}
+   * @param {number | null} [sinceBlock]
+   * @returns {Promise<TransferPage>}
    */
-  outgoingTransfers(sender, cursor, limit) {
-    return this.#transfers(sender, cursor, limit, (data) => data.from === sender);
+  outgoingTransfers(sender, cursor, limit, sinceBlock = null) {
+    return this.#transfers(sender, { cursor, limit, sinceBlock }, (data) => data.from === sender);
   }
 
   /**
    * @param {string} account
-   * @param {number} cursor
-   * @param {number} limit
+   * @param {{ cursor: number, limit: number, sinceBlock: number | null }} page
    * @param {(data: Readonly<Record<string, unknown>>) => boolean} direction
+   * @returns {Promise<TransferPage>}
    */
-  async #transfers(account, cursor, limit, direction) {
-    const entries = await this.#history.getAccountHistory(account, cursor, limit);
+  async #transfers(account, { cursor, limit, sinceBlock }, direction) {
+    if (limit <= HISTORY_OVERLAP) {
+      throw new RangeError(`SteemTransferPaymentProvider: a history page must be longer than the ${HISTORY_OVERLAP}-entry overlap`);
+    }
+    const read = await this.#history.getAccountHistory(account, Math.max(-1, cursor - HISTORY_OVERLAP), limit);
+    const entries = read.filter((entry) => entry.index > cursor || sinceBlock === null || entry.blockNum >= sinceBlock);
     const transfers = entries
       .filter((entry) => !entry.virtual && entry.operation.type === "transfer" && direction(entry.operation.data))
       .map((entry) => toTransfer(entry.operation.data, { txId: entry.txId, opIndex: entry.opIndex, blockNum: entry.blockNum, time: entry.time }))
       .filter((transfer) => transfer !== null);
-    return Object.freeze({ transfers: Object.freeze(/** @type {Transfer[]} */ (transfers)), cursor: entries.length === 0 ? cursor : entries[entries.length - 1].index });
+    const last = read.at(-1);
+    return Object.freeze({
+      transfers: Object.freeze(/** @type {Transfer[]} */ (transfers)),
+      cursor: last === undefined ? cursor : Math.max(cursor, last.index),
+      sinceBlock: last === undefined ? sinceBlock : Math.max(sinceBlock ?? 0, last.blockNum),
+    });
   }
 
   /**

@@ -1611,6 +1611,136 @@
         }
       ],
       "text": "Destroy an enemy creature."
+    },
+    {
+      "id": "charging_ram",
+      "name": "Charging Ram",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 3,
+      "attack": 3,
+      "health": 3,
+      "keywords": [
+        "trample"
+      ],
+      "text": "Trample. Head down, horns first, no brakes."
+    },
+    {
+      "id": "thunderhoof_mammoth",
+      "name": "Thunderhoof Mammoth",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 6,
+      "attack": 6,
+      "health": 6,
+      "keywords": [
+        "trample"
+      ],
+      "text": "Trample. The ground remembers where it walked."
+    },
+    {
+      "id": "molten_rhino",
+      "name": "Molten Rhino",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 5,
+      "attack": 5,
+      "health": 4,
+      "keywords": [
+        "trample"
+      ],
+      "text": "Trample. Its charge leaves a trail of glass."
+    },
+    {
+      "id": "siege_ram",
+      "name": "Siege Ram",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 4,
+      "attack": 3,
+      "health": 5,
+      "keywords": [
+        "trample"
+      ],
+      "text": "Trample. Built for gates; works on shields."
+    },
+    {
+      "id": "rampaging_ogre",
+      "name": "Rampaging Ogre",
+      "type": "creature",
+      "faction": "neutral",
+      "cost": 5,
+      "attack": 4,
+      "health": 5,
+      "keywords": [
+        "trample"
+      ],
+      "text": "Trample. It never learned the word \"stop\"."
+    },
+    {
+      "id": "village_militia",
+      "name": "Village Militia",
+      "type": "creature",
+      "faction": "neutral",
+      "cost": 2,
+      "attack": 2,
+      "health": 2,
+      "keywords": [
+        "vigilance"
+      ],
+      "text": "Vigilance. Farmers by day, the wall by night."
+    },
+    {
+      "id": "rampart_automaton",
+      "name": "Rampart Automaton",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 3,
+      "attack": 2,
+      "health": 4,
+      "keywords": [
+        "vigilance"
+      ],
+      "text": "Vigilance. It was never told to stand down."
+    },
+    {
+      "id": "rune_warden",
+      "name": "Rune Warden",
+      "type": "creature",
+      "faction": "arcane",
+      "cost": 4,
+      "attack": 3,
+      "health": 4,
+      "keywords": [
+        "vigilance"
+      ],
+      "text": "Vigilance. Its wards stay lit even as it strikes."
+    },
+    {
+      "id": "tomb_knight",
+      "name": "Tomb Knight",
+      "type": "creature",
+      "faction": "shadow",
+      "cost": 5,
+      "attack": 4,
+      "health": 5,
+      "keywords": [
+        "vigilance"
+      ],
+      "text": "Vigilance. The dead do not sleep on watch."
+    },
+    {
+      "id": "oakheart_warden",
+      "name": "Oakheart Warden",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 6,
+      "attack": 5,
+      "health": 7,
+      "keywords": [
+        "vigilance"
+      ],
+      "text": "Vigilance. A hundred years of standing guard, and it has only just begun."
     }
   ]
 }

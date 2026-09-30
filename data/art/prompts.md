@@ -99,6 +99,15 @@ style : anime ritual
 no text
 ```
 
+### Molten Rhino (`molten_rhino`)
+```
+background color: red-black-orange
+armoured rhino of molten rock charging through a wall of smoke, glowing horn, the ground behind it turned to glass, with red-black-orange rock skin
+
+style : anime ritual
+no text
+```
+
 ### Kindling Sprite (`kindling_sprite`)
 ```
 background color: red-black-orange
@@ -222,6 +231,24 @@ no text
 ```
 background color: steel blue-navy-silver
 gigantic riveted iron colossus towering over a foundry city, a furnace glowing in its chest, with steel blue-navy-silver plating
+
+style : anime ritual
+no text
+```
+
+### Siege Ram (`siege_ram`)
+```
+background color: steel blue-navy-silver
+mechanical ram on heavy iron wheels smashing through a wooden gate, reinforced ram head, splinters flying, with steel blue-navy-silver plating
+
+style : anime ritual
+no text
+```
+
+### Rampart Automaton (`rampart_automaton`)
+```
+background color: steel blue-navy-silver
+tall automaton standing watch on a castle rampart, tower shield planted in front, one arm raised with a blade, glowing eye scanning the horizon, with steel blue-navy-silver plating
 
 style : anime ritual
 no text
@@ -380,6 +407,15 @@ style : anime ritual
 no text
 ```
 
+### Tomb Knight (`tomb_knight`)
+```
+background color: purple-black-lilac
+undead knight in ancient armour guarding a crypt gate, tattered cape, sword drawn, cold lilac light in the empty helm, with purple-black-lilac armour
+
+style : anime ritual
+no text
+```
+
 ### Mind Rot (`mind_rot`) — magia
 ```
 background color: purple-black-lilac
@@ -512,6 +548,33 @@ no text
 ```
 background color: green-dark green-lime
 colossal being made of a whole forest, giant roots as legs, waterfalls running down its body, with green-dark green-lime foliage
+
+style : anime ritual
+no text
+```
+
+### Charging Ram (`charging_ram`)
+```
+background color: green-dark green-lime
+wild ram with heavy curled horns charging down a mossy slope, head lowered to butt, hooves kicking up earth and leaves, with green-dark green-lime fleece
+
+style : anime ritual
+no text
+```
+
+### Thunderhoof Mammoth (`thunderhoof_mammoth`)
+```
+background color: green-dark green-lime
+colossal woolly mammoth trampling through a forest, trees bending aside, moss and vines hanging from its tusks, with green-dark green-lime fur
+
+style : anime ritual
+no text
+```
+
+### Oakheart Warden (`oakheart_warden`)
+```
+background color: green-dark green-lime
+towering treefolk guardian with a glowing heart of amber in its trunk, bark armour, one massive branch arm raised to strike while the other shields a grove, with green-dark green-lime leaves
 
 style : anime ritual
 no text
@@ -659,6 +722,16 @@ style : anime ritual
 no text
 ```
 
+### Rune Warden (`rune_warden`)
+```
+background color: blue-indigo-cyan
+armoured warden holding a runed glaive, a ring of glowing protective runes floating around the body, stepping forward to strike, with blue-indigo-cyan armour
+gender: female
+
+style : anime ritual
+no text
+```
+
 ### Unsummon (`unsummon`) — magia
 ```
 magic ritual
@@ -743,6 +816,26 @@ no text
 background color: grey-olive-cream  
 Very old age calm male giant sitting among rolling hills, huge club resting beside him, very small human figures around him to emphasize his enormous size, wearing grey-olive-cream ritual clothes  
 style: anime ritual  
+no text
+```
+
+### Rampaging Ogre (`rampaging_ogre`)
+```
+background color: grey-olive-cream
+furious ogre charging downhill, crude club raised, broken fences and a toppled cart behind it, with grey-olive-cream clothes
+gender: male
+
+style : anime ritual
+no text
+```
+
+### Village Militia (`village_militia`)
+```
+background color: grey-olive-cream
+villager militia standing guard at a wooden palisade with a pitchfork and a small round shield, lantern hanging on a post, alert eyes, with grey-olive-cream clothes
+gender: female
+
+style : anime ritual
 no text
 ```
 

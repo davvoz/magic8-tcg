@@ -219,12 +219,16 @@ export class FakeSteemLedger {
   }
 
   /**
-   * The transaction is no longer in its block (a micro-fork dropped it).
+   * The transaction is no longer in its block (a micro-fork dropped it), nor
+   * in any account's history: a node rebuilds the history of the fork it follows.
    * @param {string} txId
    */
   drop(txId) {
     for (const [blockNum, transactions] of this.blocks) {
       this.blocks.set(blockNum, transactions.filter((transaction) => transaction.txId !== txId));
+    }
+    for (const [account, entries] of this.history) {
+      this.history.set(account, entries.filter((entry) => entry.txId !== txId));
     }
   }
 
@@ -235,6 +239,7 @@ export class FakeSteemLedger {
       getBlock: async (blockNum) => (this.blocks.has(blockNum) ? { blockNum, time: this.time, transactions: this.blocks.get(blockNum) } : null),
       getAccountHistory: async (account, after, limit) => (this.history.get(account) ?? []).filter((entry) => entry.index > after).slice(0, limit),
       getLatestHistoryIndex: async (account) => (this.history.get(account) ?? []).length - 1,
+      getLatestHistoryEntry: async (account) => (this.history.get(account) ?? []).at(-1) ?? null,
     };
   }
 
