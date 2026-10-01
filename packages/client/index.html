@@ -5,9 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Magic8</title>
   <style>
-    /* HTML is used only to host the canvas. All game UI is rendered on the canvas. */
+    /* HTML is used only to host the canvas. All game UI is rendered on the canvas, except the maintenance banner. */
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0a0c14; overflow: hidden; }
     canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
+    /* The one HTML overlay: the maintenance announcement (src/rendering/page/MaintenanceBanner.js). */
+    .maintenance-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 8px 16px; background: #b45309; color: #fff; font: 600 14px/1.4 system-ui, sans-serif; text-align: center; pointer-events: none; }
+    .maintenance-banner[hidden] { display: none; }
   </style>
 </head>
 <body>
