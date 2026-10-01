@@ -47,6 +47,7 @@ export function loadConfig(env) {
     ackKey: parseAckKey(env, secure),
     // Game protocol v2 (signed moves, docs/tcg/12) unless explicitly turned off.
     gameProtocol: gameProtocolOf(env.M8_SIGNED_MOVES),
+    firstEpochId: parseFirstEpochId(env.M8_FIRST_EPOCH_ID),
   });
 }
 
@@ -191,6 +192,24 @@ function gameProtocolOf(value) {
     return 1;
   }
   throw new ConfigError('M8_SIGNED_MOVES: "true" or "false"');
+}
+
+/**
+ * M8_FIRST_EPOCH_ID: the lowest id a new pack epoch may take (default 1).
+ * Verifiers bind an epoch number to the first commitment the root's
+ * broadcasters published for it, so a server whose root already published
+ * epochs from another database (tests on the same account) starts above them.
+ * @param {string | undefined} value
+ */
+function parseFirstEpochId(value) {
+  if (value === undefined || value === "") {
+    return 1;
+  }
+  const id = Number(value);
+  if (!/^\d{1,10}$/.test(value) || id < 1 || id > 2_147_483_647) {
+    throw new ConfigError("M8_FIRST_EPOCH_ID: an integer in 1..2147483647");
+  }
+  return id;
 }
 
 /**

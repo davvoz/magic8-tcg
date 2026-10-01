@@ -21,6 +21,7 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 | `M8_SHOP_ACCOUNT` | default `verdu.green` | riceve i pagamenti |
 | `M8_ROOT_ACCOUNT` | default `verdu.green` | pubblica i manifest (consigliato un account dedicato, vedi 06) |
 | `M8_BROADCASTER_KEYS` | per pubblicare | `account:WIF_posting,…`, **solo chiavi posting** |
+| `M8_FIRST_EPOCH_ID` | se il root ha già pubblicato epoche da un altro database | il numero più basso di una nuova epoca dei pacchetti (default 1). Un verificatore lega ogni numero alla **prima** commitment pubblicata dai broadcaster del root: se delle prove sullo stesso account hanno già pubblicato delle epoche, la produzione parte sopra |
 | `M8_SIGNED_MOVES` | no | `true` (default): partite nuove nel protocollo v2, mosse firmate dai giocatori (12). `false` solo per strumenti o client vecchi. Il browser firma solo in https o su `localhost` |
 | `M8_ACK_KEY` | sì (https) | chiave WIF dedicata che firma gli ack ai giocatori (11); mai la chiave di un account o di un broadcaster |
 | `M8_ADMIN_ACCOUNTS` | default = shop | account che vedono `/admin.html` |
@@ -48,7 +49,7 @@ Il server rifiuta di partire con:
 
 1. Creare gli account: root (meglio dedicato), shop, 1–4 broadcaster (nomi validi: ogni parte tra i punti ha almeno 3 caratteri). Delegare Steem Power ai broadcaster da un account freddo.
 2. Aprire `/manifest.html` e pubblicare con Keychain, chiave **active del root**, la lista dei broadcaster. Poi, scegliendo "Ack keys", la chiave pubblica di `M8_ACK_KEY` (all'avvio il log la mostra se non è ancora nominata: `the ack key is not named…`). Attendere circa un minuto (irreversibilità).
-3. Avviare il server con `M8_BROADCASTER_KEYS`. Nel log: nessun `broadcaster not authorised`.
+3. Se il broadcaster ha già pubblicato da un altro database (prove sullo stesso account), prima di dargli le chiavi: `node packages/server/src/maintenance/startChainTracking.js <broadcaster>` (con Docker: `docker compose exec app node …`). Il tracker leggerà la sua storia da quel punto: altrimenti ogni operazione precedente diventa un allarme `UNKNOWN_ON_CHAIN`. Poi avviare il server con `M8_BROADCASTER_KEYS`. Nel log: nessun `broadcaster not authorised`.
 4. Comprare un pacchetto di prova. Dopo la rivelazione dell'epoca (circa 7 giorni) verificarlo con `node tools/verify-order.js <ordine> --server https://…`.
 
 ## 3. Backup e ripristino

@@ -119,7 +119,7 @@ export async function createServerApp(deps) {
   const outbox = new ChainOutbox({ repository: new PgOutboxRepository(database), clock });
   // What a player should hear about is written with the change; each process pushes it to the players connected to it.
   const notifications = new NotificationService({ repository: new PgNotificationRepository(database), clock, unitOfWork });
-  const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
+  const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, firstEpochId: config.firstEpochId, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
   const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, notifications, audit, clock, unitOfWork, logger });
   const rootAccount = /** @type {Record<string, string>} */ (config.rootAccounts)[defaultNetwork];
   const chain = publishing === null ? null : buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies: chainPolicies, ackKey: ackSigner?.publicKey ?? null });

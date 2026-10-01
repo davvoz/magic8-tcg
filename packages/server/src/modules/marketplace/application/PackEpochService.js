@@ -34,6 +34,7 @@ export class PackEpochService {
   #unitOfWork;
   #maxAgeMs;
   #publisher;
+  #firstEpochId;
 
   /**
    * @param {{
@@ -44,9 +45,10 @@ export class PackEpochService {
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   maxAgeMs: number,
    *   publisher: import("./ports.js").EpochPublisher,
-   * }} deps
+   *   firstEpochId?: number,
+   * }} deps `firstEpochId`: the lowest id a new epoch takes (M8_FIRST_EPOCH_ID)
    */
-  constructor({ repository, secrets, random, clock, unitOfWork, maxAgeMs, publisher }) {
+  constructor({ repository, secrets, random, clock, unitOfWork, maxAgeMs, publisher, firstEpochId = 1 }) {
     this.#repository = repository;
     this.#secrets = secrets;
     this.#random = random;
@@ -54,6 +56,7 @@ export class PackEpochService {
     this.#unitOfWork = unitOfWork;
     this.#maxAgeMs = maxAgeMs;
     this.#publisher = publisher;
+    this.#firstEpochId = firstEpochId;
   }
 
   /**
@@ -71,7 +74,7 @@ export class PackEpochService {
       if (open !== null) {
         await this.#repository.closeEpoch(open.id, now);
       }
-      const id = await this.#repository.nextEpochId();
+      const id = Math.max(await this.#repository.nextEpochId(), this.#firstEpochId);
       const secret = this.#random.bytes(SECRET_BYTES);
       const commit = packEpochCommitment(bytesToHex(secret));
       await this.#repository.insertEpoch({ id, commit, sealedSecret: this.#secrets.seal(secret, epochContext(id)), openedAt: now });
