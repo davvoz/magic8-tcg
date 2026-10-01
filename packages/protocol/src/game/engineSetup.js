@@ -38,7 +38,6 @@ export function createGameEngine({ content, accounts, decks, firstSeat, engineSe
     deckList: new DeckList({
       id: `deck_${SEATS[index]}`,
       name: SEATS[index],
-      faction: "recorded",
       entries: canonicalDeck(decks[index]).map(([cardId, count]) => ({ cardId, count })),
     }),
   }));

@@ -4,13 +4,13 @@
  * to a Result; the server is the authority on what a player owns.
  *
  * @typedef {Readonly<{ cardId: string, count: number }>} DeckEntry
- * @typedef {Readonly<{ id: string, name: string, faction: string, size: number, cards: readonly DeckEntry[] }>} StarterChoice
+ * @typedef {Readonly<{ id: string, name: string, size: number, cards: readonly DeckEntry[] }>} StarterChoice
  * @typedef {Readonly<{ claimed: boolean, choices: readonly StarterChoice[] }>} StarterStatus
  * @typedef {Readonly<{ id: string, edition: string, serial: number, status: string, tradeable?: boolean }>} OwnedCopy tradeable: bought or a free grant (not a reward), so it may be offered in a trade
  * @typedef {Readonly<{ definitionId: string, copies: readonly OwnedCopy[] }>} CollectionEntry
  * @typedef {Readonly<{ code: string, message: string, cardId: string | null }>} DeckProblem
- * @typedef {Readonly<{ id: string, name: string, faction: string, cards: readonly DeckEntry[], version: number, playable: boolean, problems: readonly DeckProblem[] }>} AccountDeck
- * @typedef {Readonly<{ name: string, faction: string, cards: readonly DeckEntry[] }>} DeckInput
+ * @typedef {Readonly<{ id: string, name: string, cards: readonly DeckEntry[], version: number, playable: boolean, problems: readonly DeckProblem[] }>} AccountDeck
+ * @typedef {Readonly<{ name: string, cards: readonly DeckEntry[] }>} DeckInput
  *
  * @typedef {import("@magic8/engine/shared/Result.js").Fail} Fail
  * @typedef {object} CollectionApi

@@ -4,7 +4,7 @@
  * - to be saved, a deck must be well formed (the engine's structural
  *   validation) and use only cards the user owns, in the counts they own;
  * - to be playable it must also satisfy the deck rules (size, copies,
- *   faction). An unfinished deck can be saved as a draft; matchmaking
+ *   card types). An unfinished deck can be saved as a draft; matchmaking
  *   accepts only playable decks.
  *
  * Ownership can change after saving (future trading), so playability is
@@ -19,18 +19,18 @@ export const NOT_OWNED = "NOT_OWNED";
 const DRAFT_ID = "draft";
 
 /**
- * @typedef {Readonly<{ name: string, faction: string, entries: readonly Readonly<{ cardId: string, count: number }>[] }>} DeckDraft
+ * @typedef {Readonly<{ name: string, entries: readonly Readonly<{ cardId: string, count: number }>[] }>} DeckDraft
  * @typedef {Readonly<{ playable: boolean, problems: readonly Readonly<{ code: string, message: string, cardId: string | null }>[] }>} DeckEvaluation
  */
 
 /**
- * @param {{ name: unknown, faction: unknown, cards: unknown }} input
+ * @param {{ name: unknown, cards: unknown }} input
  * @param {import("@magic8/engine/domain/decks/DeckRules.js").DeckRules} rules
  * @returns {import("@magic8/engine/shared/Result.js").Ok<DeckDraft> | import("@magic8/engine/shared/Result.js").Fail}
  */
-export function parseDeckDraft({ name, faction, cards }, rules) {
+export function parseDeckDraft({ name, cards }, rules) {
   const trimmed = typeof name === "string" ? name.trim() : name;
-  const list = validateDeckList({ id: DRAFT_ID, name: trimmed, faction, cards }, { requireSchemaVersion: false });
+  const list = validateDeckList({ id: DRAFT_ID, name: trimmed, cards }, { requireSchemaVersion: false });
   if (!list.ok) {
     return list;
   }
@@ -40,7 +40,7 @@ export function parseDeckDraft({ name, faction, cards }, rules) {
   if (list.value.totalCards > rules.maxSize) {
     return fail("VALIDATION", `a deck holds at most ${rules.maxSize} cards`);
   }
-  return ok(Object.freeze({ name: list.value.name, faction: list.value.faction, entries: list.value.entries }));
+  return ok(Object.freeze({ name: list.value.name, entries: list.value.entries }));
 }
 
 /**
@@ -76,7 +76,7 @@ export function evaluateDeck(draft, content, owned) {
  * @param {DeckDraft} draft
  */
 export function toDeckList(draft) {
-  const result = validateDeckList({ id: DRAFT_ID, name: draft.name, faction: draft.faction, cards: draft.entries }, { requireSchemaVersion: false });
+  const result = validateDeckList({ id: DRAFT_ID, name: draft.name, cards: draft.entries }, { requireSchemaVersion: false });
   if (!result.ok) {
     throw new TypeError(`toDeckList: a stored deck is not a valid deck list: ${result.error.message}`);
   }

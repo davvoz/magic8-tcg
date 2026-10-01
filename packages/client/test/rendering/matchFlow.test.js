@@ -116,7 +116,7 @@ describe("DeckSelectionScene", () => {
 
     const real = appContext();
     const builder = new DeckBuildingService({ content, repository: real.repository });
-    builder.startNew("iron", "Work in progress");
+    builder.startNew("Work in progress");
     builder.addCard("iron_watcher");
     assert.equal((await builder.save()).ok, true);
     const scene = new DeckSelectionScene(services({ hasScene: (id) => id === SceneId.DECK_BUILDER }), real);

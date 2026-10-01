@@ -7,7 +7,7 @@ import { AppError } from "../../../kernel/AppError.js";
 import { Auth } from "../../../platform/http/Router.js";
 import { validated } from "../../../platform/http/validateBody.js";
 
-const DECK_KEYS = Object.freeze(["name", "faction", "cards"]);
+const DECK_KEYS = Object.freeze(["name", "cards"]);
 const MAX_ENTRIES = 200;
 const READ_RATE = Object.freeze({ name: "decks-read", capacity: 60, refillPerSecond: 1, by: /** @type {const} */ ("user") });
 const WRITE_RATE = Object.freeze({ name: "decks-write", capacity: 30, refillPerSecond: 0.5, by: /** @type {const} */ ("user") });
@@ -17,7 +17,6 @@ const ETAG_PATTERN = /^(?:W\/)?"(\d{1,9})"$/;
 function deckInput(body) {
   return validated(body, DECK_KEYS, (issues, object) => {
     checkString(issues, object.name, "body.name", { minLength: 1, maxLength: 64 });
-    checkString(issues, object.faction, "body.faction", { minLength: 1, maxLength: 40 });
     // Entries are validated by the engine's deck-list validation in DeckService.
     checkArray(issues, object.cards, "body.cards", { maxLength: MAX_ENTRIES });
   });
@@ -60,7 +59,7 @@ export function registerDeckRoutes({ router, decks }) {
     rateLimit: WRITE_RATE,
     handler: async (context) => {
       const input = deckInput(await context.readJson());
-      const deck = await decks.create(context.principal.user.id, { name: input.name, faction: input.faction, cards: input.cards });
+      const deck = await decks.create(context.principal.user.id, { name: input.name, cards: input.cards });
       return { status: 201, body: { deck }, headers: etag(deck) };
     },
   });
@@ -84,7 +83,7 @@ export function registerDeckRoutes({ router, decks }) {
     handler: async (context) => {
       const version = expectedVersion(context.header("if-match"));
       const input = deckInput(await context.readJson());
-      const deck = await decks.update(context.principal.user.id, context.params.id, version, { name: input.name, faction: input.faction, cards: input.cards });
+      const deck = await decks.update(context.principal.user.id, context.params.id, version, { name: input.name, cards: input.cards });
       return { status: 200, body: { deck }, headers: etag(deck) };
     },
   });

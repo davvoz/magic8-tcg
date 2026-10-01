@@ -103,7 +103,7 @@ describe("phase progression", () => {
 });
 
 describe("empty library", () => {
-  const tinyDeck = new DeckList({ id: "tiny", name: "Tiny", faction: "ember", entries: [{ cardId: "ember_imp", count: 6 }] });
+  const tinyDeck = new DeckList({ id: "tiny", name: "Tiny", entries: [{ cardId: "ember_imp", count: 6 }] });
 
   it("fatigue mode deals damage per failed draw and the game ends through state-based actions", () => {
     const rules = rulesWith({ startingLife: 2, startingHandSize: 5 });

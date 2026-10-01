@@ -147,7 +147,7 @@ describe("controller failure handling", () => {
 describe("MatchSetupService", () => {
   it("refuses illegal decks with the rule report", () => {
     const service = new MatchSetupService({ content, effects, scheduler: immediateScheduler, logger: new MemoryLogger() });
-    const tiny = new DeckList({ id: "tiny", name: "Tiny", faction: "ember", entries: [{ cardId: "ember_imp", count: 3 }] });
+    const tiny = new DeckList({ id: "tiny", name: "Tiny", entries: [{ cardId: "ember_imp", count: 3 }] });
     const result = service.createMatch({
       seats: [
         { id: "p1", name: "A", deckList: tiny, controller: humanController },

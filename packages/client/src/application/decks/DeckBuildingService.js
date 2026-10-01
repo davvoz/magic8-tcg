@@ -13,22 +13,20 @@
  * server enforces the same rule on save. Without counts (offline practice)
  * the whole catalog is available.
  *
- * Faction: when the rules restrict cards by faction, the player picks the
- * deck's faction up front. When they do not, the faction is only the deck's
- * theme, so it follows the cards: the faction with the most copies (shared
- * cards aside) once the deck holds any.
+ * A deck has no faction: any card may go in, and `mix()` tells what the
+ * draft is made of.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { DeckList } from "@magic8/engine/domain/decks/DeckList.js";
 import { validateDeck } from "@magic8/engine/domain/decks/DeckValidator.js";
 import { validateDeckList } from "@magic8/engine/domain/decks/validateDeckList.js";
+import { deckMix } from "./deckMix.js";
 
 export const DeckBuildingError = Object.freeze({
   NO_DRAFT: "NO_DRAFT",
   UNKNOWN_CARD: "UNKNOWN_CARD",
   LIMIT_REACHED: "LIMIT_REACHED",
   INVALID_NAME: "INVALID_NAME",
-  INVALID_FACTION: "INVALID_FACTION",
   TOO_MANY_DECKS: "TOO_MANY_DECKS",
   NOT_OWNED: "NOT_OWNED",
 });
@@ -71,20 +69,15 @@ export class DeckBuildingService {
   }
 
   /**
-   * Starts an empty deck. The faction is needed only when the rules restrict
-   * cards by faction; otherwise the deck's faction follows its cards.
-   * @param {string} [faction]
+   * Starts an empty deck.
    * @param {string} [name]
    */
-  startNew(faction = this.rules.deckFactions[0], name = "New Deck") {
-    if (!this.rules.isDeckFaction(faction)) {
-      return fail(DeckBuildingError.INVALID_FACTION, `a deck cannot be built around "${faction}"; choose one of: ${this.rules.deckFactions.join(", ")}`);
-    }
+  startNew(name = "New Deck") {
     const id = this.#allocateId();
     if (!id.ok) {
       return id;
     }
-    this.#draft = new DeckList({ id: id.value, name, faction, entries: [] });
+    this.#draft = new DeckList({ id: id.value, name, entries: [] });
     this.#saved = null;
     return ok(this.#draft);
   }
@@ -104,7 +97,7 @@ export class DeckBuildingService {
     if (!id.ok) {
       return id;
     }
-    this.#draft = new DeckList({ id: id.value, name: `${deck.name} (copy)`.slice(0, this.rules.deckNameMaxLength), faction: deck.faction, entries: deck.entries });
+    this.#draft = new DeckList({ id: id.value, name: `${deck.name} (copy)`.slice(0, this.rules.deckNameMaxLength), entries: deck.entries });
     this.#saved = null;
     return ok(this.#draft);
   }
@@ -128,7 +121,7 @@ export class DeckBuildingService {
     if (draft.value.totalCards >= this.rules.maxSize) {
       return fail(DeckBuildingError.LIMIT_REACHED, `at most ${this.rules.maxSize} cards in a deck`);
     }
-    this.#draft = this.#themed(draft.value.withCardAdded(cardId));
+    this.#draft = draft.value.withCardAdded(cardId);
     return ok(this.#draft);
   }
 
@@ -138,7 +131,7 @@ export class DeckBuildingService {
     if (!draft.ok) {
       return draft;
     }
-    this.#draft = this.#themed(draft.value.withCardRemoved(cardId));
+    this.#draft = draft.value.withCardRemoved(cardId);
     return ok(this.#draft);
   }
 
@@ -156,19 +149,6 @@ export class DeckBuildingService {
     return ok(this.#draft);
   }
 
-  /** @param {string} faction */
-  setFaction(faction) {
-    const draft = this.#requireDraft();
-    if (!draft.ok) {
-      return draft;
-    }
-    if (!this.rules.isDeckFaction(faction)) {
-      return fail(DeckBuildingError.INVALID_FACTION, `a deck cannot be built around "${faction}"; choose one of: ${this.rules.deckFactions.join(", ")}`);
-    }
-    this.#draft = draft.value.withFaction(faction);
-    return ok(this.#draft);
-  }
-
   /** Drops the draft (saved or not); the repository is untouched. */
   discard() {
     this.#draft = null;
@@ -180,22 +160,27 @@ export class DeckBuildingService {
     return this.#draft === null ? null : validateDeck(this.#draft, this.rules, this.#content.catalog);
   }
 
-  /** Cards the draft may still add (respecting copies, ownership, size and faction). */
+  /** Copies per faction in the draft, in the rules' faction order (empty without a draft). */
+  mix() {
+    return this.#draft === null ? Object.freeze([]) : deckMix(this.#content, this.#draft.entries);
+  }
+
+  /** Cards the draft may still add (respecting copies, ownership and size). */
   addableCardIds() {
     const draft = this.#draft;
     if (draft === null || draft.totalCards >= this.rules.maxSize) {
       return Object.freeze([]);
     }
     return Object.freeze(
-      this.#eligibleCards(draft)
+      this.#eligibleCards()
         .filter((definition) => draft.countOf(definition.id) < this.#copyLimit(definition.id))
         .map((definition) => definition.id),
     );
   }
 
   /**
-   * Read-model for the card browser: every card the draft's faction may
-   * use (rule-eligible types and factions, owned when ownership applies),
+   * Read-model for the card browser: every card the draft may use
+   * (rule-eligible types, owned when ownership applies),
    * with how many copies the draft holds, how many it may hold and whether
    * one more may be added. Sorted by cost, then name.
    * @returns {readonly Readonly<{ card: import("@magic8/engine/domain/cards/CardDefinition.js").CardDefinition, count: number, limit: number, canAdd: boolean }>[]}
@@ -207,7 +192,7 @@ export class DeckBuildingService {
     }
     const roomLeft = draft.totalCards < this.rules.maxSize;
     return Object.freeze(
-      this.#eligibleCards(draft)
+      this.#eligibleCards()
         .sort((left, right) => left.cost - right.cost || left.name.localeCompare(right.name))
         .map((card) => {
           const count = draft.countOf(card.id);
@@ -262,39 +247,11 @@ export class DeckBuildingService {
     return result;
   }
 
-  /**
-   * With unrestricted cards, gives the deck the faction it holds most
-   * copies of (shared cards aside); a tie keeps the current faction if it
-   * is among the leaders, else the first in rule order.
-   * @param {DeckList} draft
-   */
-  #themed(draft) {
-    if (this.rules.restrictsCards) {
-      return draft;
-    }
-    const copies = new Map();
-    for (const entry of draft.entries) {
-      const faction = this.#content.catalog.get(entry.cardId)?.faction;
-      if (faction !== undefined && this.rules.isDeckFaction(faction)) {
-        copies.set(faction, (copies.get(faction) ?? 0) + entry.count);
-      }
-    }
-    if (copies.size === 0) {
-      return draft;
-    }
-    const most = Math.max(...copies.values());
-    const leaders = this.rules.deckFactions.filter((faction) => copies.get(faction) === most);
-    const faction = leaders.includes(draft.faction) ? draft.faction : leaders[0];
-    return faction === draft.faction ? draft : draft.withFaction(faction);
-  }
-
-  /** @param {DeckList} draft */
-  #eligibleCards(draft) {
+  #eligibleCards() {
     const owned = this.#ownership();
     return this.#content.catalog
       .all()
       .filter((definition) => this.rules.allowedTypes.includes(definition.type))
-      .filter((definition) => this.rules.allowsFaction(draft.faction, definition.faction))
       .filter((definition) => owned === null || (owned.get(definition.id) ?? 0) > 0);
   }
 

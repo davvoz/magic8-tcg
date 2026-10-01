@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_wildhunt",
   "name": "Wild Hunt",
-  "faction": "verdant",
   "preconstructed": true,
   "cards": [
     { "cardId": "kindling_sprite", "count": 2 },

@@ -96,7 +96,7 @@ describe("WebSocket gateway", () => {
   before(async () => {
     setup = await buildTestApp();
     server = await listen(setup.app);
-    for (const [name, keys, starter] of [["alice", alice, "precon_foundry"], ["bob", bob, "precon_harvest"], ["carol", carol, "precon_verdant"]]) {
+    for (const [name, keys, starter] of [["alice", alice, "precon_foundry"], ["bob", bob, "precon_shadow"], ["carol", carol, "precon_verdant"]]) {
       setup.chain.setAccount(name, [keys.publicKey]);
       clients[name] = new ApiClient(server.base);
       await clients[name].signIn(name, keys.privateKey);

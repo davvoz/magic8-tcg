@@ -12,6 +12,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { loadContent } from "../src/application/content/ContentService.js";
+import { deckMix } from "../src/application/decks/deckMix.js";
 import { BasicAiController } from "../src/application/match/BasicAiController.js";
 import { MatchSetupService } from "../src/application/match/MatchSetupService.js";
 import { ContentResource } from "../src/application/ports/ContentSource.contract.js";
@@ -26,6 +27,8 @@ const listJson = (directory, suffix) => readdirSync(join(DATA, directory)).filte
 const MAX_GAMES = 500;
 const CELL = 8;
 const percent = (wins, games) => `${((wins / games) * 100).toFixed(1)}%`;
+/** "iron 26 · neutral 4": what a deck is made of. */
+const mixText = (mix) => mix.map(({ faction, count }) => `${faction} ${count}`).join(" · ");
 
 /** Loads and validates the bundled content exactly as the browser would. */
 async function loadBundled(effects) {
@@ -168,7 +171,7 @@ async function main() {
   console.log(`first seat wins ${percent(totals.firstSeatWins, totals.games)}`);
   for (const deck of decks) {
     const { wins, games: played } = record.get(deck.id);
-    console.log(`${deck.name.padEnd(16)} ${deck.faction.padEnd(8)} ${percent(wins, played)} of ${played}`);
+    console.log(`${deck.name.padEnd(16)} ${percent(wins, played).padStart(6)} of ${played}  ${mixText(deckMix(content, deck.entries))}`);
   }
   printMatrix(decks, matchups);
   const diagnostics = logger.entries.filter((entry) => entry.level !== "info");

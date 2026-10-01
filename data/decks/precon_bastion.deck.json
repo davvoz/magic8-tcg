@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_bastion",
   "name": "Spire Bastion",
-  "faction": "arcane",
   "preconstructed": true,
   "cards": [
     { "cardId": "steel_sentinel", "count": 2 },

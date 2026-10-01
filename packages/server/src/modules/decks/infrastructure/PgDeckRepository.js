@@ -17,7 +17,6 @@ function toDeck(row, cards) {
     id: row.id,
     ownerId: row.owner_id,
     name: row.name,
-    faction: row.faction,
     entries: Object.freeze(cards.map((card) => Object.freeze({ cardId: card.definition_id, count: card.count }))),
     version: row.version,
     createdAt: fromTimestamp(row.created_at),
@@ -46,11 +45,10 @@ export class PgDeckRepository {
   }
 
   async insert(deck) {
-    await this.#db.query("INSERT INTO decks (id, owner_id, name, faction, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)", [
+    await this.#db.query("INSERT INTO decks (id, owner_id, name, version, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)", [
       deck.id,
       deck.ownerId,
       deck.name,
-      deck.faction,
       deck.version,
       toTimestamp(deck.createdAt),
       toTimestamp(deck.updatedAt),
@@ -60,10 +58,10 @@ export class PgDeckRepository {
 
   async update(deck, expectedVersion) {
     const row = await this.#db.maybeOne(
-      `UPDATE decks SET name = $3, faction = $4, version = version + 1, updated_at = $5
-        WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL AND version = $6
+      `UPDATE decks SET name = $3, version = version + 1, updated_at = $4
+        WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL AND version = $5
        RETURNING *`,
-      [deck.id, deck.ownerId, deck.name, deck.faction, toTimestamp(deck.updatedAt), expectedVersion],
+      [deck.id, deck.ownerId, deck.name, toTimestamp(deck.updatedAt), expectedVersion],
     );
     if (row === null) {
       return null;

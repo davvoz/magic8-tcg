@@ -9,6 +9,7 @@
 import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, matchesCardFilter } from "../../../application/content/CardFilter.js";
 import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../../cards/cardFilterBar.js";
 import { CardStrip } from "../../cards/CardStrip.js";
+import { mixText } from "../../cards/deckStripe.js";
 import { rarityOf } from "../../cards/cardInfo.js";
 import { unknownCard } from "../../cards/unknownCard.js";
 import { Button } from "../../ui/Button.js";
@@ -70,7 +71,7 @@ export class EditorView {
     this.#buildFooter(deckPanel);
 
     const catalogPanel = root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
-    this.#buildCatalog(catalogPanel, draft);
+    this.#buildCatalog(catalogPanel);
     return nameField;
   }
 
@@ -96,7 +97,9 @@ export class EditorView {
       }),
     );
     const state = builder.hasUnsavedChanges ? "unsaved changes" : "saved";
-    panel.add(new Label({ x: INSET, y: META_TOP, width, height: 26, text: `${draft.faction} · ${draft.totalCards} / ${rules.minSize}–${rules.maxSize} cards · ${state}`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    // The mix goes last: when it is long, it is what gets shortened.
+    const meta = [`${draft.totalCards} / ${rules.minSize}–${rules.maxSize} cards`, state, mixText(builder.mix())].filter((part) => part.length > 0).join(" · ");
+    panel.add(new Label({ id: "editor.meta", x: INSET, y: META_TOP, width, height: 26, text: meta, size: "small", align: "left", colorKey: "textMuted", fit: true }));
     const problem = this.#firstProblem();
     panel.add(new Label({ id: "editor.report", x: INSET, y: META_TOP + 28, width, height: 26, text: problem ?? "Legal deck", size: "small", align: "left", colorKey: problem === null ? "success" : "danger", fit: true }));
     return nameField;
@@ -170,16 +173,11 @@ export class EditorView {
     panel.add(new Button({ id: "editor.close", x: INSET + buttonWidth + ACTION.gap, y, width: buttonWidth, height: FOOTER_HEIGHT, text: "Close", onActivate: () => this.#close() }));
   }
 
-  /**
-   * @param {Panel} panel
-   * @param {import("@magic8/engine/domain/decks/DeckList.js").DeckList} draft
-   */
-  #buildCatalog(panel, draft) {
+  /** @param {Panel} panel */
+  #buildCatalog(panel) {
     const builder = this.#host.app.deckBuilding;
-    const rules = builder.rules;
     const width = COLUMNS.right.width - 2 * INSET;
-    const scope = catalogScope(rules, draft.faction);
-    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: `Cards · ${scope}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "Cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     const app = this.#host.app;
     buildCardFilterBar(panel, { id: "catalog.filter", x: INSET, y: CATALOG_FILTER_TOP, width, filter: this.#filter, options: cardFilterOptions(app), onChange: (filter) => this.#changeFilter(filter) });
     const list = panel.add(new ScrollList({ id: CATALOG_LIST_ID, x: INSET, y: CATALOG_LIST_TOP, width, height: COLUMNS.height - CATALOG_LIST_TOP - INSET }));
@@ -266,14 +264,3 @@ export class EditorView {
   }
 }
 
-/**
- * Which cards the catalog offers, as the rules define it.
- * @param {import("@magic8/engine/domain/decks/DeckRules.js").DeckRules} rules
- * @param {string} faction
- */
-function catalogScope(rules, faction) {
-  if (!rules.restrictsCards) {
-    return "all factions";
-  }
-  return rules.factionRule.neutral === faction ? faction : `${faction} + ${rules.factionRule.neutral}`;
-}

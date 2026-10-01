@@ -4,8 +4,9 @@ import { describe, it } from "node:test";
 import { CardCatalog } from "../../src/domain/cards/CardCatalog.js";
 import { validateCardSet } from "../../src/domain/cards/validateCardDefinition.js";
 import { DeckList } from "../../src/domain/decks/DeckList.js";
-import { FactionRuleMode, validateDeckRules } from "../../src/domain/decks/DeckRules.js";
+import { validateDeckRules } from "../../src/domain/decks/DeckRules.js";
 import { DeckProblem, validateDeck } from "../../src/domain/decks/DeckValidator.js";
+import { factionMix } from "../../src/domain/decks/factionMix.js";
 import { validateDeckList } from "../../src/domain/decks/validateDeckList.js";
 import { createCoreEffectRegistry } from "../../src/domain/effects/registerCoreEffects.js";
 
@@ -16,7 +17,6 @@ const rulesRaw = () => ({
   maxCopies: 2,
   allowedTypes: ["creature"],
   factions: ["ember", "iron", "neutral"],
-  factionRule: { mode: "single_plus_neutral", neutral: "neutral" },
   maxSavedDecks: 10,
   deckNameMaxLength: 12,
 });
@@ -42,7 +42,6 @@ const deckRaw = () => ({
   schemaVersion: 1,
   id: "my_deck",
   name: "My Deck",
-  faction: "ember",
   cards: [
     { cardId: "ember_imp", count: 2 },
     { cardId: "sellsword", count: 2 },
@@ -72,6 +71,13 @@ describe("validateDeckList", () => {
     assert.equal(validateDeckList(badId).ok, false);
 
     assert.equal(validateDeckList({ ...deckRaw(), hacker: 1 }).ok, false);
+  });
+
+  it("reads and drops the faction lists carried before decks lost theirs", () => {
+    const legacy = validateDeckList({ ...deckRaw(), faction: "ember" });
+    assert.equal(legacy.ok, true);
+    assert.equal("faction" in legacy.value, false);
+    assert.equal("faction" in legacy.value.toPlain(), false);
   });
 
   it("requires schemaVersion for files but not for embedded lists", () => {
@@ -110,31 +116,11 @@ describe("DeckList operations", () => {
 });
 
 describe("validateDeckRules", () => {
-  it("parses rules and helpers", () => {
-    assert.equal(rules.allowsFaction("ember", "neutral"), true);
-    assert.equal(rules.allowsFaction("ember", "iron"), false);
-    assert.equal(rules.isKnownFaction("water"), false);
-  });
-
-  it("requires a known neutral faction for single_plus_neutral and makes it optional for any", () => {
-    const badNeutral = { ...rulesRaw(), factionRule: { mode: "single_plus_neutral", neutral: "water" } };
-    assert.equal(validateDeckRules(badNeutral).ok, false);
-    assert.equal(rules.restrictsCards, true);
-    const any = validateDeckRules({ ...rulesRaw(), factionRule: { mode: "any" } }).value;
-    assert.equal(any.factionRule.mode, FactionRuleMode.ANY);
-    assert.equal(any.restrictsCards, false);
-    assert.equal(any.allowsFaction("ember", "iron"), true);
-    assert.deepEqual(any.deckFactions, any.factions, "with no shared pool every faction is a deck faction");
-    const anyWithPool = validateDeckRules({ ...rulesRaw(), factionRule: { mode: "any", neutral: "neutral" } }).value;
-    assert.equal(anyWithPool.allowsFaction("ember", "iron"), true, "cards are still unrestricted");
-    assert.deepEqual(anyWithPool.deckFactions, ["ember", "iron"], "but the shared pool is not a theme to start a deck from");
-    assert.equal(validateDeckRules({ ...rulesRaw(), factionRule: { mode: "any", neutral: "water" } }).ok, false);
-  });
-
-  it("excludes the shared neutral pool from the factions a deck can be built around", () => {
-    assert.deepEqual(rules.deckFactions, ["ember", "iron"]);
-    assert.equal(rules.isDeckFaction("neutral"), false);
-    assert.equal(rules.isKnownFaction("neutral"), true, "still a valid card faction");
+  it("reads and ignores the faction rule of content published before decks lost their faction", () => {
+    const legacy = validateDeckRules({ ...rulesRaw(), factionRule: { mode: "any", neutral: "neutral" } });
+    assert.equal(legacy.ok, true);
+    assert.equal("factionRule" in legacy.value, false);
+    assert.deepEqual(legacy.value.factions, ["ember", "iron", "neutral"]);
   });
 
   it("rejects maxSize below minSize and unknown card types", () => {
@@ -152,7 +138,6 @@ describe("validateDeck (rule level)", () => {
   it("reports every problem at once", () => {
     const raw = deckRaw();
     raw.name = "A name that is far too long";
-    raw.faction = "iron";
     raw.cards = [
       { cardId: "ember_imp", count: 3 },
       { cardId: "bolt", count: 1 },
@@ -165,25 +150,27 @@ describe("validateDeck (rule level)", () => {
     assert.ok(codes.includes(DeckProblem.TOO_LARGE));
     assert.ok(codes.includes(DeckProblem.NAME_TOO_LONG));
     assert.ok(codes.includes(DeckProblem.TOO_MANY_COPIES));
-    assert.ok(codes.includes(DeckProblem.FACTION_MISMATCH));
     assert.ok(codes.includes(DeckProblem.TYPE_NOT_ALLOWED));
     assert.ok(codes.includes(DeckProblem.UNKNOWN_CARD));
     assert.equal(report.problems.find((p) => p.code === DeckProblem.UNKNOWN_CARD).cardId, "ghost");
   });
 
-  it("reports TOO_SMALL and UNKNOWN_FACTION", () => {
-    const deck = new DeckList({ id: "x", name: "x", faction: "water", entries: [{ cardId: "ember_imp", count: 1 }] });
+  it("reports TOO_SMALL", () => {
+    const deck = new DeckList({ id: "x", name: "x", entries: [{ cardId: "ember_imp", count: 1 }] });
     const codes = validateDeck(deck, rules, catalog).problems.map((problem) => problem.code);
-    assert.ok(codes.includes(DeckProblem.TOO_SMALL));
-    assert.ok(codes.includes(DeckProblem.UNKNOWN_FACTION));
+    assert.deepEqual(codes, [DeckProblem.TOO_SMALL]);
   });
 
-  it("refuses a deck built around the shared neutral pool", () => {
-    const deck = new DeckList({ id: "x", name: "x", faction: "neutral", entries: [{ cardId: "stone_guardian", count: 3 }] });
-    const report = validateDeck(deck, rules, catalog);
-    const problem = report.problems.find((candidate) => candidate.code === DeckProblem.NOT_A_DECK_FACTION);
-    assert.ok(problem, "NOT_A_DECK_FACTION reported");
-    assert.match(problem.message, /ember, iron/);
-    assert.ok(!report.problems.some((candidate) => candidate.code === DeckProblem.UNKNOWN_FACTION), "it is a known faction, just not a deck one");
+  it("lets cards of every faction share a deck", () => {
+    const deck = new DeckList({ id: "x", name: "x", entries: [{ cardId: "ember_imp", count: 2 }, { cardId: "scrap_golem", count: 1 }, { cardId: "sellsword", count: 1 }] });
+    assert.deepEqual(validateDeck(deck, rules, catalog), { valid: true, problems: [] });
+  });
+});
+
+describe("factionMix", () => {
+  it("counts copies per faction in the rules' order, leaving out empty factions and unknown cards", () => {
+    const entries = [{ cardId: "sellsword", count: 1 }, { cardId: "scrap_golem", count: 2 }, { cardId: "ghost", count: 3 }];
+    assert.deepEqual(factionMix(entries, catalog, rules.factions), [{ faction: "iron", count: 2 }, { faction: "neutral", count: 1 }]);
+    assert.deepEqual(factionMix([], catalog, rules.factions), []);
   });
 });

@@ -17,7 +17,9 @@
  */
 import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
+import { deckMix } from "../../application/decks/deckMix.js";
 import { ShopCategory, cartSummary, deckBreakdown, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
+import { mixBands, mixText } from "../cards/deckStripe.js";
 import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardFan } from "../cards/CardFan.js";
@@ -26,7 +28,6 @@ import { CardThumb } from "../cards/CardThumb.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
 import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
-import { factionTones } from "../theme/Theme.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -297,22 +298,27 @@ export class ShopScene extends Scene {
       const deck = this.#deckOf(product);
       const subtitle = {
         [ShopCategory.PACKS]: () => `${product.cards} unknown cards · ${priceText(product)}`,
-        [ShopCategory.DECKS]: () => `${cardsText(product.cards)} · ${deck?.faction ?? "deck"} · ${priceText(product)}`,
+        [ShopCategory.DECKS]: () => [cardsText(product.cards), priceText(product), deck === undefined ? "" : mixText(this.#mixOf(deck))].filter((part) => part.length > 0).join(" · "),
       }[this.#category] ?? (() => `${cardsText(product.cards)} · ${priceText(product)}`);
-      return list.add(new OptionRow({ id: `shop.product.${product.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: product.name, subtitle: subtitle(), stripeColor: this.#stripeOf(deck), selected: product.id === this.#selected[this.#category], onActivate: () => this.#select(product.id) }));
+      return list.add(new OptionRow({ id: `shop.product.${product.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: product.name, subtitle: subtitle(), stripe: this.#stripeOf(deck), selected: product.id === this.#selected[this.#category], onActivate: () => this.#select(product.id) }));
     });
   }
 
   /**
-   * A deck's row is striped in its faction's colour, a pack's in gold.
+   * A deck's row is striped with its faction mix, a pack's in gold.
    * @param {import("@magic8/engine/domain/decks/DeckList.js").DeckList | undefined} deck
    */
   #stripeOf(deck) {
     const { theme } = this.services;
     if (deck !== undefined) {
-      return factionTones(theme, deck.faction).base;
+      return mixBands(theme, this.#mixOf(deck));
     }
-    return this.#category === ShopCategory.PACKS ? theme.colors.accent : null;
+    return this.#category === ShopCategory.PACKS ? [{ color: theme.colors.accent, weight: 1 }] : [];
+  }
+
+  /** @param {import("@magic8/engine/domain/decks/DeckList.js").DeckList} deck */
+  #mixOf(deck) {
+    return deckMix(this.#app.content, deck.entries);
   }
 
   /**
@@ -377,7 +383,7 @@ export class ShopScene extends Scene {
     const { lines, total } = deckBreakdown(deck.entries, singles);
     const top = 150;
     const bottom = PURCHASE_TOP - INSET - LINE;
-    panel.add(new Label({ x: INSET, y: top, width: DETAIL_WIDTH, height: LINE, text: `${deck.faction} deck · ${cardsText(product.cards)}, ${lines.length} different · copies × price as a single · tap a card for its details`, size: "small", align: "left", colorKey: "accentLight", fit: true }));
+    panel.add(new Label({ x: INSET, y: top, width: DETAIL_WIDTH, height: LINE, text: `${mixText(this.#mixOf(deck))} · ${cardsText(product.cards)}, ${lines.length} different · copies × price as a single · tap a card for its details`, size: "small", align: "left", colorKey: "accentLight", fit: true }));
     const list = panel.add(new ScrollList({ id: "shop.deckCards", x: INSET, y: top + LINE + 6, width: DETAIL_WIDTH, height: bottom - top - LINE - 6 }));
     const perRow = Math.max(1, Math.floor((list.rowWidth + DECK_THUMB.gap) / (DECK_THUMB.width + DECK_THUMB.gap)));
     const cellHeight = CardThumb.heightFor(DECK_THUMB.width) + DECK_THUMB.rarity + DECK_THUMB.gap;

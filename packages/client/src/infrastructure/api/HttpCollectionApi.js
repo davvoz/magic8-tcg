@@ -32,13 +32,12 @@ function accountDeck(value) {
   const deck = /** @type {any} */ (value);
   const cards = entries(deck.cards);
   const problems = Array.isArray(deck.problems) && deck.problems.every((problem) => isObject(problem) && isString(problem.code) && isString(problem.message)) ? deck.problems : null;
-  if (!UUID_PATTERN.test(deck.id) || !isString(deck.name) || !isString(deck.faction) || cards === null || !isCount(deck.version) || typeof deck.playable !== "boolean" || problems === null) {
+  if (!UUID_PATTERN.test(deck.id) || !isString(deck.name) || cards === null || !isCount(deck.version) || typeof deck.playable !== "boolean" || problems === null) {
     return null;
   }
   return Object.freeze({
     id: deck.id,
     name: deck.name,
-    faction: deck.faction,
     cards,
     version: deck.version,
     playable: deck.playable,
@@ -53,10 +52,10 @@ function starterChoice(value) {
   }
   const choice = /** @type {any} */ (value);
   const cards = entries(choice.cards);
-  if (!isString(choice.id) || !isString(choice.name) || !isString(choice.faction) || !isCount(choice.size) || cards === null) {
+  if (!isString(choice.id) || !isString(choice.name) || !isCount(choice.size) || cards === null) {
     return null;
   }
-  return Object.freeze({ id: choice.id, name: choice.name, faction: choice.faction, size: choice.size, cards });
+  return Object.freeze({ id: choice.id, name: choice.name, size: choice.size, cards });
 }
 
 /** @param {unknown} value */

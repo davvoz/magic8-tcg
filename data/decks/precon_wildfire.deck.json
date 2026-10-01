@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_wildfire",
   "name": "Ember Wildfire",
-  "faction": "ember",
   "preconstructed": true,
   "cards": [
     {

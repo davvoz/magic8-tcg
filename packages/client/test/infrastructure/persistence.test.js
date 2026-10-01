@@ -11,7 +11,7 @@ import { EnvelopeError, openEnvelope, sealEnvelope } from "../../src/infrastruct
 import { DECKS_STORAGE_KEY, DeckRepositoryError, StoredDeckRepository } from "../../src/infrastructure/persistence/StoredDeckRepository.js";
 import { createSeed } from "../../src/infrastructure/random/seedProvider.js";
 
-const deck = (id, name = id) => new DeckList({ id, name, faction: "ember", entries: [{ cardId: "ember_imp", count: 2 }] });
+const deck = (id, name = id) => new DeckList({ id, name, entries: [{ cardId: "ember_imp", count: 2 }] });
 
 describe("StorageEnvelope", () => {
   it("round-trips a payload and rejects size, malformed JSON, wrong shape and wrong version", () => {
@@ -57,10 +57,11 @@ describe("StoredDeckRepository", () => {
       deck("custom_1", "dup").toPlain(),
       { ...deck("custom_3").toPlain(), preconstructed: true },
       JSON.parse('{"__proto__":{"x":1},"id":"custom_4","name":"P","faction":"ember","cards":[]}'),
+      { ...deck("custom_5").toPlain(), faction: "ember" },
     ];
     store.write(DECKS_STORAGE_KEY, JSON.stringify({ schemaVersion: 1, payload }));
     const listed = repository.list().value;
-    assert.deepEqual(listed.map((stored) => stored.id), ["custom_1"]);
+    assert.deepEqual(listed.map((stored) => stored.id), ["custom_1", "custom_5"], "a deck saved when decks had a faction still loads");
     assert.equal(logger.entries.length, 5);
   });
 

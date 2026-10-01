@@ -9,6 +9,7 @@
  *   /tools/preview/?scene=builder            deck builder, library view
  *   /tools/preview/?scene=editor             deck builder, editing a copy of the first deck
  *   /tools/preview/?scene=editor&inspect=1   plus the inspect overlay
+ *   /tools/preview/?scene=starter            the starter offer (data/economy/starter-offer.json), signed in as a stand-in
  *   /tools/preview/?scene=match&turns=6      a match after N auto-played turns (seeded)
  *   /tools/preview/?scene=match&deck=precon_shadow   playing that deck (default: the first playable one)
  *   /tools/preview/?scene=match&inspect=1    plus the inspect overlay on a hand card
@@ -19,6 +20,7 @@
  *
  * Nothing here is imported by src/.
  */
+import { AccountStatus } from "../../src/application/account/AccountService.js";
 import { ContentResource } from "../../src/application/ports/ContentSource.contract.js";
 import { NO_ILLUSTRATIONS, buildIllustrationManifest } from "../../src/application/content/IllustrationManifest.js";
 import { loadContent } from "../../src/application/content/ContentService.js";
@@ -89,6 +91,26 @@ function buildApp(content) {
     createSeed: () => SEED,
     logger,
     environment: Object.freeze({ version: "preview", storage: "memory" }),
+  });
+}
+
+/**
+ * A signed-in account still owed its starter, offering what the bundled
+ * offer file lists; taking one is refused (there is no server here).
+ * @param {import("../../src/application/content/ContentService.js").GameContent} content
+ */
+async function starterAccount(content) {
+  const offer = await (await fetch("/data/economy/starter-offer.json")).json();
+  const choices = offer.choices
+    .map((id) => content.preconDecks.find((deck) => deck.id === id))
+    .filter((deck) => deck !== undefined)
+    .map((deck) => Object.freeze({ id: deck.id, name: deck.name, size: deck.totalCards, cards: deck.entries }));
+  return Object.freeze({
+    state: Object.freeze({ status: AccountStatus.READY, error: null, account: "preview" }),
+    collection: Object.freeze({ state: Object.freeze({ starter: Object.freeze({ claimed: false, choices }) }) }),
+    needsStarter: true,
+    subscribe: () => () => undefined,
+    claimStarter: async () => ({ ok: false, error: { code: "UNAVAILABLE", message: "no server in the preview" } }),
   });
 }
 
@@ -227,6 +249,8 @@ function inspectFirstCard(sceneManager) {
 async function show(sceneManager, app, { scene, turns, inspect, deckId }) {
   if (scene === "decks") {
     sceneManager.navigate(SceneId.DECK_SELECTION);
+  } else if (scene === "starter") {
+    sceneManager.navigate(SceneId.STARTER);
   } else if (scene === "builder") {
     sceneManager.navigate(SceneId.DECK_BUILDER);
   } else if (scene === "editor") {
@@ -263,7 +287,7 @@ async function boot() {
   if (!theme.ok) {
     throw new Error(theme.error.message);
   }
-  const app = buildApp(content.value);
+  const app = request.scene === "starter" ? Object.freeze({ ...buildApp(content.value), account: /** @type {any} */ (await starterAccount(content.value)) }) : buildApp(content.value);
   const illustrations = await loadIllustrations(request.procedural || !rawIllustrations.ok ? null : rawIllustrations.value, content.value.catalog);
   const tableArt = request.procedural ? undefined : await loadTableArt();
   const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations, tableArt }));

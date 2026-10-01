@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_arcane",
   "name": "Arcane Conclave",
-  "faction": "arcane",
   "preconstructed": true,
   "cards": [
     { "cardId": "arcane_apprentice", "count": 2 },

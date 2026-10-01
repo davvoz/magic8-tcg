@@ -123,7 +123,7 @@ function service(options) {
     connection: server.connection,
     randomHex: (bytes) => "cd".repeat(bytes),
     newCommandId: () => `00000000-0000-4000-8000-${String((ids += 1)).padStart(12, "0")}`,
-    accountDecks: () => [{ id: "deck-1", name: "Iron", faction: "iron", totalCards: 30, playable: true, problem: null }],
+    accountDecks: () => [{ id: "deck-1", name: "Iron", mix: [{ faction: "iron", count: 30 }], totalCards: 30, playable: true, problem: null }],
     logger: new MemoryLogger(),
   });
   return { online, server };

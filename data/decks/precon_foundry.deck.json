@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_foundry",
   "name": "Iron Foundry",
-  "faction": "iron",
   "preconstructed": true,
   "cards": [
     {

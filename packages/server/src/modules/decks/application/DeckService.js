@@ -16,7 +16,6 @@ import { DECK_REPOSITORY_METHODS } from "./ports.js";
  * @typedef {Readonly<{
  *   id: string,
  *   name: string,
- *   faction: string,
  *   cards: readonly Readonly<{ cardId: string, count: number }>[],
  *   version: number,
  *   createdAt: number,
@@ -75,7 +74,7 @@ export class DeckService {
 
   /**
    * @param {string} userId
-   * @param {{ name: unknown, faction: unknown, cards: unknown }} input
+   * @param {{ name: unknown, cards: unknown }} input
    * @returns {Promise<DeckView>}
    */
   async create(userId, input) {
@@ -98,7 +97,7 @@ export class DeckService {
    * @param {string} userId
    * @param {unknown} deckId
    * @param {number} expectedVersion
-   * @param {{ name: unknown, faction: unknown, cards: unknown }} input
+   * @param {{ name: unknown, cards: unknown }} input
    * @returns {Promise<DeckView>}
    */
   async update(userId, deckId, expectedVersion, input) {
@@ -139,10 +138,10 @@ export class DeckService {
     if (!view.playable) {
       throw new AppError("VALIDATION", "this deck cannot be played yet", { problems: view.problems });
     }
-    return toDeckList({ name: view.name, faction: view.faction, entries: view.cards });
+    return toDeckList({ name: view.name, entries: view.cards });
   }
 
-  /** @param {{ name: unknown, faction: unknown, cards: unknown }} input */
+  /** @param {{ name: unknown, cards: unknown }} input */
   #parse(input) {
     const parsed = parseDeckDraft(input, this.#content().deckRules);
     if (!parsed.ok) {
@@ -187,7 +186,6 @@ export class DeckService {
     return Object.freeze({
       id: deck.id,
       name: deck.name,
-      faction: deck.faction,
       cards: deck.entries,
       version: deck.version,
       createdAt: deck.createdAt,

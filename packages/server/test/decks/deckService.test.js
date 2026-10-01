@@ -22,7 +22,7 @@ async function ownerOfPrecon(setup, account, deckId = "precon_foundry") {
   const user = await userIn(setup, account);
   const precon = setup.app.catalog.current().content.preconDecks.find((deck) => deck.id === deckId);
   await setup.app.inventory.mint({ ownerId: user.id, items: precon.entries.map((entry) => ({ definitionId: entry.cardId, count: entry.count })), ...PRINTING, origin: { kind: "grant", ref: `test:${account}` } });
-  return { user, precon, input: { name: precon.name, faction: precon.faction, cards: precon.entries.map((entry) => ({ ...entry })) } };
+  return { user, precon, input: { name: precon.name, cards: precon.entries.map((entry) => ({ ...entry })) } };
 }
 
 describe("DeckService: creating", () => {
@@ -62,7 +62,6 @@ describe("DeckService: creating", () => {
     for (const bad of [
       { ...input, name: "" },
       { ...input, name: "x".repeat(31) },
-      { ...input, faction: "Iron!" },
       { ...input, cards: [{ cardId: input.cards[0].cardId, count: 0 }] },
       { ...input, cards: [input.cards[0], input.cards[0]] },
       { ...input, cards: [{ cardId: input.cards[0].cardId, count: 1, extra: true }] },

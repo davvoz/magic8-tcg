@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_ember",
   "name": "Ember Vanguard",
-  "faction": "ember",
   "preconstructed": true,
   "cards": [
     { "cardId": "ember_imp", "count": 3 },

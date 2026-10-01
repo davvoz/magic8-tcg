@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_harvest",
   "name": "Grave Harvest",
-  "faction": "shadow",
   "preconstructed": true,
   "cards": [
     { "cardId": "restless_ghoul", "count": 3 },

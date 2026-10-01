@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_iron",
   "name": "Iron Legion",
-  "faction": "iron",
   "preconstructed": true,
   "cards": [
     { "cardId": "scrap_golem", "count": 3 },

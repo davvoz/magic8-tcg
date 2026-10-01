@@ -36,7 +36,7 @@ import { verifySessionSignature } from "../src/kernel/crypto/sessionSignatures.j
 
 const PLAYERS = Number(process.argv[2] ?? 40);
 const MAX_COMMANDS = Number(process.argv[3] ?? 400);
-const STARTERS = ["precon_foundry", "precon_harvest", "precon_verdant"];
+const STARTERS = ["precon_ember", "precon_foundry", "precon_shadow", "precon_verdant", "precon_bastion"];
 const BROADCASTER = "m8tcg-b1";
 const ROOT = "m8tcg";
 

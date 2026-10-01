@@ -9,8 +9,8 @@ import { HttpCollectionApi } from "../../src/infrastructure/api/HttpCollectionAp
 
 const DECK_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const COPY_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
-const DECK = Object.freeze({ id: DECK_ID, name: "Iron", faction: "iron", cards: [{ cardId: "iron_watcher", count: 2 }], version: 3, playable: false, problems: [{ code: "TOO_SMALL", message: "deck has 2 cards", cardId: null }] });
-const CHOICE = Object.freeze({ id: "precon_foundry", name: "Iron Foundry", faction: "iron", size: 30, cards: [{ cardId: "iron_watcher", count: 3 }] });
+const DECK = Object.freeze({ id: DECK_ID, name: "Iron", cards: [{ cardId: "iron_watcher", count: 2 }], version: 3, playable: false, problems: [{ code: "TOO_SMALL", message: "deck has 2 cards", cardId: null }] });
+const CHOICE = Object.freeze({ id: "precon_foundry", name: "Iron Foundry", size: 30, cards: [{ cardId: "iron_watcher", count: 3 }] });
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -47,7 +47,7 @@ describe("HttpCollectionApi", () => {
 
   it("creates, updates with If-Match, lists and deletes decks", async () => {
     const { api, requests } = apiWith((url, init) => (init.method === "DELETE" ? new Response(null, { status: 204 }) : json(init.method === "POST" ? 201 : 200, init.method === "GET" ? { decks: [DECK], limit: 50 } : { deck: DECK })));
-    const input = { name: "Iron", faction: "iron", cards: [{ cardId: "iron_watcher", count: 2 }] };
+    const input = { name: "Iron", cards: [{ cardId: "iron_watcher", count: 2 }] };
     assert.equal((await api.createDeck(input)).value.id, DECK_ID);
     assert.equal((await api.updateDeck(DECK_ID, 3, input)).value.version, 3);
     assert.equal((await api.listDecks()).value.length, 1);
@@ -58,7 +58,7 @@ describe("HttpCollectionApi", () => {
 
   it("never puts a non-UUID id in a path", async () => {
     const { api, requests } = apiWith(() => json(200, {}));
-    assert.equal((await api.updateDeck("../me", 1, { name: "x", faction: "iron", cards: [] })).error.code, "BAD_RESPONSE");
+    assert.equal((await api.updateDeck("../me", 1, { name: "x", cards: [] })).error.code, "BAD_RESPONSE");
     assert.equal((await api.deleteDeck("d_123")).error.code, "BAD_RESPONSE");
     assert.equal(requests.length, 0);
   });
@@ -77,7 +77,7 @@ describe("HttpCollectionApi", () => {
     assert.equal((await apiWith(() => json(200, { decks: [{ ...DECK, version: 0 }] })).api.listDecks()).error.code, "BAD_RESPONSE");
     assert.equal((await apiWith(() => json(201, { deck: DECK, cardsGranted: 0 })).api.claimStarter("x")).error.code, "BAD_RESPONSE");
 
-    const conflict = await apiWith(() => json(412, { error: { code: "PRECONDITION_FAILED", message: "changed elsewhere", details: { version: 4 } } })).api.updateDeck(DECK_ID, 3, { name: "x", faction: "iron", cards: [] });
+    const conflict = await apiWith(() => json(412, { error: { code: "PRECONDITION_FAILED", message: "changed elsewhere", details: { version: 4 } } })).api.updateDeck(DECK_ID, 3, { name: "x", cards: [] });
     assert.deepEqual(conflict.error, { code: "PRECONDITION_FAILED", message: "changed elsewhere", details: { version: 4 } });
     assert.equal((await apiWith(() => Promise.reject(new TypeError("offline"))).api.collection()).error.code, "NETWORK");
   });

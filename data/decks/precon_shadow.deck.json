@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "precon_shadow",
   "name": "Shadow Pact",
-  "faction": "shadow",
   "preconstructed": true,
   "cards": [
     {

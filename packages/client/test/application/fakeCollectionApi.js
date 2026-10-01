@@ -12,7 +12,7 @@ const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 /**
  * @param {{ content: import("../../src/application/content/ContentService.js").GameContent, starterIds?: readonly string[], claimed?: boolean }} options
  */
-export function fakeCollectionApi({ content, starterIds = ["precon_foundry", "precon_harvest", "precon_verdant"], claimed = false }) {
+export function fakeCollectionApi({ content, starterIds = ["precon_ember", "precon_foundry", "precon_shadow", "precon_verdant", "precon_bastion"], claimed = false }) {
   let next = 1;
   const calls = [];
   /** @type {Map<string, { code: string, message: string }>} */
@@ -39,7 +39,7 @@ export function fakeCollectionApi({ content, starterIds = ["precon_foundry", "pr
     return Object.freeze({ ...deck, playable: problems.length === 0, problems });
   };
   const createDeck = (input) => {
-    const deck = { id: uuid(next++), name: input.name, faction: input.faction, cards: input.cards.map((entry) => ({ cardId: entry.cardId, count: entry.count })), version: 1 };
+    const deck = { id: uuid(next++), name: input.name, cards: input.cards.map((entry) => ({ cardId: entry.cardId, count: entry.count })), version: 1 };
     state.decks.set(deck.id, deck);
     return view(deck);
   };
@@ -60,7 +60,7 @@ export function fakeCollectionApi({ content, starterIds = ["precon_foundry", "pr
   };
 
   const api = {
-    starter: method("starter", () => ok({ claimed: state.claimed, choices: starters.map((deck) => ({ id: deck.id, name: deck.name, faction: deck.faction, size: deck.totalCards, cards: deck.entries })) })),
+    starter: method("starter", () => ok({ claimed: state.claimed, choices: starters.map((deck) => ({ id: deck.id, name: deck.name, size: deck.totalCards, cards: deck.entries })) })),
     claimStarter: method("claimStarter", (starterId) => {
       const starter = starters.find((deck) => deck.id === starterId);
       if (starter === undefined) {
@@ -75,7 +75,7 @@ export function fakeCollectionApi({ content, starterIds = ["precon_foundry", "pr
           state.copies.push({ id: uuid(next++), definitionId: entry.cardId, serial: state.copies.length + 1 });
         }
       }
-      return ok({ deck: createDeck({ name: starter.name, faction: starter.faction, cards: starter.entries }), cardsGranted: starter.totalCards });
+      return ok({ deck: createDeck({ name: starter.name, cards: starter.entries }), cardsGranted: starter.totalCards });
     }),
     collection: method("collection", () => {
       const groups = new Map();
@@ -94,7 +94,7 @@ export function fakeCollectionApi({ content, starterIds = ["precon_foundry", "pr
       if (deck.version !== version) {
         return fail("PRECONDITION_FAILED", "the deck was changed elsewhere; reload it");
       }
-      const updated = { ...deck, name: input.name, faction: input.faction, cards: input.cards.map((entry) => ({ cardId: entry.cardId, count: entry.count })), version: deck.version + 1 };
+      const updated = { ...deck, name: input.name, cards: input.cards.map((entry) => ({ cardId: entry.cardId, count: entry.count })), version: deck.version + 1 };
       state.decks.set(id, updated);
       return ok(view(updated));
     }),

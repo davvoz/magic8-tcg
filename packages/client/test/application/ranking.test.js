@@ -101,7 +101,7 @@ function screens(ranking, requests = []) {
     subscribe: () => () => undefined,
     onStatus: (listener) => (listener("open", { code: null }), () => undefined),
   };
-  const deck = { id: "11111111-1111-4111-8111-111111111111", name: "Iron Foundry", faction: "iron", totalCards: 30, playable: true, problem: null };
+  const deck = { id: "11111111-1111-4111-8111-111111111111", name: "Iron Foundry", mix: [{ faction: "iron", count: 26 }, { faction: "neutral", count: 4 }], totalCards: 30, playable: true, problem: null };
   const online = { state: { status: "idle", error: null, opponent: null, session: null }, subscribe: () => () => undefined, start: () => undefined, decks: () => [deck], dismissGame: () => undefined, queue: (deckId, mode) => connection.request("queue.join", { mode, deckId }) };
   const viewport = new Viewport(theme.layout);
   viewport.resize({ cssWidth: 1600, cssHeight: 900 });

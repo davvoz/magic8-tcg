@@ -10,10 +10,6 @@ export const DeckProblem = Object.freeze({
   TOO_MANY_COPIES: "TOO_MANY_COPIES",
   UNKNOWN_CARD: "UNKNOWN_CARD",
   TYPE_NOT_ALLOWED: "TYPE_NOT_ALLOWED",
-  FACTION_MISMATCH: "FACTION_MISMATCH",
-  UNKNOWN_FACTION: "UNKNOWN_FACTION",
-  /** The faction exists but is the shared (neutral) pool, not something a deck can be built around. */
-  NOT_A_DECK_FACTION: "NOT_A_DECK_FACTION",
   NAME_TOO_LONG: "NAME_TOO_LONG",
 });
 
@@ -37,7 +33,7 @@ export function validateDeck(deck, rules, catalog) {
   };
 
   checkDeckLevel(deck, rules, report);
-  const scope = { deck, rules, catalog, report };
+  const scope = { rules, catalog, report };
   for (const entry of deck.entries) {
     checkEntry(entry, scope);
   }
@@ -60,16 +56,10 @@ function checkDeckLevel(deck, rules, report) {
   if (deck.name.length > rules.deckNameMaxLength) {
     report(DeckProblem.NAME_TOO_LONG, `deck name exceeds ${rules.deckNameMaxLength} characters`);
   }
-  if (!rules.isKnownFaction(deck.faction)) {
-    report(DeckProblem.UNKNOWN_FACTION, `unknown faction "${deck.faction}"`);
-  } else if (!rules.isDeckFaction(deck.faction)) {
-    report(DeckProblem.NOT_A_DECK_FACTION, `"${deck.faction}" cards are shared; a deck must belong to one of: ${rules.deckFactions.join(", ")}`);
-  }
 }
 
 /**
  * @typedef {object} EntryScope
- * @property {import("./DeckList.js").DeckList} deck
  * @property {import("./DeckRules.js").DeckRules} rules
  * @property {import("../cards/CardCatalog.js").CardCatalog} catalog
  * @property {(code: string, message: string, cardId?: string | null) => void} report
@@ -79,7 +69,7 @@ function checkDeckLevel(deck, rules, report) {
  * @param {Readonly<{ cardId: string, count: number }>} entry
  * @param {EntryScope} scope
  */
-function checkEntry(entry, { deck, rules, catalog, report }) {
+function checkEntry(entry, { rules, catalog, report }) {
   const definition = catalog.get(entry.cardId);
   if (definition === undefined) {
     report(DeckProblem.UNKNOWN_CARD, `unknown card "${entry.cardId}"`, entry.cardId);
@@ -90,8 +80,5 @@ function checkEntry(entry, { deck, rules, catalog, report }) {
   }
   if (!rules.allowedTypes.includes(definition.type)) {
     report(DeckProblem.TYPE_NOT_ALLOWED, `${definition.name}: type "${definition.type}" is not allowed`, entry.cardId);
-  }
-  if (!rules.allowsFaction(deck.faction, definition.faction)) {
-    report(DeckProblem.FACTION_MISMATCH, `${definition.name}: faction "${definition.faction}" cannot go in a ${deck.faction} deck`, entry.cardId);
   }
 }

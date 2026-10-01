@@ -1,5 +1,5 @@
 {
   "schemaVersion": 1,
   "edition": "core-1",
-  "choices": ["precon_foundry", "precon_harvest", "precon_verdant"]
+  "choices": ["precon_ember", "precon_foundry", "precon_shadow", "precon_verdant", "precon_bastion"]
 }

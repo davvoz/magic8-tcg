@@ -7,7 +7,7 @@ import { shade, withAlpha } from "../theme/color.js";
 import { displayFont, fontFor } from "../theme/Theme.js";
 
 const PADDING = 16;
-const STRIPE_WIDTH = 8;
+const STRIPE_WIDTH = 12;
 const CHECK_SIZE = 22;
 const TITLE_SIZE = 22;
 const GLOW_BLUR = 18;
@@ -15,8 +15,13 @@ const GLOW_BLUR = 18;
 const AVATAR_RADIUS = 0.36;
 
 /**
- * A selectable list row: a coloured stripe on the left (the option's
- * faction or category), a title in the display face, a muted subtitle and
+ * One colour of a row's stripe and its share of the stripe's height.
+ * @typedef {Readonly<{ color: string, weight: number }>} StripeBand
+ */
+
+/**
+ * A selectable list row: a coloured stripe on the left (a deck's faction
+ * mix, one band per faction in proportion to its cards, or a category), a title in the display face, a muted subtitle and
  * a check mark when selected. A row about a player shows their portrait
  * (`avatar`: the account) after the stripe. Behaves exactly like a Button
  * (`text` stays the title for keyboard users and tests); `selected` drives
@@ -25,20 +30,20 @@ const AVATAR_RADIUS = 0.36;
 export class OptionRow extends Button {
   /** @type {string} */
   subtitle;
-  /** Hex colour of the stripe, or null for none. @type {string | null} */
-  stripeColor;
+  /** The stripe's bands, top to bottom; empty for no stripe. @type {readonly StripeBand[]} */
+  stripe;
   /** @type {boolean} */
   selected;
   /** The account whose portrait the row shows, or null for none. @type {string | null} */
   avatar;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, subtitle?: string, stripeColor?: string | null, selected?: boolean, avatar?: string | null, onActivate: () => void }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, subtitle?: string, stripe?: readonly StripeBand[], selected?: boolean, avatar?: string | null, onActivate: () => void }} options
    */
   constructor(options) {
     super({ ...options, variant: "secondary", align: "left" });
     this.subtitle = options.subtitle ?? "";
-    this.stripeColor = options.stripeColor ?? null;
+    this.stripe = options.stripe ?? [];
     this.selected = options.selected ?? false;
     this.avatar = options.avatar ?? null;
   }
@@ -109,7 +114,8 @@ export class OptionRow extends Button {
    * @param {import("../theme/Theme.js").Theme} theme
    */
   #paintStripe(context, theme) {
-    if (this.stripeColor === null) {
+    const total = this.stripe.reduce((sum, band) => sum + Math.max(0, band.weight), 0);
+    if (total <= 0) {
       return;
     }
     const area = this.bounds;
@@ -117,14 +123,22 @@ export class OptionRow extends Button {
     context.save();
     roundedRectPath(context, area, radius);
     context.clip();
-    context.fillStyle = verticalGradient(context, area, [[0, shade(this.stripeColor, 0.2)], [1, shade(this.stripeColor, -0.3)]]);
-    context.fillRect(area.x, area.y, STRIPE_WIDTH, area.height);
+    let y = area.y;
+    for (const band of this.stripe) {
+      const height = (area.height * Math.max(0, band.weight)) / total;
+      if (height > 0) {
+        // Each band keeps the row's light: lit at the top of the row, shaded at the bottom.
+        context.fillStyle = verticalGradient(context, area, [[0, shade(band.color, 0.2)], [1, shade(band.color, -0.3)]]);
+        context.fillRect(area.x, y, STRIPE_WIDTH, height);
+      }
+      y += height;
+    }
     context.restore();
   }
 
   /** Where the row's content starts, past the stripe. */
   #contentLeft() {
-    return this.bounds.x + PADDING + (this.stripeColor === null ? 0 : STRIPE_WIDTH);
+    return this.bounds.x + PADDING + (this.stripe.length === 0 ? 0 : STRIPE_WIDTH);
   }
 
   /**

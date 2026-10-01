@@ -33,7 +33,7 @@ describe("AccountService", () => {
     assert.equal(account.needsStarter, false);
     assert.equal(repository.storage, DeckStorage.BROWSER);
     assert.equal(collection.ownedCounts(), null);
-    builder.startNew("iron");
+    builder.startNew();
     assert.equal(builder.browse().length, content.catalog.size);
     assert.equal(server.calls.length, 0, "nothing is asked of the server");
   });
@@ -51,7 +51,7 @@ describe("AccountService", () => {
     assert.equal(account.needsStarter, true);
     assert.equal(repository.storage, DeckStorage.ACCOUNT);
     assert.deepEqual(repository.list().value, []);
-    builder.startNew("iron");
+    builder.startNew();
     assert.deepEqual(builder.browse(), [], "nothing owned yet");
   });
 
@@ -86,8 +86,8 @@ describe("AccountService", () => {
 
   it("creates a new account deck on first save and adopts the server's identity", async () => {
     const { account, builder, repository, server } = await signedIn();
-    await account.claimStarter("precon_harvest");
-    builder.startNew("shadow", "Night");
+    await account.claimStarter("precon_shadow");
+    builder.startNew("Night");
     const draftId = builder.draft.id;
     builder.addCard(builder.addableCardIds()[0]);
     const saved = await builder.save();
@@ -104,7 +104,7 @@ describe("AccountService", () => {
 
   it("reports a refused claim without changing anything", async () => {
     const { account, server } = await signedIn({ claimed: false });
-    assert.equal((await account.claimStarter("precon_ember")).error.code, "UNKNOWN_STARTER");
+    assert.equal((await account.claimStarter("precon_harvest")).error.code, "UNKNOWN_STARTER");
     server.fail("claimStarter", "RATE_LIMITED");
     assert.equal((await account.claimStarter("precon_foundry")).error.code, "RATE_LIMITED");
     assert.equal(account.needsStarter, true);
@@ -158,7 +158,7 @@ describe("AccountService", () => {
 
   it("ignores a load that finishes after the player signed out", async () => {
     const { account, identity, accountDecks, collection, server } = setup({ claimed: true });
-    server.state.decks.set("00000000-0000-4000-8000-000000000999", { id: "00000000-0000-4000-8000-000000000999", name: "Old", faction: "iron", cards: [], version: 1 });
+    server.state.decks.set("00000000-0000-4000-8000-000000000999", { id: "00000000-0000-4000-8000-000000000999", name: "Old", cards: [], version: 1 });
     const release = server.hold("listDecks");
     identity.become(ALICE);
     identity.become(null);
@@ -209,7 +209,7 @@ describe("RemoteDeckRepository", () => {
     const server = fakeCollectionApi({ content });
     const decks = new RemoteDeckRepository({ api: server.api });
     assert.equal((await decks.remove("d_nothing")).error.code, RemoteDeckError.NOT_FOUND);
-    server.state.decks.set("00000000-0000-4000-8000-000000000001", { id: "00000000-0000-4000-8000-000000000001", name: "Bad", faction: "iron", cards: [{ cardId: "Not An Id", count: 1 }], version: 1 });
+    server.state.decks.set("00000000-0000-4000-8000-000000000001", { id: "00000000-0000-4000-8000-000000000001", name: "Bad", cards: [{ cardId: "Not An Id", count: 1 }], version: 1 });
     assert.equal((await decks.refresh()).error.code, RemoteDeckError.BAD_DECK);
   });
 

@@ -24,6 +24,7 @@ import { TradingService } from "./application/trading/TradingService.js";
 import { SalesService } from "./application/sales/SalesService.js";
 import { ShopService } from "./application/shop/ShopService.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
+import { deckMix } from "./application/decks/deckMix.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
 import { IdentityService } from "./application/identity/IdentityService.js";
 import { CoinFace } from "./application/match/CoinToss.js";
@@ -310,7 +311,7 @@ async function boot() {
     accountDecks: () =>
       accountDecks.list().value.flatMap((deck) => {
         const ref = accountDecks.describe(deck.id);
-        return ref === undefined ? [] : [{ id: ref.serverId, name: deck.name, faction: deck.faction, totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
+        return ref === undefined ? [] : [{ id: ref.serverId, name: deck.name, mix: deckMix(content.value, deck.entries), totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
       }),
     liveGames: new HttpLiveGamesApi({ fetch: httpFetch }),
     // Signed moves (docs/tcg/12): a key per game that cannot leave the browser, authorised with Keychain.

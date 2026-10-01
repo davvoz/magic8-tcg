@@ -5,7 +5,6 @@
  *   id: string,
  *   ownerId: string,
  *   name: string,
- *   faction: string,
  *   entries: readonly Readonly<{ cardId: string, count: number }>[],
  *   version: number,
  *   createdAt: number,

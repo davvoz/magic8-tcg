@@ -60,7 +60,7 @@ describe("lobby", () => {
   it("starts a game when a challenge is accepted, taking both players out of the queue", async () => {
     const { setup, lobby, player } = await world();
     const alice = await player("alice");
-    const bob = await player("bob", { starterId: "precon_harvest" });
+    const bob = await player("bob", { starterId: "precon_shadow" });
     await setup.app.matchmaking.join({ user: { id: bob.id, account: "bob" }, mode: "casual", deckId: bob.deckId });
 
     const sent = await lobby.challenge({ user: alice.user, to: "bob", mode: "casual", deckId: alice.deckId });
@@ -121,7 +121,7 @@ describe("lobby", () => {
     await assert.rejects(lobby.challenge({ user: alice.user, to: "nobody", mode: "casual", deckId: alice.deckId }), /@nobody is not online/);
     await assert.rejects(lobby.challenge({ user: alice.user, to: "alice", mode: "casual", deckId: alice.deckId }), /cannot challenge yourself/);
     await assert.rejects(lobby.challenge({ user: alice.user, to: "bob", mode: "arena", deckId: alice.deckId }), /mode must be one of/);
-    const draft = await setup.app.decks.create(alice.id, { name: "Draft", faction: "iron", cards: [] });
+    const draft = await setup.app.decks.create(alice.id, { name: "Draft", cards: [] });
     await assert.rejects(lobby.challenge({ user: alice.user, to: "bob", mode: "casual", deckId: draft.id }), /cannot be played/);
     await setup.app.matchmaking.join({ user: { id: bob.id, account: "bob" }, mode: "casual", deckId: bob.deckId });
     await setup.app.matchmaking.join({ user: { id: carol.id, account: "carol" }, mode: "casual", deckId: carol.deckId });

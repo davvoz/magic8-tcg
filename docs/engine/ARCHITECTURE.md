@@ -39,7 +39,7 @@ The first playable build is not "a small game"; it is a proof that the engine's 
 - Summoning sickness, exhaustion after attacking.
 - Effects: `draw_card`, `deal_damage`, `heal`, `modify_stats`; triggers `on_play`/`on_cast`, `on_death`; declarative targeting.
 - State-based actions: lethal damage → graveyard, life ≤ 0 → loss, empty library → fatigue damage.
-- Deck rules: min/max size, max copies, allowed types, faction rule (`any`: the faction is the deck's theme and every card may go in — the shipped setting; `single_plus_neutral`: one faction plus the shared pool).
+- Deck rules: min/max size, max copies, allowed types, the card factions. A deck has no faction: any card may go in any deck, and what a deck is made of is shown from its cards (its faction mix).
 
 **Deferred (architecturally anticipated — see 2.14)**
 
@@ -216,7 +216,7 @@ magic8/
 │   │   │   ├── CardCatalog.js      id → CardDefinition, read-only after load
 │   │   │   └── validateCardDefinition.js
 │   │   ├── decks/
-│   │   │   ├── DeckList.js         value object: id, name, faction, entries[{cardId,count}]
+│   │   │   ├── DeckList.js         value object: id, name, entries[{cardId,count}]
 │   │   │   ├── DeckRules.js        parsed/validated deck rules config
 │   │   │   ├── DeckValidator.js    DeckList × DeckRules × CardCatalog → ValidationReport
 │   │   │   └── validateDeckList.js
@@ -580,14 +580,13 @@ Constraints: `id` matches `^[a-z0-9_]{1,40}$` and is unique; `name` ≤ 40 chars
   "maxSize": 40,
   "maxCopies": 3,
   "allowedTypes": ["creature", "spell"],
-  "factions": ["ember", "iron", "shadow", "neutral"],
-  "factionRule": { "mode": "any", "neutral": "neutral" },
+  "factions": ["ember", "iron", "shadow", "verdant", "arcane", "neutral"],
   "maxSavedDecks": 50,
   "deckNameMaxLength": 30
 }
 ```
 
-`factionRule.mode` is `any` (no card restriction; `neutral`, optional, only names the shared pool so it is not offered as a faction to start a deck from) or `single_plus_neutral` (cards must belong to the deck's faction or to the required `neutral` pool). `DeckRules.restrictsCards` tells the views which wording to use; they never compare the mode themselves.
+`factions` is what a card may belong to, in the order a deck's mix is shown. Content published before 2026-10-01 also carries a `factionRule`, and its deck lists a `faction`: both are read and ignored, so games still running on that content resume and decks saved in a browser still load.
 
 **Storage envelope** — `localStorage["ccg.v1.decks"]`
 
@@ -693,7 +692,7 @@ Kept intentionally thin — services with explicit methods rather than one class
 | New effect primitive | **Now (one handler class)** | `effects/handlers/*` + `registerCoreEffects` |
 | New trigger type | **Supported** | `TriggerDispatcher` enum + emit in the relevant handler |
 | New card type (artifact, enchantment) | **Supported** | `CardType` enum + validator branch + `PlayCardHandler` strategy per type + a board zone in `BoardLayout` |
-| New faction / colour restrictions | **Now (data)** | `deck-rules.json` `factions`, `factionRule` |
+| New faction | **Now (data)** | `deck-rules.json` `factions`, theme tones |
 | Land-style resources | **Supported** | `ResourceSystem` strategy + `PLAY_RESOURCE` command + zone |
 | Status effects / counters | **Supported** | `CardInstance.statModifiers` already generalises to typed modifiers with durations |
 | Stack / priority | **Supported (medium)** | `EffectQueue` order, `PASS_PRIORITY` command, `PhaseTable` actor `priority` |
@@ -1188,3 +1187,16 @@ A third keyword, `vigilance` (`Keyword.VIGILANCE`), interpreted by `DeclareAttac
 Cards (5, none in a precon deck yet): Village Militia (neutral, 2, 2/2, common), Rampart Automaton (iron, 3, 2/4, common), Rune Warden (arcane, 4, 3/4, uncommon), Tomb Knight (shadow, 5, 4/5, uncommon), Oakheart Warden (verdant, 6, 5/7, rare). Rarities in `rarities.json`, prompts in `data/art/prompts.md`, art in `illustrations.json` (Rampart Automaton's 3:2 original cropped to 1344 × 768 like the rest).
 
 **Tests:** `combat.test.js` — a vigilant attacker stays ready, then blocks and kills on the opponent's turn; in a mixed attack only the vigilant creature stays ready.
+
+### Decks without a faction (2026-10-01)
+
+**Request:** a player who took Iron Foundry or Verdant Grove as a starter kept that deck's faction forever. The faction followed the majority of the cards, and a single-faction starter only changes majority when more than half of it is replaced. Since any card may go in any deck, the faction was just a label, and a wrong one as soon as the deck was mixed.
+
+**Change:** decks have no faction any more. What a deck is made of is its *faction mix*: copies per faction, in the rules' faction order (`domain/decks/factionMix.js`, exposed to the client by `application/decks/deckMix.js`).
+
+- Engine: `DeckList` lost `faction` and `withFaction`. `DeckRules` lost `factionRule`, `deckFactions`, `isDeckFaction`, `restrictsCards`, `allowsFaction` and `isKnownFaction`. `DeckValidator` lost `FACTION_MISMATCH`, `UNKNOWN_FACTION` and `NOT_A_DECK_FACTION`, and the content check that every deck faction could reach the minimum size is gone. `validateDeckList` and `validateDeckRules` still accept the old `faction` and `factionRule` keys and drop them. Old content payloads (games resumed after a restart), browser-stored decks and an older client therefore keep working.
+- Data: `factionRule` is gone from `deck-rules.json` and `faction` from every precon. The content hash changes; games in progress keep their own content.
+- Server: `decks.faction` is dropped (migration `014_decks_without_faction.sql`). The deck API neither takes nor returns a faction, and `POST`/`PUT /api/decks` refuse it as an unknown field. Starter choices no longer carry one.
+- Client: `DeckBuildingService.startNew(name)` takes no faction, `setFaction` and the majority re-theming are gone, and `mix()` gives the draft's mix. `OptionRow` takes `stripe`: bands `{ color, weight }`, painted top to bottom in proportion. The stripe is now 12 px wide so a small share still shows. Deck rows (library, deck selection, online lobby, shop) are striped with the mix. Their subtitles read "30 cards · notes · iron 26 · neutral 4", with the mix last so a narrow row shortens the mix, never "not playable" or the price. The editor's meta line reads "N / 30–40 cards · saved · mix", and the catalog heading is just "Cards". `tools/simulate.js` prints each deck's mix.
+
+**Starter offer:** one deck per faction, no neutral one (only 10 neutral cards). The choice was measured with `npm run simulate 500` over all ten precons (45,000 games). Among the 32 sets of one precon per faction, **Ember Vanguard, Iron Foundry, Shadow Pact, Verdant Grove, Spire Bastion** has the smallest spread of win rates against the other four: 48.4–51.0%. Its worst head-to-head is Iron Foundry vs Shadow Pact at 66.1%. The set with the mildest worst head-to-head (64.5%) spreads 44.5–56.8% overall. The starter screen became a list on the left (striped rows) and the selected deck on the right, because five columns of card strips do not fit in 1600 px. The preview harness gained `?scene=starter`.

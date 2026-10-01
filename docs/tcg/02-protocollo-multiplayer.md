@@ -30,14 +30,14 @@
 |---|---|---|
 | GET | `/api/content/current` | `{ hash, engineVersion }` dei contenuti attivi. Pubblico. |
 | GET | `/api/content/{hash}` | Il payload canonico, identico byte per byte a quello che l'hash certifica; `Cache-Control: immutable`. Pubblico, anche per i verificatori. |
-| GET | `/api/starter` | `{ claimed, choices: [{ id, name, faction, size, cards }] }`: i tre starter fra cui scegliere |
-| POST | `/api/starter` | `{ "starterId": "precon_harvest" }` → 201 `{ deck, cardsGranted }`. Una volta per account: in seguito 409 `STARTER_ALREADY_CLAIMED`, anche con richieste concorrenti. Le carte vengono coniate e salvate come mazzo giocabile in un'unica transazione. |
+| GET | `/api/starter` | `{ claimed, choices: [{ id, name, size, cards }] }`: gli starter fra cui scegliere, uno per fazione |
+| POST | `/api/starter` | `{ "starterId": "precon_shadow" }` → 201 `{ deck, cardsGranted }`. Una volta per account: in seguito 409 `STARTER_ALREADY_CLAIMED`, anche con richieste concorrenti. Le carte vengono coniate e salvate come mazzo giocabile in un'unica transazione. |
 | GET | `/api/collection` | `{ cards: [{ definitionId, copies: [{ id, edition, serial, status }] }] }` |
 | GET | `/api/collection/cards/{instanceId}` | Dettaglio e storia di una copia propria; le copie altrui risultano 404 |
-| GET/POST | `/api/decks` | Elenco `{ decks, limit }` / creazione `{ name, faction, cards: [{ cardId, count }] }` |
+| GET/POST | `/api/decks` | Elenco `{ decks, limit }` / creazione `{ name, cards: [{ cardId, count }] }`. Un mazzo non ha fazione: il client mostra il suo mix di fazioni ricavandolo dalle carte |
 | GET/PUT/DELETE | `/api/decks/{id}` | Solo il proprietario (per gli altri 404). La versione viaggia come `ETag`; `PUT` richiede `If-Match` (manca → 428, versione vecchia → 412). `DELETE` è logica: le partite continuano a riferirsi al mazzo. |
 
-**Regole dei mazzi.** Un mazzo si salva solo se usa carte possedute, nelle quantità possedute (altrimenti 422 `CARDS_NOT_OWNED`, con l'elenco delle mancanti). Può essere incompleto: in quel caso è una bozza con `playable: false` e l'elenco dei `problems` (dimensione, copie, fazione). `playable` si ricalcola a ogni lettura, perché il possesso può cambiare. Il matchmaking (M4) accetterà solo mazzi giocabili.
+**Regole dei mazzi.** Un mazzo si salva solo se usa carte possedute, nelle quantità possedute (altrimenti 422 `CARDS_NOT_OWNED`, con l'elenco delle mancanti). Può essere incompleto: in quel caso è una bozza con `playable: false` e l'elenco dei `problems` (dimensione, copie, tipi di carta). `playable` si ricalcola a ogni lettura, perché il possesso può cambiare. Il matchmaking (M4) accetterà solo mazzi giocabili.
 
 ### Marketplace
 

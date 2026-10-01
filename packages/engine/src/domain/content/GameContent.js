@@ -57,33 +57,11 @@ export function buildGameContent(raw, effects) {
   if (!catalog.ok) {
     return catalog;
   }
-  const pools = checkFactionPools(deckRules.value, catalog.value);
-  if (!pools.ok) {
-    return pools;
-  }
   const preconDecks = buildPreconDecks(raw.preconDecks, deckRules.value, catalog.value);
   if (!preconDecks.ok) {
     return preconDecks;
   }
   return ok(Object.freeze({ catalog: catalog.value, gameRules: gameRules.value, deckRules: deckRules.value, preconDecks: preconDecks.value }));
-}
-
-/**
- * Every faction a deck can be built around must have enough eligible cards
- * (its own plus the shared pool, times the copy limit) to reach the minimum
- * deck size; otherwise the deck builder would offer an impossible deck.
- * @param {import("../decks/DeckRules.js").DeckRules} rules
- * @param {CardCatalog} catalog
- */
-function checkFactionPools(rules, catalog) {
-  const cards = catalog.all().filter((definition) => rules.allowedTypes.includes(definition.type));
-  for (const faction of rules.deckFactions) {
-    const eligible = cards.filter((definition) => rules.allowsFaction(faction, definition.faction)).length;
-    if (eligible * rules.maxCopies < rules.minSize) {
-      return fail(ContentError.INVALID, `faction "${faction}" has ${eligible} eligible cards; ${eligible} × ${rules.maxCopies} copies cannot reach the minimum deck size of ${rules.minSize}`);
-    }
-  }
-  return ok(undefined);
 }
 
 /**

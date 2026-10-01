@@ -114,37 +114,50 @@ describe("StarterScene", () => {
     return { ...world, scene };
   }
 
-  it("shows the three decks with their cards and takes one after confirmation", async () => {
+  it("lists one deck per faction striped with its mix, shows the selected one's cards and takes it after confirmation", async () => {
     const { scene, navigated, server, account } = await starterScene();
     const texts = rendered(scene);
-    for (const id of ["precon_foundry", "precon_harvest", "precon_verdant"]) {
+    const offered = ["precon_ember", "precon_foundry", "precon_shadow", "precon_verdant", "precon_bastion"];
+    for (const id of offered) {
       const deck = content.preconDecks.find((candidate) => candidate.id === id);
       assert.ok(texts.includes(deck.name), deck.name);
-      assert.ok(byId(scene, `starter.cards.${id}`).contentHeight > 0, "card list filled");
     }
-    assert.equal(scene.focusedNode.id, "starter.take.precon_foundry");
+    const foundry = byId(scene, "starter.choice.precon_foundry");
+    assert.equal(foundry.subtitle, "30 cards · iron 26 · neutral 4");
+    assert.deepEqual(foundry.stripe.map((band) => band.weight), [26, 4], "the stripe splits by faction, in proportion");
+    assert.equal(byId(scene, "starter.choice.precon_bastion").stripe.length, 2, "a deck of two factions shows both");
+    assert.equal(scene.focusedNode.id, "starter.choice.precon_ember", "the first deck is selected and focused");
+    assert.ok(byId(scene, "starter.cards.precon_ember").contentHeight > 0, "its card list is filled");
+    assert.equal(byId(scene, "starter.cards.precon_shadow"), null, "only the selected deck's cards are shown");
 
-    click(byId(scene, "starter.take.precon_harvest"));
+    click(byId(scene, "starter.choice.precon_shadow"));
+    assert.equal(byId(scene, "starter.choice.precon_shadow").selected, true);
+    assert.equal(byId(scene, "starter.choice.precon_ember").selected, false);
+    assert.ok(byId(scene, "starter.cards.precon_shadow").contentHeight > 0);
+    assert.equal(byId(scene, "starter.summary").text, "30 cards · 14 different · shadow 30");
+
+    click(byId(scene, "starter.take.precon_shadow"));
     assert.ok(scene.modal, "taking a starter asks first");
     assert.equal(scene.focusedNode.id, "confirm.cancel", "the safe choice is focused");
     click(byId(scene, "confirm.cancel"));
     assert.equal(server.state.claimed, false);
 
-    click(byId(scene, "starter.take.precon_harvest"));
+    click(byId(scene, "starter.take.precon_shadow"));
     click(byId(scene, "confirm.ok"));
-    assert.equal(byId(scene, "starter.take.precon_harvest").text, "Taking…");
-    assert.equal(byId(scene, "starter.take.precon_foundry").enabled, false, "one claim at a time");
+    assert.equal(byId(scene, "starter.take.precon_shadow").text, "Taking…");
+    assert.equal(byId(scene, "starter.take.precon_shadow").enabled, false, "one claim at a time");
     await settle();
     assert.equal(server.state.claimed, true);
     assert.equal(account.needsStarter, false);
     assert.equal(navigated.at(-1).id, SceneId.COLLECTION);
-    assert.match(navigated.at(-1).params.notice, /^Grave Harvest is yours: 30 cards/);
+    assert.match(navigated.at(-1).params.notice, /^Shadow Pact is yours: 30 cards/);
     scene.exit();
   });
 
   it("explains a refused claim and keeps the offer open", async () => {
     const { scene, server } = await starterScene();
     server.fail("claimStarter", "RATE_LIMITED");
+    click(byId(scene, "starter.choice.precon_verdant"));
     click(byId(scene, "starter.take.precon_verdant"));
     click(byId(scene, "confirm.ok"));
     await settle();
@@ -155,7 +168,7 @@ describe("StarterScene", () => {
 
   it("disables the offer once taken, and Escape goes back to the menu", async () => {
     const { scene, navigated } = await starterScene({ claimed: true });
-    assert.equal(byId(scene, "starter.take.precon_foundry").enabled, false);
+    assert.equal(byId(scene, "starter.take.precon_ember").enabled, false);
     assert.equal(byId(scene, "starter.status").text, "You already took your starter deck.");
     assert.equal(scene.focusedNode.id, "starter.back");
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });

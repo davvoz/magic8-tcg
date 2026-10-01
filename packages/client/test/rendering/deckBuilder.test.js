@@ -69,7 +69,10 @@ describe("DeckBuilderScene — library", () => {
     for (const faction of content.deckRules.factions) {
       assert.equal(byId(scene, `library.new.${faction}`), null, "no faction to pick when any card may go in");
     }
-    assert.ok(rendered(scene).some((text) => text.includes("Any card may go in; the deck takes the faction it holds most cards of.")));
+    assert.ok(rendered(scene).some((text) => text.includes("Any card may go in; the coloured band shows the deck's mix of factions.")));
+    const bastion = byId(scene, "library.deck.precon_bastion");
+    assert.equal(bastion.subtitle, "30 cards · preconstructed · iron 11 · arcane 19");
+    assert.deepEqual(bastion.stripe.map((band) => band.weight), [11, 19], "one band per faction, in proportion to its cards");
     for (const deck of content.preconDecks) {
       assert.equal(byId(scene, `library.edit.${deck.id}`).text, "Copy");
       assert.equal(byId(scene, `library.delete.${deck.id}`), null, "bundled decks cannot be deleted");
@@ -95,10 +98,14 @@ describe("DeckBuilderScene — editor", () => {
     const rows = app.deckBuilding.browse();
     assert.equal(rows.length, content.catalog.size, "every card is offered, whatever its faction");
     assert.ok(rows.every((row, index) => index === 0 || rows[index - 1].card.cost <= row.card.cost), "sorted by cost");
-    assert.ok(rendered(scene).includes("Cards · all factions"));
+    assert.ok(rendered(scene).includes("Cards"));
+    assert.equal(byId(scene, "editor.meta").text, "0 / 30–40 cards · unsaved changes");
 
     click(byId(scene, "catalog.add.iron_watcher"));
     assert.equal(app.deckBuilding.draft.countOf("iron_watcher"), 1);
+    click(byId(scene, "catalog.add.ember_imp"));
+    assert.equal(byId(scene, "editor.meta").text, "2 / 30–40 cards · unsaved changes · ember 1 · iron 1", "the mix follows the cards");
+    click(byId(scene, "deck.remove.ember_imp"));
     click(byId(scene, "deck.add.iron_watcher"));
     click(byId(scene, "deck.add.iron_watcher"));
     assert.equal(app.deckBuilding.draft.countOf("iron_watcher"), 3);
@@ -177,7 +184,7 @@ describe("DeckBuilderScene — editor", () => {
     assert.equal(byId(scene, "editor.save").enabled, false, "one save at a time");
     await settle();
     assert.equal(byId(scene, "editor.save").enabled, false, "nothing left to save");
-    assert.ok(rendered(scene).some((text) => text.endsWith("· saved")));
+    assert.ok(rendered(scene).some((text) => text.startsWith("30 / 30–40 cards · saved · ")));
     assert.equal(repository.list().value[0].name, "Wall Time");
     assert.equal(repository.list().value[0].entries.length, 10);
 
@@ -262,10 +269,10 @@ describe("DeckBuilderScene — editor", () => {
     assert.equal(app.deckBuilding.draft.countOf("iron_watcher"), 1);
 
     for (let index = 0; index < content.deckRules.maxSavedDecks; index += 1) {
-      app.deckBuilding.startNew("ember", `Filler ${index}`);
+      app.deckBuilding.startNew(`Filler ${index}`);
       assert.equal((await app.deckBuilding.save()).ok, true);
     }
-    app.deckBuilding.startNew("ember", "One too many");
+    app.deckBuilding.startNew("One too many");
     scene.enter({});
     click(byId(scene, "editor.save"));
     await settle();

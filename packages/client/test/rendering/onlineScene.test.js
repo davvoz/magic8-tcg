@@ -48,8 +48,8 @@ async function harness({ lobbyReplies } = {}) {
     randomHex: (bytes) => "ab".repeat(bytes),
     newCommandId: () => "00000000-0000-4000-8000-000000000001",
     accountDecks: () => [
-      { id: "11111111-1111-4111-8111-111111111111", name: "Iron Foundry", faction: "iron", totalCards: 30, playable: true, problem: null },
-      { id: "22222222-2222-4222-8222-222222222222", name: "Draft", faction: "ember", totalCards: 3, playable: false, problem: "deck has 3 cards; minimum is 30" },
+      { id: "11111111-1111-4111-8111-111111111111", name: "Iron Foundry", mix: [{ faction: "iron", count: 26 }, { faction: "neutral", count: 4 }], totalCards: 30, playable: true, problem: null },
+      { id: "22222222-2222-4222-8222-222222222222", name: "Draft", mix: [{ faction: "ember", count: 3 }], totalCards: 3, playable: false, problem: "deck has 3 cards; minimum is 30" },
     ],
     logger: new MemoryLogger(),
   });

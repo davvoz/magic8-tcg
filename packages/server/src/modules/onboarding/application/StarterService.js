@@ -44,7 +44,7 @@ export class StarterService {
       claimed,
       choices: Object.freeze(
         this.#offer.choices.map((deck) =>
-          Object.freeze({ id: deck.id, name: deck.name, faction: deck.faction, size: deck.totalCards, cards: deck.entries }),
+          Object.freeze({ id: deck.id, name: deck.name, size: deck.totalCards, cards: deck.entries }),
         ),
       ),
     });
@@ -70,7 +70,7 @@ export class StarterService {
       if (!grant.granted) {
         throw new AppError("STARTER_ALREADY_CLAIMED", "you already received your starter deck");
       }
-      const deck = await this.#decks.create(userId, { name: starter.name, faction: starter.faction, cards: starter.entries });
+      const deck = await this.#decks.create(userId, { name: starter.name, cards: starter.entries });
       await this.#audit.record({ actorKind: "user", actorUserId: userId, action: "collection.starter_claimed", targetKind: "grant", targetId: key, ip, details: { starter: starter.id, cards: grant.instances.length, deck: deck.id } });
       return Object.freeze({ deck, cardsGranted: grant.instances.length });
     });

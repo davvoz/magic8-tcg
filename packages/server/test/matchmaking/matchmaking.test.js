@@ -26,7 +26,7 @@ describe("matchmaking", () => {
   it("pairs two waiting players into a game with their frozen decks", async () => {
     const setup = await buildTestApp();
     const alice = await player(setup, "alice");
-    const bob = await player(setup, "bob", "precon_harvest");
+    const bob = await player(setup, "bob", "precon_shadow");
     const queued = await setup.app.matchmaking.join({ user: alice.user, mode: "casual", deckId: alice.deckId });
     assert.equal(queued.state, "searching");
     assert.equal(last(alice.inbox, "queue.status").state, "searching");
@@ -52,7 +52,7 @@ describe("matchmaking", () => {
     const setup = await buildTestApp();
     const alice = await player(setup, "alice");
     const bob = await player(setup, "bob");
-    const draft = await setup.app.decks.create(alice.user.id, { name: "Draft", faction: "iron", cards: [] });
+    const draft = await setup.app.decks.create(alice.user.id, { name: "Draft", cards: [] });
     await assert.rejects(setup.app.matchmaking.join({ user: alice.user, mode: "casual", deckId: draft.id }), /cannot be played/);
     await assert.rejects(setup.app.matchmaking.join({ user: alice.user, mode: "casual", deckId: bob.deckId }), (error) => error.code === "NOT_FOUND", "someone else's deck does not exist");
     await assert.rejects(setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId }), /finish 3 more casual game/, "ranked needs finished casual games");

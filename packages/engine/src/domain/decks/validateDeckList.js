@@ -19,6 +19,9 @@ import { DeckList } from "./DeckList.js";
 
 export const DECK_LIST_SCHEMA_VERSION = 1;
 
+// "faction" is read and ignored: decks lost their faction on 2026-10-01, and
+// lists saved or published before then (browser storage, content payloads of
+// games still running, an old client) still carry it.
 const DECK_KEYS = Object.freeze(["schemaVersion", "id", "name", "faction", "preconstructed", "cards"]);
 const ENTRY_KEYS = Object.freeze(["cardId", "count"]);
 
@@ -50,11 +53,10 @@ export function checkDeckList(issues, raw, path, requireSchemaVersion) {
   }
   const id = checkString(issues, object.id, `${path}.id`, { minLength: 1, maxLength: LIMITS.ID_MAX_LENGTH, pattern: LIMITS.ID_PATTERN });
   const name = checkString(issues, object.name, `${path}.name`, { minLength: 1, maxLength: LIMITS.NAME_MAX_LENGTH });
-  const faction = checkString(issues, object.faction, `${path}.faction`, { minLength: 1, maxLength: LIMITS.ID_MAX_LENGTH, pattern: LIMITS.ID_PATTERN });
   const preconstructed = checkBoolean(issues, object.preconstructed ?? false, `${path}.preconstructed`);
   const entries = checkEntries(issues, object.cards, `${path}.cards`);
 
-  const fields = allDefined({ id, name, faction, preconstructed, entries });
+  const fields = allDefined({ id, name, preconstructed, entries });
   if (!issues.isEmpty || fields === undefined) {
     return undefined;
   }

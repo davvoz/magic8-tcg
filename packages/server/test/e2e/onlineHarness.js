@@ -108,7 +108,7 @@ export async function onlineWorld() {
       connection,
       randomHex: (bytes) => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join(""),
       newCommandId: () => globalThis.crypto.randomUUID(),
-      accountDecks: () => [{ id: deckId, name: "Foundry", faction: "iron", totalCards: 30, playable: true, problem: null }],
+      accountDecks: () => [{ id: deckId, name: "Foundry", mix: [{ faction: "iron", count: 30 }], totalCards: 30, playable: true, problem: null }],
       sessionKeys: new WebCryptoSessionKeys({ subtle: globalThis.crypto.subtle }),
       wallet: keychain,
       logger,

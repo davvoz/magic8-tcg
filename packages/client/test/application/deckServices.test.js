@@ -12,26 +12,7 @@ import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStor
 import { StoredDeckRepository } from "../../src/infrastructure/persistence/StoredDeckRepository.js";
 import { bundledResources, effects, loadBundledContent } from "./fixtures.js";
 
-const SINGLE_PLUS_NEUTRAL = Object.freeze({ mode: "single_plus_neutral", neutral: "neutral" });
-
 const content = await loadBundledContent();
-/**
- * The same content under the restrictive faction rule, to cover the faction
- * checks. Bundled decks may mix factions (the shipped rule is `any`), so only
- * the single-faction ones are carried over; the others would not load here.
- */
-const restricted = await loadBundledContent({
-  [ContentResource.DECK_RULES]: { ...bundledResources()[ContentResource.DECK_RULES], factionRule: SINGLE_PLUS_NEUTRAL },
-  [ContentResource.PRECON_DECKS]: bundledResources()[ContentResource.PRECON_DECKS].filter((deck) => isSingleFaction(deck, content.catalog)),
-});
-
-/**
- * @param {{ faction: string, cards: { cardId: string }[] }} deck raw deck list
- * @param {import("@magic8/engine/domain/cards/CardCatalog.js").CardCatalog} catalog
- */
-function isSingleFaction(deck, catalog) {
-  return deck.cards.every(({ cardId }) => [deck.faction, SINGLE_PLUS_NEUTRAL.neutral].includes(catalog.get(cardId)?.faction));
-}
 
 function services(bundle = content) {
   const logger = new MemoryLogger();
@@ -57,20 +38,19 @@ describe("ContentService", () => {
     assert.match(badCardResult.error.message, /cardSets\[0\]/);
 
     const badDeck = bundledResources();
-    badDeck[ContentResource.PRECON_DECKS] = [{ schemaVersion: 1, id: "p", name: "P", faction: "ember", preconstructed: true, cards: [{ cardId: "ember_imp", count: 3 }] }];
+    badDeck[ContentResource.PRECON_DECKS] = [{ schemaVersion: 1, id: "p", name: "P", preconstructed: true, cards: [{ cardId: "ember_imp", count: 3 }] }];
     const badDeckResult = await loadContent(new StaticContentSource(badDeck), effects);
     assert.equal(badDeckResult.error.code, ContentError.INVALID);
     assert.match(badDeckResult.error.message, /breaks deck rules/);
   });
 
-  it("refuses content whose deck factions cannot reach the minimum deck size", async () => {
-    // Under single_plus_neutral: 15 ember cards + 8 neutral = 23 eligible; at one copy each they cannot reach 30.
-    const thin = bundledResources();
-    thin[ContentResource.DECK_RULES] = { ...thin[ContentResource.DECK_RULES], maxCopies: 1, factionRule: SINGLE_PLUS_NEUTRAL };
-    const result = await loadContent(new StaticContentSource(thin), effects);
-    assert.equal(result.ok, false);
-    assert.equal(result.error.code, ContentError.INVALID);
-    assert.match(result.error.message, /faction "ember" has 26 eligible cards; 26 × 1 copies cannot reach the minimum deck size of 30/);
+  it("still loads content published when decks had a faction", async () => {
+    const legacy = bundledResources();
+    legacy[ContentResource.DECK_RULES] = { ...legacy[ContentResource.DECK_RULES], factionRule: { mode: "any", neutral: "neutral" } };
+    legacy[ContentResource.PRECON_DECKS] = legacy[ContentResource.PRECON_DECKS].map((deck) => ({ ...deck, faction: "iron" }));
+    const result = await loadContent(new StaticContentSource(legacy), effects);
+    assert.equal(result.ok, true, JSON.stringify(result.error));
+    assert.equal(result.value.preconDecks.length, 10);
   });
 
   it("produces a frozen bundle with catalog, rules and precon decks", () => {
@@ -84,12 +64,12 @@ describe("ContentService", () => {
 describe("DeckBuildingService", () => {
   it("builds a legal deck from scratch, reports progress and saves it", async () => {
     const { builder, repository } = services();
-    assert.equal(builder.startNew("iron", "Wall Time").ok, true);
+    assert.equal(builder.startNew("Wall Time").ok, true);
     assert.equal(builder.report().valid, false);
     assert.ok(builder.report().problems.some((problem) => problem.code === DeckProblem.TOO_SMALL));
     assert.ok(builder.addableCardIds().includes("iron_watcher"));
-    assert.ok(builder.addableCardIds().includes("stone_guardian"), "neutral is allowed");
-    assert.ok(builder.addableCardIds().includes("ember_imp"), "the faction is only the deck's theme: every card may go in");
+    assert.ok(builder.addableCardIds().includes("stone_guardian"));
+    assert.ok(builder.addableCardIds().includes("ember_imp"), "a deck has no faction: every card may go in");
     assert.equal(builder.browse().length, content.catalog.size, "the browser offers the whole catalog");
 
     for (const cardId of builder.addableCardIds().slice(0, 10)) {
@@ -107,46 +87,34 @@ describe("DeckBuildingService", () => {
     assert.equal(repository.list().value[0].name, "Wall Time");
   });
 
-  it("enforces copies, size, unknown cards, faction and name rules", () => {
-    const { builder } = services(restricted);
-    assert.ok(!builder.rules.allowsFaction("ember", "iron"));
-    builder.startNew("ember");
+  it("enforces copies, size, unknown cards and name rules", () => {
+    const { builder } = services();
+    builder.startNew();
     for (let copy = 0; copy < 3; copy += 1) {
       builder.addCard("ember_imp");
     }
     assert.equal(builder.addCard("ember_imp").error.code, DeckBuildingError.LIMIT_REACHED);
     assert.equal(builder.addCard("ghost").error.code, DeckBuildingError.UNKNOWN_CARD);
-    assert.equal(builder.addCard("iron_watcher").ok, true, "adding an off-faction card is allowed; the report flags it");
-    assert.ok(builder.report().problems.some((problem) => problem.code === DeckProblem.FACTION_MISMATCH));
+    assert.equal(builder.addCard("iron_watcher").ok, true);
+    assert.ok(builder.report().problems.every((problem) => problem.code === DeckProblem.TOO_SMALL), "cards of any faction mix freely");
     assert.equal(builder.rename("").error.code, DeckBuildingError.INVALID_NAME);
     assert.equal(builder.rename("x".repeat(40)).error.code, DeckBuildingError.INVALID_NAME);
     assert.equal(builder.rename("  Burn  ").value.name, "Burn");
-    assert.equal(builder.setFaction("water").error.code, DeckBuildingError.INVALID_FACTION);
-    assert.equal(builder.setFaction("neutral").error.code, DeckBuildingError.INVALID_FACTION, "the shared pool is not a deck faction");
-    assert.equal(builder.startNew("neutral").error.code, DeckBuildingError.INVALID_FACTION);
-    assert.equal(services().builder.startNew("neutral").error.code, DeckBuildingError.INVALID_FACTION, "nor a theme to start from when cards are unrestricted");
-    assert.equal(builder.setFaction("iron").ok, true);
-    assert.ok(!builder.report().problems.some((problem) => problem.code === DeckProblem.FACTION_MISMATCH && problem.cardId === "iron_watcher"));
     assert.equal(builder.removeCard("ember_imp").value.countOf("ember_imp"), 2);
   });
 
-  it("gives an unrestricted deck the faction it holds most cards of", () => {
+  it("tells the draft's faction mix as cards come and go", () => {
     const { builder } = services();
-    assert.equal(builder.startNew().value.faction, content.deckRules.deckFactions[0], "an empty deck starts on the first faction");
+    assert.deepEqual(builder.mix(), [], "no draft, no mix");
+    builder.startNew();
+    assert.deepEqual(builder.mix(), []);
+    builder.addCard("stone_guardian");
     builder.addCard("iron_watcher");
-    assert.equal(builder.draft.faction, "iron");
     builder.addCard("ember_imp");
-    assert.equal(builder.draft.faction, "iron", "a tie keeps the current faction");
     builder.addCard("ember_imp");
-    assert.equal(builder.draft.faction, "ember");
-    builder.removeCard("ember_imp");
-    builder.removeCard("ember_imp");
-    assert.equal(builder.draft.faction, "iron");
-
-    const strict = services(restricted).builder;
-    strict.startNew("ember");
-    strict.addCard("iron_watcher");
-    assert.equal(strict.draft.faction, "ember", "a restricted deck keeps the faction the player chose");
+    assert.deepEqual(builder.mix(), [{ faction: "ember", count: 2 }, { faction: "iron", count: 1 }, { faction: "neutral", count: 1 }], "in the rules' faction order");
+    builder.removeCard("iron_watcher");
+    assert.deepEqual(builder.mix(), [{ faction: "ember", count: 2 }, { faction: "neutral", count: 1 }]);
   });
 
   it("copies preconstructed decks instead of editing them, and caps saved decks", async () => {
@@ -160,10 +128,10 @@ describe("DeckBuildingService", () => {
     assert.equal(repository.list().value.length, 1);
 
     for (let index = 2; index <= content.deckRules.maxSavedDecks; index += 1) {
-      builder.startNew("ember", `Deck ${index}`);
+      builder.startNew(`Deck ${index}`);
       assert.equal((await builder.save()).ok, true);
     }
-    builder.startNew("ember", "One too many");
+    builder.startNew("One too many");
     assert.equal((await builder.save()).error.code, DeckBuildingError.TOO_MANY_DECKS);
     assert.equal((await builder.delete("custom_3")).ok, true);
     assert.equal((await builder.save()).ok, true, "a slot freed up");
@@ -180,7 +148,7 @@ describe("DeckBuildingService", () => {
 describe("DeckSelectionService", () => {
   it("lists preconstructed decks first, then custom decks with their reports", async () => {
     const { builder, selection } = services();
-    builder.startNew("iron", "WIP");
+    builder.startNew("WIP");
     builder.addCard("iron_watcher");
     await builder.save();
     const options = selection.listDecks();

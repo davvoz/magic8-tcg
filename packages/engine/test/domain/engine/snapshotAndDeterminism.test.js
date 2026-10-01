@@ -124,8 +124,8 @@ describe("createInitialState", () => {
   });
 
   it("rejects unknown cards and empty decks", () => {
-    const ghost = new DeckList({ id: "g", name: "G", faction: "ember", entries: [{ cardId: "ghost", count: 1 }] });
-    const empty = new DeckList({ id: "e", name: "E", faction: "ember", entries: [] });
+    const ghost = new DeckList({ id: "g", name: "G", entries: [{ cardId: "ghost", count: 1 }] });
+    const empty = new DeckList({ id: "e", name: "E", entries: [] });
     const players = (deck) => [
       { id: "p1", name: "A", deckList: emberDeck },
       { id: "p2", name: "B", deckList: deck },

@@ -18,7 +18,7 @@
  */
 import { ChallengeMode, PlayerActivity } from "../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
-import { factionTones } from "../theme/Theme.js";
+import { deckSummary, mixBands } from "../cards/deckStripe.js";
 import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -187,10 +187,10 @@ export class OnlineScene extends Scene {
           width: list.rowWidth,
           height: ROW.height,
           text: deck.name,
-          subtitle: deck.playable ? `${deck.faction} · ${deck.totalCards} cards` : `not playable: ${deck.problem ?? "fix it in the Deck Builder"}`,
+          subtitle: deck.playable ? deckSummary(deck.totalCards, deck.mix) : `not playable: ${deck.problem ?? "fix it in the Deck Builder"}`,
           enabled: deck.playable,
           selected: deck.id === this.#selectedId,
-          stripeColor: factionTones(this.services.theme, deck.faction).base,
+          stripe: mixBands(this.services.theme, deck.mix),
           onActivate: () => {
             this.#selectedId = deck.id;
             this.#rebuild();

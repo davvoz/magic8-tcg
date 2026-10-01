@@ -5,13 +5,14 @@
  * shows it and starts the match once the coin has landed.
  * Signed in, "your decks" are the account's (the starter you took and the
  * decks you built); offline, the preconstructed decks too. Each deck is a
- * banner row in its faction's colour; decks that break the rules are shown
+ * banner row striped with its faction mix; decks that break the rules are shown
  * disabled with the first problem so the player knows to fix them.
  */
 import { BasicAiController } from "../../application/match/BasicAiController.js";
 import { DeckSource } from "../../application/decks/DeckSelectionService.js";
+import { deckMix } from "../../application/decks/deckMix.js";
 import { humanController } from "../../application/match/HumanController.js";
-import { factionTones } from "../theme/Theme.js";
+import { deckSummary, mixBands } from "../cards/deckStripe.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -86,6 +87,7 @@ export class DeckSelectionScene extends Scene {
     }
     options.forEach((option, index) => {
       const selected = option.deck.id === this.#selectedDeckId;
+      const mix = deckMix(this.#app.content, option.deck.entries);
       list.add(
         new OptionRow({
           id: `deck-${option.deck.id}`,
@@ -96,8 +98,8 @@ export class DeckSelectionScene extends Scene {
           enabled: option.report.valid,
           selected,
           text: option.deck.name,
-          subtitle: describeOption(option),
-          stripeColor: factionTones(this.services.theme, option.deck.faction).base,
+          subtitle: describeOption(option, mix),
+          stripe: mixBands(this.services.theme, mix),
           onActivate: () => this.#select(option.deck.id),
         }),
       );
@@ -169,11 +171,12 @@ function seedIndex(seed, length) {
 }
 
 /**
- * Subtitle of a deck row: faction, size, "preconstructed" for the offline
- * decks and, when not playable, why.
+ * Subtitle of a deck row: size, faction mix, "preconstructed" for the
+ * offline decks and, when not playable, why.
  * @param {import("../../application/decks/DeckSelectionService.js").DeckOption} option
+ * @param {readonly import("../../application/decks/deckMix.js").FactionShare[]} mix
  */
-function describeOption({ deck, source, report }) {
-  const base = `${deck.faction} · ${deck.totalCards} cards${source === DeckSource.PRECONSTRUCTED ? " · preconstructed" : ""}`;
-  return report.valid ? base : `${base} · not playable: ${report.problems[0].message}`;
+function describeOption({ deck, source, report }, mix) {
+  const notes = [...(source === DeckSource.PRECONSTRUCTED ? ["preconstructed"] : []), ...(report.valid ? [] : [`not playable: ${report.problems[0].message}`])];
+  return deckSummary(deck.totalCards, mix, notes);
 }

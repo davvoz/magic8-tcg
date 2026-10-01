@@ -94,7 +94,8 @@ describe("ShopScene", () => {
     const { scene } = await harness();
     click(byId(scene, "shop.tab.decks"));
     const deck = byId(scene, "shop.product.deck_precon_arcane");
-    assert.equal(deck.subtitle, "30 cards · arcane · 49.000 STEEM");
+    assert.equal(deck.subtitle, "30 cards · 49.000 STEEM · arcane 30");
+    assert.deepEqual(deck.stripe.map((band) => band.weight), [30]);
     assert.equal(byId(scene, "shop.deckTotal").text, "Sum of the cards: 49.000 STEEM · Deck price: 49.000 STEEM");
     const apprentice = byId(scene, "shop.deckCard.arcane_apprentice");
     assert.deepEqual([apprentice.card.id, apprentice.caption, apprentice.rarity], ["arcane_apprentice", "2 × 0.500", "common"], "each card as a thumbnail: copies × price, and its rarity");

@@ -4,7 +4,7 @@
  * persistence simple and makes "unsaved changes" a plain reference comparison.
  *
  * Structural validity (ids, counts, uniqueness) is guaranteed by
- * validateDeckList; rule validity (size, copies, factions) is a separate
+ * validateDeckList; rule validity (size, copies, card types) is a separate
  * concern handled by DeckValidator against a CardCatalog and DeckRules.
  */
 export class DeckList {
@@ -12,20 +12,17 @@ export class DeckList {
   id;
   /** @type {string} */
   name;
-  /** @type {string} */
-  faction;
   /** @type {boolean} */
   preconstructed;
   /** @type {readonly Readonly<{ cardId: string, count: number }>[]} */
   entries;
 
   /**
-   * @param {{ id: string, name: string, faction: string, preconstructed?: boolean, entries?: readonly { cardId: string, count: number }[] }} fields
+   * @param {{ id: string, name: string, preconstructed?: boolean, entries?: readonly { cardId: string, count: number }[] }} fields
    */
-  constructor({ id, name, faction, preconstructed = false, entries = [] }) {
+  constructor({ id, name, preconstructed = false, entries = [] }) {
     this.id = id;
     this.name = name;
-    this.faction = faction;
     this.preconstructed = preconstructed;
     this.entries = Object.freeze(entries.map((entry) => Object.freeze({ cardId: entry.cardId, count: entry.count })));
     Object.freeze(this);
@@ -73,14 +70,6 @@ export class DeckList {
   }
 
   /**
-   * @param {string} faction
-   * @returns {DeckList}
-   */
-  withFaction(faction) {
-    return this.#copyWith({ faction });
-  }
-
-  /**
    * @param {string} id
    * @returns {DeckList}
    */
@@ -93,18 +82,16 @@ export class DeckList {
     return {
       id: this.id,
       name: this.name,
-      faction: this.faction,
       preconstructed: this.preconstructed,
       cards: this.entries.map((entry) => ({ cardId: entry.cardId, count: entry.count })),
     };
   }
 
-  /** @param {Partial<{ id: string, name: string, faction: string, preconstructed: boolean, entries: readonly { cardId: string, count: number }[] }>} changes */
+  /** @param {Partial<{ id: string, name: string, preconstructed: boolean, entries: readonly { cardId: string, count: number }[] }>} changes */
   #copyWith(changes) {
     return new DeckList({
       id: this.id,
       name: this.name,
-      faction: this.faction,
       preconstructed: this.preconstructed,
       entries: this.entries,
       ...changes,

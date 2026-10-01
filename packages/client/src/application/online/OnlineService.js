@@ -50,7 +50,7 @@ export const OnlineStatus = Object.freeze({
 });
 
 /**
- * @typedef {Readonly<{ id: string, name: string, faction: string, totalCards: number, playable: boolean, problem: string | null }>} OnlineDeck id is the server's deck id
+ * @typedef {Readonly<{ id: string, name: string, mix: readonly import("@magic8/engine/domain/decks/factionMix.js").FactionShare[], totalCards: number, playable: boolean, problem: string | null }>} OnlineDeck id is the server's deck id
  * @typedef {Readonly<{ you: boolean, opponent: boolean }>} Acceptance v2, while the game waits for its players: who has accepted it with Keychain
  * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null, acceptance: Acceptance | null }>} OnlineState
  */

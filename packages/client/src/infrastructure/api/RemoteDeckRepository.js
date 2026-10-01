@@ -90,7 +90,7 @@ export class RemoteDeckRepository {
 
   /** @param {import("@magic8/engine/domain/decks/DeckList.js").DeckList} deck */
   async save(deck) {
-    const input = Object.freeze({ name: deck.name, faction: deck.faction, cards: deck.entries });
+    const input = Object.freeze({ name: deck.name, cards: deck.entries });
     const ref = this.#refs.get(deck.id);
     const generation = this.#generation;
     const saved = ref === undefined ? await this.#api.createDeck(input) : await this.#api.updateDeck(ref.serverId, ref.version, input);
@@ -125,7 +125,7 @@ export class RemoteDeckRepository {
    */
   #adopt(deck) {
     const id = clientDeckId(deck.id);
-    const list = validateDeckList({ id, name: deck.name, faction: deck.faction, cards: deck.cards }, { requireSchemaVersion: false });
+    const list = validateDeckList({ id, name: deck.name, cards: deck.cards }, { requireSchemaVersion: false });
     if (!list.ok) {
       return fail(RemoteDeckError.BAD_DECK, `the server sent a malformed deck: ${list.error.message}`);
     }

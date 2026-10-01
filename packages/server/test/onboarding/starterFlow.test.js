@@ -12,7 +12,7 @@ import { ApiClient } from "../support/apiClient.js";
 
 const alice = keyPair(1);
 const bob = keyPair(2);
-const OFFERED = ["precon_foundry", "precon_harvest", "precon_verdant"];
+const OFFERED = ["precon_ember", "precon_foundry", "precon_shadow", "precon_verdant", "precon_bastion"];
 
 describe("new player flow over HTTP", () => {
   /** @type {Awaited<ReturnType<typeof buildTestApp>>} */
@@ -29,7 +29,7 @@ describe("new player flow over HTTP", () => {
 
   after(() => server.close());
 
-  it("offers the three starters, grants the chosen one once and saves it as a playable deck", async () => {
+  it("offers one starter per faction, grants the chosen one once and saves it as a playable deck", async () => {
     const client = new ApiClient(server.base);
     await client.signIn("alice", alice.privateKey);
 
@@ -37,13 +37,14 @@ describe("new player flow over HTTP", () => {
     assert.equal(offer.status, 200);
     assert.equal(offer.json.claimed, false);
     assert.deepEqual(offer.json.choices.map((choice) => choice.id), OFFERED);
-    const chosen = offer.json.choices.find((choice) => choice.id === "precon_harvest");
+    const chosen = offer.json.choices.find((choice) => choice.id === "precon_shadow");
 
-    const claim = await client.post("/api/starter", { starterId: "precon_harvest" });
+    const claim = await client.post("/api/starter", { starterId: "precon_shadow" });
     assert.equal(claim.status, 201, claim.text);
     assert.equal(claim.json.cardsGranted, chosen.size);
     assert.equal(claim.json.deck.name, chosen.name);
     assert.equal(claim.json.deck.playable, true, JSON.stringify(claim.json.deck.problems));
+    assert.equal("faction" in claim.json.deck, false, "a deck has no faction: its cards say what it is");
 
     assert.equal((await client.get("/api/starter")).json.claimed, true);
     const again = await client.post("/api/starter", { starterId: "precon_verdant" });
@@ -71,7 +72,7 @@ describe("new player flow over HTTP", () => {
     const client = new ApiClient(server.base);
     await client.signIn("bob", bob.privateKey);
     const claims = await Promise.all(OFFERED.map((starterId) => client.post("/api/starter", { starterId })));
-    assert.deepEqual(claims.map((claim) => claim.status).sort(), [201, 409, 409]);
+    assert.deepEqual(claims.map((claim) => claim.status).sort(), [201, ...OFFERED.slice(1).map(() => 409)]);
     const copies = (await client.get("/api/collection")).json.cards.reduce((sum, entry) => sum + entry.copies.length, 0);
     assert.equal(copies, claims.find((claim) => claim.status === 201).json.cardsGranted);
   });
@@ -80,7 +81,7 @@ describe("new player flow over HTTP", () => {
     const client = new ApiClient(server.base);
     await client.signIn("alice", alice.privateKey);
     const [starterDeck] = (await client.get("/api/decks")).json.decks;
-    const body = { name: "My build", faction: starterDeck.faction, cards: starterDeck.cards };
+    const body = { name: "My build", cards: starterDeck.cards };
 
     const created = await client.post("/api/decks", body);
     assert.equal(created.status, 201, created.text);
@@ -99,6 +100,7 @@ describe("new player flow over HTTP", () => {
     assert.equal(notOwned.status, 422);
     assert.equal(notOwned.json.error.code, "CARDS_NOT_OWNED");
     assert.equal((await client.post("/api/decks", { ...body, extra: 1 })).status, 400, "unknown fields are refused");
+    assert.equal((await client.post("/api/decks", { ...body, faction: "iron" })).status, 400, "decks have no faction any more");
 
     assert.equal((await client.delete(path)).status, 204);
     assert.equal((await client.get(path)).status, 404);
@@ -112,7 +114,7 @@ describe("new player flow over HTTP", () => {
     const [aliceDeck] = (await aliceClient.get("/api/decks")).json.decks;
     const aliceCard = (await aliceClient.get("/api/collection")).json.cards[0].copies[0];
     assert.equal((await bobClient.get(`/api/decks/${aliceDeck.id}`)).status, 404);
-    assert.equal((await bobClient.put(`/api/decks/${aliceDeck.id}`, { name: "x", faction: aliceDeck.faction, cards: [] }, { "If-Match": `"${aliceDeck.version}"` })).status, 404);
+    assert.equal((await bobClient.put(`/api/decks/${aliceDeck.id}`, { name: "x", cards: [] }, { "If-Match": `"${aliceDeck.version}"` })).status, 404);
     assert.equal((await bobClient.delete(`/api/decks/${aliceDeck.id}`)).status, 404);
     assert.equal((await bobClient.get(`/api/collection/cards/${aliceCard.id}`)).status, 404);
   });

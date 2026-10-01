@@ -61,7 +61,7 @@ describe("ranked play", () => {
   it("rates a ranked game once, for both players, and shows it in the standings", async () => {
     const { setup, player } = await world();
     const alice = await player("alice");
-    const bob = await player("bob", "precon_harvest");
+    const bob = await player("bob", "precon_shadow");
     const gameId = await rankedGame(setup, alice, bob, bob);
     const [game] = await setup.database.rows("SELECT mode FROM games WHERE id = $1", [gameId]);
     assert.equal(game.mode, "ranked");

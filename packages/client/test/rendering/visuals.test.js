@@ -174,10 +174,10 @@ describe("CardArt", () => {
 describe("OptionRow", () => {
   it("shows title, subtitle and a drawn check mark when selected; stays a Button", () => {
     let activated = 0;
-    const row = new OptionRow({ id: "row", width: 400, height: 72, text: "Ember Vanguard", subtitle: "ember · 30 cards", stripeColor: "#c8472f", selected: true, onActivate: () => { activated += 1; } });
+    const row = new OptionRow({ id: "row", width: 400, height: 72, text: "Ember Vanguard", subtitle: "30 cards · ember 28 · neutral 2", stripe: [{ color: "#c8472f", weight: 28 }, { color: "#8a8a8a", weight: 2 }], selected: true, onActivate: () => { activated += 1; } });
     const context = new FakeContext2D();
     row.draw(context, theme);
-    assert.deepEqual(context.texts, ["Ember Vanguard", "ember · 30 cards"]);
+    assert.deepEqual(context.texts, ["Ember Vanguard", "30 cards · ember 28 · neutral 2"]);
     assert.ok(context.calls.filter((call) => call.method === "lineTo").length >= 2, "check mark is drawn, not typed");
     assertBalanced(context);
     row.activate();
@@ -189,6 +189,18 @@ describe("OptionRow", () => {
     plain.enabled = false;
     plain.activate();
     assert.equal(activated, 1, "disabled rows do not fire");
+  });
+
+  it("splits the stripe among its bands in proportion to their weights, top to bottom", () => {
+    const row = new OptionRow({ width: 400, height: 60, text: "Spire Bastion", stripe: [{ color: "#3a6fd8", weight: 19 }, { color: "#9aa4ad", weight: 11 }, { color: "#ffffff", weight: 0 }], onActivate: () => undefined });
+    const context = new FakeContext2D();
+    row.draw(context, theme);
+    const bands = context.calls.filter((call) => call.method === "fillRect").map((call) => call.args);
+    assert.deepEqual(bands, [[0, 0, 12, 38], [0, 38, 12, 22]], "an empty band takes no room");
+    assertBalanced(context);
+    const none = new FakeContext2D();
+    new OptionRow({ width: 400, height: 60, text: "Empty", stripe: [{ color: "#3a6fd8", weight: 0 }], onActivate: () => undefined }).draw(none, theme);
+    assert.equal(none.calls.filter((call) => call.method === "fillRect").length, 0, "no cards, no stripe");
   });
 });
 

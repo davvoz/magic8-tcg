@@ -36,7 +36,7 @@ Ogni giocatore parte con **20 punti vita**. Perde chi scende a 0 o meno. Se entr
 ### 2.3 Il mazzo
 
 - Da **30 a 40 carte**, al massimo **3 copie** della stessa carta.
-- **Le fazioni si mescolano liberamente**; nessun vincolo di colore.
+- **Le fazioni si mescolano liberamente**; nessun vincolo di colore. Un mazzo non ha una fazione sua: la striscia colorata a sinistra di ogni mazzo è divisa fra le fazioni delle sue carte, ciascuna in proporzione al numero di carte (per esempio "iron 26 · neutral 4").
 - Online si possono usare solo carte **possedute e disponibili**: una copia offerta in uno scambio o messa in vendita è bloccata e non conta.
 - Ogni account può salvare fino a 50 mazzi.
 
@@ -143,7 +143,7 @@ flowchart LR
 ```
 
 1. **Accesso.** Il giocatore scrive il nome del suo account STEEM e firma con Keychain un messaggio del server. Nessuna password, nessuna chiave privata al server. La sessione dura fino a 7 giorni (24 ore di inattività).
-2. **Starter gratuito.** Al primo accesso sceglie **uno fra tre mazzi**: Iron Foundry, Grave Harvest, Verdant Grove. Il mazzo diventa suo (carte coniate a suo nome) ed è già pronto per giocare. Si riceve una sola volta per account. I tre sono stati scelti perché, nelle simulazioni, sono i più equilibrati fra loro.
+2. **Starter gratuito.** Al primo accesso sceglie **uno fra cinque mazzi, uno per fazione**: Ember Vanguard, Iron Foundry, Shadow Pact, Verdant Grove, Spire Bastion (arcane con un po' di iron). Non c'è uno starter neutrale: le carte neutrali sono troppo poche. Il mazzo diventa suo (carte coniate a suo nome) ed è già pronto per giocare. Si riceve una sola volta per account. I cinque sono stati scelti perché, nelle simulazioni, sono i più equilibrati fra loro: ognuno vince fra il 48% e il 51% contro gli altri quattro.
 3. **Collezione.** Mostra tutte le copie possedute, con numero di serie, edizione e stato.
 4. **Deck builder.** Si costruiscono mazzi con le carte possedute; un mazzo che non rispetta le regole o usa carte non più disponibili non si può portare in partita.
 5. **Gioco**, **negozio**, **scambi** e **bacheca**: vedi le sezioni successive.

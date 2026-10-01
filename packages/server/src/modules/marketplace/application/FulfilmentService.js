@@ -228,7 +228,7 @@ export class FulfilmentService {
    */
   async #saveDeck(userId, deck) {
     try {
-      await this.#decks.create(userId, { name: deck.name, faction: deck.faction, cards: deck.entries.map((entry) => ({ cardId: entry.cardId, count: entry.count })) });
+      await this.#decks.create(userId, { name: deck.name, cards: deck.entries.map((entry) => ({ cardId: entry.cardId, count: entry.count })) });
       return true;
     } catch (error) {
       if (error instanceof AppError && error.code === "LIMIT_REACHED") {

@@ -41,7 +41,7 @@ describe("maintenance", () => {
     const setup = await buildTestApp();
     const { app } = setup;
     const alice = await player(setup, "alice");
-    const bob = await player(setup, "bob", "precon_harvest");
+    const bob = await player(setup, "bob", "precon_shadow");
     const placed = await orderOf(setup, alice.buyer, "before");
     const [copy] = await app.inventory.mint({ ownerId: alice.user.id, items: [{ definitionId: "ember_imp", count: 1 }], edition: "core-1", origin: { kind: "purchase", ref: "test:maintenance" } });
     await app.matchmaking.join({ user: alice.user, mode: "casual", deckId: alice.deckId });
