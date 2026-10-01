@@ -22,7 +22,8 @@ import { systemClock } from "../kernel/time.js";
 import { PgChainRepository } from "../modules/chain/index.js";
 import { openDatabase } from "../platform/db/openDatabase.js";
 
-const PAGE_SIZE = 1000;
+/** Public nodes answer at most 100 history entries a call. */
+const PAGE_SIZE = 100;
 
 /**
  * @param {{

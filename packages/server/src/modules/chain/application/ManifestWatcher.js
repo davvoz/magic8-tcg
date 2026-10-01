@@ -15,7 +15,8 @@
  */
 import { AckKeyRegistry, BroadcasterRegistry, OperationId } from "@magic8/protocol";
 
-const PAGE_SIZE = 1000;
+/** Public nodes answer at most 100 history entries a call. */
+const PAGE_SIZE = 100;
 
 export class ManifestWatcher {
   #reader;

@@ -48,15 +48,15 @@ describe("a root account shared with another database", () => {
   it("starts the tracker at the end of the history it did not write, once", async () => {
     const setup = await buildTestApp();
     const deps = { database: setup.database, network: "steem", clock: setup.clock };
-    const history = historyOf(2500);
+    const history = historyOf(250);
     const started = await startChainTracking({ ...deps, reader: history }, "verdu.green");
-    assert.deepEqual(started, { account: "verdu.green", started: true, index: 2499, problem: null });
+    assert.deepEqual(started, { account: "verdu.green", started: true, index: 249, problem: null });
     assert.equal(history.asked, 3, "read to the end, page by page");
     const cursor = await setup.database.rows("SELECT position FROM chain_cursors WHERE name = 'tracker:steem:verdu.green'");
-    assert.deepEqual(cursor.map((row) => row.position), [{ index: 2499 }]);
+    assert.deepEqual(cursor.map((row) => row.position), [{ index: 249 }]);
 
     const again = await startChainTracking({ ...deps, reader: historyOf(3000) }, "verdu.green");
-    assert.deepEqual([again.started, again.index, again.problem], [false, 2499, "the tracker already follows this account"]);
+    assert.deepEqual([again.started, again.index, again.problem], [false, 249, "the tracker already follows this account"]);
     assert.equal((await startChainTracking({ ...deps, reader: historyOf(0) }, "nobody")).problem, "the account has no history: nothing to skip");
   });
 

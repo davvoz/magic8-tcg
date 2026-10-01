@@ -21,7 +21,8 @@ export const STEEM_NETWORK = "steem";
 
 const TX_ID_PATTERN = /^[0-9a-f]{40}$/;
 const BLOCK_ID_PATTERN = /^[0-9a-f]{40}$/;
-const MAX_HISTORY_PAGE = 1000;
+/** Public nodes answer at most 100 history entries a call ("condenser_api.get_account_history upper limit is 100"). */
+const MAX_HISTORY_PAGE = 100;
 
 export class ChainDataError extends Error {
   /** @param {string} message */
@@ -179,7 +180,7 @@ export class SteemBlockchainProvider {
    * that remembers the last index it processed never misses or repeats one.
    * @param {string} account
    * @param {number} after last index already read (-1 for none)
-   * @param {number} limit 1..1000
+   * @param {number} limit 1..100 (what public nodes accept)
    * @returns {Promise<readonly HistoryEntry[]>}
    */
   async getAccountHistory(account, after, limit) {

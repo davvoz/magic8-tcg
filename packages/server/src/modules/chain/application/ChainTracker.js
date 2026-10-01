@@ -22,7 +22,8 @@ import { OperationId } from "@magic8/protocol";
 import { operationJson } from "./ChainBroadcaster.js";
 
 export const DEFAULT_TRACKER_POLICY = Object.freeze({
-  pageSize: 1000,
+  // Public nodes answer at most 100 history entries a call.
+  pageSize: 100,
   maxPagesPerRound: 5,
   blockIntervalMs: 3000,
   maxAttempts: 5,
