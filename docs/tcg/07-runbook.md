@@ -28,6 +28,7 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 | `M8_METRICS_TOKEN` | per il monitoraggio | 32–128 caratteri: `Authorization: Bearer …` su `/api/metrics` |
 | `M8_STEEM_NODES` | default nell'ordine di 06 | nodi RPC, separati da virgola |
 | `M8_HOST`, `M8_PORT`, `M8_LOG_LEVEL`, `M8_SERVE_CLIENT`, `M8_APP_NAME` | no | |
+| `M8_BUILD` | no | La versione servita (lettere, cifre, `.`, `_`, `-`; al massimo 64). In Docker è il commit del deploy (`APP_TAG`). Le schede aperte la leggono in `GET /api/maintenance`: se cambia, propongono di ricaricare la pagina. Senza, nessun avviso. |
 | `M8_LOG_FORMAT` | no | `pretty` (predefinito: righe brevi, senza hash, txId e chiavi) oppure `json` (tutti i campi, per un sistema di raccolta log) |
 
 Il server rifiuta di partire con:
@@ -43,7 +44,7 @@ Il server rifiuta di partire con:
 
 **Log:** su stdout, una riga per evento. In produzione impostare `M8_LOG_FORMAT=json` (una riga JSON con tutti i campi, compresi txId e hash utili alle indagini) e mandarla a un sistema che possa avvisare sulle righe `"level":"error"`, in particolare `alarm raised: …` e `chain alert: …`. Il formato predefinito (`pretty`) è per chi legge il terminale e tralascia hash, txId, chiavi e id.
 
-**Manutenzione annunciata:** dalla sezione *Maintenance* di `/admin.html`, oppure `node packages/server/src/maintenance/maintenanceNotice.js announce <minuti> ["messaggio"] | end | show` (con Docker: `sh deploy/maintenance.sh`). Dall'annuncio il server rifiuta nuovi ordini del negozio, acquisti tra giocatori e ingressi in coda (`MAINTENANCE`, 503) e svuota la coda; le partite in corso, i pagamenti già avviati, gli annullamenti e i rimborsi continuano. I client ricevono il conto alla rovescia in push (`maintenance` sul WebSocket; `GET /api/maintenance` al caricamento). L'annuncio sta nel database: sopravvive ai riavvii, finché un operatore o un deploy riuscito non lo chiude.
+**Manutenzione annunciata:** dalla sezione *Maintenance* di `/admin.html`, oppure `node packages/server/src/maintenance/maintenanceNotice.js announce <minuti> ["messaggio"] | end | show` (con Docker: `sh deploy/maintenance.sh`). Dall'annuncio il server rifiuta nuovi ordini del negozio, acquisti tra giocatori e ingressi in coda (`MAINTENANCE`, 503) e svuota la coda; le partite in corso, i pagamenti già avviati, gli annullamenti e i rimborsi continuano. I client ricevono il conto alla rovescia in push (`maintenance` sul WebSocket; `GET /api/maintenance` al caricamento). L'annuncio sta nel database: sopravvive ai riavvii, finché un operatore o un deploy non lo chiude. **Ogni deploy ne annuncia una da solo** (5 minuti di preavviso, `deploy.sh --notice=<minuti>`), e sostituisce il server all'ora annunciata o prima, appena non resta nessuna partita in corso (deploy/README.md). Il client mostra anche "connessione persa" quando il WebSocket è caduto da più di 3 secondi, e "nuova versione" con un pulsante *Reload* quando `M8_BUILD` cambia. Rilegge `GET /api/maintenance` ogni minuto, così anche chi non ha fatto l'accesso vede l'annuncio.
 
 ## 2. Lancio (una volta)
 

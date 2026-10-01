@@ -132,7 +132,7 @@ describe("maintenance", () => {
       const anonymous = new ApiClient(server.base);
       const nothing = await anonymous.get("/api/maintenance");
       assert.equal(nothing.status, 200);
-      assert.deepEqual(nothing.json, { maintenance: null });
+      assert.deepEqual(nothing.json, { maintenance: null, build: null }, "no version named in development");
 
       assert.equal((await alice.post("/api/admin/maintenance", { minutes: 10 })).status, 403);
       assert.equal((await anonymous.post("/api/admin/maintenance", { minutes: 10 })).status, 401);
@@ -141,13 +141,25 @@ describe("maintenance", () => {
 
       const announced = await operator.post("/api/admin/maintenance", { minutes: 10, message: "New cards" });
       assert.equal(announced.status, 200);
-      assert.deepEqual((await anonymous.get("/api/maintenance")).json, announced.json);
+      assert.deepEqual((await anonymous.get("/api/maintenance")).json, { ...announced.json, build: null });
       const refused = await alice.post("/api/orders", { items: [{ productId: "core_booster", quantity: 1 }], asset: "STEEM" }, { "Idempotency-Key": "maintenance-http-000001" });
       assert.deepEqual([refused.status, refused.json.error.code], [503, "MAINTENANCE"]);
 
       assert.equal((await alice.delete("/api/admin/maintenance")).status, 403);
       assert.deepEqual((await operator.delete("/api/admin/maintenance")).json, { ended: true });
-      assert.deepEqual((await anonymous.get("/api/maintenance")).json, { maintenance: null });
+      assert.deepEqual((await anonymous.get("/api/maintenance")).json, { maintenance: null, build: null });
+    });
+
+    it("names the version being served, so tabs opened before a deploy can tell", async () => {
+      const deployed = await buildTestApp({ env: { M8_BUILD: "96e1df5c1a2b" } });
+      const deployedServer = await listen(deployed.app);
+      try {
+        const status = await new ApiClient(deployedServer.base).get("/api/maintenance");
+        assert.deepEqual(status.json, { maintenance: null, build: "96e1df5c1a2b" });
+        assert.equal(status.headers.get("cache-control"), "no-store");
+      } finally {
+        await deployedServer.close();
+      }
     });
   });
 });

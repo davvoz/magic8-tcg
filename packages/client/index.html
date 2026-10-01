@@ -11,6 +11,8 @@
     /* The one HTML overlay: the maintenance announcement (src/rendering/page/MaintenanceBanner.js). */
     .maintenance-banner { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 10; box-sizing: border-box; width: max-content; max-width: min(640px, calc(100% - 32px)); padding: 6px 16px; border-radius: 16px; background: #b45309; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); color: #fff; font: 600 13px/1.4 system-ui, sans-serif; text-align: center; pointer-events: none; }
     .maintenance-banner[hidden] { display: none; }
+    .maintenance-banner button { pointer-events: auto; margin-left: 12px; padding: 2px 12px; border: 1px solid #fff; border-radius: 10px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+    .maintenance-banner button:hover, .maintenance-banner button:focus-visible { background: rgba(255, 255, 255, 0.2); }
   </style>
 </head>
 <body>

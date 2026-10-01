@@ -40,7 +40,7 @@ import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
 import { HttpTradingApi } from "./infrastructure/api/HttpTradingApi.js";
 import { HttpSalesApi } from "./infrastructure/api/HttpSalesApi.js";
 import { HttpNotificationsApi } from "./infrastructure/api/HttpNotificationsApi.js";
-import { fetchMaintenanceNotice } from "./infrastructure/api/fetchMaintenanceNotice.js";
+import { fetchServerStatus } from "./infrastructure/api/fetchServerStatus.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
@@ -68,7 +68,7 @@ import { Avatars } from "./rendering/images/Avatars.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 import { MaintenanceBanner } from "./rendering/page/MaintenanceBanner.js";
-import { describeMaintenance } from "./application/maintenance/MaintenanceNotice.js";
+import { describeBanner } from "./application/maintenance/MaintenanceNotice.js";
 import { MaintenanceWatch } from "./application/maintenance/MaintenanceWatch.js";
 
 const ENGINE_VERSION = "0.9.0";
@@ -98,6 +98,8 @@ const CONTENT_MANIFEST = Object.freeze({
 const ART_DIRECTORY = "data/art/";
 /** How often the maintenance countdown moves. */
 const MAINTENANCE_TICK_MS = 1000;
+/** How often the page asks again, for tabs without a realtime connection (signed out) and pushes that went missing. */
+const SERVER_STATUS_POLL_MS = 60_000;
 /**
  * The painted coin of the opening toss: one image per face (1024², the coin
  * seen slightly from above with its rim painted beneath), and where the face
@@ -430,16 +432,22 @@ function buildIllustrations(raw, catalog) {
 
 /**
  * The maintenance banner starts on its own, before the game: it shows even
- * when the game fails to start. Read once now; boot() hands it the realtime
- * connection, on which the server pushes every change.
+ * when the game fails to start. Read once now and every minute; boot() hands
+ * it the realtime connection, on which the server pushes every change. It
+ * also tells a lost connection, and a newer version with a button to reload.
  */
 function watchMaintenance() {
-  const watch = new MaintenanceWatch({ load: () => fetchMaintenanceNotice((url, init) => fetch(url, init)) });
+  const watch = new MaintenanceWatch({ load: () => fetchServerStatus((url, init) => fetch(url, init)), now: () => Date.now() });
   const banner = new MaintenanceBanner(document);
-  const render = () => banner.show(watch.notice === null ? null : describeMaintenance(watch.notice, Date.now()));
+  const reload = Object.freeze({ label: "Reload", onActivate: () => window.location.reload() });
+  const render = () => {
+    const line = describeBanner(watch, Date.now());
+    banner.show(line?.text ?? null, line?.reload ? reload : null);
+  };
   watch.subscribe(render);
   void watch.refresh();
   window.setInterval(render, MAINTENANCE_TICK_MS);
+  window.setInterval(() => void watch.refresh(), SERVER_STATUS_POLL_MS);
   return watch;
 }
 

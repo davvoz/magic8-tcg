@@ -1,7 +1,8 @@
 /**
- * Announced maintenance: when it starts and the line the banner shows. The
- * operator announces it on the server (deploy/maintenance.sh writes
- * /maintenance.json, which nginx serves); no deploy, no restart.
+ * Announced maintenance: when it starts and the line the banner shows. Every
+ * deploy announces one (deploy/deploy.sh); an operator can too, from the
+ * admin page or deploy/maintenance.sh. The banner also says when the
+ * connection to the server is lost and when a newer version is live.
  */
 
 const MAX_MESSAGE_LENGTH = 200;
@@ -41,6 +42,27 @@ export function describeMaintenance(notice, now) {
     ? `Maintenance in ${formatCountdown(left)}: the shop and new games are paused.`
     : "Maintenance in progress: back in a few minutes.";
   return notice.message === null ? lead : `${lead} ${notice.message}`;
+}
+
+/** A connection lost for less than this is not worth a banner (it comes straight back). */
+export const DISCONNECTED_AFTER_MS = 3000;
+
+/**
+ * What the banner says, most urgent first: the maintenance, a lost
+ * connection, then a newer version (with a reload button).
+ * @param {Readonly<{ notice: MaintenanceNotice | null, disconnectedSince: number | null, updateAvailable: boolean }>} state
+ * @param {number} now epoch milliseconds
+ * @returns {Readonly<{ text: string, reload: boolean }> | null} null: no banner
+ */
+export function describeBanner({ notice, disconnectedSince, updateAvailable }, now) {
+  const maintenance = notice === null ? null : describeMaintenance(notice, now);
+  if (maintenance !== null) {
+    return Object.freeze({ text: maintenance, reload: false });
+  }
+  if (disconnectedSince !== null && now - disconnectedSince >= DISCONNECTED_AFTER_MS) {
+    return Object.freeze({ text: "Connection to the game server lost: reconnecting…", reload: false });
+  }
+  return updateAvailable ? Object.freeze({ text: "A new version of the game is out.", reload: true }) : null;
 }
 
 /**

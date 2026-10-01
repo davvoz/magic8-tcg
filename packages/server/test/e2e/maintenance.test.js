@@ -11,7 +11,7 @@ import { after, describe, it } from "node:test";
 
 import { MaintenanceWatch } from "../../../client/src/application/maintenance/MaintenanceWatch.js";
 import { describeMaintenance } from "../../../client/src/application/maintenance/MaintenanceNotice.js";
-import { fetchMaintenanceNotice } from "../../../client/src/infrastructure/api/fetchMaintenanceNotice.js";
+import { fetchServerStatus } from "../../../client/src/infrastructure/api/fetchServerStatus.js";
 import { runMaintenanceCommand } from "../../src/maintenance/maintenanceNotice.js";
 import { buildTestApp, deterministicRandom, keyPair } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
@@ -37,7 +37,7 @@ describe("announced maintenance (real clients, real server)", () => {
     const bob = await w.player("bob");
     // What each page runs: read on load, then follow the pushes on the tab's connection.
     const watchOf = async (tab) => {
-      const watch = new MaintenanceWatch({ load: () => fetchMaintenanceNotice((url, init) => fetch(`${w.server.base}${url}`, init)) });
+      const watch = new MaintenanceWatch({ load: () => fetchServerStatus((url, init) => fetch(`${w.server.base}${url}`, init)), now: () => w.setup.clock.now() });
       await watch.refresh();
       watch.follow(tab.connection);
       return watch;

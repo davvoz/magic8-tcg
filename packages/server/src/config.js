@@ -35,6 +35,8 @@ export function loadConfig(env) {
     secure,
     trustProxy: parseBoolean(env.M8_TRUST_PROXY ?? "false", "M8_TRUST_PROXY"),
     appName: env.M8_APP_NAME ?? "verdu.green",
+    // The version being served (deploy.sh: the commit), so open tabs can tell a newer one went live.
+    build: parseBuild(env.M8_BUILD),
     ...parseLogSettings(env),
     steemNodes: Object.freeze(nodes),
     sessionCookieName: secure ? "__Host-m8_session" : "m8_session",
@@ -49,6 +51,21 @@ export function loadConfig(env) {
     gameProtocol: gameProtocolOf(env.M8_SIGNED_MOVES),
     firstEpochId: parseFirstEpochId(env.M8_FIRST_EPOCH_ID),
   });
+}
+
+/**
+ * M8_BUILD: a short version label (deploy.sh passes the commit); unset in development.
+ * @param {string | undefined} value
+ * @returns {string | null}
+ */
+function parseBuild(value) {
+  if (value === undefined || value === "") {
+    return null;
+  }
+  if (!/^[0-9A-Za-z._-]{1,64}$/.test(value)) {
+    throw new ConfigError("M8_BUILD: letters, digits, '.', '_' or '-', at most 64");
+  }
+  return value;
 }
 
 /**

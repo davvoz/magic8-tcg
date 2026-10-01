@@ -1,18 +1,27 @@
 import { parseMaintenanceNotice } from "../../application/maintenance/MaintenanceNotice.js";
 
-export const MAINTENANCE_URL = "/api/maintenance";
+export const SERVER_STATUS_URL = "/api/maintenance";
+const BUILD_PATTERN = /^[0-9A-Za-z._-]{1,64}$/;
 
 /**
- * Reads the announced maintenance from the server. A failure (server down,
- * network error, unexpected answer) means "none known": the banner never
- * blocks the game.
+ * Reads what the server says about itself: the announced maintenance and
+ * the version it serves. A failure (server down, network error, unexpected
+ * answer) means "nothing new": the banner never blocks the game.
  * @param {(url: string, init: RequestInit) => Promise<Response>} httpFetch
- * @returns {Promise<import("../../application/maintenance/MaintenanceNotice.js").MaintenanceNotice | null>}
+ * @returns {Promise<import("../../application/maintenance/MaintenanceWatch.js").ServerStatus | null>}
  */
-export async function fetchMaintenanceNotice(httpFetch) {
+export async function fetchServerStatus(httpFetch) {
   try {
-    const response = await httpFetch(MAINTENANCE_URL, { cache: "no-store" });
-    return response.ok ? parseMaintenanceNotice((await response.json())?.maintenance ?? null) : null;
+    const response = await httpFetch(SERVER_STATUS_URL, { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    const body = await response.json();
+    if (typeof body !== "object" || body === null) {
+      return null;
+    }
+    const build = typeof body.build === "string" && BUILD_PATTERN.test(body.build) ? body.build : null;
+    return Object.freeze({ notice: parseMaintenanceNotice(body.maintenance ?? null), build });
   } catch {
     return null;
   }

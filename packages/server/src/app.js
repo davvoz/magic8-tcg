@@ -195,7 +195,7 @@ export async function createServerApp(deps) {
     clock,
   });
   registerAdminRoutes({ router, admin });
-  registerMaintenanceRoutes({ router, maintenance, admin });
+  registerMaintenanceRoutes({ router, maintenance, admin, build: config.build });
   const rateLimiter = new RateLimiter({ now: () => clock.now() });
   const http = new HttpApp({
     router,

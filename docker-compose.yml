@@ -21,6 +21,8 @@ services:
       M8_PUBLIC_ORIGIN: https://${M8_DOMAIN:?set M8_DOMAIN in .env}
       M8_DATABASE_URL: postgres://magic8:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/magic8
       M8_TRUST_PROXY: "true"
+      # The commit being served (deploy.sh sets APP_TAG); open tabs see it change and offer to reload.
+      M8_BUILD: ${APP_TAG:-current}
     ports:
       - "127.0.0.1:${M8_HOST_PORT:-8090}:8080"
     depends_on:

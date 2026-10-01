@@ -3,10 +3,18 @@ name: Deploy to production
 # A push to master deploys only when one of its commit messages contains
 # [deploy], e.g. "feat: new card set [deploy]". "Run workflow" in the Actions
 # tab deploys the tip of master without a commit.
+# Every deploy announces a maintenance first (deploy/deploy.sh): players get a
+# countdown, then the swap happens at the announced time, or sooner once no
+# game is in progress. A push gives 5 minutes' notice; "Run workflow" asks.
 on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      notice_minutes:
+        description: Minutes of notice before the server is replaced (0 = right away)
+        required: false
+        default: "5"
 
 concurrency:
   group: production
@@ -38,10 +46,15 @@ jobs:
         env:
           SERVER: ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}
           KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          NOTICE_MINUTES: ${{ github.event.inputs.notice_minutes || '5' }}
         run: |
+          case "$NOTICE_MINUTES" in
+            '' | *[!0-9]*) echo "notice_minutes must be a number of minutes" >&2; exit 2 ;;
+          esac
           mkdir -p ~/.ssh
           echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
-          ssh "$SERVER" "sh /opt/magic8/deploy/deploy.sh ${{ github.sha }}"
+          # The commit goes last: a key limited to the deploy passes only the last word (deploy/README.md).
+          ssh "$SERVER" "sh /opt/magic8/deploy/deploy.sh --notice=$NOTICE_MINUTES ${{ github.sha }}"
 
       - name: Check the public site
         env:

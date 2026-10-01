@@ -110,6 +110,14 @@ describe("config", () => {
     assert.equal(loadConfig({ M8_SHOP_ACCOUNT: "shop.m8" }).shopAccounts.steem, "shop.m8");
   });
 
+  it("reads the version label deploy.sh passes, and refuses one that is not a plain label", () => {
+    assert.equal(loadConfig({}).build, null, "unset in development");
+    assert.equal(loadConfig({ M8_BUILD: "" }).build, null);
+    assert.equal(loadConfig({ M8_BUILD: "96e1df5c1a2b" }).build, "96e1df5c1a2b");
+    assert.throws(() => loadConfig({ M8_BUILD: "<script>" }), /M8_BUILD/);
+    assert.throws(() => loadConfig({ M8_BUILD: "x".repeat(65) }), /M8_BUILD/);
+  });
+
   it("reads the broadcaster posting keys and the root account, and refuses malformed ones", () => {
     const wif = "5JRaypasxMx1L97ZUX7YuC5Psb5EAbF821kkAGtBj7xCJFQcbLg";
     const config = loadConfig({ M8_BROADCASTER_KEYS: ` m8tcg-b1:${wif}, m8tcg-b2:${wif} `, M8_ROOT_ACCOUNT: "m8tcg" });
