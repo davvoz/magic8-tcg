@@ -16,7 +16,11 @@
  *      expiration is older than the irreversible block's time: they can
  *      never be included, so their records go back to BUILT and are sent
  *      again, byte for byte (MISSING_ON_CHAIN). Too many attempts raise an
- *      alert.
+ *      alert. Before that, it looks for the transaction in the blocks it
+ *      could have entered: public nodes index an account's history late,
+ *      sometimes after the block is irreversible (2026-10-01: an epoch
+ *      commitment included in 2 s was still missing from the history 2
+ *      minutes later, expired and published twice).
  */
 import { OperationId } from "@magic8/protocol";
 import { operationJson } from "./ChainBroadcaster.js";
@@ -27,6 +31,10 @@ export const DEFAULT_TRACKER_POLICY = Object.freeze({
   maxPagesPerRound: 5,
   blockIntervalMs: 3000,
   maxAttempts: 5,
+  // Where an unseen transaction may be: the blocks of this span before its expiration (the broadcaster signs
+  // for 60 s), give or take a few blocks for the nodes' clocks.
+  searchBeforeExpirationMs: 2 * 60 * 1000,
+  searchMarginBlocks: 5,
 });
 
 /** @type {ReadonlySet<string>} */
@@ -165,12 +173,48 @@ export class ChainTracker {
       if (transaction.status !== "BROADCAST" || transaction.expiration >= irreversibleTime) {
         continue;
       }
+      const blockNum = await this.#findInBlocks(signer, transaction, head);
+      if (blockNum !== null) {
+        this.#logger.info("a transaction missing from the account history was found in its block", { signer, txId: transaction.txId, block: blockNum });
+        await this.#unitOfWork(() => this.#repository.markIncluded(transaction.id, blockNum, this.#clock.now()));
+        continue;
+      }
       const released = await this.#unitOfWork(() => this.#repository.markExpired(transaction.id, this.#clock.now()));
       this.#logger.warn("a transaction expired without being included; its records will be sent again", { signer, txId: transaction.txId, records: released.length });
       for (const row of released.filter((candidate) => candidate.attempts >= this.#policy.maxAttempts)) {
         await this.#alert(AlertKind.REPEATED_REBROADCAST, String(row.id), { signer, row: row.id, attempts: row.attempts, kind: row.kind, orderId: row.orderId, gameId: row.gameId });
       }
     }
+  }
+
+  /**
+   * Looks for a transaction in the blocks it could have entered, up to its
+   * expiration, without trusting the account history. A block the node does
+   * not serve is skipped (logged): waiting for it could stall publishing for
+   * good, while sending a record twice costs resource credits, nothing else.
+   * @param {string} signer
+   * @param {{ txId: string, expiration: number }} transaction
+   * @param {import("./ports.js").ChainHead} head
+   * @returns {Promise<number | null>} its block, or null when it is in none of them
+   */
+  async #findInBlocks(signer, transaction, head) {
+    const { blockIntervalMs, searchBeforeExpirationMs, searchMarginBlocks } = this.#policy;
+    const blockAt = (/** @type {number} */ time) => head.headBlock - Math.floor((head.time - time) / blockIntervalMs);
+    const first = Math.max(1, blockAt(transaction.expiration - searchBeforeExpirationMs) - searchMarginBlocks);
+    const last = Math.min(head.irreversibleBlock, blockAt(transaction.expiration) + searchMarginBlocks);
+    let unread = 0;
+    for (let blockNum = first; blockNum <= last; blockNum += 1) {
+      const operations = await this.#reader.blockOperations(blockNum);
+      if (operations === null) {
+        unread += 1;
+      } else if (operations.some((operation) => operation.txId === transaction.txId)) {
+        return blockNum;
+      }
+    }
+    if (unread > 0) {
+      this.#logger.warn("blocks where a transaction could be were not served", { signer, txId: transaction.txId, from: first, to: last, unread });
+    }
+    return null;
   }
 
   /**

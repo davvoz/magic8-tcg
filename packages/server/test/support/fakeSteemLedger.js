@@ -65,6 +65,8 @@ export class FakeSteemLedger {
   mempool = [];
   /** Broadcasts accepted by a node but never included (a lost transaction). */
   loseBroadcasts = false;
+  /** Blocks are produced but the accounts' history does not show them yet (a node indexing late). */
+  historyLags = false;
   /** Broadcasts that fail at the node, after it relayed them or not. */
   failBroadcasts = /** @type {null | "relayed" | "refused"} */ (null);
   /** @type {Set<string>} */
@@ -96,7 +98,7 @@ export class FakeSteemLedger {
     const included = this.mempool;
     this.mempool = [];
     this.blocks.set(this.headBlock, included);
-    for (const transaction of included) {
+    for (const transaction of this.historyLags ? [] : included) {
       transaction.operations.forEach((operation, opIndex) => {
         for (const account of new Set([...operation.data.required_auths, ...operation.data.required_posting_auths])) {
           const entries = this.history.get(account) ?? [];

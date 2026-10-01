@@ -219,6 +219,27 @@ describe("ChainBroadcaster and ChainTracker", () => {
     assert.deepEqual(await alerts(w), [], "our own sale record is not an unknown operation");
   });
 
+  it("does not send a record again when its block is irreversible but the account history does not show it yet", async () => {
+    const w = await world({ signers: [B1] });
+    await w.newRecord();
+    w.ledger.historyLags = true;
+    await w.chain.broadcaster.runOnce();
+    const [sent] = await transactions(w);
+    const block = w.ledger.produceBlock();
+    w.ledger.produceBlocks(30);
+    w.ledger.finalize();
+    await w.chain.tracker.runOnce();
+    const [found] = await transactions(w);
+    assert.deepEqual([found.tx_id, found.status, Number(found.block_num)], [sent.tx_id, "INCLUDED", block], "found in its block, not expired");
+    assert.deepEqual((await rowsOf(w)).map((row) => [row.status, row.attempts]), [["INCLUDED", 1]]);
+
+    await w.chain.broadcaster.runOnce();
+    assert.equal((await transactions(w)).length, 1, "nothing is sent again");
+    await w.chain.tracker.runOnce();
+    assert.equal((await transactions(w))[0].status, "IRREVERSIBLE");
+    assert.deepEqual(await alerts(w), []);
+  });
+
   it("sends a record again, byte for byte, when its transaction expired unseen; an ambiguous broadcast error changes nothing", async () => {
     const w = await world({ signers: [B1] });
     await w.newRecord();
