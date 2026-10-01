@@ -66,6 +66,7 @@ export class MarketplaceService {
   #unitOfWork;
   #policy;
   #describe;
+  #gate;
 
   /**
    * @param {{
@@ -81,9 +82,10 @@ export class MarketplaceService {
    *   policy?: Partial<MarketplacePolicy>,
    *   describeFulfilment?: (order: import("../domain/Order.js").Order) => Promise<unknown>,
    *   commitmentAnchored?: ((epoch: Readonly<{ id: number, commit: string }>) => Promise<boolean>) | null,
-   * }} deps `commitmentAnchored`: null when nothing is published on chain (development)
+   *   gate?: { assertOpen: (what: string) => void },
+   * }} deps `commitmentAnchored`: null when nothing is published on chain (development); `gate`: closed during an announced maintenance
    */
-  constructor({ catalog, economy, repository, epochs, receiverFor, audit, clock, random, unitOfWork, policy = {}, describeFulfilment = async () => null, commitmentAnchored = null }) {
+  constructor({ catalog, economy, repository, epochs, receiverFor, audit, clock, random, unitOfWork, policy = {}, describeFulfilment = async () => null, commitmentAnchored = null, gate = { assertOpen: () => undefined } }) {
     assertImplements(repository, MARKETPLACE_REPOSITORY_METHODS, "MarketplaceRepository");
     this.#catalog = catalog;
     this.#economy = economy;
@@ -97,6 +99,7 @@ export class MarketplaceService {
     this.#policy = Object.freeze({ ...DEFAULT_MARKETPLACE_POLICY, ...policy });
     this.#describe = describeFulfilment;
     this.#commitmentAnchored = commitmentAnchored;
+    this.#gate = gate;
   }
 
   /** The open pack epoch, provided its commitment is on chain (when the chain is in use). */
@@ -154,6 +157,7 @@ export class MarketplaceService {
     if (previous !== null) {
       return this.#replay(previous, requestHash);
     }
+    this.#gate.assertOpen("The shop");
     const { lines, quote } = this.#priceRequest({ items, asset, buyer });
     if ((await this.#repository.countOpen(buyer.id)) >= this.#policy.maxOpenOrders) {
       throw new AppError("LIMIT_REACHED", `at most ${this.#policy.maxOpenOrders} unpaid orders at a time: pay or cancel one first`);

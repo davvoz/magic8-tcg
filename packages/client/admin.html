@@ -21,6 +21,8 @@
     code, .mono { font-family: ui-monospace, monospace; font-size: 12px; }
     #notice { margin: 8px 0; min-height: 1.5em; } #notice.bad { color: var(--bad); } #notice.good { color: var(--good); }
     .muted { color: var(--muted); }
+    .minutes { width: 5em; } .wide { width: 22em; max-width: 100%; }
+    #maintenanceState.closed { color: var(--wait); }
   </style>
 </head>
 <body>
@@ -30,6 +32,12 @@
     <div id="notice"></div>
     <h2>Overview</h2>
     <section><div class="stats" id="stats"></div></section>
+    <h2>Maintenance</h2>
+    <section>
+      <p id="maintenanceState" class="muted"></p>
+      <form id="maintenanceForm" class="row">Starts in <input id="maintenanceMinutes" class="minutes" type="number" min="0" max="1440" value="15" required> minutes <input id="maintenanceMessage" class="wide" maxlength="200" placeholder="message for the players (optional)"> <button type="submit">Announce</button> <button type="button" id="maintenanceEnd">End maintenance</button></form>
+      <p class="muted">From the announcement the server takes no new shop orders, purchases between players or queue entries, and empties the queue; games in progress go on. Players see a countdown. A successful deploy ends it.</p>
+    </section>
     <h2>Refunds to send</h2>
     <section><table><thead><tr><th>To</th><th>Amount</th><th>Memo</th><th>Status</th><th></th></tr></thead><tbody id="refunds"></tbody></table></section>
     <h2>Chain alerts</h2>

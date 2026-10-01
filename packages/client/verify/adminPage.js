@@ -21,15 +21,17 @@ const when = (ms) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
 /**
  * @param {string} path
  * @param {unknown} [body]
+ * @param {"GET" | "POST" | "DELETE"} [method]
  */
-async function api(path, body) {
-  const init = body === undefined ? {} : { method: "POST", headers: { ...REQUEST_HEADER, "content-type": "application/json" }, body: JSON.stringify(body) };
+async function api(path, body, method = body === undefined ? "GET" : "POST") {
+  const json = body === undefined ? {} : { "content-type": "application/json" };
+  const init = method === "GET" ? {} : { method, headers: { ...REQUEST_HEADER, ...json }, body: body === undefined ? undefined : JSON.stringify(body) };
   const response = await fetch(path, { credentials: "same-origin", ...init });
-  const json = await response.json().catch(() => ({}));
+  const answer = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(json.error?.message ?? `HTTP ${response.status}`);
+    throw new Error(answer.error?.message ?? `HTTP ${response.status}`);
   }
-  return json;
+  return answer;
 }
 
 /**
@@ -160,14 +162,51 @@ async function showAudit() {
   element("audit").replaceChildren(...entries.map((entry) => row([String(entry.seq), when(entry.at), entry.action, `${entry.targetKind ?? ""} ${entry.targetId ?? ""}`, cell("code", JSON.stringify(entry.details))])));
 }
 
+async function showMaintenance() {
+  const { maintenance } = await api("/api/maintenance");
+  const state = element("maintenanceState");
+  if (maintenance === null) {
+    state.textContent = "No maintenance announced: everything is open.";
+  } else {
+    const message = maintenance.message === null ? "" : ` ("${maintenance.message}")`;
+    state.textContent = `Announced for ${when(Date.parse(maintenance.at))} UTC${message}: new orders, purchases and queue entries are closed.`;
+  }
+  state.className = maintenance === null ? "muted" : "closed";
+  element("maintenanceEnd").disabled = maintenance === null;
+}
+
 async function refresh() {
   try {
-    await Promise.all([showOverview(), showRefunds(), showAlerts()]);
+    await Promise.all([showOverview(), showMaintenance(), showRefunds(), showAlerts()]);
   } catch (error) {
     notice(error instanceof Error ? error.message : String(error), "bad");
   }
 }
 
+element("maintenanceForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const minutes = Number(element("maintenanceMinutes").value);
+  if (!window.confirm(`Close new orders, purchases and games now, for a maintenance in ${minutes} minutes?`)) {
+    return;
+  }
+  try {
+    const message = element("maintenanceMessage").value.trim();
+    await api("/api/admin/maintenance", message === "" ? { minutes } : { minutes, message });
+    notice("Maintenance announced: players see the countdown.", "good");
+    await showMaintenance();
+  } catch (error) {
+    notice(`Not announced: ${error instanceof Error ? error.message : String(error)}`, "bad");
+  }
+});
+element("maintenanceEnd").addEventListener("click", async () => {
+  try {
+    await api("/api/admin/maintenance", undefined, "DELETE");
+    notice("Maintenance ended: everything is open again.", "good");
+    await showMaintenance();
+  } catch (error) {
+    notice(`Not ended: ${error instanceof Error ? error.message : String(error)}`, "bad");
+  }
+});
 element("auditForm").addEventListener("submit", (event) => {
   event.preventDefault();
   showAudit().catch((error) => notice(error.message, "bad"));

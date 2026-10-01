@@ -52,6 +52,15 @@ export class PgMatchmakingRepository {
     return result.rowCount;
   }
 
+  /**
+   * @param {number} at
+   * @returns {Promise<string[]>} the users whose ticket was cancelled
+   */
+  async cancelAllWaiting(at) {
+    const rows = await this.#db.rows("UPDATE matchmaking SET status = 'CANCELLED', updated_at = $1 WHERE status = 'WAITING' RETURNING user_id", [toTimestamp(at)]);
+    return rows.map((row) => row.user_id);
+  }
+
   /** @param {string} userId */
   async findWaiting(userId) {
     const row = await this.#db.maybeOne("SELECT * FROM matchmaking WHERE user_id = $1 AND status = 'WAITING'", [userId]);

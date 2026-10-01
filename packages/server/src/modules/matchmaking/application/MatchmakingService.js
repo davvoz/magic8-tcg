@@ -35,6 +35,7 @@ export class MatchmakingService {
   #logger;
   #ticketTtlMs;
   #ranking;
+  #gate;
 
   /**
    * @param {{
@@ -48,9 +49,10 @@ export class MatchmakingService {
    *   logger: import("../../../kernel/logger.js").Logger,
    *   ranking: import("../../ranking/index.js").RankingService,
    *   ticketTtlMs?: number,
-   * }} deps
+   *   gate?: { assertOpen: (what: string) => void, isClosed: () => boolean },
+   * }} deps `gate`: closed during an announced maintenance (no new games)
    */
-  constructor({ repository, decks, games, notifier, clock, random, unitOfWork, logger, ranking, ticketTtlMs = 10 * 60 * 1000 }) {
+  constructor({ repository, decks, games, notifier, clock, random, unitOfWork, logger, ranking, ticketTtlMs = 10 * 60 * 1000, gate = { assertOpen: () => undefined, isClosed: () => false } }) {
     this.#repository = repository;
     this.#decks = decks;
     this.#games = games;
@@ -61,6 +63,7 @@ export class MatchmakingService {
     this.#logger = logger;
     this.#ticketTtlMs = ticketTtlMs;
     this.#ranking = ranking;
+    this.#gate = gate;
   }
 
   /**
@@ -71,6 +74,7 @@ export class MatchmakingService {
     if (mode === undefined) {
       throw new AppError("VALIDATION", `mode must be one of ${MODES.join(", ")}`);
     }
+    this.#gate.assertOpen("Matchmaking");
     if ((await this.#games.activeGameOf(user.id)) !== null) {
       throw new AppError("CONFLICT", "you are already in a game");
     }
@@ -122,6 +126,9 @@ export class MatchmakingService {
    * @returns {Promise<number>} games created
    */
   async pair() {
+    if (this.#gate.isClosed()) {
+      return 0;
+    }
     let created = 0;
     for (const mode of MODES) {
       created += await this.#pairMode(mode);
@@ -150,6 +157,18 @@ export class MatchmakingService {
       created += 1;
     }
     return created;
+  }
+
+  /**
+   * A maintenance was announced: everyone waiting leaves the queue, and is told.
+   * @returns {Promise<number>} tickets cancelled
+   */
+  async closeQueue() {
+    const userIds = await this.#repository.cancelAllWaiting(this.#clock.now());
+    for (const userId of new Set(userIds)) {
+      this.#notifier.send(userId, "queue.status", { state: "idle", reason: "maintenance" });
+    }
+    return userIds.length;
   }
 
   /** Drops tickets that waited too long. */

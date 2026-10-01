@@ -1,11 +1,13 @@
 /**
- * Maintenance notice: what a maintenance.json may say, and the banner line
- * before, during and long after the announced time.
+ * Maintenance notice: what the server's announcement may say, the banner line
+ * before, during and long after the announced time, and how the page follows
+ * it (read on load, pushed afterwards, read again after a reconnection).
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { STALE_AFTER_MS, describeMaintenance, formatCountdown, parseMaintenanceNotice } from "../../src/application/maintenance/MaintenanceNotice.js";
+import { MaintenanceWatch } from "../../src/application/maintenance/MaintenanceWatch.js";
 import { fetchMaintenanceNotice } from "../../src/infrastructure/api/fetchMaintenanceNotice.js";
 
 const AT = "2026-10-02T21:00:00Z";
@@ -32,11 +34,11 @@ describe("describeMaintenance", () => {
   const notice = { startsAt: STARTS_AT, message: null };
 
   it("counts down before the start", () => {
-    assert.match(describeMaintenance(notice, STARTS_AT - 90_000) ?? "", /^Maintenance in 1m 30s: .*do not buy packs/);
+    assert.match(describeMaintenance(notice, STARTS_AT - 90_000) ?? "", /^Maintenance in 1m 30s: the shop and new games are paused.$/);
   });
 
   it("says it is in progress after the start, and appends the message", () => {
-    assert.equal(describeMaintenance({ ...notice, message: "New cards!" }, STARTS_AT + 1000), "Maintenance in progress: the game will be back in a few minutes. New cards!");
+    assert.equal(describeMaintenance({ ...notice, message: "New cards!" }, STARTS_AT + 1000), "Maintenance in progress: back in a few minutes. New cards!");
   });
 
   it("hides a notice left over long after the start", () => {
@@ -54,16 +56,58 @@ describe("formatCountdown", () => {
 });
 
 describe("fetchMaintenanceNotice", () => {
-  it("asks without cache and parses the file", async () => {
+  it("asks the server without cache", async () => {
     const calls = [];
-    const notice = await fetchMaintenanceNotice(async (url, init) => (calls.push({ url, init }), Response.json({ at: AT })));
+    const notice = await fetchMaintenanceNotice(async (url, init) => (calls.push({ url, init }), Response.json({ maintenance: { at: AT, message: null } })));
     assert.deepEqual(notice, { startsAt: STARTS_AT, message: null });
-    assert.deepEqual(calls, [{ url: "/maintenance.json", init: { cache: "no-store" } }]);
+    assert.deepEqual(calls, [{ url: "/api/maintenance", init: { cache: "no-store" } }]);
+    assert.equal(await fetchMaintenanceNotice(async () => Response.json({ maintenance: null })), null);
   });
 
-  it("means no maintenance on 404, network errors and garbage", async () => {
-    assert.equal(await fetchMaintenanceNotice(async () => new Response("<h1>404</h1>", { status: 404 })), null);
+  it("means none known when the server is down, the network fails or the answer is garbage", async () => {
+    assert.equal(await fetchMaintenanceNotice(async () => new Response("<h1>502</h1>", { status: 502 })), null);
     assert.equal(await fetchMaintenanceNotice(async () => { throw new TypeError("offline"); }), null);
     assert.equal(await fetchMaintenanceNotice(async () => new Response("not json")), null);
+  });
+});
+
+describe("MaintenanceWatch", () => {
+  /** A connection that delivers what the test pushes. */
+  function fakeConnection() {
+    const listeners = new Set();
+    const statusListeners = new Set();
+    return {
+      connection: { subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)), onStatus: (listener) => (statusListeners.add(listener), () => statusListeners.delete(listener)) },
+      push: (message) => listeners.forEach((listener) => listener(message)),
+      status: (status) => statusListeners.forEach((listener) => listener(status, { code: null })),
+    };
+  }
+
+  it("reads on load, follows pushes, and reads again after a reconnection", async () => {
+    let served = null;
+    let loads = 0;
+    const watch = new MaintenanceWatch({ load: async () => ((loads += 1), served) });
+    const seen = [];
+    watch.subscribe((notice) => seen.push(notice));
+    await watch.refresh();
+    assert.equal(watch.notice, null);
+
+    const { connection, push, status } = fakeConnection();
+    watch.follow(connection);
+    push({ t: "maintenance", d: { maintenance: { at: AT, message: "Soon" } } });
+    assert.deepEqual(watch.notice, { startsAt: STARTS_AT, message: "Soon" });
+    push({ t: "notification", d: {} });
+    assert.equal(seen.length, 2, "other messages are not its business");
+
+    served = { startsAt: STARTS_AT + 60_000, message: null };
+    status("closed");
+    assert.equal(loads, 1);
+    status("open");
+    await Promise.resolve();
+    assert.equal(loads, 2, "missed pushes are read again");
+    assert.deepEqual(watch.notice, served);
+
+    push({ t: "maintenance", d: { maintenance: null } });
+    assert.equal(watch.notice, null);
   });
 });

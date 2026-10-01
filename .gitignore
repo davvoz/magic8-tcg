@@ -17,5 +17,3 @@ Thumbs.db
 /backups/
 deploy/README.md
 
-# maintenance announcement served by nginx (deploy/maintenance.sh)
-/maintenance.json

@@ -65,6 +65,7 @@ import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 import { MaintenanceBanner } from "./rendering/page/MaintenanceBanner.js";
 import { describeMaintenance } from "./application/maintenance/MaintenanceNotice.js";
+import { MaintenanceWatch } from "./application/maintenance/MaintenanceWatch.js";
 
 const ENGINE_VERSION = "0.9.0";
 
@@ -91,8 +92,7 @@ const CONTENT_MANIFEST = Object.freeze({
 });
 /** Where the illustration files named in data/art/illustrations.json live. */
 const ART_DIRECTORY = "data/art/";
-/** How often the page looks for an announced maintenance, and how often the countdown moves. */
-const MAINTENANCE_POLL_MS = 60_000;
+/** How often the maintenance countdown moves. */
 const MAINTENANCE_TICK_MS = 1000;
 /**
  * The painted coin of the opening toss: one image per face (1024², the coin
@@ -298,6 +298,7 @@ async function boot() {
   const timers = { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (handle) => globalThis.clearTimeout(handle) };
   // One realtime connection per signed-in player, shared by online play and notifications.
   const realtime = new WebSocketConnection({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`, createSocket: (url) => new WebSocket(url), timers });
+  maintenance.follow(realtime);
   const online = new OnlineService({
     connection: realtime,
     randomHex: (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join(""),
@@ -406,27 +407,24 @@ function buildIllustrations(raw, catalog) {
 }
 
 /**
- * The maintenance banner runs on its own, apart from the game: it shows even
- * when the game failed to start or the server is down for the maintenance.
+ * The maintenance banner starts on its own, before the game: it shows even
+ * when the game fails to start. Read once now; boot() hands it the realtime
+ * connection, on which the server pushes every change.
  */
 function watchMaintenance() {
+  const watch = new MaintenanceWatch({ load: () => fetchMaintenanceNotice((url, init) => fetch(url, init)) });
   const banner = new MaintenanceBanner(document);
-  /** @type {import("./application/maintenance/MaintenanceNotice.js").MaintenanceNotice | null} */
-  let notice = null;
-  const render = () => banner.show(notice === null ? null : describeMaintenance(notice, Date.now()));
-  const refresh = async () => {
-    notice = await fetchMaintenanceNotice((url, init) => fetch(url, init));
-    render();
-  };
-  void refresh();
-  window.setInterval(() => void refresh(), MAINTENANCE_POLL_MS);
+  const render = () => banner.show(watch.notice === null ? null : describeMaintenance(watch.notice, Date.now()));
+  watch.subscribe(render);
+  void watch.refresh();
   window.setInterval(render, MAINTENANCE_TICK_MS);
+  return watch;
 }
 
 window.addEventListener("error", (event) => showFatal("Unexpected error", describeError(event.error ?? event.message)));
 window.addEventListener("unhandledrejection", (event) => showFatal("Unexpected error", describeError(event.reason)));
 
-watchMaintenance();
+const maintenance = watchMaintenance();
 boot().catch((error) => {
   showFatal("Startup failed", describeError(error));
 });

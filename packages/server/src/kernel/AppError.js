@@ -27,6 +27,7 @@ export const ErrorStatus = Object.freeze({
   PRECONDITION_REQUIRED: 428,
   RATE_LIMITED: 429,
   CHAIN_UNAVAILABLE: 503,
+  MAINTENANCE: 503,
   INTERNAL: 500,
 });
 

@@ -75,6 +75,7 @@ export class SalesService {
   #unitOfWork;
   #logger;
   #policy;
+  #gate;
 
   /**
    * @param {{
@@ -90,9 +91,10 @@ export class SalesService {
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   logger: import("../../../kernel/logger.js").Logger,
    *   policy?: Partial<SalesPolicy>,
-   * }} deps `assets`: what may be asked as a price (the accepted assets); `publish`: a NOTIFY to every server process
+   *   gate?: { assertOpen: (what: string) => void },
+   * }} deps `assets`: what may be asked as a price (the accepted assets); `publish`: a NOTIFY to every server process; `gate`: closed during an announced maintenance
    */
-  constructor({ repository, inventory, assets, providers, publish, notifications, audit, clock, random, unitOfWork, logger, policy = {} }) {
+  constructor({ repository, inventory, assets, providers, publish, notifications, audit, clock, random, unitOfWork, logger, policy = {}, gate = { assertOpen: () => undefined } }) {
     this.#repository = repository;
     this.#inventory = inventory;
     this.#assets = assets;
@@ -105,6 +107,7 @@ export class SalesService {
     this.#unitOfWork = unitOfWork;
     this.#logger = logger;
     this.#policy = Object.freeze({ ...DEFAULT_SALES_POLICY, ...policy });
+    this.#gate = gate;
   }
 
   get policy() {
@@ -261,6 +264,7 @@ export class SalesService {
     if (held !== null && held.buyerId === buyer.id) {
       return this.purchaseView(buyer.id, held.id);
     }
+    this.#gate.assertOpen("Buying from other players");
     if (listing.network !== buyer.network) {
       throw new AppError("VALIDATION", `this card is sold on ${listing.network}; you are signed in on ${buyer.network}`);
     }

@@ -9,7 +9,7 @@
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0a0c14; overflow: hidden; }
     canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
     /* The one HTML overlay: the maintenance announcement (src/rendering/page/MaintenanceBanner.js). */
-    .maintenance-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 10; padding: 8px 16px; background: #b45309; color: #fff; font: 600 14px/1.4 system-ui, sans-serif; text-align: center; pointer-events: none; }
+    .maintenance-banner { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 10; box-sizing: border-box; width: max-content; max-width: min(640px, calc(100% - 32px)); padding: 6px 16px; border-radius: 16px; background: #b45309; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); color: #fff; font: 600 13px/1.4 system-ui, sans-serif; text-align: center; pointer-events: none; }
     .maintenance-banner[hidden] { display: none; }
   </style>
 </head>

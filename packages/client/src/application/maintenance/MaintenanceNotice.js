@@ -38,8 +38,8 @@ export function describeMaintenance(notice, now) {
     return null;
   }
   const lead = left > 0
-    ? `Maintenance in ${formatCountdown(left)}: the game will be back a few minutes later. Please do not buy packs now.`
-    : "Maintenance in progress: the game will be back in a few minutes.";
+    ? `Maintenance in ${formatCountdown(left)}: the shop and new games are paused.`
+    : "Maintenance in progress: back in a few minutes.";
   return notice.message === null ? lead : `${lead} ${notice.message}`;
 }
 

@@ -116,6 +116,9 @@ export async function onlineWorld() {
     const entry = {
       account,
       online,
+      /** The tab's realtime connection and its signed-in HTTP client, for what else the page runs on them. */
+      connection,
+      api,
       keychain,
       logger,
       sent,

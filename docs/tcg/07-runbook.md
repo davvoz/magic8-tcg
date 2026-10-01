@@ -42,6 +42,8 @@ Il server rifiuta di partire con:
 
 **Log:** su stdout, una riga per evento. In produzione impostare `M8_LOG_FORMAT=json` (una riga JSON con tutti i campi, compresi txId e hash utili alle indagini) e mandarla a un sistema che possa avvisare sulle righe `"level":"error"`, in particolare `alarm raised: …` e `chain alert: …`. Il formato predefinito (`pretty`) è per chi legge il terminale e tralascia hash, txId, chiavi e id.
 
+**Manutenzione annunciata:** dalla sezione *Maintenance* di `/admin.html`, oppure `node packages/server/src/maintenance/maintenanceNotice.js announce <minuti> ["messaggio"] | end | show` (con Docker: `sh deploy/maintenance.sh`). Dall'annuncio il server rifiuta nuovi ordini del negozio, acquisti tra giocatori e ingressi in coda (`MAINTENANCE`, 503) e svuota la coda; le partite in corso, i pagamenti già avviati, gli annullamenti e i rimborsi continuano. I client ricevono il conto alla rovescia in push (`maintenance` sul WebSocket; `GET /api/maintenance` al caricamento). L'annuncio sta nel database: sopravvive ai riavvii, finché un operatore o un deploy riuscito non lo chiude.
+
 ## 2. Lancio (una volta)
 
 1. Creare gli account: root (meglio dedicato), shop, 1–4 broadcaster (nomi validi: ogni parte tra i punti ha almeno 3 caratteri). Delegare Steem Power ai broadcaster da un account freddo.

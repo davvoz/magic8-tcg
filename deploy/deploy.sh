@@ -26,8 +26,8 @@ main() {
   if APP_TAG=$tag docker compose up -d --no-deps --wait --wait-timeout 90 app; then
     docker tag "magic8-tcg:$tag" magic8-tcg:current
     echo "deploy: $tag is live"
-    # The announced maintenance is over: the banner goes away (deploy/maintenance.sh).
-    rm -f maintenance.json
+    # The announced maintenance is over: everything reopens (deploy/maintenance.sh).
+    docker compose exec -T app node packages/server/src/maintenance/maintenanceNotice.js end > /dev/null || echo "deploy: could not end the maintenance; end it with: sh deploy/maintenance.sh off" >&2
   else
     echo "deploy: $tag did not become ready; last log lines:" >&2
     APP_TAG=$tag docker compose logs --tail 50 app >&2 || true

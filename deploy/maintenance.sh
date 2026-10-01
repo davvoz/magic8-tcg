@@ -1,28 +1,24 @@
 #!/bin/sh
-# Announces a maintenance: the game shows a countdown banner. It reads
-# /maintenance.json, which nginx serves from the repository directory, so
-# nothing restarts. deploy.sh removes the notice after a successful deploy.
+# Announces a maintenance from the server's machine (the admin page does the
+# same). From the announcement the game takes no new shop orders, purchases
+# between players or queue entries, and players see a countdown; games in
+# progress go on. deploy.sh ends it after a successful deploy.
 # Usage: sh deploy/maintenance.sh <minutes> ["message"]   announce
-#        sh deploy/maintenance.sh off                      remove the banner
+#        sh deploy/maintenance.sh off                      end it, everything reopens
+#        sh deploy/maintenance.sh                          show what is announced
 set -eu
 cd "$(dirname "$0")/.."
-FILE=maintenance.json
 
-if [ "${1:-}" = off ]; then
-  rm -f "$FILE"
-  echo "maintenance: banner removed"
-  exit
-fi
+notice() {
+  docker compose exec -T app node packages/server/src/maintenance/maintenanceNotice.js "$@"
+}
+
 case "${1:-}" in
-  '' | *[!0-9]*)
+  '') notice show ;;
+  off) notice end ;;
+  *[!0-9]*)
     echo "usage: sh deploy/maintenance.sh <minutes> [\"message\"] | off" >&2
     exit 2
     ;;
+  *) notice announce "$1" "${2:-}" ;;
 esac
-
-at=$(date -u -d "+$1 minutes" +%Y-%m-%dT%H:%M:%SZ)
-message=$(printf '%s' "${2:-}" | sed 's/\\/\\\\/g; s/"/\\"/g')
-printf '{"at":"%s","message":"%s"}\n' "$at" "$message" > "$FILE.tmp"
-chmod 644 "$FILE.tmp"
-mv "$FILE.tmp" "$FILE"
-echo "maintenance: announced for $at UTC (in $1 minutes)"

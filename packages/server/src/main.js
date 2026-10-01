@@ -96,6 +96,8 @@ async function main() {
   const stopRelay = await app.notificationRelay.start();
   // So do the board's changes, to everyone looking at it.
   const stopBoardRelay = await app.boardRelay.start();
+  // An announced maintenance: read now, then followed whoever changes it (the admin page, the command line).
+  const stopMaintenance = await app.maintenance.start();
   const jobs = [
     setInterval(() => app.keyAuditor.run().catch((error) => logger.error("session key audit failed", { error })), KEY_AUDIT_INTERVAL_MS),
     setInterval(() => app.challenges.purgeExpired(systemClock.now()).catch((error) => logger.error("challenge purge failed", { error })), CHALLENGE_PURGE_INTERVAL_MS),
@@ -136,6 +138,7 @@ async function main() {
     jobs.forEach(clearInterval);
     stopRelay().catch((error) => logger.warn("notification relay did not stop cleanly", { error }));
     stopBoardRelay().catch((error) => logger.warn("board relay did not stop cleanly", { error }));
+    stopMaintenance().catch((error) => logger.warn("maintenance relay did not stop cleanly", { error }));
     app.realtime.close();
     setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS).unref();
     server.close(() => {
