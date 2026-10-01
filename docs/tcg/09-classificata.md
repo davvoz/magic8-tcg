@@ -19,6 +19,8 @@
 - **Requisiti per entrare:** serve una stagione in corso e un numero minimo di partite casual finite (`eligibility.minFinishedCasualGames`, default 3). Frena gli account nuovi creati solo per gonfiare il rating.
 - **Abbinamento:** nessuna regola, tutti contro tutti. Come in casual, i due biglietti più vecchi in coda si affrontano subito, qualunque sia il loro rating e anche se si sono già incontrati oltre il limite giornaliero (quella partita viene registrata ma non conta, vedi fair play). Nessuna attesa forzata.
 
+- **Sfide dirette:** una partita classificata si può anche proporre a un giocatore online dalla lobby, se entrambi soddisfano i requisiti (17). Conta come una partita della coda, limite giornaliero per coppia compreso.
+
 ## Fair play (T24)
 
 - **Limite giornaliero per coppia.** Oltre `maxRatedGamesPerPairPerDay` partite contate fra gli stessi due giocatori in 24 ore, le partite successive restano registrate (`counted = false`, `reason = "repeat_pair"`) ma non cambiano il rating. Vale anche per le partite create fuori dalla coda. La coppia riceve una segnalazione `repeat_pair`.

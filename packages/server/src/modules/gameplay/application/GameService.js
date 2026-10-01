@@ -225,6 +225,22 @@ export class GameService {
   }
 
   /**
+   * The users seated in a game this process runs that is not over (the lobby's "in a game").
+   * @returns {Set<string>}
+   */
+  playingUsers() {
+    const playing = new Set();
+    for (const actor of this.#actors.values()) {
+      if (!actor.isOver) {
+        for (const userId of actor.userIds()) {
+          playing.add(userId);
+        }
+      }
+    }
+    return playing;
+  }
+
+  /**
    * @param {string} userId
    * @param {unknown} gameId
    * @param {unknown} entropy

@@ -200,6 +200,11 @@ export class GameActor {
     return this.#game.players.find((player) => player.userId === userId)?.seat ?? null;
   }
 
+  /** The users seated in this game. */
+  userIds() {
+    return this.#game.players.map((player) => player.userId);
+  }
+
   /** Whether players must sign their moves (game protocol v2). */
   get signsMoves() {
     return this.#recorder.version >= GameProtocol.V2;

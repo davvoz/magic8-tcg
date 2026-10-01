@@ -1,6 +1,7 @@
 /**
- * A player's HUD: name, a life crystal, resource orbs and the hand /
- * library / graveyard counts drawn as small card stacks. It is a widget
+ * A player's HUD: name (with their profile picture in an online game), a
+ * life crystal, resource orbs and the hand / library / graveyard counts
+ * drawn as small card stacks. It is a widget
  * because players are legal targets for some spells; when the interaction
  * marks it targetable it becomes tappable and shows a highlight halo.
  * When the life total moves the crystal swells and throws off a ring —
@@ -11,6 +12,7 @@ import { mix, shade, withAlpha } from "../theme/color.js";
 import { bodyFont, fontFor } from "../theme/Theme.js";
 import { drawOutlinedText, drawTextInRect, fillRoundedRect, glowRoundedRect, verticalGradient } from "../ui/drawing.js";
 import { paintStone } from "../ui/Panel.js";
+import { drawAvatar } from "../ui/avatar.js";
 import { drawCardStackIcon, drawGem, drawOrb } from "../ui/shapes.js";
 import { UiNode } from "../ui/UiNode.js";
 
@@ -43,6 +45,8 @@ export class PlayerNode extends UiNode {
   isActive;
   /** @type {string | null} */
   highlight;
+  /** The player's STEEM account in an online game (their portrait is shown), or null. @type {string | null} */
+  avatar;
   /** @type {(playerId: string) => void} */
   onTap;
   /** The life drawn in the crystal, read every frame: it may lag the snapshot while a cast plays out. @type {() => number} */
@@ -51,9 +55,9 @@ export class PlayerNode extends UiNode {
   lifeKick;
 
   /**
-   * @param {{ player: PlayerView, rect: import("@magic8/engine/shared/geometry.js").Rect, isMe: boolean, isActive: boolean, highlight: string | null, onTap: (playerId: string) => void, lifeShown?: () => number, lifeKick?: () => { progress: number, delta: number } | null }} options
+   * @param {{ player: PlayerView, rect: import("@magic8/engine/shared/geometry.js").Rect, isMe: boolean, isActive: boolean, highlight: string | null, onTap: (playerId: string) => void, lifeShown?: () => number, lifeKick?: () => { progress: number, delta: number } | null, avatar?: string | null }} options
    */
-  constructor({ player, rect, isMe, isActive, highlight, onTap, lifeShown = () => player.life, lifeKick = () => null }) {
+  constructor({ player, rect, isMe, isActive, highlight, onTap, lifeShown = () => player.life, lifeKick = () => null, avatar = null }) {
     super({ id: player.id, ...rect, enabled: highlight === Highlight.TARGETABLE });
     this.player = player;
     this.lifeShown = lifeShown;
@@ -61,6 +65,7 @@ export class PlayerNode extends UiNode {
     this.isMe = isMe;
     this.isActive = isActive;
     this.highlight = highlight;
+    this.avatar = avatar;
     this.onTap = onTap;
     this.interactive = true;
     this.focusable = this.enabled;
@@ -117,7 +122,11 @@ export class PlayerNode extends UiNode {
     const area = this.bounds;
     const { colors } = theme;
     const line = { x: area.x + PAD, y: area.y + PAD, width: area.width - 2 * PAD, height: NAME_HEIGHT };
-    drawTextInRect(context, this.player.name, line, { font: fontFor(theme, "body", "bold"), color: this.isActive ? colors.accentLight : colors.text, align: "left" });
+    const portrait = this.avatar === null ? 0 : NAME_HEIGHT + 8;
+    if (this.avatar !== null) {
+      drawAvatar(context, theme, { account: this.avatar, center: { x: line.x + NAME_HEIGHT / 2, y: line.y + NAME_HEIGHT / 2 }, radius: NAME_HEIGHT / 2 });
+    }
+    drawTextInRect(context, this.player.name, { ...line, x: line.x + portrait, width: line.width - portrait }, { font: fontFor(theme, "body", "bold"), color: this.isActive ? colors.accentLight : colors.text, align: "left" });
     if (this.isMe) {
       const tag = { x: line.x + line.width - 44, y: line.y + 3, width: 44, height: NAME_HEIGHT - 6 };
       fillRoundedRect(context, tag, { fill: withAlpha(colors.accent, 0.2), stroke: withAlpha(colors.accent, 0.7), radius: tag.height / 2, lineWidth: 1 });

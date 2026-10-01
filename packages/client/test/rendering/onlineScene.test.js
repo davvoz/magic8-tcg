@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ok } from "@magic8/engine/shared/Result.js";
+import { LobbyService } from "../../src/application/lobby/LobbyService.js";
 import { OnlineService } from "../../src/application/online/OnlineService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
@@ -21,7 +22,8 @@ const content = await loadBundledContent();
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const GAME = "01j8x3r6h2qkq4w0v7m5a9c1dz";
 
-async function harness() {
+/** @param {{ lobbyReplies?: Record<string, (d: any) => unknown> }} [options] `lobbyReplies`: the scripted server's answers to the lobby's requests */
+async function harness({ lobbyReplies } = {}) {
   const listeners = new Set();
   const statusListeners = new Set();
   const requests = [];
@@ -32,6 +34,9 @@ async function harness() {
       requests.push({ t, d });
       if (t === "hello") {
         return ok({ t: "welcome", d: { user: {}, serverTime: 0, activeGame: null, queue: { state: "idle" } } });
+      }
+      if (lobbyReplies?.[t] !== undefined) {
+        return ok(lobbyReplies[t](d));
       }
       return ok({ t: t === "queue.join" ? "queue.status" : "ok", d: { state: t === "queue.join" ? "searching" : "idle" } });
     },
@@ -52,10 +57,11 @@ async function harness() {
   viewport.resize({ cssWidth: 1600, cssHeight: 900 });
   const navigated = [];
   const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, params) => navigated.push({ id, params }), hasScene: () => true };
-  const scene = new OnlineScene(services, { content, online });
+  const lobby = lobbyReplies === undefined ? undefined : new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => 0, logger: new MemoryLogger() });
+  const scene = new OnlineScene(services, { content, online, lobby });
   scene.enter({});
   await flush();
-  return { scene, online, requests, navigated, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
+  return { scene, online, lobby, requests, navigated, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
 }
 
 const byId = (scene, id) => scene.root.findById(id);
@@ -64,6 +70,8 @@ function rendered(scene) {
   scene.render(context);
   return context.texts;
 }
+/** Everything the scene says, as one text (wrapped paragraphs read across their lines). */
+const said = (scene) => rendered(scene).join(" ");
 
 describe("OnlineScene", () => {
   it("lists the account's decks, unplayable ones disabled with the reason", async () => {
@@ -73,7 +81,7 @@ describe("OnlineScene", () => {
     assert.equal(good.selected, true);
     assert.equal(draft.enabled, false);
     assert.match(draft.subtitle, /not playable: deck has 3 cards/);
-    assert.ok(rendered(scene).some((text) => text.includes("first player is drawn by lot")));
+    assert.match(said(scene), /first player is drawn by lot/);
   });
 
   it("queues with the selected deck, can stop, and opens the match when the server starts it", async () => {
@@ -107,14 +115,94 @@ describe("OnlineScene before a v2 game starts", () => {
   it("shows who has accepted, then the cancellation and who did not accept, and lets the player search again", async () => {
     const { scene, navigated, push } = await harness();
     push("game.state", WAITING({ s0: true, s1: false }));
-    assert.ok(rendered(scene).some((text) => text.includes("@bob has accepted")), rendered(scene).join(" | "));
+    assert.match(said(scene), /@bob has accepted/);
     assert.equal(byId(scene, "online.find").enabled, false, "no new search while a game waits");
 
     push("game.aborted", { gameId: GAME, reason: "not_authorized", seats: ["s1"], you: "s1" });
-    const texts = rendered(scene);
-    assert.ok(texts.some((text) => text.includes("cancelled before it started")));
-    assert.ok(texts.some((text) => text.includes("You did not sign the game with Keychain in time")), texts.join(" | "));
+    assert.match(said(scene), /cancelled before it started/);
+    assert.match(said(scene), /You did not sign the game with Keychain in time/);
     assert.equal(byId(scene, "online.find").enabled, true);
     assert.ok(navigated.every((entry) => entry.id !== SceneId.MATCH), "never went to the board");
+  });
+});
+
+describe("OnlineScene: players online and challenges", () => {
+  const DECK = "11111111-1111-4111-8111-111111111111";
+  const CHALLENGE = { id: "c1", from: "carol", to: "me", mode: "casual", expiresAt: 0, expiresInMs: 60_000 };
+  const players = [
+    { account: "bob", status: "idle" },
+    { account: "dave", status: "searching" },
+    { account: "erin", status: "playing" },
+  ];
+  const lobbyReplies = {
+    "lobby.list": () => ({ t: "lobby.players", d: { players, challenges: { incoming: [], outgoing: null } } }),
+    "challenge.send": (d) => ({ t: "challenge.sent", d: { id: "c2", from: "me", to: d.to, mode: d.mode, expiresAt: 0, expiresInMs: 60_000 } }),
+    "challenge.accept": (d) => ({ t: "challenge.accepted", d: { challengeId: d.challengeId, gameId: GAME } }),
+    "challenge.decline": (d) => ({ t: "challenge.declined", d: { challengeId: d.challengeId } }),
+    "challenge.cancel": (d) => ({ t: "challenge.cancelled", d: { challengeId: d.challengeId } }),
+  };
+
+  it("lists the players online with their portraits; those in a game cannot be challenged", async () => {
+    const { scene } = await harness({ lobbyReplies });
+    const bob = byId(scene, "online.player.bob");
+    assert.equal(bob.avatar, "bob");
+    assert.match(bob.subtitle, /Ready to play/);
+    assert.equal(bob.enabled, true);
+    assert.equal(byId(scene, "online.player.dave").enabled, true, "searching players can be challenged");
+    assert.equal(byId(scene, "online.player.erin").enabled, false);
+    assert.equal(byId(scene, "online.players.count").text, "3");
+  });
+
+  it("challenges a player to a casual or ranked game with the selected deck, and can withdraw it", async () => {
+    const { scene, requests } = await harness({ lobbyReplies });
+    byId(scene, "online.player.bob").activate();
+    assert.equal(byId(scene, "challenge.title").text, "Challenge @bob");
+    assert.equal(byId(scene, "challenge.ranked").enabled, false, "ranked needs the player to be eligible");
+    byId(scene, "challenge.casual").activate();
+    await flush();
+    assert.deepEqual(requests.find((request) => request.t === "challenge.send").d, { to: "bob", mode: "casual", deckId: DECK });
+    assert.equal(scene.modal, null);
+    assert.match(said(scene), /Waiting for @bob to accept your casual challenge/);
+    assert.equal(byId(scene, "online.player.bob").selected, true);
+    assert.equal(byId(scene, "online.find"), null, "no queue while waiting for an answer");
+
+    byId(scene, "online.withdraw").activate();
+    await flush();
+    assert.deepEqual(requests.at(-1), { t: "challenge.cancel", d: { challengeId: "c2" } });
+    assert.ok(byId(scene, "online.find"));
+  });
+
+  it("shows a challenge received first, and accepts it with the selected deck", async () => {
+    const { scene, requests, push } = await harness({ lobbyReplies });
+    push("challenge.received", CHALLENGE);
+    const row = byId(scene, "online.challenge.c1");
+    assert.equal(row.text, "@carol challenges you");
+    assert.equal(row.avatar, "carol");
+    row.activate();
+    assert.equal(byId(scene, "challenge.title").text, "@carol challenges you");
+    assert.match(byId(scene, "challenge.message").text, /You play with “Iron Foundry”/);
+    byId(scene, "challenge.accept").activate();
+    await flush();
+    assert.deepEqual(requests.find((request) => request.t === "challenge.accept").d, { challengeId: "c1", deckId: DECK });
+    assert.equal(byId(scene, "online.challenge.c1"), null);
+  });
+
+  it("keeps a dialog open while the list refreshes, and closes it when its challenge closes", async () => {
+    const listed = { t: "lobby.players", d: { players, challenges: { incoming: [CHALLENGE], outgoing: null } } };
+    const { scene, lobby, requests, push } = await harness({ lobbyReplies: { ...lobbyReplies, "lobby.list": () => listed } });
+    push("challenge.received", CHALLENGE);
+    byId(scene, "online.challenge.c1").activate();
+    await lobby?.refresh();
+    assert.notEqual(scene.modal, null, "a refresh does not close it");
+    assert.equal(byId(scene, "challenge.title").text, "@carol challenges you");
+    push("challenge.closed", { challengeId: "c1", reason: "cancelled" });
+    assert.equal(scene.modal, null);
+
+    push("challenge.received", { ...CHALLENGE, id: "c3" });
+    byId(scene, "online.challenge.c3").activate();
+    byId(scene, "challenge.decline").activate();
+    await flush();
+    assert.deepEqual(requests.at(-1), { t: "challenge.decline", d: { challengeId: "c3" } });
+    assert.equal(scene.modal, null);
   });
 });

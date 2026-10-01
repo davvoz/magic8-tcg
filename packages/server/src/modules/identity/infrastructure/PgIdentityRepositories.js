@@ -61,6 +61,19 @@ export class PgUserRepository {
     return row === null ? null : toUser(row);
   }
 
+  /**
+   * The account names of active users, in one query (the lobby's list of who is online).
+   * @param {readonly string[]} ids
+   * @returns {Promise<Map<string, string>>} user id → account
+   */
+  async accountsOf(ids) {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await this.#db.rows("SELECT id, account FROM users WHERE id = ANY($1::uuid[]) AND status = 'active'", [ids]);
+    return new Map(rows.map((row) => [row.id, row.account]));
+  }
+
   async recordLogin(id, now) {
     await this.#db.query("UPDATE users SET last_login_at = $2 WHERE id = $1", [id, toTimestamp(now)]);
   }

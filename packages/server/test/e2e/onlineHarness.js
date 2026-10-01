@@ -1,7 +1,7 @@
 /**
  * End to end, the way two browsers play: a real server on a local port, and
- * for each player the real client stack (OnlineService over a real
- * WebSocketConnection, WebCrypto session keys) with a Keychain stand-in the
+ * for each player the real client stack (OnlineService and LobbyService over
+ * a real WebSocketConnection, WebCrypto session keys) with a Keychain stand-in the
  * test drives by hand — every prompt waits until the test approves,
  * refuses or ignores it, like a person in front of the extension.
  */
@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 
 import { signMessage } from "@magic8/steem";
 import { WebSocket } from "ws";
+import { LobbyService } from "../../../client/src/application/lobby/LobbyService.js";
 import { OnlineService } from "../../../client/src/application/online/OnlineService.js";
 import { WebCryptoSessionKeys } from "../../../client/src/infrastructure/crypto/webSessionKeys.js";
 import { MemoryLogger } from "../../../client/src/infrastructure/logging/MemoryLogger.js";
@@ -113,9 +114,13 @@ export async function onlineWorld() {
       logger,
     });
     online.start();
+    // The lobby's list is read on demand in tests (no polling).
+    const lobby = new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => Date.now(), logger });
+    lobby.start();
     const entry = {
       account,
       online,
+      lobby,
       /** The tab's realtime connection and its signed-in HTTP client, for what else the page runs on them. */
       connection,
       api,
@@ -127,6 +132,7 @@ export async function onlineWorld() {
       count: (type) => sent.filter((candidate) => candidate === type).length,
       /** The page is reloaded: this tab goes, a new one opens for the same player. */
       reload: async () => {
+        lobby.stop();
         online.stop();
         await settle();
         return browser({ account, api, keys, deckId });
@@ -159,6 +165,7 @@ export async function onlineWorld() {
     },
     close: async () => {
       for (const entry of players) {
+        entry.lobby.stop();
         entry.online.stop();
       }
       await server.close();

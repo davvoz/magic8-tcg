@@ -22,6 +22,8 @@ const MIME_TYPES = Object.freeze({
   ".ico": "image/x-icon",
 });
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+/** Where players' profile pictures come from: the STEEM image service, which serves each account's avatar. */
+const AVATAR_ORIGIN = "https://steemitimages.com";
 const INLINE_BLOCK = /<(script|style)\b[^>]*>([\s\S]*?)<\/\1>/g;
 
 /**
@@ -48,7 +50,7 @@ export function pageCsp(html, connectSources = []) {
     "default-src 'self'",
     `script-src 'self' ${hashes.script.join(" ")}`.trim(),
     `style-src 'self' ${hashes.style.join(" ")}`.trim(),
-    "img-src 'self' data:",
+    `img-src 'self' data: ${AVATAR_ORIGIN}`,
     `connect-src 'self' ${connectSources.join(" ")}`.trim(),
     "font-src 'self'",
     "object-src 'none'",

@@ -171,6 +171,8 @@ describe("Decision clock (MatchScene)", () => {
       eventsFor: () => [],
       submit: () => ({ ok: true, value: undefined }),
       stop: () => undefined,
+      // Timed games are online ones: the other seat is a remote player.
+      controllerKindOf: (playerId) => (playerId === P1 ? "human" : "remote"),
     };
   }
 

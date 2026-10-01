@@ -1,7 +1,8 @@
 /**
  * The ranked leaderboard of the current season: settled ratings ranked
- * first, then provisional ones (listed with no rank yet), with the
- * player's own line highlighted and their standing above.
+ * first, then provisional ones (listed with no rank yet), each with the
+ * player's profile picture, the player's own line highlighted and their
+ * standing above.
  */
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -93,6 +94,7 @@ export class LeaderboardScene extends Scene {
           text: entry.rank === null ? `—  @${entry.account}` : `#${entry.rank}  @${entry.account}`,
           subtitle: `rating ${entry.rating}${entry.rank === null ? " (provisional)" : ""} · ${entry.wins}–${entry.losses}${draws} in ${entry.games} game(s)`,
           selected: entry.account === me,
+          avatar: entry.account,
           onActivate: () => undefined,
         }),
       );

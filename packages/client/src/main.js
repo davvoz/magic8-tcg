@@ -16,7 +16,9 @@ import { COLLECTION_CHANGING_KINDS, describeNotification } from "./application/n
 import { NotificationService } from "./application/notifications/NotificationService.js";
 import { AccountDeckRepository, DeckStorage } from "./application/decks/AccountDeckRepository.js";
 import { AckReceipts } from "./application/online/AckReceipts.js";
-import { OnlineService } from "./application/online/OnlineService.js";
+import { OnlineService, OnlineStatus } from "./application/online/OnlineService.js";
+import { LobbyService } from "./application/lobby/LobbyService.js";
+import { describeLobbyEvent } from "./application/lobby/describeLobbyEvent.js";
 import { RankingService } from "./application/ranking/RankingService.js";
 import { TradingService } from "./application/trading/TradingService.js";
 import { SalesService } from "./application/sales/SalesService.js";
@@ -61,6 +63,7 @@ import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
 import { CoinArt } from "./rendering/board/CoinArt.js";
 import { TableArt, TablePiece } from "./rendering/images/TableArt.js";
 import { UiArt, UiPiece } from "./rendering/images/UiArt.js";
+import { Avatars } from "./rendering/images/Avatars.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 import { MaintenanceBanner } from "./rendering/page/MaintenanceBanner.js";
@@ -321,6 +324,8 @@ async function boot() {
     }),
     logger,
   });
+  // Who else is online, and challenges: heard on any screen once signed in.
+  const lobby = new LobbyService({ connection: realtime, scheduler: browserScheduler, now: () => Date.now(), logger });
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });
   // Trades move copies between collections: the account reloads after each one.
   const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), scheduler: browserScheduler, onCollectionChanged: () => account.refresh() });
@@ -332,9 +337,13 @@ async function boot() {
   account.subscribe((state) => {
     if (state.status === AccountStatus.READY) {
       notifications.start();
+      lobby.start();
+      // A challenge can be accepted while the player is on another screen: the game must reach them there.
+      online.start();
     }
     if (state.account === null) {
       notifications.stop();
+      lobby.stop();
       shop.dismiss();
       online.stop();
       ranking.reset();
@@ -357,6 +366,7 @@ async function boot() {
     account,
     shop,
     online,
+    lobby,
     ranking,
     trading,
     sales,
@@ -364,11 +374,22 @@ async function boot() {
     ...rarities,
   });
 
-  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt }));
+  // Players' STEEM profile pictures; a player is drawn as their initial until theirs is ready.
+  const avatars = new Avatars({ loadImage: loadBrowserImage, onLoaded: () => presentation?.loop.requestRender(), logger });
+  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars }));
   registerScenes(sceneManager, app);
-  // A notification that arrives shows as a toast on any screen; a click opens the feed.
-  const toasts = new ToastLayer({ viewport: theme.value.layout, onOpen: () => sceneManager.navigate(SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
+  // A notification that arrives shows as a toast on any screen; a click opens the feed (or the lobby, for a challenge).
+  const toasts = new ToastLayer({ viewport: theme.value.layout, onOpen: (message) => sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
   sceneManager.setOverlay(toasts);
+  lobby.onEvent((event) => toasts.show({ ...describeLobbyEvent(event), opens: SceneId.ONLINE }));
+  // A game found while the player is elsewhere (their challenge was accepted): the lobby shows it and asks Keychain to accept it.
+  let onlineStatus = online.state.status;
+  online.subscribe((state) => {
+    if (state.status === OnlineStatus.MATCHED && onlineStatus !== OnlineStatus.MATCHED && sceneManager.currentId !== SceneId.ONLINE && sceneManager.currentId !== SceneId.MATCH) {
+      sceneManager.navigate(SceneId.ONLINE);
+    }
+    onlineStatus = state.status;
+  });
   notifications.onArrival((notification) => {
     toasts.show(describeNotification(notification, content.value.catalog));
     if (COLLECTION_CHANGING_KINDS.includes(notification.kind)) {

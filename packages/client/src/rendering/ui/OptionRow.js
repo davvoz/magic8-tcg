@@ -1,3 +1,4 @@
+import { drawAvatar } from "./avatar.js";
 import { Button } from "./Button.js";
 import { bevelRoundedRect, drawTextInRect, fillRoundedRect, glowRoundedRect, roundedRectPath, verticalGradient } from "./drawing.js";
 import { drawCheckIcon } from "./shapes.js";
@@ -10,12 +11,16 @@ const STRIPE_WIDTH = 8;
 const CHECK_SIZE = 22;
 const TITLE_SIZE = 22;
 const GLOW_BLUR = 18;
+/** The portrait of a player's row, as a share of the row's height. */
+const AVATAR_RADIUS = 0.36;
 
 /**
  * A selectable list row: a coloured stripe on the left (the option's
  * faction or category), a title in the display face, a muted subtitle and
- * a check mark when selected. Behaves exactly like a Button (`text` stays
- * the title for keyboard users and tests); `selected` drives the look.
+ * a check mark when selected. A row about a player shows their portrait
+ * (`avatar`: the account) after the stripe. Behaves exactly like a Button
+ * (`text` stays the title for keyboard users and tests); `selected` drives
+ * the look.
  */
 export class OptionRow extends Button {
   /** @type {string} */
@@ -24,15 +29,18 @@ export class OptionRow extends Button {
   stripeColor;
   /** @type {boolean} */
   selected;
+  /** The account whose portrait the row shows, or null for none. @type {string | null} */
+  avatar;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, subtitle?: string, stripeColor?: string | null, selected?: boolean, onActivate: () => void }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, subtitle?: string, stripeColor?: string | null, selected?: boolean, avatar?: string | null, onActivate: () => void }} options
    */
   constructor(options) {
     super({ ...options, variant: "secondary", align: "left" });
     this.subtitle = options.subtitle ?? "";
     this.stripeColor = options.stripeColor ?? null;
     this.selected = options.selected ?? false;
+    this.avatar = options.avatar ?? null;
   }
 
   /**
@@ -52,6 +60,10 @@ export class OptionRow extends Button {
       bevelRoundedRect(context, area, { light: withAlpha("#ffffff", 0.14), dark: withAlpha("#000000", 0.45), radius });
     }
     this.#paintStripe(context, theme);
+    if (this.avatar !== null) {
+      const portrait = area.height * AVATAR_RADIUS;
+      drawAvatar(context, theme, { account: this.avatar, center: { x: this.#contentLeft() + portrait, y: area.y + area.height / 2 }, radius: portrait });
+    }
     this.#paintTexts(context, theme, enabled);
     if (this.selected) {
       drawCheckIcon(context, { x: area.x + area.width - PADDING - CHECK_SIZE / 2, y: area.y + area.height / 2 }, CHECK_SIZE, { color: colors.accentLight });
@@ -110,6 +122,11 @@ export class OptionRow extends Button {
     context.restore();
   }
 
+  /** Where the row's content starts, past the stripe. */
+  #contentLeft() {
+    return this.bounds.x + PADDING + (this.stripeColor === null ? 0 : STRIPE_WIDTH);
+  }
+
   /**
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
@@ -118,7 +135,7 @@ export class OptionRow extends Button {
   #paintTexts(context, theme, enabled) {
     const area = this.bounds;
     const { colors } = theme;
-    const left = area.x + PADDING + (this.stripeColor === null ? 0 : STRIPE_WIDTH);
+    const left = this.#contentLeft() + (this.avatar === null ? 0 : area.height * AVATAR_RADIUS * 2 + PADDING * 0.75);
     const width = area.width - (left - area.x) - PADDING - (this.selected ? CHECK_SIZE + PADDING : 0);
     const hasSubtitle = this.subtitle.length > 0;
     const titleHeight = hasSubtitle ? area.height * 0.55 : area.height;

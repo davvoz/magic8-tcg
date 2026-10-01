@@ -30,6 +30,8 @@ const EPOCH_REVEAL_INTERVAL_MS = 10 * 60 * 1000;
 const GAME_TICK_INTERVAL_MS = 1000;
 /** The rating window widens while a ticket waits, so the queue is re-run often. */
 const MATCHMAKING_INTERVAL_MS = 5000;
+/** Unanswered challenges lapse after a minute; both players hear of it within a few seconds. */
+const CHALLENGE_EXPIRY_INTERVAL_MS = 5000;
 /** One broadcast round per block. */
 const BROADCAST_INTERVAL_MS = 3000;
 const TRACKER_INTERVAL_MS = 6000;
@@ -119,6 +121,7 @@ async function main() {
     every(NOTIFICATION_PURGE_INTERVAL_MS, "notification retention", () => app.notifications.purge(), logger),
     every(MATCHMAKING_INTERVAL_MS, "matchmaking", () => app.matchmaking.pair(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "queue expiry", () => app.matchmaking.expireStale(), logger),
+    every(CHALLENGE_EXPIRY_INTERVAL_MS, "challenge expiry", async () => app.lobby.expireDue(), logger),
   ];
   const chainModule = app.chain;
   if (chainModule !== null) {

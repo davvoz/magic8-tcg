@@ -130,6 +130,7 @@ export async function buildTestApp(options = {}) {
     marketplacePolicy,
     salesPolicy: options.salesPolicy,
     timePolicy,
+    lobbyPolicy: options.lobbyPolicy,
     publishing,
     chainPolicies,
     ackSigner: options.ackSigner === undefined ? testAckSigner : options.ackSigner,

@@ -110,6 +110,10 @@ Monitoraggio (fuori da `/api/admin`): `GET /api/health`, `GET /api/ready` e `GET
 | `game.concede` | `{ "gameId", "commandId", "expectedVersion"?, "signature"? }` | Scorciatoia per `CONCEDE`; in v2 firmata come una mossa |
 | `watch.start` | `{ "gameId" }` | Guarda una partita (una alla volta); risposta `watch.state` (10) |
 | `watch.stop` | `{}` | Smette di guardare; risposta `watch.stopped` |
+| `lobby.list` | `{}` | Chi è online e le proprie sfide; risposta `lobby.players` (17) |
+| `challenge.send` | `{ "to", "mode": "casual"\|"ranked", "deckId" }` | Sfida un giocatore online; il mazzo viene rivalidato e congelato. Risposta `challenge.sent` (17) |
+| `challenge.accept` | `{ "challengeId", "deckId" }` | Accetta: la partita parte subito (`match.found` a entrambi). Risposta `challenge.accepted` (17) |
+| `challenge.decline` / `challenge.cancel` | `{ "challengeId" }` | Rifiuta una sfida ricevuta / ritira la propria (17) |
 
 ### 3.4 Server → client
 
@@ -129,6 +133,7 @@ Monitoraggio (fuori da `/api/admin`): `GET /api/health`, `GET /api/ready` e `GET
 | `notification`, `notifications.resync` | una notifica appena scritta (per esempio `shop.fulfilled` quando un ordine è evaso), oppure la richiesta di rileggere il feed (15) |
 | `trade.updated` | `{ "tradeId" }` a entrambi i giocatori a ogni cambiamento di uno scambio (13) |
 | `sales.board`, `sale.updated` | `{ "listingId" }`: la bacheca è cambiata / un annuncio del venditore o del compratore è cambiato (14) |
+| `challenge.received`, `challenge.closed` | una sfida ricevuta / una sfida chiusa, con il motivo (`accepted`, `declined`, `cancelled`, `expired`, `offline`, `busy`, `maintenance`) (17) |
 | `error` | `{ "code", "message" }` |
 
 Codici d'errore del comando: quelli del motore (`NOT_YOUR_TURN`, `NOT_ALLOWED_IN_PHASE`, `INVALID_COMMAND`, …) più `STALE_VERSION`, `NOT_IN_GAME`, `GAME_NOT_ACTIVE`, `RATE_LIMITED` e, in v2, `SESSION_REQUIRED`, `INVALID_SIGNATURE`. Errori del canale: `BAD_MESSAGE` (envelope malformato; 10 volte → chiusura 4002), `UNKNOWN_MESSAGE`, `VALIDATION` (campi sconosciuti inclusi, come per HTTP). Ogni messaggio con `id` riceve una risposta.

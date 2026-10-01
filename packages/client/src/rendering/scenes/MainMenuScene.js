@@ -6,6 +6,7 @@
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
+import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -25,6 +26,8 @@ const ORNAMENT_Y = 314;
 const BUTTONS_Y = 360;
 const SUMMARY = Object.freeze({ y: 718, lineHeight: 28, width: 900 });
 const BELL = Object.freeze({ width: 260, height: 48, margin: 40 });
+/** The signed-in player's portrait and name, in the top-left corner (the bell's mirror). */
+const PROFILE = Object.freeze({ size: 56, nameWidth: 320 });
 
 export class MainMenuScene extends Scene {
   #app;
@@ -97,6 +100,7 @@ export class MainMenuScene extends Scene {
     });
 
     this.#buildBell(width);
+    this.#buildProfile();
     const draft = this.#draftSummary();
     const lines = [
       { text: this.#accountSummary(), colorKey: "accentLight" },
@@ -143,6 +147,18 @@ export class MainMenuScene extends Scene {
         onActivate: () => this.services.navigate(SceneId.NOTIFICATIONS),
       }),
     );
+  }
+
+  /** The signed-in player's STEEM profile picture and name. */
+  #buildProfile() {
+    const state = this.#app.identity?.state;
+    const user = state?.status === IdentityStatus.SIGNED_IN ? state.user : null;
+    if (user === null || user === undefined) {
+      return;
+    }
+    const top = BELL.margin / 2 + (BELL.height - PROFILE.size) / 2;
+    this.root.add(new AvatarNode({ id: "profile.avatar", x: BELL.margin, y: top, size: PROFILE.size, account: user.account }));
+    this.root.add(new Label({ id: "profile.name", x: BELL.margin + PROFILE.size + 14, y: top, width: PROFILE.nameWidth, height: PROFILE.size, text: `@${user.account}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
   }
 
   /** Online play, once signed in and the account is loaded. */

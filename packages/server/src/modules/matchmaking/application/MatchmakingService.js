@@ -14,6 +14,8 @@
  *   pairing rules: like casual, the two oldest tickets play each other
  *   straight away, whatever their ratings or how often they met today
  *   (games over the daily limit are recorded but not rated, T24).
+ * - Direct games (a challenge accepted in the lobby) skip the queue but
+ *   are created here too, under the same rule: one game per player.
  */
 import { AppError } from "../../../kernel/AppError.js";
 import { uuidV4 } from "../../../kernel/random.js";
@@ -119,6 +121,50 @@ export class MatchmakingService {
   async status(userId) {
     const ticket = await this.#repository.findWaiting(userId);
     return ticket === null ? Object.freeze({ state: "idle" }) : Object.freeze({ state: "searching", mode: ticket.mode, since: ticket.createdAt });
+  }
+
+  /** The users waiting in a queue now. */
+  async waitingUsers() {
+    return new Set(await this.#repository.waitingUsers());
+  }
+
+  /**
+   * A game between two chosen players, with no queue (a challenge accepted,
+   * the lobby module). Their waiting tickets are cancelled in the same unit
+   * of work as the game is created: a ticket the pairing holds makes the
+   * cancel wait for it, and a game it gave either player meanwhile makes
+   * this one fail, so nobody ends up in two games. Decks were validated by
+   * the caller (and frozen when each player chose theirs).
+   * @param {{ mode: unknown, entrants: readonly Readonly<{ userId: string, account: string, deckId: string, deck: readonly Readonly<{ cardId: string, count: number }>[] }>[] }} request
+   * @returns {Promise<string>} the game's id
+   */
+  async startDirect({ mode: requested, entrants }) {
+    const mode = MODES.find((known) => known === requested);
+    if (mode === undefined) {
+      throw new AppError("VALIDATION", `mode must be one of ${MODES.join(", ")}`);
+    }
+    this.#gate.assertOpen("Matchmaking");
+    const now = this.#clock.now();
+    const { staged, unqueued } = await this.#unitOfWork(async () => {
+      const cancelled = [];
+      for (const entrant of entrants) {
+        if ((await this.#repository.cancelWaiting(entrant.userId, now)) > 0) {
+          cancelled.push(entrant.userId);
+        }
+      }
+      for (const entrant of entrants) {
+        if ((await this.#games.activeGameOf(entrant.userId)) !== null) {
+          throw new AppError("CONFLICT", `@${entrant.account} is already in a game`);
+        }
+      }
+      return { staged: await this.#games.stageGame({ mode, entrants }), unqueued: cancelled };
+    });
+    for (const userId of unqueued) {
+      this.#notifier.send(userId, "queue.status", { state: "idle" });
+    }
+    this.#games.launchGame(staged);
+    this.#logger.info("direct game made", { game: staged.game.id, mode });
+    return staged.game.id;
   }
 
   /**

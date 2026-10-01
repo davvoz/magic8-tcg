@@ -508,12 +508,14 @@ export class MatchScene extends Scene {
    * @param {MatchInteraction} interaction
    */
   #buildPlayers(snapshot, layout, interaction) {
+    // Online, every seat is a STEEM account (its name): the HUD shows their profile pictures.
+    const online = snapshot.players.some((player) => this.#session?.controllerKindOf(player.id) === "remote");
     for (const seat of [layout.opponent, layout.me]) {
       const player = snapshot.players.find((candidate) => candidate.id === seat.id);
       if (player === undefined) {
         continue;
       }
-      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeKick: () => this.#presenter.lifeKickFor(player.id) }));
+      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeKick: () => this.#presenter.lifeKickFor(player.id), avatar: online ? player.name : null }));
     }
   }
 

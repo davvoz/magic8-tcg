@@ -1,7 +1,7 @@
 /**
  * The session-level WebSocket messages, which span modules: `hello` (who
  * am I, which game am I in, am I queued) and presence (a connection that
- * comes or goes). A reconnecting client gets its game's full state in the
+ * comes or goes: the queue and the challenges of a player who left close). A reconnecting client gets its game's full state in the
  * welcome and resumes from there (docs/tcg/02-protocollo-multiplayer.md §3.6).
  */
 import { validated } from "./platform/http/validateBody.js";
@@ -35,13 +35,14 @@ export function registerSessionMessages({ router, games, matchmaking, clock }) {
 
 /**
  * What happens when a user's connection comes or goes.
- * @param {{ games: import("./modules/gameplay/index.js").GameService, matchmaking: import("./modules/matchmaking/index.js").MatchmakingService }} deps
+ * @param {{ games: import("./modules/gameplay/index.js").GameService, matchmaking: import("./modules/matchmaking/index.js").MatchmakingService, lobby: import("./modules/lobby/index.js").LobbyService }} deps
  * @returns {(userId: string, connected: boolean) => Promise<void>}
  */
-export function presenceHandler({ games, matchmaking }) {
+export function presenceHandler({ games, matchmaking, lobby }) {
   return async (userId, connected) => {
     if (!connected) {
-      // Nobody can be matched while away: they would not see the game start.
+      // Nobody can be matched or challenged while away: they would not see the game start.
+      lobby.disconnected(userId);
       await matchmaking.leave(userId);
     }
     await games.presence(userId, connected);

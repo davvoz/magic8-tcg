@@ -61,6 +61,12 @@ export class PgMatchmakingRepository {
     return rows.map((row) => row.user_id);
   }
 
+  /** @returns {Promise<string[]>} the users with a waiting ticket */
+  async waitingUsers() {
+    const rows = await this.#db.rows("SELECT user_id FROM matchmaking WHERE status = 'WAITING'");
+    return rows.map((row) => row.user_id);
+  }
+
   /** @param {string} userId */
   async findWaiting(userId) {
     const row = await this.#db.maybeOne("SELECT * FROM matchmaking WHERE user_id = $1 AND status = 'WAITING'", [userId]);

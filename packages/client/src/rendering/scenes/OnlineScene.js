@@ -1,19 +1,29 @@
 /**
- * The online lobby: pick one of your account decks and a mode (casual, or
- * ranked once the server says you may), find an opponent, and go to the
- * match when the server starts it. A game already running (after a reload
- * or a dropped connection) is offered for resuming. Your ranked standing
- * and the leaderboard come from the server.
+ * The online lobby: pick one of your account decks, then either find an
+ * opponent in the queue (casual, or ranked once the server says you may)
+ * or challenge one of the players online — and go to the match when the
+ * server starts the game. A game already running (after a reload or a
+ * dropped connection) is offered for resuming. Your ranked standing and
+ * the leaderboard come from the server.
+ *
+ * The middle column lists who else is online, with their profile picture
+ * and what they are doing; the challenges you received come first. A click
+ * on a player proposes a casual or ranked game with the selected deck; a
+ * click on a challenge accepts it (with the selected deck) or declines it.
+ * The list is read again every few seconds while the lobby is shown.
  *
  * Once matched (protocol v2), the game waits until both players accept it
  * with Keychain: the lobby says who has. If either does not, the game is
  * cancelled, the lobby says who did not accept, and a new search can start.
  */
+import { ChallengeMode, PlayerActivity } from "../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
 import { factionTones } from "../theme/Theme.js";
+import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
+import { Modal } from "../ui/Modal.js";
 import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
@@ -23,16 +33,26 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "online.decks";
+const PLAYERS_ID = "online.players";
 const BUTTON = Object.freeze({ height: 60 });
 const MODE = Object.freeze({ y: 64, height: 48, gap: 12 });
+/** The three columns: your decks, the players online, the game. */
+const LAYOUT = Object.freeze({
+  decks: Object.freeze({ x: 60, width: 440 }),
+  players: Object.freeze({ x: 520, width: 500 }),
+  game: Object.freeze({ x: 1040, width: 500 }),
+});
+const PLAYER_ROW = Object.freeze({ height: 64, gap: 8 });
+const DIALOG = Object.freeze({ width: 680, height: 320, avatar: 72, buttonHeight: 52, gap: 14 });
 export const QueueMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
 /** @typedef {typeof QueueMode[keyof typeof QueueMode]} Mode */
+/** @typedef {{ kind: "challenge", account: string } | { kind: "answer", challengeId: string }} Dialog */
 
 /** What the lobby says in each state. */
 const STATUS_TEXT = Object.freeze({
   [OnlineStatus.OFFLINE]: () => "Not connected to the game server. Reconnecting…",
   [OnlineStatus.CONNECTING]: () => "Connecting to the game server…",
-  [OnlineStatus.IDLE]: () => "Choose a deck and find an opponent. The first player is drawn by lot.",
+  [OnlineStatus.IDLE]: () => "Choose a deck, then find an opponent or challenge a player online. The first player is drawn by lot.",
   [OnlineStatus.SEARCHING]: () => "Looking for an opponent…",
   [OnlineStatus.MATCHED]: (state) => matchedText(state),
   [OnlineStatus.PLAYING]: (state) => `Your game against @${state.opponent ?? "?"} is in progress.`,
@@ -40,16 +60,25 @@ const STATUS_TEXT = Object.freeze({
   [OnlineStatus.CANCELLED]: () => "The game was cancelled before it started.",
 });
 
+/** What a player online is doing, as their row says it. */
+const ACTIVITY_TEXT = Object.freeze({
+  [PlayerActivity.IDLE]: "Ready to play · click to challenge",
+  [PlayerActivity.SEARCHING]: "Looking for a match · click to challenge",
+  [PlayerActivity.PLAYING]: "In a game",
+});
+
 export class OnlineScene extends Scene {
   #app;
-  /** @type {(() => void) | null} */
-  #unsubscribe = null;
+  /** @type {Array<() => void>} */
+  #unsubscribes = [];
   /** @type {string | null} */
   #selectedId = null;
   /** @type {Mode} */
   #mode = QueueMode.CASUAL;
-  /** @type {(() => void) | null} */
-  #unsubscribeRanking = null;
+  /** The challenge dialog open, if any (rebuilt with the scene). @type {Dialog | null} */
+  #dialog = null;
+  /** Scroll offsets by list id, kept across rebuilds (the list of players refreshes every few seconds). @type {Record<string, number>} */
+  #scroll = {};
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -62,24 +91,33 @@ export class OnlineScene extends Scene {
 
   enter() {
     const online = this.#online();
-    this.#unsubscribe = online.subscribe((state) => this.#onChange(state));
+    this.#unsubscribes.push(online.subscribe((state) => this.#onChange(state)));
     online.start();
     if (this.#app.ranking !== undefined) {
-      this.#unsubscribeRanking = this.#app.ranking.subscribe(() => this.#rebuild());
+      this.#unsubscribes.push(this.#app.ranking.subscribe(() => this.#rebuild()));
       this.#app.ranking.refresh();
+    }
+    const lobby = this.#app.lobby;
+    if (lobby !== undefined) {
+      this.#unsubscribes.push(lobby.subscribe(() => this.#rebuild()));
+      lobby.start();
+      this.#unsubscribes.push(lobby.watch());
     }
     this.#rebuild();
   }
 
   exit() {
-    this.#unsubscribe?.();
-    this.#unsubscribe = null;
-    this.#unsubscribeRanking?.();
-    this.#unsubscribeRanking = null;
+    this.#unsubscribes.forEach((unsubscribe) => unsubscribe());
+    this.#unsubscribes = [];
+    this.#dialog = null;
     super.exit();
   }
 
   onCancel() {
+    if (this.modal !== null) {
+      super.onCancel();
+      return;
+    }
     this.#leave();
   }
 
@@ -101,6 +139,10 @@ export class OnlineScene extends Scene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
+    this.#rememberScroll();
+    if (this.modal !== null) {
+      this.closeModal();
+    }
     this.root.clear();
     const { viewport } = this.services;
     this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 400, height: HEADER.height, text: "Play online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
@@ -112,15 +154,17 @@ export class OnlineScene extends Scene {
       this.root.add(new Button({ id: "online.watch", x: viewport.logicalWidth - HEADER.sideMargin - 3 * HEADER.backWidth - 32, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Watch", onActivate: () => this.services.navigate(SceneId.LIVE_GAMES) }));
     }
     const firstDeck = this.#buildDecks();
+    this.#buildPlayers();
     const action = this.#buildActions();
     this.focus(this.root.findById(focusedId) ?? action ?? firstDeck ?? back);
+    this.#reopenDialog(focusedId);
     this.services.requestRender();
   }
 
   /** @returns {Button | null} */
   #buildDecks() {
-    const panel = this.root.add(new Panel({ x: COLUMNS.left.x, y: COLUMNS.top, width: COLUMNS.left.width, height: COLUMNS.height }));
-    const width = COLUMNS.left.width - 2 * INSET;
+    const panel = this.root.add(new Panel({ x: LAYOUT.decks.x, y: COLUMNS.top, width: LAYOUT.decks.width, height: COLUMNS.height }));
+    const width = LAYOUT.decks.width - 2 * INSET;
     panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "Your decks", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
     const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: 60, width, height: COLUMNS.height - 60 - INSET }));
     const decks = this.#online().decks();
@@ -156,47 +200,120 @@ export class OnlineScene extends Scene {
       first ??= row;
     });
     list.contentHeight = rowsHeight(decks.length);
+    list.scrollTo(this.#scroll[LIST_ID] ?? 0);
     return first;
+  }
+
+  /** The players online, the challenges received first. */
+  #buildPlayers() {
+    const panel = this.root.add(new Panel({ x: LAYOUT.players.x, y: COLUMNS.top, width: LAYOUT.players.width, height: COLUMNS.height }));
+    const width = LAYOUT.players.width - 2 * INSET;
+    const lobby = this.#app.lobby;
+    const players = lobby?.state.players ?? [];
+    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "Players online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    if (lobby?.state.loaded) {
+      panel.add(new Label({ id: "online.players.count", x: INSET, y: 14, width, height: 36, text: String(players.length), size: "body", weight: "bold", colorKey: "textMuted", align: "right" }));
+    }
+    const list = panel.add(new ScrollList({ id: PLAYERS_ID, x: INSET, y: 60, width, height: COLUMNS.height - 60 - INSET }));
+    if (lobby === undefined) {
+      return;
+    }
+    const { incoming, outgoing } = lobby.state;
+    const canChallenge = this.#free();
+    /** @type {{ id: string, text: string, subtitle: string, avatar: string, selected: boolean, enabled: boolean, onActivate: () => void }[]} */
+    const rows = [
+      ...incoming.map((challenge) => ({
+        id: `online.challenge.${challenge.id}`,
+        text: `@${challenge.from} challenges you`,
+        subtitle: `${modeName(challenge.mode)} game · click to answer`,
+        avatar: challenge.from,
+        selected: true,
+        enabled: this.#online().state.status !== OnlineStatus.PLAYING,
+        onActivate: () => this.#openDialog({ kind: "answer", challengeId: challenge.id }),
+      })),
+      ...players.map((player) => {
+        const challenged = outgoing?.to === player.account;
+        return {
+          id: `online.player.${player.account}`,
+          text: `@${player.account}`,
+          subtitle: challenged ? `${modeName(outgoing.mode)} challenge sent · waiting for an answer` : (ACTIVITY_TEXT[/** @type {keyof typeof ACTIVITY_TEXT} */ (player.status)] ?? ""),
+          avatar: player.account,
+          selected: challenged,
+          enabled: canChallenge && !challenged && player.status !== PlayerActivity.PLAYING,
+          onActivate: () => this.#openDialog({ kind: "challenge", account: player.account }),
+        };
+      }),
+    ];
+    rows.forEach((row, index) => list.add(new OptionRow({ ...row, x: 0, y: index * (PLAYER_ROW.height + PLAYER_ROW.gap), width: list.rowWidth, height: PLAYER_ROW.height })));
+    if (rows.length === 0) {
+      const text = lobby.state.loaded ? "Nobody else is online right now. Find a match in the queue, or wait here: players appear as they arrive." : "Looking for players online…";
+      list.add(new TextBlock({ id: "online.players.empty", x: 0, y: 0, width: list.rowWidth, height: 4 * 26, text, size: "small", colorKey: "textMuted" }));
+      list.contentHeight = 4 * 26;
+      return;
+    }
+    list.contentHeight = rows.length * (PLAYER_ROW.height + PLAYER_ROW.gap) - PLAYER_ROW.gap;
+    list.scrollTo(this.#scroll[PLAYERS_ID] ?? 0);
   }
 
   /** @returns {Button | null} the main action */
   #buildActions() {
-    const online = this.#online();
-    const state = online.state;
-    const panel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
-    const width = COLUMNS.right.width - 2 * INSET;
+    const state = this.#online().state;
+    const panel = this.root.add(new Panel({ x: LAYOUT.game.x, y: COLUMNS.top, width: LAYOUT.game.width, height: COLUMNS.height }));
+    const width = LAYOUT.game.width - 2 * INSET;
     panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: this.#mode === QueueMode.RANKED ? "Ranked game" : "Casual game", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
     const top = this.#buildModes(panel, width, state);
-    const status = STATUS_TEXT[/** @type {keyof typeof STATUS_TEXT} */ (state.status)]?.(state) ?? "";
-    panel.add(new TextBlock({ id: "online.status", x: INSET, y: top, width, height: 3 * 28, text: status, size: "body", colorKey: "text" }));
-    if (state.error !== null) {
-      panel.add(new TextBlock({ id: "online.error", x: INSET, y: top + 96, width, height: 2 * 28, text: state.error.message, size: "small", colorKey: "danger" }));
+    panel.add(new TextBlock({ id: "online.status", x: INSET, y: top, width, height: 4 * 28, text: this.#statusText(), size: "body", colorKey: "text" }));
+    const error = state.error ?? this.#app.lobby?.state.error ?? null;
+    if (error !== null) {
+      panel.add(new TextBlock({ id: "online.error", x: INSET, y: top + 120, width, height: 2 * 28, text: error.message, size: "small", colorKey: "danger" }));
     }
-    panel.add(new TextBlock({ x: INSET, y: top + 176, width, height: 4 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and every move of the game is recorded.", size: "small", colorKey: "textMuted" }));
-    const y = COLUMNS.height - INSET - BUTTON.height;
+    panel.add(new TextBlock({ x: INSET, y: top + 190, width, height: 5 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and every move of the game is recorded.", size: "small", colorKey: "textMuted" }));
+    return panel.add(new Button({ ...this.#mainAction(), x: INSET, y: COLUMNS.height - INSET - BUTTON.height, width, height: BUTTON.height }));
+  }
+
+  /** The challenge the player has out, while they wait for an answer (not once a game is on). */
+  #waitingChallenge() {
+    const outgoing = this.#app.lobby?.state.outgoing ?? null;
+    return outgoing !== null && this.#free() ? outgoing : null;
+  }
+
+  #statusText() {
+    const state = this.#online().state;
+    const waiting = this.#waitingChallenge();
+    if (waiting !== null) {
+      return `Waiting for @${waiting.to} to accept your ${modeName(waiting.mode).toLowerCase()} challenge. They have a minute to answer.`;
+    }
+    return STATUS_TEXT[/** @type {keyof typeof STATUS_TEXT} */ (state.status)]?.(state) ?? "";
+  }
+
+  /**
+   * The big button of the game column: stop searching, resume the game, withdraw the challenge, or find a match.
+   * @returns {{ id: string, text: string, variant?: import("../ui/Button.js").ButtonVariant, enabled?: boolean, onActivate: () => void }}
+   */
+  #mainAction() {
+    const online = this.#online();
+    const state = online.state;
     if (state.status === OnlineStatus.SEARCHING) {
-      return panel.add(new Button({ id: "online.cancel", x: INSET, y, width, height: BUTTON.height, text: "Stop searching", onActivate: () => online.leaveQueue() }));
+      return { id: "online.cancel", text: "Stop searching", onActivate: () => online.leaveQueue() };
     }
     if (state.status === OnlineStatus.PLAYING && state.session !== null) {
-      return panel.add(new Button({ id: "online.resume", x: INSET, y, width, height: BUTTON.height, text: "Resume your game", variant: "primary", onActivate: () => this.services.navigate(SceneId.MATCH, { session: online.resume(), againScene: SceneId.ONLINE }) }));
+      return { id: "online.resume", text: "Resume your game", variant: "primary", onActivate: () => this.services.navigate(SceneId.MATCH, { session: online.resume(), againScene: SceneId.ONLINE }) };
+    }
+    if (this.#waitingChallenge() !== null) {
+      return { id: "online.withdraw", text: "Withdraw challenge", onActivate: () => this.#app.lobby?.cancel() };
     }
     const canQueue = state.status === OnlineStatus.IDLE || state.status === OnlineStatus.OVER || state.status === OnlineStatus.CANCELLED;
-    return panel.add(
-      new Button({
-        id: "online.find",
-        x: INSET,
-        y,
-        width,
-        height: BUTTON.height,
-        text: "Find a match",
-        variant: "primary",
-        enabled: canQueue && this.#selectedId !== null,
-        onActivate: () => {
-          online.dismissGame();
-          online.queue(/** @type {string} */ (this.#selectedId), this.#mode);
-        },
-      }),
-    );
+    return {
+      id: "online.find",
+      text: "Find a match",
+      variant: "primary",
+      enabled: canQueue && this.#selectedId !== null,
+      onActivate: () => {
+        online.dismissGame();
+        this.#app.lobby?.clearError();
+        online.queue(/** @type {string} */ (this.#selectedId), this.#mode);
+      },
+    };
   }
 
   /**
@@ -210,8 +327,7 @@ export class OnlineScene extends Scene {
     if (ranking === undefined) {
       return MODE.y;
     }
-    const standing = ranking.state.standing;
-    const eligible = standing?.eligible === true;
+    const eligible = this.#rankedAllowed();
     if (!eligible) {
       this.#mode = QueueMode.CASUAL;
     }
@@ -231,10 +347,169 @@ export class OnlineScene extends Scene {
     return MODE.y + MODE.height + 70;
   }
 
+  /**
+   * Opens a challenge dialog (and keeps it open across rebuilds while it still applies).
+   * @param {Dialog} dialog
+   */
+  #openDialog(dialog) {
+    this.#dialog = dialog;
+    this.#app.lobby?.clearError();
+    this.#rebuild();
+  }
+
+  #closeDialog() {
+    this.#dialog = null;
+    this.#rebuild();
+  }
+
+  /**
+   * Shows the open dialog again after a rebuild, or forgets it when it no longer applies
+   * (the player left, the challenge closed).
+   * @param {string} focusedId
+   */
+  #reopenDialog(focusedId) {
+    const modal = this.#dialog === null ? null : this.#dialogModal(this.#dialog);
+    if (modal === null) {
+      this.#dialog = null;
+      return;
+    }
+    this.openModal(modal);
+    const focused = modal.findById(focusedId);
+    if (focused !== null && focused.focusable) {
+      this.focus(focused);
+    }
+  }
+
+  /**
+   * @param {Dialog} dialog
+   * @returns {Modal | null}
+   */
+  #dialogModal(dialog) {
+    const lobby = this.#app.lobby;
+    if (lobby === undefined) {
+      return null;
+    }
+    if (dialog.kind === "answer") {
+      const challenge = lobby.state.incoming.find((open) => open.id === dialog.challengeId);
+      return challenge === undefined ? null : this.#answerModal(challenge);
+    }
+    const player = lobby.state.players.find((candidate) => candidate.account === dialog.account);
+    return player === undefined || player.status === PlayerActivity.PLAYING || !this.#free() ? null : this.#challengeModal(player.account);
+  }
+
+  /**
+   * Proposes a casual or ranked game to a player, with the selected deck.
+   * @param {string} account
+   */
+  #challengeModal(account) {
+    const deck = this.#selectedDeck();
+    const message = deck === null ? "Choose one of your playable decks first: it is the deck you will play with." : `You play with “${deck.name}”. @${account} has a minute to accept, with a deck of their own.`;
+    const ranked = this.#rankedAllowed() ? "" : " Ranked opens once you have played enough casual games.";
+    const send = (/** @type {string} */ mode) => {
+      this.#dialog = null;
+      void this.#app.lobby?.challenge(account, mode, /** @type {{ id: string }} */ (deck).id);
+      this.#rebuild();
+    };
+    return this.#dialogFrame({
+      account,
+      title: `Challenge @${account}`,
+      message: message + ranked,
+      buttons: [
+        { id: "challenge.close", text: "Cancel", variant: "secondary", enabled: true, onActivate: () => this.#closeDialog() },
+        { id: "challenge.casual", text: "Casual game", variant: "primary", enabled: deck !== null, onActivate: () => send(ChallengeMode.CASUAL) },
+        { id: "challenge.ranked", text: "Ranked game", variant: "primary", enabled: deck !== null && this.#rankedAllowed(), onActivate: () => send(ChallengeMode.RANKED) },
+      ],
+    });
+  }
+
+  /**
+   * Accepts (with the selected deck) or declines a challenge received.
+   * @param {import("../../application/lobby/LobbyService.js").Challenge} challenge
+   */
+  #answerModal(challenge) {
+    const deck = this.#selectedDeck();
+    const game = `A ${modeName(challenge.mode).toLowerCase()} game.`;
+    const message = deck === null ? `${game} Choose one of your playable decks to accept it.` : `${game} You play with “${deck.name}”; the game starts as soon as you accept.`;
+    const lobby = /** @type {import("../../application/lobby/LobbyService.js").LobbyService} */ (this.#app.lobby);
+    return this.#dialogFrame({
+      account: challenge.from,
+      title: `@${challenge.from} challenges you`,
+      message,
+      buttons: [
+        { id: "challenge.close", text: "Not now", variant: "secondary", enabled: true, onActivate: () => this.#closeDialog() },
+        {
+          id: "challenge.decline",
+          text: "Decline",
+          variant: "danger",
+          enabled: true,
+          onActivate: () => {
+            this.#dialog = null;
+            void lobby.decline(challenge.id);
+          },
+        },
+        {
+          id: "challenge.accept",
+          text: "Accept",
+          variant: "primary",
+          enabled: deck !== null && this.#free(),
+          onActivate: () => {
+            this.#dialog = null;
+            this.#online().dismissGame();
+            void lobby.accept(challenge.id, /** @type {{ id: string }} */ (deck).id);
+            this.#rebuild();
+          },
+        },
+      ],
+    });
+  }
+
+  /**
+   * A challenge dialog: the other player's portrait, a title, a message and a row of buttons.
+   * @param {{ account: string, title: string, message: string, buttons: readonly { id: string, text: string, variant: import("../ui/Button.js").ButtonVariant, enabled: boolean, onActivate: () => void }[] }} content
+   */
+  #dialogFrame({ account, title, message, buttons }) {
+    const { viewport } = this.services;
+    const modal = new Modal({ id: "challenge", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: DIALOG.width, panelHeight: DIALOG.height, onDismiss: () => this.#closeDialog() });
+    const { panel } = modal;
+    const inner = DIALOG.width - 2 * INSET;
+    panel.add(new AvatarNode({ x: INSET, y: INSET, size: DIALOG.avatar, account }));
+    const textX = INSET + DIALOG.avatar + 20;
+    const textWidth = DIALOG.width - INSET - textX;
+    panel.add(new Label({ id: "challenge.title", x: textX, y: INSET + 4, width: textWidth, height: 40, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new TextBlock({ id: "challenge.message", x: textX, y: INSET + 52, width: textWidth, height: 4 * 26, text: message, size: "small", colorKey: "textMuted" }));
+    const buttonWidth = (inner - (buttons.length - 1) * DIALOG.gap) / buttons.length;
+    const y = DIALOG.height - INSET - DIALOG.buttonHeight;
+    buttons.forEach((button, index) => panel.add(new Button({ ...button, x: INSET + index * (buttonWidth + DIALOG.gap), y, width: buttonWidth, height: DIALOG.buttonHeight })));
+    return modal;
+  }
+
+  /** Whether the player may challenge or accept now: not in a game, and none starting. */
+  #free() {
+    const status = this.#online().state.status;
+    return status !== OnlineStatus.MATCHED && status !== OnlineStatus.PLAYING && status !== OnlineStatus.OFFLINE && status !== OnlineStatus.CONNECTING;
+  }
+
+  #rankedAllowed() {
+    return this.#app.ranking?.state.standing?.eligible === true;
+  }
+
+  #selectedDeck() {
+    return this.#online().decks().find((deck) => deck.id === this.#selectedId && deck.playable) ?? null;
+  }
+
   /** @param {Mode} mode */
   #choose(mode) {
     this.#mode = mode;
     this.#rebuild();
+  }
+
+  #rememberScroll() {
+    for (const id of [LIST_ID, PLAYERS_ID]) {
+      const list = this.root.findById(id);
+      if (list instanceof ScrollList) {
+        this.#scroll[id] = list.scrollY;
+      }
+    }
   }
 
   #leave() {
@@ -251,6 +526,11 @@ export class OnlineScene extends Scene {
     }
     return this.#app.online;
   }
+}
+
+/** @param {string} mode */
+function modeName(mode) {
+  return mode === ChallengeMode.RANKED ? "Ranked" : "Casual";
 }
 
 /**

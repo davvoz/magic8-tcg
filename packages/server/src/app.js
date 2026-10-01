@@ -25,6 +25,7 @@ import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository, RefundWa
 import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, registerMonitoringRoutes } from "./modules/admin/index.js";
 import { GameService, PgGameRepository, registerGameMessages, registerGameRoutes } from "./modules/gameplay/index.js";
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
+import { LobbyService, registerLobbyMessages } from "./modules/lobby/index.js";
 import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
 import { BoardRelay, PgSalesRepository, SaleSettlement, SalesService, registerSalesRoutes } from "./modules/sales/index.js";
@@ -54,6 +55,7 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   marketplacePolicy?: Partial<typeof DEFAULT_MARKETPLACE_POLICY>,
  *   salesPolicy?: Partial<typeof import("./modules/sales/index.js").DEFAULT_SALES_POLICY>,
  *   timePolicy?: Partial<import("./modules/gameplay/domain/TurnClock.js").TimePolicy>,
+ *   lobbyPolicy?: Partial<typeof import("./modules/lobby/index.js").DEFAULT_LOBBY_POLICY>,
  *   publishing?: { transactions: import("./modules/chain/application/ports.js").TransactionProvider, reader: import("./modules/chain/application/ports.js").PublicationReader } | null,
  *   alarmPolicy?: Partial<typeof import("./modules/admin/index.js").DEFAULT_ALARM_POLICY>,
  *   chainPolicies?: { broadcast?: object, tracker?: object, rc?: object },
@@ -64,7 +66,7 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
   const { staticFiles, publishing, ackSigner, verifyMoveSignature } = optionalAdapters(deps);
-  const { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy } = policiesOf(deps);
+  const { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy, lobbyPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
 
@@ -142,7 +144,23 @@ export async function createServerApp(deps) {
   const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: rankedSettings.value, games, clock, unitOfWork, logger });
   games.onGameFinished((summary) => ranking.record(summary).then(() => undefined));
   const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger, ranking, gate: maintenance });
+  // Who is online, and challenges between them (a game without the queue).
+  const lobby = new LobbyService({
+    hub,
+    accountsOf: (ids) => users.accountsOf(ids),
+    findUser: (account) => users.findByAccount(defaultNetwork, account),
+    matchmaking,
+    decks,
+    games,
+    ranking,
+    clock,
+    random,
+    logger,
+    gate: maintenance,
+    policy: lobbyPolicy,
+  });
   maintenance.onClose(() => matchmaking.closeQueue());
+  maintenance.onClose(async () => lobby.closeAll());
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, notifications, formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)), clock, unitOfWork, logger });
   const notificationRelay = new NotificationRelay({ notifications, listen, hub, logger });
   const boardRelay = new BoardRelay({ listen, hub, logger });
@@ -189,13 +207,14 @@ export async function createServerApp(deps) {
   });
   const messages = new MessageRouter();
   registerSessionMessages({ router: messages, games, matchmaking, clock });
+  registerLobbyMessages({ router: messages, lobby });
   registerGameMessages({ router: messages, games });
   registerQueueMessages({ router: messages, matchmaking });
   const realtime = new WebSocketGateway({
     hub,
     router: messages,
     authenticate: (token) => auth.authenticate(token),
-    onPresence: presenceHandler({ games, matchmaking }),
+    onPresence: presenceHandler({ games, matchmaking, lobby }),
     clock,
     logger,
     config: { allowedOrigins: config.allowedOrigins, sessionCookieName: config.sessionCookieName, trustProxy: config.trustProxy },
@@ -208,7 +227,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, realtime });
 }
 
 /** Anchoring states that prove a payload is on chain. */
@@ -260,8 +279,8 @@ function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = n
  * The tunable policies of createServerApp (tests shorten times, lower limits).
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function policiesOf({ identityPolicyOverrides = {}, marketplacePolicy = {}, salesPolicy = {}, timePolicy = {}, chainPolicies = {}, alarmPolicy = {} }) {
-  return { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy };
+function policiesOf({ identityPolicyOverrides = {}, marketplacePolicy = {}, salesPolicy = {}, timePolicy = {}, chainPolicies = {}, alarmPolicy = {}, lobbyPolicy = {} }) {
+  return { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy, lobbyPolicy };
 }
 
 /**
