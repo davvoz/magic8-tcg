@@ -37,7 +37,7 @@ describe("announced maintenance (real clients, real server)", () => {
     const bob = await w.player("bob");
     // What each page runs: read on load, then follow the pushes on the tab's connection.
     const watchOf = async (tab) => {
-      const watch = new MaintenanceWatch({ load: () => fetchServerStatus((url, init) => fetch(`${w.server.base}${url}`, init)), now: () => w.setup.clock.now() });
+      const watch = new MaintenanceWatch({ load: () => fetchServerStatus((url, init) => fetch(`${w.server.base}${url}`, init)), now: () => w.setup.clock.now(), page: { version: "0.2.0", build: null } });
       await watch.refresh();
       watch.follow(tab.connection);
       return watch;

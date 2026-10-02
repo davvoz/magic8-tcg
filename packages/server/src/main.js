@@ -3,6 +3,7 @@
  * builds real adapters, starts the HTTP server and the periodic jobs, shuts
  * down cleanly on SIGINT/SIGTERM.
  */
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
@@ -11,6 +12,7 @@ import { createServerApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { readServerContent } from "./contentFiles.js";
 import { verifySessionSignature } from "./kernel/crypto/sessionSignatures.js";
+import { parseJson } from "./kernel/json.js";
 import { createConsoleLogger, createJsonLogger } from "./kernel/logger.js";
 import { nodeSecureRandom } from "./kernel/random.js";
 import { systemClock } from "./kernel/time.js";
@@ -61,6 +63,7 @@ async function main() {
   const verifiers = config.steemNodes.map((node) => new SteemBlockchainProvider({ rpc: new SteemRpcClient({ nodes: [node] }) }));
   const steemPayments = new SteemTransferPaymentProvider({ history: chain, verifiers });
   const publishing = await openPublishing(config, rpc, chain);
+  const version = await productVersion();
   const staticFiles = config.serveClient
     ? new StaticFiles([
         { prefix: "/data/", directory: join(REPOSITORY_ROOT, "data") },
@@ -87,6 +90,7 @@ async function main() {
     publishing,
     ackSigner: ackSignerFrom(config, logger),
     verifyMoveSignature: verifySessionSignature,
+    version,
   });
 
   const restored = await app.games.restoreAll();
@@ -134,7 +138,7 @@ async function main() {
     chainModule.rc.runOnce().catch((error) => logger.warn("resource credits could not be read", { error: error instanceof Error ? error.message : String(error) }));
     chainModule.manifests.runOnce().catch((error) => logger.warn("root manifests could not be read", { error: error instanceof Error ? error.message : String(error) }));
   }
-  server.listen(config.port, config.host, () => logger.info("server listening", { host: config.host, port: config.port, origin: config.publicOrigin }));
+  server.listen(config.port, config.host, () => logger.info("server listening", { host: config.host, port: config.port, origin: config.publicOrigin, version, build: config.build }));
 
   const shutdown = (signal) => {
     logger.info("shutting down", { signal });
@@ -156,6 +160,12 @@ async function main() {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+}
+
+/** @returns {Promise<string>} the product version (the root package.json's), told to the browser tabs with the build */
+async function productVersion() {
+  const { version } = /** @type {{ version: string }} */ (parseJson(await readFile(join(REPOSITORY_ROOT, "package.json"), "utf8")));
+  return version;
 }
 
 /**

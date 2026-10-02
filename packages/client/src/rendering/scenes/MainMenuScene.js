@@ -107,7 +107,7 @@ export class MainMenuScene extends Scene {
       { text: this.#contentSummary(), colorKey: "textMuted" },
       { text: this.#storageSummary(), colorKey: "textMuted" },
       ...(draft === null ? [] : [{ text: draft, colorKey: "accent" }]),
-      { text: `engine ${this.#app.environment.version}`, colorKey: "disabledText" },
+      { text: this.#versionSummary(), colorKey: "disabledText" },
     ];
     lines.forEach((line, index) => {
       this.root.add(new Label({ x: centerX - SUMMARY.width / 2, y: SUMMARY.y + index * SUMMARY.lineHeight, width: SUMMARY.width, height: SUMMARY.lineHeight, text: line.text, size: "small", colorKey: line.colorKey, fit: true }));
@@ -242,5 +242,11 @@ export class MainMenuScene extends Scene {
   #storageSummary() {
     const saved = this.#app.deckSelection.listDecks().filter((option) => option.source === "custom").length;
     return `${saved} custom deck${saved === 1 ? "" : "s"} ${deckStorageText(this.#app)}`;
+  }
+
+  /** The game's release (so a player can tell which one they run), then the engine's. */
+  #versionSummary() {
+    const { release, version } = this.#app.environment;
+    return release === undefined ? `engine ${version}` : `Magic8 ${release} · engine ${version}`;
   }
 }

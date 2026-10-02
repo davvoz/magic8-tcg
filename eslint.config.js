@@ -20,12 +20,22 @@ const browserGlobals = {
   URL: "readonly",
   WebSocket: "readonly",
   location: "readonly",
+  navigator: "readonly",
+};
+
+/** What the service worker (packages/client/sw.js) runs with. */
+const serviceWorkerGlobals = {
+  self: "readonly",
+  caches: "readonly",
+  fetch: "readonly",
+  URL: "readonly",
 };
 
 const nodeGlobals = {
   fetch: "readonly",
   process: "readonly",
   Response: "readonly",
+  Headers: "readonly",
   DOMException: "readonly",
   setTimeout: "readonly",
   clearTimeout: "readonly",
@@ -74,6 +84,12 @@ export default [
     // Standalone pages next to the client (the game verifier, the manifest tool).
     files: ["packages/client/verify/**/*.js"],
     languageOptions: { ecmaVersion: 2022, sourceType: "module", globals: { ...browserGlobals, URLSearchParams: "readonly" } },
+    rules: qualityRules,
+  },
+  {
+    // The service worker: a classic script with its own globals, served from the site root.
+    files: ["packages/client/sw.js"],
+    languageOptions: { ecmaVersion: 2022, sourceType: "script", globals: serviceWorkerGlobals },
     rules: qualityRules,
   },
   {

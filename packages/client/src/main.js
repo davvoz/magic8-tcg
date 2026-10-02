@@ -70,6 +70,8 @@ import { validateTheme } from "./rendering/theme/Theme.js";
 import { MaintenanceBanner } from "./rendering/page/MaintenanceBanner.js";
 import { describeBanner } from "./application/maintenance/MaintenanceNotice.js";
 import { MaintenanceWatch } from "./application/maintenance/MaintenanceWatch.js";
+import { registerServiceWorker } from "./infrastructure/pwa/registerServiceWorker.js";
+import { RELEASE } from "./release.js";
 
 const ENGINE_VERSION = "0.9.0";
 
@@ -372,7 +374,7 @@ async function boot() {
     matchSetup: new MatchSetupService({ content: content.value, effects: createCoreEffectRegistry(), scheduler: browserScheduler, logger }),
     createSeed,
     logger,
-    environment: Object.freeze({ version: ENGINE_VERSION, storage: storageAvailable ? "local" : "memory" }),
+    environment: Object.freeze({ version: ENGINE_VERSION, release: describeRelease(RELEASE), storage: storageAvailable ? "local" : "memory" }),
     identity,
     account,
     shop,
@@ -439,23 +441,44 @@ function buildIllustrations(raw, catalog) {
 }
 
 /**
+ * @param {Readonly<{ version: string, build: string | null }>} release
+ * @returns {string} "v0.2.0 (0253e2b)" as deployed, "v0.2.0 dev" in development
+ */
+function describeRelease({ version, build }) {
+  return build === null ? `v${version} dev` : `v${version} (${build.slice(0, 7)})`;
+}
+
+/**
  * The maintenance banner starts on its own, before the game: it shows even
- * when the game fails to start. Read once now and every minute; boot() hands
- * it the realtime connection, on which the server pushes every change. It
- * also tells a lost connection, and a newer version with a button to reload.
+ * when the game fails to start. Read once now, every minute, and whenever the
+ * player comes back to the page (a phone may have frozen it for hours);
+ * boot() hands it the realtime connection, on which the server pushes every
+ * change. It also tells a lost connection, and a newer version than this
+ * page's release with a button to update (a reload: the service worker never
+ * serves an old version).
  */
 function watchMaintenance() {
-  const watch = new MaintenanceWatch({ load: () => fetchServerStatus((url, init) => fetch(url, init)), now: () => Date.now() });
+  const watch = new MaintenanceWatch({ load: () => fetchServerStatus((url, init) => fetch(url, init)), now: () => Date.now(), page: RELEASE });
   const banner = new MaintenanceBanner(document);
-  const reload = Object.freeze({ label: "Reload", onActivate: () => window.location.reload() });
+  const update = Object.freeze({ label: "Update", onActivate: () => window.location.reload() });
   const render = () => {
     const line = describeBanner(watch, Date.now());
-    banner.show(line?.text ?? null, line?.reload ? reload : null);
+    banner.show(line?.text ?? null, line?.reload ? update : null);
   };
   watch.subscribe(render);
   void watch.refresh();
   window.setInterval(render, MAINTENANCE_TICK_MS);
   window.setInterval(() => void watch.refresh(), SERVER_STATUS_POLL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void watch.refresh();
+    }
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      void watch.refresh();
+    }
+  });
   return watch;
 }
 
@@ -463,6 +486,7 @@ window.addEventListener("error", (event) => showFatal("Unexpected error", descri
 window.addEventListener("unhandledrejection", (event) => showFatal("Unexpected error", describeError(event.reason)));
 
 const maintenance = watchMaintenance();
+void registerServiceWorker(navigator.serviceWorker, logger);
 boot().catch((error) => {
   showFatal("Startup failed", describeError(error));
 });

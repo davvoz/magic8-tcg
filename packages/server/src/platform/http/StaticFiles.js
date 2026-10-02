@@ -20,6 +20,7 @@ const MIME_TYPES = Object.freeze({
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2",
   ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json",
 });
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Where players' profile pictures come from: the STEEM image service, which serves each account's avatar. */
@@ -60,6 +61,21 @@ export function pageCsp(html, connectSources = []) {
   ].join("; ");
 }
 
+/**
+ * @param {string | undefined} header If-None-Match: "*", or a list of tags (weak comparison)
+ * @param {string} etag
+ */
+function matchesEtag(header, etag) {
+  if (header === undefined) {
+    return false;
+  }
+  const opaque = etag.replace(/^W\//, "");
+  return header.split(",").some((tag) => {
+    const trimmed = tag.trim();
+    return trimmed === "*" || trimmed.replace(/^W\//, "") === opaque;
+  });
+}
+
 export class StaticFiles {
   #mounts;
   #connectSources;
@@ -94,8 +110,15 @@ export class StaticFiles {
     if (type === undefined || !info.isFile() || info.size > MAX_FILE_BYTES) {
       return false;
     }
+    // "no-cache": the browser (and the service worker, sw.js) asks every time, and an unchanged file costs a 304.
+    const etag = `W/"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`;
+    if (matchesEtag(request.headers["if-none-match"], etag)) {
+      response.writeHead(304, { ETag: etag, "Cache-Control": "no-cache" });
+      response.end();
+      return true;
+    }
     const content = await readFile(path);
-    const headers = { "Content-Type": type, "Content-Length": content.length, "Cache-Control": "no-cache" };
+    const headers = { "Content-Type": type, "Content-Length": content.length, "Cache-Control": "no-cache", ETag: etag };
     if (type.startsWith("text/html")) {
       headers["Content-Security-Policy"] = pageCsp(content.toString("utf8"), this.#connectSources);
     }

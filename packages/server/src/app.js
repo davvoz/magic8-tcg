@@ -61,11 +61,12 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   chainPolicies?: { broadcast?: object, tracker?: object, rc?: object },
  *   ackSigner?: import("./modules/gameplay/application/ports.js").AckSigner | null,
  *   verifyMoveSignature?: (message: string, signature: string, sessionKey: string) => boolean,
- * }} deps `verifyMoveSignature` (P-256) is needed for games in protocol v2
+ *   version?: string | null,
+ * }} deps `verifyMoveSignature` (P-256) is needed for games in protocol v2; `version`: the product's (root package.json)
  */
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
-  const { staticFiles, publishing, ackSigner, verifyMoveSignature } = optionalAdapters(deps);
+  const { staticFiles, publishing, ackSigner, verifyMoveSignature, version } = optionalAdapters(deps);
   const { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy, lobbyPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
@@ -195,7 +196,7 @@ export async function createServerApp(deps) {
     clock,
   });
   registerAdminRoutes({ router, admin });
-  registerMaintenanceRoutes({ router, maintenance, admin, build: config.build });
+  registerMaintenanceRoutes({ router, maintenance, admin, version, build: config.build });
   const rateLimiter = new RateLimiter({ now: () => clock.now() });
   const http = new HttpApp({
     router,
@@ -271,8 +272,8 @@ function moveSignatures(wallet, verifyMoveSignature) {
  * The optional adapters of createServerApp, with their defaults.
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = null, verifyMoveSignature = undefined }) {
-  return { staticFiles, publishing, ackSigner, verifyMoveSignature };
+function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = null, verifyMoveSignature = undefined, version = null }) {
+  return { staticFiles, publishing, ackSigner, verifyMoveSignature, version };
 }
 
 /**

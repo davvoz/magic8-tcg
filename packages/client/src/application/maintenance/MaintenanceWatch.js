@@ -4,23 +4,26 @@
  *   not), then pushed on the player's realtime connection ("maintenance"),
  *   and read again after a reconnection (pushes may have gone by meanwhile)
  *   and on every poll;
- * - the version it serves: the first one read is the one this page runs; a
- *   different one later means a deploy went live and the page is out of date;
+ * - the version it serves: a build other than the one this page runs
+ *   (src/release.js, stamped when the image is built) means a deploy went
+ *   live and the page is out of date;
  * - whether the realtime connection is lost (a deploy, a network drop).
  */
 
 import { parseMaintenanceNotice } from "./MaintenanceNotice.js";
 
 /** @typedef {import("./MaintenanceNotice.js").MaintenanceNotice} MaintenanceNotice */
-/** @typedef {Readonly<{ notice: MaintenanceNotice | null, build: string | null }>} ServerStatus */
+/** @typedef {Readonly<{ notice: MaintenanceNotice | null, version: string | null, build: string | null }>} ServerStatus */
 
 export class MaintenanceWatch {
   #load;
   #now;
   /** @type {MaintenanceNotice | null} */
   #notice = null;
-  /** The version this page runs: the first one the server named. @type {string | null} */
-  #pageBuild = null;
+  /** The release this page runs; build null in development (never out of date). @type {Readonly<{ version: string, build: string | null }>} */
+  #page;
+  /** The server's version while it serves another build than the page's, if it is another version too; else null. @type {string | null} */
+  #newVersion = null;
   #updateAvailable = false;
   /** When the realtime connection was lost; null while it is up (or was never opened). @type {number | null} */
   #disconnectedSince = null;
@@ -28,11 +31,13 @@ export class MaintenanceWatch {
   #listeners = new Set();
 
   /**
-   * @param {{ load: () => Promise<ServerStatus | null>, now: () => number }} deps `load` answers null when it cannot read; `now` in epoch milliseconds
+   * @param {{ load: () => Promise<ServerStatus | null>, now: () => number, page: Readonly<{ version: string, build: string | null }> }} deps
+   *   `load` answers null when it cannot read; `now` in epoch milliseconds; `page` the release this page runs (src/release.js)
    */
-  constructor({ load, now }) {
+  constructor({ load, now, page }) {
     this.#load = load;
     this.#now = now;
+    this.#page = page;
   }
 
   /** @returns {MaintenanceNotice | null} */
@@ -43,6 +48,11 @@ export class MaintenanceWatch {
   /** A newer version than the one this page runs is live: reloading picks it up. */
   get updateAvailable() {
     return this.#updateAvailable;
+  }
+
+  /** @returns {string | null} the version the server now serves (e.g. "0.3.0") while the page is out of date, if not the page's own */
+  get newVersion() {
+    return this.#newVersion;
   }
 
   /** @returns {number | null} epoch milliseconds the realtime connection went down, null while it is up */
@@ -56,9 +66,11 @@ export class MaintenanceWatch {
     if (status === null) {
       return;
     }
-    if (status.build !== null) {
-      this.#pageBuild ??= status.build;
-      this.#updateAvailable ||= status.build !== this.#pageBuild;
+    if (this.#page.build !== null && status.build !== null) {
+      // Back on the page's build (a rollback), the page is up to date again.
+      this.#updateAvailable = status.build !== this.#page.build;
+      // A deploy without a new version number is still an update, just not one to name.
+      this.#newVersion = this.#updateAvailable && status.version !== this.#page.version ? status.version : null;
     }
     this.#set(status.notice);
   }

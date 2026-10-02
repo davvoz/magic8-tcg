@@ -2,7 +2,8 @@
  * The identity API over real HTTP: what a browser (or an attacker) sees.
  */
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, utimes, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -198,6 +199,41 @@ describe("static client files", () => {
       }
     } finally {
       await server.close();
+    }
+  });
+
+  it("answers 304 to a copy still current (the service worker asks every time), and serves the app manifest", async () => {
+    const root = await mkdtemp(join(tmpdir(), "m8-static-"));
+    await writeFile(join(root, "main.js"), "export {};");
+    await writeFile(join(root, "app.webmanifest"), "{}");
+    const files = new StaticFiles([{ prefix: "/", directory: root }]);
+    const server = createServer((request, response) => {
+      files.handle(request, response, new URL(request.url ?? "/", "http://localhost").pathname).then((served) => served || response.writeHead(404).end());
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(undefined)));
+    const address = /** @type {import("node:net").AddressInfo} */ (server.address());
+    const base = `http://127.0.0.1:${address.port}`;
+    try {
+      const first = await fetch(`${base}/main.js`);
+      const etag = first.headers.get("etag");
+      assert.match(etag ?? "", /^W\/"[0-9a-f]+-[0-9a-f]+"$/);
+      assert.equal(first.headers.get("cache-control"), "no-cache");
+      const again = await fetch(`${base}/main.js`, { headers: { "If-None-Match": etag } });
+      assert.equal(again.status, 304);
+      assert.equal(await again.text(), "");
+      assert.equal(again.headers.get("etag"), etag);
+      assert.equal((await fetch(`${base}/main.js`, { headers: { "If-None-Match": `"other", ${etag}` } })).status, 304, "one of a list");
+
+      await writeFile(join(root, "main.js"), "export const deployed = true;");
+      await utimes(join(root, "main.js"), new Date(), new Date(Date.now() + 60_000));
+      const changed = await fetch(`${base}/main.js`, { headers: { "If-None-Match": etag } });
+      assert.equal(changed.status, 200, "a deploy changed the file");
+      assert.equal(await changed.text(), "export const deployed = true;");
+      assert.notEqual(changed.headers.get("etag"), etag);
+
+      assert.equal((await fetch(`${base}/app.webmanifest`)).headers.get("content-type"), "application/manifest+json");
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
     }
   });
 });

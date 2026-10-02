@@ -9,7 +9,7 @@
  * @property {import("./match/MatchSetupService.js").MatchSetupService} matchSetup
  * @property {() => string} createSeed
  * @property {import("./ports/Logger.contract.js").Logger} logger
- * @property {Readonly<{ version: string, storage: "local" | "memory" }>} environment
+ * @property {Readonly<{ version: string, release?: string, storage: "local" | "memory" }>} environment `version` the engine's; `release` the game's ("v0.2.0 (0253e2b)"), absent in tools and previews
  * @property {import("./identity/IdentityService.js").IdentityService} [identity] absent when the client runs without a game server (tools, previews)
  * @property {import("./account/AccountService.js").AccountService} [account] the signed-in player's collection and decks; absent with `identity`
  * @property {import("./shop/ShopService.js").ShopService} [shop] the marketplace; absent with `identity`

@@ -50,11 +50,11 @@ export const DISCONNECTED_AFTER_MS = 3000;
 /**
  * What the banner says, most urgent first: the maintenance, a lost
  * connection, then a newer version (with a reload button).
- * @param {Readonly<{ notice: MaintenanceNotice | null, disconnectedSince: number | null, updateAvailable: boolean }>} state
+ * @param {Readonly<{ notice: MaintenanceNotice | null, disconnectedSince: number | null, updateAvailable: boolean, newVersion?: string | null }>} state
  * @param {number} now epoch milliseconds
  * @returns {Readonly<{ text: string, reload: boolean }> | null} null: no banner
  */
-export function describeBanner({ notice, disconnectedSince, updateAvailable }, now) {
+export function describeBanner({ notice, disconnectedSince, updateAvailable, newVersion = null }, now) {
   const maintenance = notice === null ? null : describeMaintenance(notice, now);
   if (maintenance !== null) {
     return Object.freeze({ text: maintenance, reload: false });
@@ -62,7 +62,11 @@ export function describeBanner({ notice, disconnectedSince, updateAvailable }, n
   if (disconnectedSince !== null && now - disconnectedSince >= DISCONNECTED_AFTER_MS) {
     return Object.freeze({ text: "Connection to the game server lost: reconnecting…", reload: false });
   }
-  return updateAvailable ? Object.freeze({ text: "A new version of the game is out.", reload: true }) : null;
+  if (!updateAvailable) {
+    return null;
+  }
+  const named = newVersion === null ? "" : ` (v${newVersion})`;
+  return Object.freeze({ text: `A new version of the game is out${named}.`, reload: true });
 }
 
 /**

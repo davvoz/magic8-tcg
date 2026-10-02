@@ -70,6 +70,10 @@ describe("describeBanner", () => {
     assert.deepEqual(describeBanner({ ...quiet, updateAvailable: true }, STARTS_AT), { text: "A new version of the game is out.", reload: true });
   });
 
+  it("names the new version when the server does", () => {
+    assert.equal(describeBanner({ ...quiet, updateAvailable: true, newVersion: "0.3.0" }, STARTS_AT)?.text, "A new version of the game is out (v0.3.0).");
+  });
+
   it("waits a moment before telling a lost connection, and forgets a stale maintenance", () => {
     assert.equal(describeBanner({ ...quiet, disconnectedSince: STARTS_AT }, STARTS_AT + DISCONNECTED_AFTER_MS - 1), null);
     const stale = { ...quiet, notice: { startsAt: STARTS_AT, message: null }, updateAvailable: true };
@@ -80,11 +84,11 @@ describe("describeBanner", () => {
 describe("fetchServerStatus", () => {
   it("asks the server without cache, for the maintenance and the version it serves", async () => {
     const calls = [];
-    const status = await fetchServerStatus(async (url, init) => (calls.push({ url, init }), Response.json({ maintenance: { at: AT, message: null }, build: "96e1df5c1a2b" })));
-    assert.deepEqual(status, { notice: { startsAt: STARTS_AT, message: null }, build: "96e1df5c1a2b" });
+    const status = await fetchServerStatus(async (url, init) => (calls.push({ url, init }), Response.json({ maintenance: { at: AT, message: null }, version: "0.2.0", build: "96e1df5c1a2b" })));
+    assert.deepEqual(status, { notice: { startsAt: STARTS_AT, message: null }, version: "0.2.0", build: "96e1df5c1a2b" });
     assert.deepEqual(calls, [{ url: "/api/maintenance", init: { cache: "no-store" } }]);
-    assert.deepEqual(await fetchServerStatus(async () => Response.json({ maintenance: null })), { notice: null, build: null }, "no version named: development");
-    assert.deepEqual(await fetchServerStatus(async () => Response.json({ maintenance: null, build: "<script>" })), { notice: null, build: null });
+    assert.deepEqual(await fetchServerStatus(async () => Response.json({ maintenance: null })), { notice: null, version: null, build: null }, "no version named: development");
+    assert.deepEqual(await fetchServerStatus(async () => Response.json({ maintenance: null, version: "<b>1</b>", build: "<script>" })), { notice: null, version: null, build: null });
   });
 
   it("means nothing new when the server is down, the network fails or the answer is garbage", async () => {
@@ -110,7 +114,7 @@ describe("MaintenanceWatch", () => {
   it("reads on load, follows pushes, and reads again after a reconnection", async () => {
     let served = { notice: null, build: null };
     let loads = 0;
-    const watch = new MaintenanceWatch({ load: async () => ((loads += 1), served), now: () => 0 });
+    const watch = new MaintenanceWatch({ load: async () => ((loads += 1), served), now: () => 0, page: { version: "0.2.0", build: null } });
     const seen = [];
     watch.subscribe((notice) => seen.push(notice));
     await watch.refresh();
@@ -137,40 +141,59 @@ describe("MaintenanceWatch", () => {
 
   it("keeps what it knows when a read fails (the server is restarting)", async () => {
     let served = { notice: { startsAt: STARTS_AT, message: null }, build: "a" };
-    const watch = new MaintenanceWatch({ load: async () => served, now: () => 0 });
+    const watch = new MaintenanceWatch({ load: async () => served, now: () => 0, page: { version: "0.2.0", build: null } });
     await watch.refresh();
     served = null;
     await watch.refresh();
     assert.deepEqual(watch.notice, { startsAt: STARTS_AT, message: null }, "still announced");
   });
 
-  it("tells a newer version from the one the page runs, and keeps saying so", async () => {
-    let build = "first";
-    const watch = new MaintenanceWatch({ load: async () => ({ notice: null, build }), now: () => 0 });
+  it("tells a build other than the one the page runs, even the first time it reads", async () => {
+    let served = { notice: null, version: "0.2.0", build: "page" };
+    const watch = new MaintenanceWatch({ load: async () => served, now: () => 0, page: { version: "0.2.0", build: "page" } });
     await watch.refresh();
-    assert.equal(watch.updateAvailable, false);
-    await watch.refresh();
-    assert.equal(watch.updateAvailable, false, "the same version");
-    build = "second";
+    assert.equal(watch.updateAvailable, false, "the same build");
+    served = { notice: null, version: "0.3.0", build: "deployed" };
     await watch.refresh();
     assert.equal(watch.updateAvailable, true);
-    build = "first";
+    assert.equal(watch.newVersion, "0.3.0");
+    served = { notice: null, version: "0.2.0", build: "hotfix" };
     await watch.refresh();
-    assert.equal(watch.updateAvailable, true, "the page still runs the first one");
+    assert.deepEqual([watch.updateAvailable, watch.newVersion], [true, null], "a new build of the same version: an update, with no number to name");
+
+    served = { notice: null, version: "0.3.0", build: "deployed" };
+    const late = new MaintenanceWatch({ load: async () => served, now: () => 0, page: { version: "0.2.0", build: "page" } });
+    await late.refresh();
+    assert.equal(late.updateAvailable, true, "a page loaded just before the deploy, whose first read already reaches the new server");
   });
 
-  it("never offers a reload when the server named no version at first (development)", async () => {
-    let build = null;
-    const watch = new MaintenanceWatch({ load: async () => ({ notice: null, build }), now: () => 0 });
+  it("is up to date again when the server goes back to the page's build (a rollback), and keeps what it knew when a read fails", async () => {
+    let served = { notice: null, version: "0.3.0", build: "deployed" };
+    const watch = new MaintenanceWatch({ load: async () => served, now: () => 0, page: { version: "0.2.0", build: "page" } });
     await watch.refresh();
-    build = "deployed";
+    served = null;
     await watch.refresh();
-    assert.equal(watch.updateAvailable, false, "the first version named is taken as the page's");
+    assert.equal(watch.updateAvailable, true, "a failed read changes nothing");
+    served = { notice: null, version: "0.2.0", build: "page" };
+    await watch.refresh();
+    assert.equal(watch.updateAvailable, false);
+    assert.equal(watch.newVersion, null);
+  });
+
+  it("never offers an update in development (no build on either side)", async () => {
+    let served = { notice: null, version: "0.2.0", build: "deployed" };
+    const dev = new MaintenanceWatch({ load: async () => served, now: () => 0, page: { version: "0.2.0", build: null } });
+    await dev.refresh();
+    assert.equal(dev.updateAvailable, false, "the page has no build");
+    served = { notice: null, version: "0.2.0", build: null };
+    const unnamed = new MaintenanceWatch({ load: async () => served, now: () => 0, page: { version: "0.2.0", build: "page" } });
+    await unnamed.refresh();
+    assert.equal(unnamed.updateAvailable, false, "the server names none");
   });
 
   it("knows since when the connection is lost, until it is back", () => {
     let now = 1000;
-    const watch = new MaintenanceWatch({ load: async () => null, now: () => now });
+    const watch = new MaintenanceWatch({ load: async () => null, now: () => now, page: { version: "0.2.0", build: null } });
     const { connection, status } = fakeConnection();
     watch.follow(connection);
     const seen = [];

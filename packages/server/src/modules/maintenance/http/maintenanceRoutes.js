@@ -1,7 +1,8 @@
 /**
  * HTTP surface of the announced maintenance:
  * - GET /api/maintenance: anyone, signed in or not, reads it when the page loads (then it comes by push),
- *   with the version being served (`build`), so a tab opened before a deploy can tell;
+ *   with the release being served (`version` from package.json, `build` the deployed commit): a tab
+ *   running another build (its src/release.js) offers to update;
  * - POST /api/admin/maintenance {minutes, message?}: an operator announces it;
  * - DELETE /api/admin/maintenance: an operator ends it.
  */
@@ -20,16 +21,17 @@ const NO_STORE = Object.freeze({ "Cache-Control": "no-store" });
  *   router: import("../../../platform/http/Router.js").Router,
  *   maintenance: import("../application/MaintenanceService.js").MaintenanceService,
  *   admin: { requireAdmin: (principal: any) => { id: string } },
+ *   version?: string | null,
  *   build?: string | null,
- * }} deps `build`: the version being served, null when unknown (development)
+ * }} deps `version`: the product version served; `build`: the deployed commit, null in development
  */
-export function registerMaintenanceRoutes({ router, maintenance, admin, build = null }) {
+export function registerMaintenanceRoutes({ router, maintenance, admin, version = null, build = null }) {
   router.add({
     method: "GET",
     path: "/api/maintenance",
     auth: Auth.NONE,
     rateLimit: READ_RATE,
-    handler: async () => ({ status: 200, body: { maintenance: maintenance.current(), build }, headers: NO_STORE }),
+    handler: async () => ({ status: 200, body: { maintenance: maintenance.current(), version, build }, headers: NO_STORE }),
   });
 
   router.add({

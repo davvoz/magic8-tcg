@@ -19,6 +19,16 @@ COPY data data
 COPY packages packages
 COPY tools tools
 
+# The release this image serves: the version in package.json and the commit
+# deploy/deploy.sh builds it from (docker-compose.yml passes APP_TAG; empty
+# for an untagged local build). It is stamped into the client
+# (packages/client/src/release.js) and the server names it in
+# GET /api/maintenance: a tab running another build offers to update. Baked in
+# the image, it stays right when an older image is started again (a rollback).
+ARG M8_BUILD=
+ENV M8_BUILD=$M8_BUILD
+RUN node tools/stamp-release.js
+
 # Inside a container the server must listen on every interface; the proxy reaches it over the compose network.
 ENV M8_HOST=0.0.0.0 \
     M8_PORT=8080 \
