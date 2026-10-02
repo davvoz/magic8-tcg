@@ -48,7 +48,11 @@ const CAST_TARGET = Object.freeze({ beamWidth: 3, beamBlur: 16, markRadius: 26, 
 /** An ability going off: its rune (in px, spreading from `from` to `to` times `radius`) and the card's name over it. */
 const FLARE = Object.freeze({ radius: 34, from: 0.8, to: 2.2, rays: 8, blur: 18, nameFont: 17, nameGap: 10, nameHeight: 24, nameSpread: 110 });
 /** The turn banner: the band of light, the words on it (sliding in from `slide` of the board's width) and the turn number under them. */
-const TURN = Object.freeze({ bandHeight: 150, edge: 2, font: 64, glowBlur: 24, slide: 0.18, dim: 0.35, captionFont: 18, captionGap: 6, captionHeight: 24 });
+const WIDE_TURN = Object.freeze({ bandHeight: 150, edge: 2, font: 64, glowBlur: 24, slide: 0.18, dim: 0.35, captionFont: 18, captionGap: 6, captionHeight: 24 });
+/** The same banner on a compact board (a phone): a narrower band and smaller words, so the table stays in view. */
+const COMPACT_TURN = Object.freeze({ ...WIDE_TURN, bandHeight: 86, font: 36, glowBlur: 14, captionFont: 14, captionGap: 2, captionHeight: 18 });
+/** Floating numbers on a compact board, where cards are half as wide. */
+const COMPACT_FLOAT_FONT = 24;
 
 /**
  * @typedef {Readonly<{ attackerId: string, blockerId: string }>} Block
@@ -116,13 +120,14 @@ export class EffectsNode extends UiNode {
     const area = this.bounds;
     const { colors } = theme;
     const label = this.#turnLabel(banner.playerId);
+    const turn = this.#layout.compact ? COMPACT_TURN : WIDE_TURN;
     const tone = label.mine ? colors.accent : colors.focus;
     const centreY = this.#layout.banner.y + this.#layout.banner.height / 2;
-    const height = TURN.bandHeight * Math.max(0, frame.band);
+    const height = turn.bandHeight * Math.max(0, frame.band);
     const band = { x: area.x, y: centreY - height / 2, width: area.width, height };
     context.save();
     context.globalAlpha = alpha;
-    context.fillStyle = withAlpha(colors.letterbox, TURN.dim);
+    context.fillStyle = withAlpha(colors.letterbox, turn.dim);
     context.fillRect(area.x, area.y, area.width, area.height);
     const fade = (color, strength) => horizontalGradient(context, band, [[0, withAlpha(color, 0)], [0.5, withAlpha(color, strength)], [1, withAlpha(color, 0)]]);
     context.fillStyle = fade(colors.letterbox, 0.85);
@@ -130,14 +135,14 @@ export class EffectsNode extends UiNode {
     context.fillStyle = fade(tone, 0.28);
     context.fillRect(band.x, band.y, band.width, band.height);
     context.fillStyle = fade(tone, 0.9);
-    context.fillRect(band.x, band.y, band.width, TURN.edge);
-    context.fillRect(band.x, band.y + band.height - TURN.edge, band.width, TURN.edge);
-    const offset = frame.sweep * area.width * TURN.slide;
-    const font = TURN.font * frame.scale;
+    context.fillRect(band.x, band.y, band.width, turn.edge);
+    context.fillRect(band.x, band.y + band.height - turn.edge, band.width, turn.edge);
+    const offset = frame.sweep * area.width * turn.slide;
+    const font = turn.font * frame.scale;
     const words = { x: area.x + offset, y: centreY - font * 0.75, width: area.width, height: font * 1.2 };
-    drawOutlinedText(context, label.text, words, { font: displayFont(theme, font), color: label.mine ? colors.accentLight : colors.text, outline: withAlpha(colors.letterbox, 0.9), outlineWidth: 5, glow: withAlpha(tone, 0.9), glowBlur: TURN.glowBlur });
-    const caption = { x: area.x - offset / 2, y: words.y + words.height + TURN.captionGap, width: area.width, height: TURN.captionHeight };
-    drawOutlinedText(context, `Turn ${banner.turnNumber}`, caption, { font: displayFont(theme, TURN.captionFont), color: colors.textMuted, outline: withAlpha(colors.letterbox, 0.85), outlineWidth: 3 });
+    drawOutlinedText(context, label.text, words, { font: displayFont(theme, font), color: label.mine ? colors.accentLight : colors.text, outline: withAlpha(colors.letterbox, 0.9), outlineWidth: 5, glow: withAlpha(tone, 0.9), glowBlur: turn.glowBlur });
+    const caption = { x: area.x - offset / 2, y: words.y + words.height + turn.captionGap, width: area.width, height: turn.captionHeight };
+    drawOutlinedText(context, `Turn ${banner.turnNumber}`, caption, { font: displayFont(theme, turn.captionFont), color: colors.textMuted, outline: withAlpha(colors.letterbox, 0.85), outlineWidth: 3 });
     context.restore();
   }
 
@@ -229,8 +234,9 @@ export class EffectsNode extends UiNode {
       const pop = progress < FLOAT_POP.untilProgress ? FLOAT_POP.scale - (FLOAT_POP.scale - 1) * (progress / FLOAT_POP.untilProgress) : 1;
       context.globalAlpha = 1 - progress;
       const color = theme.colors[spec.colorKey] ?? theme.colors.text;
-      const box = { x: spec.x - 100, y: spec.y + floatOffset(progress) - FLOAT_FONT, width: 200, height: FLOAT_FONT * 2 };
-      drawOutlinedText(context, spec.text, box, { font: bodyFont(theme, FLOAT_FONT * pop, "bold"), color, outline: withAlpha(theme.colors.letterbox, 0.9), outlineWidth: 5, glow: withAlpha(color, 0.9), glowBlur: 16 });
+      const size = this.#layout.compact ? COMPACT_FLOAT_FONT : FLOAT_FONT;
+      const box = { x: spec.x - 100, y: spec.y + floatOffset(progress) - size, width: 200, height: size * 2 };
+      drawOutlinedText(context, spec.text, box, { font: bodyFont(theme, size * pop, "bold"), color, outline: withAlpha(theme.colors.letterbox, 0.9), outlineWidth: 5, glow: withAlpha(color, 0.9), glowBlur: 16 });
     }
     context.restore();
   }
