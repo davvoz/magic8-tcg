@@ -3,7 +3,7 @@
 Multiplayer collectible card game built on the magic8 rules engine (forked with its history):
 
 - **authoritative server**: clients send intentions, the server validates them with the deterministic engine;
-- **STEEM** for identity (Steem Keychain login, no private key ever leaves the browser), payments (standard `transfer` operations, verified on-chain) and a public record, through `custom_json`, of what changes hands: purchase receipts, pack draws (verifiable from the chain alone), trades and sales, and each game's result. A game's hash-chained history stays in the server's database; its result, published when it ends, commits to that history;
+- **STEEM** for identity (Steem Keychain login, no private key ever leaves the browser), payments (standard `transfer` operations, verified on-chain) and a public record, through `custom_json`, of what changes hands: purchase receipts, pack draws (verifiable from the chain alone), trades and sales, and each game's result.A game's hash-chained history stays in the server's database; its result, published when it ends, commits to that history;
 - blockchain access behind network-agnostic ports,so other chains or payment systems can be added without touching the game domain.
 
 ## Design documents (Italian)
