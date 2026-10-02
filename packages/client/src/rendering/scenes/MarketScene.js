@@ -20,6 +20,7 @@ import { CardStrip } from "../cards/CardStrip.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
 import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
+import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -43,7 +44,9 @@ const LIST_TOP = FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12;
 const COPIES_TOP = 48 + CARD_FILTER_BAR_HEIGHT + 12;
 const PAGER_HEIGHT = 44;
 const PRICE_WIDTH = 170;
-const META_WIDTH = 140;
+const META_WIDTH = 190;
+/** The seller's portrait at the start of a board row's meta column. */
+const SELLER_AVATAR = 40;
 const CARD = Object.freeze({ width: 300, height: 442 });
 const BUTTON_HEIGHT = 56;
 const PRICE_PATTERN = /^\d{1,6}(\.\d{1,3})?$/;
@@ -237,8 +240,11 @@ export class MarketScene extends Scene {
         list.add(new CardStrip({ x: 0, y: rowY(index), width: stripWidth, height: ROW.height, card: card ?? unknownCard(listing.card.definitionId), broken: card === undefined, muted: !selected, rarity: rarityOf(this.#app, listing.card.definitionId) }));
         const metaX = stripWidth + ACTION.gap;
         const copy = `#${listing.card.serial}`;
-        list.add(new Label({ x: metaX, y: rowY(index) + 4, width: META_WIDTH, height: ROW.height / 2 - 4, text: `@${listing.seller}`, size: "small", colorKey: "text", align: "left", fit: true }));
-        list.add(new Label({ x: metaX, y: rowY(index) + ROW.height / 2, width: META_WIDTH, height: ROW.height / 2 - 4, text: copy, size: "tiny", colorKey: "textMuted", align: "left", fit: true }));
+        list.add(new AvatarNode({ id: `market.seller.${listing.id}`, x: metaX, y: rowY(index) + (ROW.height - SELLER_AVATAR) / 2, size: SELLER_AVATAR, account: listing.seller }));
+        const textX = metaX + SELLER_AVATAR + 10;
+        const textWidth = META_WIDTH - SELLER_AVATAR - 10;
+        list.add(new Label({ x: textX, y: rowY(index) + 4, width: textWidth, height: ROW.height / 2 - 4, text: `@${listing.seller}`, size: "small", colorKey: "text", align: "left", fit: true }));
+        list.add(new Label({ x: textX, y: rowY(index) + ROW.height / 2, width: textWidth, height: ROW.height / 2 - 4, text: copy, size: "tiny", colorKey: "textMuted", align: "left", fit: true }));
         const text = listing.reserved ? "reserved" : `${listing.price.amount} ${listing.price.asset}`;
         list.add(new Button({ id: `market.listing.${listing.id}`, x: metaX + META_WIDTH + ACTION.gap, y: rowY(index), width: PRICE_WIDTH, height: ROW.height, text, textSize: "small", variant: selected ? "primary" : "secondary", onActivate: () => this.#select("listing", listing.id) }));
       });
@@ -273,9 +279,10 @@ export class MarketScene extends Scene {
     const { listings, purchases } = this.#sales().state.mine;
     const list = panel.add(new ScrollList({ id: "market.mine", x: INSET, y: TABS.top + TABS.height + 12, width: COLUMNS.left.width - 2 * INSET, height: COLUMNS.height - TABS.top - TABS.height - 12 - INSET }));
     const now = this.#now();
+    // Each row shows the other side when there is one: the buyer of a sold card, the seller of a bought one.
     const rows = [
-      ...listings.map((listing) => ({ kind: /** @type {const} */ ("listing"), id: listing.id, text: `Selling ${this.#cardName(listing.card.definitionId)} · ${listing.price.amount} ${listing.price.asset}`, subtitle: listingSubtitle(listing, now) })),
-      ...purchases.map((purchase) => ({ kind: /** @type {const} */ ("purchase"), id: purchase.id, text: `${purchase.status === "COMPLETED" ? "Bought" : "Buying"} ${this.#cardName(purchase.card.definitionId)} from @${purchase.seller}`, subtitle: `${purchase.price.amount} ${purchase.price.asset} · ${purchase.status.toLowerCase()}` })),
+      ...listings.map((listing) => ({ kind: /** @type {const} */ ("listing"), id: listing.id, text: `Selling ${this.#cardName(listing.card.definitionId)} · ${listing.price.amount} ${listing.price.asset}`, subtitle: listingSubtitle(listing, now), avatar: listing.buyer ?? listing.seller })),
+      ...purchases.map((purchase) => ({ kind: /** @type {const} */ ("purchase"), id: purchase.id, text: `${purchase.status === "COMPLETED" ? "Bought" : "Buying"} ${this.#cardName(purchase.card.definitionId)} from @${purchase.seller}`, subtitle: `${purchase.price.amount} ${purchase.price.asset} · ${purchase.status.toLowerCase()}`, avatar: purchase.seller })),
     ];
     if (rows.length === 0) {
       list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * ROW.height, text: "You have not sold or bought anything yet.", size: "small", colorKey: "textMuted" }));
@@ -284,7 +291,7 @@ export class MarketScene extends Scene {
     }
     rows.forEach((row, index) => {
       const selected = this.#selected?.kind === row.kind && this.#selected.id === row.id;
-      list.add(new OptionRow({ id: `market.mine.${row.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: row.text, subtitle: row.subtitle, selected, onActivate: () => this.#select(row.kind, row.id) }));
+      list.add(new OptionRow({ id: `market.mine.${row.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: row.text, subtitle: row.subtitle, avatar: row.avatar, selected, onActivate: () => this.#select(row.kind, row.id) }));
     });
     list.contentHeight = rowsHeight(rows.length);
   }
@@ -314,10 +321,10 @@ export class MarketScene extends Scene {
   }
 
   /**
-   * The card at full size, and lines of text beside it (its rarity after the first, the name); returns the x and width of the text column.
+   * The card at full size, and lines of text beside it (its rarity after the first, the name; a line about a player leads with their portrait); returns the x and width of the text column.
    * @param {Panel} panel
    * @param {string} definitionId
-   * @param {readonly { text: string, colorKey?: string, bold?: boolean }[]} named
+   * @param {readonly { text: string, colorKey?: string, bold?: boolean, avatar?: string | null }[]} named
    */
   #cardWithLines(panel, definitionId, named) {
     const card = this.#app.content.catalog.get(definitionId);
@@ -329,7 +336,7 @@ export class MarketScene extends Scene {
     const x = INSET + CARD.width + INSET;
     const width = COLUMNS.right.width - x - INSET;
     lines.forEach((line, index) => {
-      panel.add(new Label({ x, y: INSET + index * LINE, width, height: LINE, text: line.text, size: line.bold === true ? "body" : "small", weight: line.bold === true ? "bold" : "normal", colorKey: line.colorKey ?? "text", align: "left", fit: true }));
+      panel.add(new Label({ x, y: INSET + index * LINE, width, height: LINE, text: line.text, size: line.bold === true ? "body" : "small", weight: line.bold === true ? "bold" : "normal", colorKey: line.colorKey ?? "text", align: "left", fit: true, avatar: line.avatar ?? null }));
     });
     return { x, width };
   }
@@ -346,9 +353,9 @@ export class MarketScene extends Scene {
     const lines = [
       { text: this.#cardName(listing.card.definitionId), bold: true, colorKey: "accentLight" },
       { text: `Copy #${listing.card.serial} · ${listing.card.edition}` },
-      { text: `Sold by @${listing.seller}` },
+      { text: `Sold by @${listing.seller}`, avatar: listing.seller },
       { text: `${listing.price.amount} ${listing.price.asset}`, bold: true, colorKey: "accent" },
-      { text: listingSubtitle(listing, now), colorKey: "textMuted" },
+      { text: listingSubtitle(listing, now), colorKey: "textMuted", avatar: listing.status === "SOLD" ? listing.buyer : null },
     ];
     this.#cardWithLines(panel, listing.card.definitionId, lines);
     const y = COLUMNS.height - INSET - BUTTON_HEIGHT;
@@ -376,7 +383,7 @@ export class MarketScene extends Scene {
     const lines = [
       { text: this.#cardName(purchase.card.definitionId), bold: true, colorKey: "accentLight" },
       { text: `Copy #${purchase.card.serial}` },
-      { text: `From @${purchase.seller} for ${purchase.price.amount} ${purchase.price.asset}` },
+      { text: `From @${purchase.seller} for ${purchase.price.amount} ${purchase.price.asset}`, avatar: purchase.seller },
       { text: `Status: ${purchase.status.toLowerCase()}`, bold: true },
       ...(purchase.txId === null ? [] : [{ text: `Payment ${purchase.txId.slice(0, 12)}…`, colorKey: "textMuted" }]),
       ...(purchase.problem === null ? [] : [{ text: problemText(purchase.problem), colorKey: "danger" }]),
@@ -411,11 +418,11 @@ export class MarketScene extends Scene {
    * @param {import("../../application/ports/SalesApi.contract.js").Purchase} purchase
    */
   #buyingLines(purchase) {
-    /** @type {{ text: string, colorKey?: string, bold?: boolean }[]} */
+    /** @type {{ text: string, colorKey?: string, bold?: boolean, avatar?: string | null }[]} */
     const lines = [
       { text: this.#cardName(purchase.card.definitionId), bold: true, colorKey: "accentLight" },
       { text: `Copy #${purchase.card.serial}` },
-      { text: `From @${purchase.seller}` },
+      { text: `From @${purchase.seller}`, avatar: purchase.seller },
       { text: `${purchase.price.amount} ${purchase.price.asset}`, bold: true, colorKey: "accent" },
     ];
     if (purchase.payment !== null) {

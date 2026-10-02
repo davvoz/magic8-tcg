@@ -1,7 +1,7 @@
 /**
  * The opening coin toss, drawn over the whole board. It reads a CoinFlip
  * every frame and holds no state of its own: the table dims, each player's
- * name stands beside the face they hold, the gold coin is thrown and spins
+ * name (with their portrait, online) stands beside the face they hold, the gold coin is thrown and spins
  * end over end (squeezed as it turns edge-on), lands in a flash, and the
  * winning face and who plays first are announced.
  *
@@ -15,6 +15,7 @@
 import { CoinFace } from "../../application/match/CoinToss.js";
 import { withAlpha } from "../theme/color.js";
 import { displayFont } from "../theme/Theme.js";
+import { drawAvatar } from "../ui/avatar.js";
 import { drawOutlinedText, radialGradient } from "../ui/drawing.js";
 import { starPath } from "../ui/shapes.js";
 import { UiNode } from "../ui/UiNode.js";
@@ -25,7 +26,7 @@ const COIN = Object.freeze({ radius: 74, rest: 40, rise: 250, grow: 0.35, edge: 
 const SHADOW = Object.freeze({ drop: 1.1, flatness: 0.22, alpha: 0.45, shrink: 0.5 });
 const SHINE = Object.freeze({ reach: 1.6, ringWidth: 4, blur: 30, halo: 2.4, haloAlpha: 0.35 });
 /** The players' plates, either side of the coin. */
-const PLATE = Object.freeze({ offset: 420, slide: 60, emblem: 38, width: 360, nameFont: 30, faceFont: 18, nameGap: 26, lineHeight: 36, winnerBlur: 28 });
+const PLATE = Object.freeze({ offset: 420, slide: 60, emblem: 38, width: 360, nameFont: 30, faceFont: 18, nameGap: 26, lineHeight: 36, winnerBlur: 28, avatar: 20, avatarGap: 10 });
 const TITLE = Object.freeze({ top: 290, font: 44, height: 56, subtitleFont: 20, subtitleGap: 8, spread: 400 });
 const VERDICT = Object.freeze({ top: 170, font: 60, height: 72, captionFont: 28, captionHeight: 40, spread: 400, rise: 24 });
 /** The emblems struck on each face: a sun for heads, a star for tails. */
@@ -42,18 +43,21 @@ export class CoinTossNode extends UiNode {
   #flip;
   #viewerId;
   #nameOf;
+  #accountOf;
 
   /**
-   * @param {{ flip: import("./CoinFlip.js").CoinFlip, x?: number, y?: number, width: number, height: number, viewerId: string | null, nameOf: (playerId: string) => string }} options
+   * @param {{ flip: import("./CoinFlip.js").CoinFlip, x?: number, y?: number, width: number, height: number, viewerId: string | null, nameOf: (playerId: string) => string, accountOf?: (playerId: string) => string | null }} options
    *   `viewerId`: the player looking at the board (shown on the left and addressed as "you"), null for a spectator;
-   *   `nameOf`: how to name a player on the plates
+   *   `nameOf`: how to name a player on the plates;
+   *   `accountOf`: the STEEM account whose portrait leads a player's name, null for none (the local AI)
    */
-  constructor({ flip, x = 0, y = 0, width, height, viewerId, nameOf }) {
+  constructor({ flip, x = 0, y = 0, width, height, viewerId, nameOf, accountOf = () => null }) {
     super({ id: "coinToss", x, y, width, height });
     this.interactive = true;
     this.#flip = flip;
     this.#viewerId = viewerId;
     this.#nameOf = nameOf;
+    this.#accountOf = accountOf;
   }
 
   /** Presses land here and go no further while the coin is tossed. */
@@ -139,11 +143,34 @@ export class CoinTossNode extends UiNode {
       paintCoinFace(context, theme, { at, radius: PLATE.emblem, face, squeeze: 1 });
       const nameBox = { x: at.x - PLATE.width / 2, y: at.y + PLATE.emblem + PLATE.nameGap, width: PLATE.width, height: PLATE.lineHeight };
       const nameColor = won && frame.verdict > 0 ? theme.colors.accentLight : theme.colors.text;
-      drawOutlinedText(context, this.#plateName(playerId), nameBox, { font: displayFont(theme, PLATE.nameFont), color: nameColor, outline: withAlpha(theme.colors.letterbox, 0.9), outlineWidth: 4 });
+      this.#paintName(context, theme, { playerId, box: nameBox, color: nameColor });
       const faceBox = { ...nameBox, y: nameBox.y + PLATE.lineHeight };
       drawOutlinedText(context, FACE_NAMES[face], faceBox, { font: displayFont(theme, PLATE.faceFont, "normal"), color: theme.colors.accent, outline: withAlpha(theme.colors.letterbox, 0.8), outlineWidth: 3 });
       context.restore();
     }
+  }
+
+  /**
+   * A player's name centred on their plate, led by their portrait when they have one.
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   * @param {{ playerId: string, box: import("@magic8/engine/shared/geometry.js").Rect, color: string }} plate
+   */
+  #paintName(context, theme, { playerId, box, color }) {
+    const name = this.#plateName(playerId);
+    const font = displayFont(theme, PLATE.nameFont);
+    const style = { font, color, outline: withAlpha(theme.colors.letterbox, 0.9), outlineWidth: 4 };
+    const account = this.#accountOf(playerId);
+    if (account === null) {
+      drawOutlinedText(context, name, box, style);
+      return;
+    }
+    const lead = 2 * PLATE.avatar + PLATE.avatarGap;
+    context.font = font;
+    const nameWidth = Math.min(context.measureText(name).width, box.width - lead);
+    const left = box.x + (box.width - lead - nameWidth) / 2;
+    drawAvatar(context, theme, { account, center: { x: left + PLATE.avatar, y: box.y + box.height / 2 }, radius: PLATE.avatar });
+    drawOutlinedText(context, name, { ...box, x: left + lead, width: nameWidth }, { ...style, align: "left" });
   }
 
   /**

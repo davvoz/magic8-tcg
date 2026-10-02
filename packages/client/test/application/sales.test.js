@@ -175,6 +175,7 @@ describe("MarketScene", () => {
     await flush();
     const row = byId(scene, `market.listing.${LISTING.id}`);
     assert.equal(row.text, "1.500 STEEM");
+    assert.equal(byId(scene, `market.seller.${LISTING.id}`).account, "alice", "the seller's portrait beside their name");
     assert.equal(byId(scene, `market.listing.${uuid(3)}`).text, "reserved");
     row.activate();
     assert.ok(rendered(scene).some((text) => text.includes("Sold by @alice")));

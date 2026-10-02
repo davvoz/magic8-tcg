@@ -1,3 +1,4 @@
+import { drawAvatar } from "./avatar.js";
 import { drawOutlinedText, drawTextInRect } from "./drawing.js";
 import { UiNode } from "./UiNode.js";
 import { ellipsize } from "../text/textUtils.js";
@@ -5,10 +6,14 @@ import { withAlpha } from "../theme/color.js";
 import { fontFor } from "../theme/Theme.js";
 
 const GLOW_BLUR = 18;
+/** Space between a portrait and the text after it. */
+const AVATAR_GAP = 8;
 
 /**
  * Single-line text, optionally truncated with an ellipsis to its width.
  * `glow` draws it outlined with a halo in its own colour, for titles.
+ * `avatar` (an account) puts that player's portrait, as tall as the label,
+ * before the text.
  */
 export class Label extends UiNode {
   text;
@@ -26,9 +31,11 @@ export class Label extends UiNode {
   fit;
   /** Outline plus halo, for display text over the backdrop. */
   glow;
+  /** The account whose portrait leads the text, or null for none. @type {string | null} */
+  avatar;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, text: string, size?: import("../theme/Theme.js").FontSize, align?: CanvasTextAlign, weight?: "normal" | "bold", colorKey?: string | null, padding?: number, fit?: boolean, glow?: boolean }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, text: string, size?: import("../theme/Theme.js").FontSize, align?: CanvasTextAlign, weight?: "normal" | "bold", colorKey?: string | null, padding?: number, fit?: boolean, glow?: boolean, avatar?: string | null }} options
    */
   constructor(options) {
     super(options);
@@ -40,6 +47,7 @@ export class Label extends UiNode {
     this.padding = options.padding ?? 0;
     this.fit = options.fit ?? false;
     this.glow = options.glow ?? false;
+    this.avatar = options.avatar ?? null;
   }
 
   /**
@@ -49,20 +57,36 @@ export class Label extends UiNode {
   paint(context, theme) {
     const color = this.colorKey === null ? theme.colors.text : theme.colors[this.colorKey] ?? theme.colors.text;
     const font = fontFor(theme, this.size, this.weight);
-    const text = this.fit ? this.#fitted(context, font) : this.text;
+    const area = this.#textArea();
+    if (this.avatar !== null) {
+      const { x, y, height } = this.bounds;
+      drawAvatar(context, theme, { account: this.avatar, center: { x: x + height / 2, y: y + height / 2 }, radius: height / 2 - 1 });
+    }
+    const text = this.fit ? this.#fitted(context, font, area.width) : this.text;
     if (this.glow) {
-      drawOutlinedText(context, text, this.bounds, { font, color, outline: withAlpha(theme.colors.letterbox, 0.85), outlineWidth: 4, glow: withAlpha(color, 0.75), glowBlur: GLOW_BLUR, align: this.align, padding: this.padding });
+      drawOutlinedText(context, text, area, { font, color, outline: withAlpha(theme.colors.letterbox, 0.85), outlineWidth: 4, glow: withAlpha(color, 0.75), glowBlur: GLOW_BLUR, align: this.align, padding: this.padding });
       return;
     }
-    drawTextInRect(context, text, this.bounds, { font, color, align: this.align, padding: this.padding });
+    drawTextInRect(context, text, area, { font, color, align: this.align, padding: this.padding });
+  }
+
+  /** Where the text goes: the whole label, or what the portrait leaves of it. */
+  #textArea() {
+    const area = this.bounds;
+    if (this.avatar === null) {
+      return area;
+    }
+    const lead = area.height + AVATAR_GAP;
+    return { ...area, x: area.x + lead, width: Math.max(0, area.width - lead) };
   }
 
   /**
    * @param {CanvasRenderingContext2D} context
    * @param {string} font
+   * @param {number} width
    */
-  #fitted(context, font) {
+  #fitted(context, font, width) {
     context.font = font;
-    return ellipsize((text) => context.measureText(text).width, this.text, Math.max(0, this.width - 2 * this.padding));
+    return ellipsize((text) => context.measureText(text).width, this.text, Math.max(0, width - 2 * this.padding));
   }
 }

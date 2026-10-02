@@ -157,9 +157,11 @@ describe("describeNotification", () => {
     assert.equal(offered.body, "@bob offers you 2× Ember Imp for Iron Watcher.");
     assert.deepEqual(offered.cards.map((card) => [card.definitionId, card.caption]), [["ember_imp", "2× offered"], ["iron_watcher", "asked"]]);
     assert.equal(offered.target, NotificationTarget.TRADES);
+    assert.equal(offered.account, "bob", "the other player, for their portrait");
 
     const fulfilled = describe_("shop.fulfilled", { orderId: "o", items: [{ productId: "core_booster", name: "Core Booster", quantity: 2 }], cards: [{ definitionId: "ember_imp", count: 1 }], total: 10 });
     assert.deepEqual([fulfilled.title, fulfilled.body, fulfilled.target, fulfilled.tone], ["Your cards have arrived", "2× Core Booster: 10 cards added to your collection.", NotificationTarget.COLLECTION, "good"]);
+    assert.equal(fulfilled.account, undefined, "no other player, no portrait");
 
     const sold = describe_("sale.sold", { account: "carol", card: { definitionId: "pyre_drake", serial: 7 }, price: "1.500", asset: "STEEM" });
     assert.equal(sold.body, "@carol bought your Pyre Drake #7 for 1.500 STEEM.");

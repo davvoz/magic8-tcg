@@ -145,6 +145,7 @@ describe("LiveGamesScene", () => {
     await flush();
     const row = scene.root.findById(`live.game.${GAME}`);
     assert.equal(row.text, "@alice vs @bob");
+    assert.deepEqual(row.avatar, ["alice", "bob"]);
     assert.equal(row.subtitle, "ranked · turn 4 · 2 watching");
     assert.equal(liveGameSubtitle({ ...LIVE, spectators: 1 }), "ranked · turn 4 · 1 watching");
     row.activate();

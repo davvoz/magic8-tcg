@@ -118,6 +118,7 @@ export class LiveGamesScene extends Scene {
           height: ROW.height,
           text: game.players.map((player) => `@${player.account}`).join(" vs "),
           subtitle: liveGameSubtitle(game),
+          avatar: game.players.map((player) => player.account),
           onActivate: () => this.#watch(game.gameId),
         }),
       ),

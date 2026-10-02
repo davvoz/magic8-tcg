@@ -194,6 +194,17 @@ describe("CoinTossNode", () => {
     assert.ok(!texts.some((text) => text.endsWith("first")), "no verdict before the coin lands");
   });
 
+  it("leads each name with the player's portrait online, and with none against the AI", () => {
+    const flip = new CoinFlip({ toss: tossWonBy("ai", "ai"), animation });
+    const online = new CoinTossNode({ flip, width: 1600, height: 900, viewerId: "player", nameOf: (id) => `@${id}`, accountOf: (id) => id });
+    flip.update(animation.longMs);
+    const texts = paintedTexts(online);
+    assert.deepEqual(texts.filter((text) => ["P", "You", "A", "@ai"].includes(text)), ["P", "You", "A", "@ai"], "each initial (no picture yet) before its name");
+    const offline = nodeFor(tossWonBy("ai", "ai"), "player");
+    offline.flip.update(animation.longMs);
+    assert.ok(!paintedTexts(offline.node).includes("P"));
+  });
+
   it("announces the face that came up and who plays first", () => {
     for (const [winner, verdict] of /** @type {const} */ ([["player", "You play first"], ["ai", "Opponent plays first"]])) {
       const { flip, node } = nodeFor(tossWonBy(winner), "player");

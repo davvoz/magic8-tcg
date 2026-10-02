@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Avatars, steemAvatarUrl } from "../../src/rendering/images/Avatars.js";
 import { drawAvatar } from "../../src/rendering/ui/avatar.js";
+import { Label } from "../../src/rendering/ui/Label.js";
 import { OptionRow } from "../../src/rendering/ui/OptionRow.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
 
@@ -64,5 +65,27 @@ describe("profile pictures", () => {
     const name = context.calls.find((call) => call.method === "fillText" && call.args[0] === "@alice");
     assert.ok(image !== undefined && name !== undefined);
     assert.ok(/** @type {number} */ (name.args[1]) > /** @type {number} */ (image.args[5]) + /** @type {number} */ (image.args[7]), "the name starts after the portrait");
+  });
+
+  it("shows every player of a row about several, the texts after the last portrait", () => {
+    const row = new OptionRow({ x: 0, y: 0, width: 400, height: 64, text: "@alice vs @bob", avatar: ["alice", "bob"], onActivate: () => undefined });
+    const context = new FakeContext2D();
+    row.paint(context, { ...theme, avatars: { imageFor: () => PICTURE } });
+    const images = context.calls.filter((call) => call.method === "drawImage");
+    const name = context.calls.find((call) => call.method === "fillText" && call.args[0] === "@alice vs @bob");
+    assert.equal(images.length, 2);
+    assert.ok(/** @type {number} */ (images[1].args[5]) > /** @type {number} */ (images[0].args[5]), "left to right");
+    assert.ok(/** @type {number} */ (name?.args[1]) > /** @type {number} */ (images[1].args[5]) + /** @type {number} */ (images[1].args[7]));
+  });
+
+  it("leads a label with the player's portrait, as tall as the label", () => {
+    const label = new Label({ x: 10, y: 0, width: 300, height: 30, text: "Sold by @alice", align: "left", fit: true, avatar: "alice" });
+    const context = new FakeContext2D();
+    label.paint(context, { ...theme, avatars: { imageFor: () => PICTURE } });
+    const image = context.calls.find((call) => call.method === "drawImage");
+    const text = context.calls.find((call) => call.method === "fillText" && call.args[0] === "Sold by @alice");
+    assert.ok(image !== undefined && text !== undefined);
+    assert.ok(/** @type {number} */ (image.args[8]) <= 30, "no taller than the label");
+    assert.ok(/** @type {number} */ (text.args[1]) >= /** @type {number} */ (image.args[5]) + /** @type {number} */ (image.args[7]), "the text starts after the portrait");
   });
 });

@@ -2,7 +2,8 @@
  * What a notification says (docs/tcg/15-notifiche.md). The server sends a
  * kind and data (ids, accounts, card definition ids); this turns them into
  * a title, a sentence, the cards to show and where the player can follow
- * it up. Pure, so every screen (toasts, the feed) words it the same way.
+ * it up, and the other player it is about (their portrait goes beside it).
+ * Pure, so every screen (toasts, the feed) words it the same way.
  */
 
 /** Where a notification leads. */
@@ -25,7 +26,7 @@ const PAYMENT_PROBLEMS = Object.freeze({
 
 /**
  * @typedef {Readonly<{ definitionId: string, count?: number, caption?: string, serial?: number }>} NotificationCard
- * @typedef {Readonly<{ title: string, body: string, cards: readonly NotificationCard[], target: string | null, tone: "good" | "bad" | "info" }>} NotificationText
+ * @typedef {Readonly<{ title: string, body: string, cards: readonly NotificationCard[], target: string | null, tone: "good" | "bad" | "info", account?: string }>} NotificationText
  * @typedef {{ data: Readonly<Record<string, any>>, account: string, name: (definitionId: unknown) => string, list: (cards: unknown) => string, single: NotificationCard | null, singleName: string, problem: string }} Facts
  */
 
@@ -79,7 +80,7 @@ export function describeNotification({ kind, data }, catalog) {
     return catalog.get(definitionId)?.name ?? definitionId;
   };
   const single = cardOf(data.card);
-  return describe({
+  const described = describe({
     data,
     account: typeof data.account === "string" ? `@${data.account}` : "another player",
     name,
@@ -88,6 +89,7 @@ export function describeNotification({ kind, data }, catalog) {
     singleName: single === null ? "a card" : name(single.definitionId) + serialOf(single),
     problem: PAYMENT_PROBLEMS[/** @type {keyof typeof PAYMENT_PROBLEMS} */ (data.problem)] ?? "it did not match",
   });
+  return typeof data.account === "string" ? Object.freeze({ ...described, account: data.account }) : described;
 }
 
 /**

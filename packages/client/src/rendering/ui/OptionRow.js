@@ -13,6 +13,8 @@ const TITLE_SIZE = 22;
 const GLOW_BLUR = 18;
 /** The portrait of a player's row, as a share of the row's height. */
 const AVATAR_RADIUS = 0.36;
+/** How far apart several portraits stand, in radii (less than 2: each overlaps the one before). */
+const AVATAR_STEP = 1.45;
 
 /**
  * One colour of a row's stripe and its share of the stripe's height.
@@ -23,7 +25,8 @@ const AVATAR_RADIUS = 0.36;
  * A selectable list row: a coloured stripe on the left (a deck's faction
  * mix, one band per faction in proportion to its cards, or a category), a title in the display face, a muted subtitle and
  * a check mark when selected. A row about a player shows their portrait
- * (`avatar`: the account) after the stripe. Behaves exactly like a Button
+ * (`avatar`: the account) after the stripe; a row about several (a game
+ * between two) shows each, overlapping. Behaves exactly like a Button
  * (`text` stays the title for keyboard users and tests); `selected` drives
  * the look.
  */
@@ -34,11 +37,11 @@ export class OptionRow extends Button {
   stripe;
   /** @type {boolean} */
   selected;
-  /** The account whose portrait the row shows, or null for none. @type {string | null} */
+  /** The account (or accounts, left to right) whose portrait the row shows, or null for none. @type {string | readonly string[] | null} */
   avatar;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, subtitle?: string, stripe?: readonly StripeBand[], selected?: boolean, avatar?: string | null, onActivate: () => void }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, subtitle?: string, stripe?: readonly StripeBand[], selected?: boolean, avatar?: string | readonly string[] | null, onActivate: () => void }} options
    */
   constructor(options) {
     super({ ...options, variant: "secondary", align: "left" });
@@ -65,10 +68,10 @@ export class OptionRow extends Button {
       bevelRoundedRect(context, area, { light: withAlpha("#ffffff", 0.14), dark: withAlpha("#000000", 0.45), radius });
     }
     this.#paintStripe(context, theme);
-    if (this.avatar !== null) {
-      const portrait = area.height * AVATAR_RADIUS;
-      drawAvatar(context, theme, { account: this.avatar, center: { x: this.#contentLeft() + portrait, y: area.y + area.height / 2 }, radius: portrait });
-    }
+    const portrait = area.height * AVATAR_RADIUS;
+    this.#accounts().forEach((account, index) => {
+      drawAvatar(context, theme, { account, center: { x: this.#contentLeft() + portrait * (1 + index * AVATAR_STEP), y: area.y + area.height / 2 }, radius: portrait });
+    });
     this.#paintTexts(context, theme, enabled);
     if (this.selected) {
       drawCheckIcon(context, { x: area.x + area.width - PADDING - CHECK_SIZE / 2, y: area.y + area.height / 2 }, CHECK_SIZE, { color: colors.accentLight });
@@ -141,6 +144,20 @@ export class OptionRow extends Button {
     return this.bounds.x + PADDING + (this.stripe.length === 0 ? 0 : STRIPE_WIDTH);
   }
 
+  /** @returns {readonly string[]} the accounts whose portraits the row shows */
+  #accounts() {
+    if (this.avatar === null) {
+      return [];
+    }
+    return typeof this.avatar === "string" ? [this.avatar] : this.avatar;
+  }
+
+  /** How much room the portraits take before the texts. */
+  #portraitsWidth() {
+    const count = this.#accounts().length;
+    return count === 0 ? 0 : this.bounds.height * AVATAR_RADIUS * (2 + (count - 1) * AVATAR_STEP) + PADDING * 0.75;
+  }
+
   /**
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
@@ -149,7 +166,7 @@ export class OptionRow extends Button {
   #paintTexts(context, theme, enabled) {
     const area = this.bounds;
     const { colors } = theme;
-    const left = this.#contentLeft() + (this.avatar === null ? 0 : area.height * AVATAR_RADIUS * 2 + PADDING * 0.75);
+    const left = this.#contentLeft() + this.#portraitsWidth();
     const width = area.width - (left - area.x) - PADDING - (this.selected ? CHECK_SIZE + PADDING : 0);
     const hasSubtitle = this.subtitle.length > 0;
     const titleHeight = hasSubtitle ? area.height * 0.55 : area.height;

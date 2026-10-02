@@ -523,8 +523,7 @@ export class MatchScene extends Scene {
    * @param {MatchInteraction} interaction
    */
   #buildPlayers(snapshot, layout, interaction) {
-    // Online, every seat is a STEEM account (its name): the HUD shows their profile pictures.
-    const online = snapshot.players.some((player) => this.#session?.controllerKindOf(player.id) === "remote");
+    const online = this.#isOnline(snapshot);
     for (const seat of [layout.opponent, layout.me]) {
       const player = snapshot.players.find((candidate) => candidate.id === seat.id);
       if (player === undefined) {
@@ -613,7 +612,17 @@ export class MatchScene extends Scene {
     }
     const { viewport } = this.services;
     const viewerId = this.#spectating ? null : this.#playerId;
-    this.root.add(new CoinTossNode({ flip, ...viewport.bounds, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId) }));
+    const online = this.#isOnline(snapshot);
+    const accountOf = (playerId) => (online ? snapshot.players.find((player) => player.id === playerId)?.name ?? null : null);
+    this.root.add(new CoinTossNode({ flip, ...viewport.bounds, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId), accountOf }));
+  }
+
+  /**
+   * Online, every seat is a STEEM account (its name): the HUD and the toss show their profile pictures.
+   * @param {Snapshot} snapshot
+   */
+  #isOnline(snapshot) {
+    return snapshot.players.some((player) => this.#session?.controllerKindOf(player.id) === "remote");
   }
 
   /**

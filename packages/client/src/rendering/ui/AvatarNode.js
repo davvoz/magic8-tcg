@@ -9,7 +9,7 @@ export class AvatarNode extends UiNode {
   account;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, size: number, account: string }} options
+   * @param {{ id?: string, x?: number, y?: number, size: number, account: string, visible?: boolean }} options
    */
   constructor({ size, account, ...options }) {
     super({ ...options, width: size, height: size });

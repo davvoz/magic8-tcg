@@ -11,6 +11,7 @@ import { CardThumb } from "../cards/CardThumb.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
 import { rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
+import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -30,6 +31,8 @@ const DAY = 24 * 60 * 60 * 1000;
 const ACCOUNT_PATTERN = /^[a-z][a-z0-9.-]{2,15}$/;
 /** The composer, top to bottom: recipient, card filter, list titles, the two lists. */
 const COMPOSER = Object.freeze({ filterTop: 80, titlesTop: 80 + CARD_FILTER_BAR_HEIGHT + 10, listsTop: 80 + CARD_FILTER_BAR_HEIGHT + 42 });
+/** The recipient's field, and their portrait beside it once the account is well formed. */
+const RECIPIENT = Object.freeze({ top: 16, height: 52, gap: 12 });
 
 /**
  * One line about a trade for the list.
@@ -139,8 +142,9 @@ export class TradesScene extends Scene {
     }
     const now = this.#now();
     trades.forEach((trade, index) => {
-      const arrow = trade.role === "proposer" ? `to @${trade.counterparty}` : `from @${trade.proposer}`;
-      list.add(new OptionRow({ id: `trades.row.${trade.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: arrow, subtitle: tradeSubtitle(trade, now), selected: trade.id === this.#selectedId, onActivate: () => this.#select(trade.id) }));
+      const other = trade.role === "proposer" ? trade.counterparty : trade.proposer;
+      const arrow = trade.role === "proposer" ? `to @${other}` : `from @${other}`;
+      list.add(new OptionRow({ id: `trades.row.${trade.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: arrow, subtitle: tradeSubtitle(trade, now), avatar: other, selected: trade.id === this.#selectedId, onActivate: () => this.#select(trade.id) }));
     });
     list.contentHeight = rowsHeight(trades.length);
   }
@@ -157,11 +161,11 @@ export class TradesScene extends Scene {
     const list = panel.add(new ScrollList({ id: "trades.detail", x: INSET, y: INSET, width, height: listHeight }));
     const copyThumbs = (copies) => copies.map((copy) => ({ definitionId: copy.definitionId, caption: `#${copy.serial}`, lines: [`Copy #${copy.serial}`] }));
     const sections = [
-      { title: `@${trade.proposer} offers`, thumbs: copyThumbs(trade.give), empty: "nothing" },
-      { title: `and asks @${trade.counterparty} for`, thumbs: trade.wants.map((want) => ({ definitionId: want.definitionId, caption: `× ${want.count}`, lines: [`Asked: ${want.count}`] })), empty: "nothing (a gift)" },
+      { title: `@${trade.proposer} offers`, avatar: trade.proposer, thumbs: copyThumbs(trade.give), empty: "nothing" },
+      { title: `and asks @${trade.counterparty} for`, avatar: trade.counterparty, thumbs: trade.wants.map((want) => ({ definitionId: want.definitionId, caption: `× ${want.count}`, lines: [`Asked: ${want.count}`] })), empty: "nothing (a gift)" },
     ];
     if (trade.status === "ACCEPTED") {
-      sections.push({ title: `@${trade.counterparty} gave`, thumbs: copyThumbs(trade.take), empty: "nothing" });
+      sections.push({ title: `@${trade.counterparty} gave`, avatar: trade.counterparty, thumbs: copyThumbs(trade.take), empty: "nothing" });
     }
     let y = 0;
     for (const section of sections) {
@@ -176,13 +180,13 @@ export class TradesScene extends Scene {
   }
 
   /**
-   * A heading and a grid of card thumbnails; returns the y below it.
+   * A heading (led by the portrait of the player whose cards they are) and a grid of card thumbnails; returns the y below it.
    * @param {ScrollList} list
-   * @param {{ title: string, thumbs: { definitionId: string, caption: string, lines: string[] }[], empty: string }} section
+   * @param {{ title: string, avatar: string, thumbs: { definitionId: string, caption: string, lines: string[] }[], empty: string }} section
    * @param {number} top
    */
-  #buildThumbSection(list, { title, thumbs, empty }, top) {
-    list.add(new Label({ x: 0, y: top, width: list.rowWidth, height: 28, text: thumbs.length === 0 ? `${title}: ${empty}` : title, size: "body", weight: "bold", colorKey: "accent", align: "left" }));
+  #buildThumbSection(list, { title, avatar, thumbs, empty }, top) {
+    list.add(new Label({ x: 0, y: top, width: list.rowWidth, height: 28, text: thumbs.length === 0 ? `${title}: ${empty}` : title, size: "body", weight: "bold", colorKey: "accent", align: "left", avatar }));
     let y = top + 36;
     if (thumbs.length === 0) {
       return y;
@@ -253,7 +257,9 @@ export class TradesScene extends Scene {
   #buildComposer() {
     const panel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
     const width = COLUMNS.right.width - 2 * INSET;
-    panel.add(new TextField({ id: "trades.to", x: INSET, y: 16, width, height: 52, value: this.#to, placeholder: "Player account", maxLength: 16, onChange: (value) => this.#changeRecipient(value) }));
+    const fieldWidth = width - RECIPIENT.height - RECIPIENT.gap;
+    panel.add(new TextField({ id: "trades.to", x: INSET, y: RECIPIENT.top, width: fieldWidth, height: RECIPIENT.height, value: this.#to, placeholder: "Player account", maxLength: 16, onChange: (value) => this.#changeRecipient(value) }));
+    panel.add(new AvatarNode({ id: "trades.to.avatar", x: INSET + fieldWidth + RECIPIENT.gap, y: RECIPIENT.top, size: RECIPIENT.height, account: this.#to, visible: ACCOUNT_PATTERN.test(this.#to) }));
     buildCardFilterBar(panel, { id: "trades.filter", x: INSET, y: COMPOSER.filterTop, width, filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (filter) => this.#changeFilter(filter) });
     const half = (width - 16) / 2;
     panel.add(new Label({ x: INSET, y: COMPOSER.titlesTop, width: half, height: 28, text: `You give (${this.#give.size}/${MAX_CARDS})`, size: "small", weight: "bold", colorKey: "accent", align: "left" }));
@@ -375,6 +381,12 @@ export class TradesScene extends Scene {
     this.#to = to;
     this.#ask.clear();
     this.#trading().lookUpAskable(ACCOUNT_PATTERN.test(to) ? to : null);
+    // Updated in place, like the Send button: rebuilding the scene would take the focus off the field.
+    const portrait = this.root.findById("trades.to.avatar");
+    if (portrait instanceof AvatarNode) {
+      portrait.account = to;
+      portrait.visible = ACCOUNT_PATTERN.test(to);
+    }
     const send = this.root.findById("trades.send");
     if (send !== null) {
       send.enabled = ACCOUNT_PATTERN.test(this.#to) && this.#give.size > 0;

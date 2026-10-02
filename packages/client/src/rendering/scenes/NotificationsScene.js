@@ -10,6 +10,7 @@ import { NotificationStatus } from "../../application/notifications/Notification
 import { CardThumb } from "../cards/CardThumb.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
 import { unknownCard } from "../cards/unknownCard.js";
+import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -21,7 +22,7 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const PANEL = Object.freeze({ top: 100, height: 770 });
-const ENTRY = Object.freeze({ height: 140, gap: 12, textWidth: 640, open: 150 });
+const ENTRY = Object.freeze({ height: 140, gap: 12, textWidth: 640, open: 150, avatar: 56 });
 const THUMB = Object.freeze({ width: 66, gap: 10, max: 6 });
 const LIST_ID = "notifications.list";
 const MINUTE = 60 * 1000;
@@ -166,11 +167,17 @@ export class NotificationsScene extends Scene {
     const text = describeNotification(item, this.#app.content.catalog);
     const fresh = this.#fresh.has(item.id);
     list.add(new Panel({ id: `notifications.entry.${item.id}`, x: 0, y, width: list.rowWidth, height: ENTRY.height }));
-    const x = 16;
-    list.add(new Label({ id: `notifications.title.${item.id}`, x, y: y + 10, width: ENTRY.textWidth, height: 30, text: fresh ? `New · ${text.title}` : text.title, weight: "bold", align: "left", colorKey: TONE_KEYS[text.tone], fit: true }));
-    list.add(new Label({ x, y: y + 40, width: ENTRY.textWidth, height: 22, text: timeAgo(item.createdAt, now), size: "tiny", align: "left", colorKey: "textMuted" }));
-    list.add(new TextBlock({ id: `notifications.body.${item.id}`, x, y: y + 64, width: ENTRY.textWidth, height: ENTRY.height - 72, text: text.body, size: "small", colorKey: "text" }));
-    const thumbsX = x + ENTRY.textWidth + 20;
+    // A notification about another player leads with their portrait; the texts move over for it.
+    const lead = text.account === undefined ? 0 : ENTRY.avatar + 16;
+    if (text.account !== undefined) {
+      list.add(new AvatarNode({ id: `notifications.avatar.${item.id}`, x: 16, y: y + 12, size: ENTRY.avatar, account: text.account }));
+    }
+    const x = 16 + lead;
+    const textWidth = ENTRY.textWidth - lead;
+    list.add(new Label({ id: `notifications.title.${item.id}`, x, y: y + 10, width: textWidth, height: 30, text: fresh ? `New · ${text.title}` : text.title, weight: "bold", align: "left", colorKey: TONE_KEYS[text.tone], fit: true }));
+    list.add(new Label({ x, y: y + 40, width: textWidth, height: 22, text: timeAgo(item.createdAt, now), size: "tiny", align: "left", colorKey: "textMuted" }));
+    list.add(new TextBlock({ id: `notifications.body.${item.id}`, x, y: y + 64, width: textWidth, height: ENTRY.height - 72, text: text.body, size: "small", colorKey: "text" }));
+    const thumbsX = 16 + ENTRY.textWidth + 20;
     text.cards.slice(0, THUMB.max).forEach((card, index) => {
       const definition = this.#app.content.catalog.get(card.definitionId);
       list.add(

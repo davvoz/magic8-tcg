@@ -106,6 +106,7 @@ describe("TradesScene", () => {
     await flush();
     const row = byId(scene, `trades.row.${TRADE.id}`);
     assert.equal(row.text, "from @alice");
+    assert.equal(row.avatar, "alice");
     assert.equal(row.subtitle, "open · gives 1 · asks 2 · 3 day(s) left");
     row.activate();
     assert.ok(rendered(scene).some((text) => text.includes("@alice offers")));
