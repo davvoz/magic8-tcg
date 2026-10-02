@@ -46,7 +46,7 @@ import { fetchServerStatus } from "./infrastructure/api/fetchServerStatus.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
 import { FetchContentSource } from "./infrastructure/config/FetchContentSource.js";
-import { loadBrowserImage } from "./infrastructure/images/loadBrowserImage.js";
+import { loadBrowserImage, scaledImageLoader } from "./infrastructure/images/loadBrowserImage.js";
 import { ConsoleLogger } from "./infrastructure/logging/ConsoleLogger.js";
 import { InMemoryStore } from "./infrastructure/persistence/InMemoryStore.js";
 import { LocalStorageStore } from "./infrastructure/persistence/LocalStorageStore.js";
@@ -70,6 +70,7 @@ import { Avatars } from "./rendering/images/Avatars.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 import { MaintenanceBanner } from "./rendering/page/MaintenanceBanner.js";
+import { TextEntryBar } from "./rendering/page/TextEntryBar.js";
 import { describeBanner } from "./application/maintenance/MaintenanceNotice.js";
 import { MaintenanceWatch } from "./application/maintenance/MaintenanceWatch.js";
 import { registerServiceWorker } from "./infrastructure/pwa/registerServiceWorker.js";
@@ -102,6 +103,13 @@ const CONTENT_MANIFEST = Object.freeze({
 const ART_DIRECTORY = "data/art/";
 /** Notifications after which the player's wallet holds a different amount. */
 const WALLET_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "sale.sold", "sale.bought"]);
+/**
+ * On a phone, card illustrations are kept this wide (enough for the largest
+ * card it shows, at twice its pixel density), and fetched as cards are shown
+ * rather than all at start-up: the full set is tens of megabytes to download
+ * and hundreds to hold decoded.
+ */
+const PHONE_ILLUSTRATION_WIDTH = 512;
 /** How often the maintenance countdown moves. */
 const MAINTENANCE_TICK_MS = 1000;
 /** How often the page asks again, for tabs without a realtime connection (signed out) and pushes that went missing. */
@@ -184,7 +192,10 @@ function buildPresentation(theme) {
     cancelFrame: (handle) => window.cancelAnimationFrame(handle),
     now: () => performance.now(),
   });
-  const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender() });
+  // A field tapped with a finger is typed into with the phone's own keyboard.
+  const textEntry = new TextEntryBar(document, { onChange: () => loop.requestRender() });
+  const touchFirst = isTouchFirst();
+  const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender(), textEntry, touchFirst });
   const host = new CanvasHost({
     canvas,
     viewport,
@@ -193,6 +204,7 @@ function buildPresentation(theme) {
       sceneManager.resize();
       loop.requestRender();
     },
+    insets: readSafeArea,
   });
   const input = new InputManager({ canvas, window, viewport, target: sceneManager });
   host.attach();
@@ -213,6 +225,25 @@ function buildPresentation(theme) {
   loop.start(target);
   presentation = { sceneManager, loop, viewport, restart: () => loop.start(target) };
   return presentation;
+}
+
+/**
+ * The screen's unsafe edges (a notch, rounded corners, the home indicator),
+ * in CSS pixels: the padding index.html gives #safe-area from env(safe-area-inset-*).
+ * @returns {{ top: number, right: number, bottom: number, left: number }}
+ */
+function readSafeArea() {
+  const probe = document.getElementById("safe-area");
+  if (probe === null) {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+  const style = window.getComputedStyle(probe);
+  return { top: parseFloat(style.paddingTop) || 0, right: parseFloat(style.paddingRight) || 0, bottom: parseFloat(style.paddingBottom) || 0, left: parseFloat(style.paddingLeft) || 0 };
+}
+
+/** Whether the device is mainly played by touch (a phone, a tablet). */
+function isTouchFirst() {
+  return window.matchMedia?.("(pointer: coarse)").matches === true;
 }
 
 /** @param {unknown} error */
@@ -424,8 +455,19 @@ async function boot() {
     }
   });
   sceneManager.navigate(SceneId.MAIN_MENU);
+  preloadArt({ illustrations, coinArt, tableArt, uiArt });
+}
+
+/**
+ * Starts fetching the painted art in the background.
+ * @param {{ illustrations: CardIllustrations, coinArt: CoinArt, tableArt: TableArt, uiArt: UiArt }} art
+ */
+function preloadArt({ illustrations, coinArt, tableArt, uiArt }) {
   // Fetched in the background so cards rarely appear procedural first; each one redraws as it arrives.
-  void illustrations.preload(illustrations.cardIds);
+  // A phone fetches each as its card is first shown instead (PHONE_ILLUSTRATION_WIDTH).
+  if (!isTouchFirst()) {
+    void illustrations.preload(illustrations.cardIds);
+  }
   // Ready before the first match, so the coin is the painted one from its first frame.
   void coinArt.preload();
   // Small and seen everywhere (the menu's card fan, every match): fetched straight away.
@@ -466,7 +508,7 @@ function buildIllustrations(raw, catalog) {
   return new CardIllustrations({
     manifest: built.ok ? built.value : NO_ILLUSTRATIONS,
     urlFor: (file) => `${ART_DIRECTORY}${file}`,
-    loadImage: loadBrowserImage,
+    loadImage: isTouchFirst() ? scaledImageLoader(PHONE_ILLUSTRATION_WIDTH) : loadBrowserImage,
     onLoaded: () => presentation?.loop.requestRender(),
     logger,
   });

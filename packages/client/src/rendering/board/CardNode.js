@@ -6,6 +6,7 @@
  * the node tells its visual when to be raised, and the visual — which
  * outlives the node across rebuilds — eases the card up and down.
  */
+import { CardFaceProfile } from "../cards/CardFace.js";
 import { drawCard } from "../cards/CardRenderer.js";
 import { UiNode } from "../ui/UiNode.js";
 
@@ -21,12 +22,16 @@ export class CardNode extends UiNode {
   highlight;
   /** @type {(instanceId: string) => void} */
   onTap;
+  /** The face it is drawn with. @type {import("../cards/CardFace.js").CardFaceProfile} */
+  profile;
 
   /**
-   * @param {{ card: import("@magic8/engine/domain/game/GameSnapshot.js").CardView, visual: import("../cards/CardVisual.js").CardVisual, slot: import("@magic8/engine/shared/geometry.js").Rect, highlight: string | null, enabled: boolean, onTap: (instanceId: string) => void }} options
+   * @param {{ card: import("@magic8/engine/domain/game/GameSnapshot.js").CardView, visual: import("../cards/CardVisual.js").CardVisual, slot: import("@magic8/engine/shared/geometry.js").Rect, highlight: string | null, enabled: boolean, onTap: (instanceId: string) => void, profile?: import("../cards/CardFace.js").CardFaceProfile }} options
+   *   `profile`: the board's card face (the mini one on a phone)
    */
-  constructor({ card, visual, slot, highlight, enabled, onTap }) {
+  constructor({ card, visual, slot, highlight, enabled, onTap, profile = CardFaceProfile.COMPACT }) {
     super({ id: card.instanceId, ...slot, enabled });
+    this.profile = profile;
     this.card = card;
     this.visual = visual;
     this.highlight = highlight;
@@ -57,7 +62,7 @@ export class CardNode extends UiNode {
     const lifted = this.isLifted;
     this.visual.liftTo(lifted);
     const scale = 1 + (LIFT_SCALE - 1) * this.visual.lift;
-    drawCard(context, theme, this.card, { ...liftedPlacement(this.visual.state, scale), highlight: this.highlight, focused: lifted, flash: this.visual.flash });
+    drawCard(context, theme, this.card, { ...liftedPlacement(this.visual.state, scale), highlight: this.highlight, focused: lifted, flash: this.visual.flash, profile: this.profile });
   }
 }
 

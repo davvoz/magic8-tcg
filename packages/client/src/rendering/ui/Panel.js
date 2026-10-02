@@ -27,6 +27,9 @@ const CORNER_FLIPS = Object.freeze([[1, 1], [-1, 1], [1, -1], [-1, -1]]);
  * image: regenerating it means measuring it again).
  */
 export const PANEL_INSET = 34;
+/** The corners of a `smallCorners` panel, and how far its content keeps from its sides. */
+const SMALL_CORNER_SCALE = 0.06;
+export const SMALL_PANEL_INSET = 18;
 
 /**
  * A bordered box; a container for other widgets. Drawn as a slab with a
@@ -37,20 +40,21 @@ export const PANEL_INSET = 34;
  * large enough is dressed with the painted gold corners (Theme.uiArt).
  * `glowKey` lights it: a halo and a tint in that theme colour (something
  * new). With `onActivate` the whole panel is clickable (a list entry); the
- * widgets on it still take their own clicks.
+ * widgets on it still take their own clicks. `smallCorners` keeps the painted
+ * corners within SMALL_PANEL_INSET, for the tighter panels of a phone's screen.
  */
 export class Panel extends UiNode {
-  /** @type {{ fillKey: string, strokeKey: string | null, textured: boolean, glowKey: string | null }} */
+  /** @type {{ fillKey: string, strokeKey: string | null, textured: boolean, glowKey: string | null, smallCorners: boolean }} */
   style;
   /** @type {(() => void) | null} */
   onActivate;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, fillKey?: string, strokeKey?: string | null, textured?: boolean, glowKey?: string | null, onActivate?: (() => void) | null }} [options]
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, fillKey?: string, strokeKey?: string | null, textured?: boolean, glowKey?: string | null, onActivate?: (() => void) | null, smallCorners?: boolean }} [options]
    */
   constructor(options = {}) {
     super(options);
-    this.style = { fillKey: options.fillKey ?? "panel", strokeKey: options.strokeKey === undefined ? "panelBorder" : options.strokeKey, textured: options.textured ?? false, glowKey: options.glowKey ?? null };
+    this.style = { fillKey: options.fillKey ?? "panel", strokeKey: options.strokeKey === undefined ? "panelBorder" : options.strokeKey, textured: options.textured ?? false, glowKey: options.glowKey ?? null, smallCorners: options.smallCorners ?? false };
     this.onActivate = options.onActivate ?? null;
     this.interactive = this.onActivate !== null;
   }
@@ -84,7 +88,7 @@ export class Panel extends UiNode {
     bevelRoundedRect(context, area, { light: withAlpha("#ffffff", 0.08), dark: withAlpha("#000000", 0.5), radius });
     fillRoundedRect(context, insetRect(area, RIM_INSET), { stroke: withAlpha(theme.colors.accent, 0.12), radius: Math.max(0, radius - RIM_INSET), lineWidth: 1 });
     if (!this.style.textured) {
-      paintCorners(context, theme, area);
+      paintCorners(context, theme, area, this.style.smallCorners ? SMALL_CORNER_SCALE : CORNER.maxScale);
     }
   }
 
@@ -114,8 +118,9 @@ export class Panel extends UiNode {
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").Theme} theme
  * @param {import("@magic8/engine/shared/geometry.js").Rect} area
+ * @param {number} maxScale the largest the corners may be drawn
  */
-function paintCorners(context, theme, area) {
+function paintCorners(context, theme, area, maxScale) {
   const art = theme.uiArt;
   const image = art?.imageFor(UiPiece.CORNER) ?? null;
   if (art === undefined || image === null) {
@@ -124,8 +129,8 @@ function paintCorners(context, theme, area) {
   const extent = inPixels(art.layout.corner.extent, image);
   const lines = { x: art.layout.corner.lines.x * image.width, y: art.layout.corner.lines.y * image.height };
   const reach = { x: extent.x + extent.width - lines.x, y: extent.y + extent.height - lines.y };
-  const scale = Math.min(CORNER.maxScale, (CORNER.reach * area.width) / reach.x, (CORNER.reach * area.height) / reach.y);
-  if (scale < CORNER.minScale) {
+  const scale = Math.min(maxScale, (CORNER.reach * area.width) / reach.x, (CORNER.reach * area.height) / reach.y);
+  if (scale < Math.min(CORNER.minScale, maxScale)) {
     return;
   }
   context.save();

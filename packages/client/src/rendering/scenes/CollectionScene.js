@@ -6,10 +6,12 @@
  * Opened from a notification, the cards that came with it are "fresh":
  * listed first, lit and tagged, the first of them selected, and the copies
  * whose serial is known lit in its details.
+ * On a compact screen the filter is one button beside the list's title and
+ * a card is picked by tapping its strip.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
-import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
+import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardStrip } from "../cards/CardStrip.js";
 import { rarityOf } from "../cards/cardInfo.js";
@@ -17,23 +19,26 @@ import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
+import { Hotspot } from "../ui/Hotspot.js";
 import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
-import { ACTION, COLUMNS, HEADER, INSET, ROW, rowY, rowsHeight } from "./deckBuilder/layout.js";
+import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "collection.cards";
 const COPIES_ID = "collection.copies";
-const FILTER_TOP = 60;
-const LIST_TOP = FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12;
-const DETAIL = Object.freeze({ width: 380, height: 560 });
-const COPY_ROW = 30;
+/**
+ * @typedef {Readonly<{ filterTop: number, listTop: number, filterButton: boolean, titleWidth: number, detail: { width: number, height: number }, copyRow: number, statusOffset: number }>} CollectionMetrics
+ *   `filterButton`: the filter as one button beside the list's title; `statusOffset`: where the status line starts, right of the title
+ */
+/** @type {CollectionMetrics} */
+const WIDE = Object.freeze({ filterTop: 60, listTop: 60 + CARD_FILTER_BAR_HEIGHT + 12, filterButton: false, titleWidth: 0, detail: Object.freeze({ width: 380, height: 560 }), copyRow: 30, statusOffset: 260 });
+/** @type {CollectionMetrics} */
+const COMPACT = Object.freeze({ filterTop: 12, listTop: 12 + CARD_FILTER_BUTTON_HEIGHT + 10, filterButton: true, titleWidth: 150, detail: Object.freeze({ width: 196, height: 274 }), copyRow: 26, statusOffset: 170 });
 /** Room for the "New: …" line above the copies of a fresh card. */
 const FRESH_LINE = 30;
-/** Where the status line starts, right of the title. */
-const STATUS_OFFSET = 260;
 
 /**
  * @typedef {Readonly<{ definitionId: string, count?: number, serial?: number }>} FreshCard a card just received (from a notification)
@@ -42,6 +47,16 @@ const STATUS_OFFSET = 260;
  */
 
 export class CollectionScene extends Scene {
+  /** The frame for the screen in use (the compact one on a phone). */
+  get #screen() {
+    return screenLayout(this.services.viewport);
+  }
+
+  /** @returns {CollectionMetrics} */
+  get #metrics() {
+    return this.#screen.compact ? COMPACT : WIDE;
+  }
+
   #app;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
@@ -85,7 +100,15 @@ export class CollectionScene extends Scene {
   }
 
   onCancel() {
+    if (this.modal !== null) {
+      super.onCancel();
+      return;
+    }
     this.services.navigate(this.#from);
+  }
+
+  relayout() {
+    this.#rebuild();
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -114,10 +137,10 @@ export class CollectionScene extends Scene {
     if (!cards.some((owned) => owned.definitionId === this.#selectedId)) {
       this.#selectedId = cards[0]?.definitionId ?? null;
     }
-    const listPanel = this.root.add(new Panel({ x: COLUMNS.left.x, y: COLUMNS.top, width: COLUMNS.left.width, height: COLUMNS.height }));
+    const listPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width: this.#screen.columns.left.width, height: this.#screen.columns.height }));
     const firstFilter = this.#buildFilters(listPanel);
     const firstRow = this.#buildList(listPanel, cards);
-    const detailPanel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
+    const detailPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
     this.#buildDetail(detailPanel, cards.find((owned) => owned.definitionId === this.#selectedId));
     this.focus(this.root.findById(focusedId) ?? firstRow ?? firstFilter ?? back);
     this.services.requestRender();
@@ -126,17 +149,18 @@ export class CollectionScene extends Scene {
   /** @returns {Button} the Back button */
   #buildHeader() {
     const { viewport } = this.services;
-    const statusX = HEADER.sideMargin + STATUS_OFFSET;
-    this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: STATUS_OFFSET, height: HEADER.height, text: "Collection", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    const { statusOffset } = this.#metrics;
+    const statusX = this.#screen.header.sideMargin + statusOffset;
+    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: statusOffset, height: this.#screen.header.height, text: "Collection", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
     const status = this.#status();
-    this.root.add(new Label({ id: "collection.status", x: statusX, y: HEADER.y, width: viewport.logicalWidth - HEADER.sideMargin - (this.services.hasScene(SceneId.MARKET) ? 3 : 2) * (HEADER.backWidth + 16) - INSET - statusX, height: HEADER.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
+    this.root.add(new Label({ id: "collection.status", x: statusX, y: this.#screen.header.y, width: viewport.logicalWidth - this.#screen.header.sideMargin - (this.services.hasScene(SceneId.MARKET) ? 3 : 2) * (this.#screen.header.backWidth + 16) - this.#screen.inset - statusX, height: this.#screen.header.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
     if (this.services.hasScene(SceneId.MARKET)) {
-      this.root.add(new Button({ id: "collection.market", x: viewport.logicalWidth - HEADER.sideMargin - 3 * HEADER.backWidth - 32, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.COLLECTION }) }));
+      this.root.add(new Button({ id: "collection.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 3 * this.#screen.header.backWidth - 32, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.COLLECTION }) }));
     }
     if (this.services.hasScene(SceneId.TRADES)) {
-      this.root.add(new Button({ id: "collection.trades", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Trades", onActivate: () => this.services.navigate(SceneId.TRADES) }));
+      this.root.add(new Button({ id: "collection.trades", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Trades", onActivate: () => this.services.navigate(SceneId.TRADES) }));
     }
-    return this.root.add(new Button({ id: "collection.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: this.#from === SceneId.MAIN_MENU ? "Back to menu" : "Back", onActivate: () => this.services.navigate(this.#from) }));
+    return this.root.add(new Button({ id: "collection.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#from === SceneId.MAIN_MENU ? this.#screen.backText : "Back", onActivate: () => this.services.navigate(this.#from) }));
   }
 
   /** @returns {{ text: string, colorKey: string }} */
@@ -169,36 +193,48 @@ export class CollectionScene extends Scene {
    * @returns {Button | null} the first filter button
    */
   #buildFilters(panel) {
-    const inner = COLUMNS.left.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: 14, width: inner, height: 36, text: "Your cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
-    return buildCardFilterBar(panel, { id: "collection.filter", x: INSET, y: FILTER_TOP, width: inner, filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (filter) => this.#changeFilter(filter) });
+    const { inset } = this.#screen;
+    const { filterTop, filterButton, titleWidth } = this.#metrics;
+    const inner = this.#screen.columns.left.width - 2 * inset;
+    const filter = { id: "collection.filter", filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (/** @type {import("../../application/content/CardFilter.js").CardFilter} */ chosen) => this.#changeFilter(chosen) };
+    if (filterButton) {
+      panel.add(new Label({ x: inset, y: filterTop, width: titleWidth, height: CARD_FILTER_BUTTON_HEIGHT, text: "Your cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+      return buildCardFilterButton(panel, { ...filter, x: inset + titleWidth, y: filterTop, width: inner - titleWidth, dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() } });
+    }
+    panel.add(new Label({ x: inset, y: 14, width: inner, height: 36, text: "Your cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    return buildCardFilterBar(panel, { ...filter, x: inset, y: filterTop, width: inner });
   }
 
   /**
    * @param {Panel} panel
    * @param {readonly OwnedCard[]} cards
-   * @returns {Button | null} the first row's button
+   * @returns {Button | Hotspot | null} the first row's button
    */
   #buildList(panel, cards) {
-    const width = COLUMNS.left.width - 2 * INSET;
-    const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: LIST_TOP, width, height: COLUMNS.height - LIST_TOP - INSET }));
+    const width = this.#screen.columns.left.width - 2 * this.#screen.inset;
+    const { listTop } = this.#metrics;
+    const list = panel.add(new ScrollList({ id: LIST_ID, x: this.#screen.inset, y: listTop, width, height: this.#screen.columns.height - listTop - this.#screen.inset }));
     if (cards.length === 0) {
-      list.add(new Label({ x: 0, y: 0, width: list.rowWidth, height: ROW.height, text: this.#emptyText(), colorKey: "textMuted", fit: true }));
-      list.contentHeight = ROW.height;
+      list.add(new Label({ x: 0, y: 0, width: list.rowWidth, height: this.#screen.row.height, text: this.#emptyText(), colorKey: "textMuted", fit: true }));
+      list.contentHeight = this.#screen.row.height;
       return this.#requireAccount().needsStarter ? this.#buildStarterLink(list) : null;
     }
-    const labelWidth = list.rowWidth - ACTION.width - ACTION.gap;
-    /** @type {Button | null} */
+    const { compact, action, row } = this.#screen;
+    // A phone has no room for View beside the strip: the strip itself picks the card.
+    const labelWidth = compact ? list.rowWidth : list.rowWidth - action.width - action.gap;
+    /** @type {Button | Hotspot | null} */
     let first = null;
     cards.forEach((owned, index) => {
-      const y = rowY(index);
+      const y = this.#screen.rowY(index);
       const selected = owned.definitionId === this.#selectedId;
       const fresh = this.#fresh.has(owned.definitionId);
-      list.add(new CardStrip({ id: `collection.strip.${owned.definitionId}`, x: 0, y, width: labelWidth, height: ROW.height, card: owned.card ?? unknownCard(owned.definitionId), count: owned.copies.length, broken: owned.card === undefined, muted: !selected && !fresh, rarity: rarityOf(this.#app, owned.definitionId), fresh }));
-      const view = list.add(new Button({ id: `collection.view.${owned.definitionId}`, x: labelWidth + ACTION.gap, y, width: ACTION.width, height: ROW.height, text: "View", variant: selected ? "primary" : "secondary", onActivate: () => this.#select(owned.definitionId) }));
+      list.add(new CardStrip({ id: `collection.strip.${owned.definitionId}`, x: 0, y, width: labelWidth, height: row.height, card: owned.card ?? unknownCard(owned.definitionId), count: owned.copies.length, broken: owned.card === undefined, muted: !selected && !fresh, rarity: rarityOf(this.#app, owned.definitionId), fresh }));
+      const select = () => this.#select(owned.definitionId);
+      const id = `collection.view.${owned.definitionId}`;
+      const view = compact ? list.add(new Hotspot({ id, x: 0, y, width: labelWidth, height: row.height, onActivate: select })) : list.add(new Button({ id, x: labelWidth + action.gap, y, width: action.width, height: row.height, text: "View", variant: selected ? "primary" : "secondary", onActivate: select }));
       first ??= view;
     });
-    list.contentHeight = rowsHeight(cards.length);
+    list.contentHeight = this.#screen.rowsHeight(cards.length);
     list.scrollTo(this.#scrollY);
     return first;
   }
@@ -212,7 +248,7 @@ export class CollectionScene extends Scene {
 
   /** @param {ScrollList} list */
   #buildStarterLink(list) {
-    return list.add(new Button({ id: "collection.starter", x: 0, y: ROW.height + ROW.gap, width: list.rowWidth, height: ROW.height, text: "Take your free starter deck", variant: "primary", enabled: this.services.hasScene(SceneId.STARTER), onActivate: () => this.services.navigate(SceneId.STARTER) }));
+    return list.add(new Button({ id: "collection.starter", x: 0, y: this.#screen.row.height + this.#screen.row.gap, width: list.rowWidth, height: this.#screen.row.height, text: "Take your free starter deck", variant: "primary", enabled: this.services.hasScene(SceneId.STARTER), onActivate: () => this.services.navigate(SceneId.STARTER) }));
   }
 
   /**
@@ -221,16 +257,17 @@ export class CollectionScene extends Scene {
    */
   #buildDetail(panel, owned) {
     if (owned === undefined) {
-      panel.add(new Label({ x: INSET, y: INSET, width: COLUMNS.right.width - 2 * INSET, height: 30, text: "Select a card to see its copies.", size: "small", align: "left", colorKey: "textMuted" }));
+      panel.add(new Label({ x: this.#screen.inset, y: this.#screen.inset, width: this.#screen.columns.right.width - 2 * this.#screen.inset, height: 30, text: "Select a card to see its copies.", size: "small", align: "left", colorKey: "textMuted" }));
       return;
     }
     const card = owned.card ?? unknownCard(owned.definitionId);
-    const top = (COLUMNS.height - DETAIL.height) / 2;
+    const { detail, copyRow } = this.#metrics;
+    const top = (this.#screen.columns.height - detail.height) / 2;
     if (owned.card !== undefined) {
-      panel.add(new CardDetail({ id: "collection.card", x: INSET, y: top, width: DETAIL.width, height: DETAIL.height, card: owned.card, rarity: rarityOf(this.#app, owned.definitionId) }));
+      panel.add(new CardDetail({ id: "collection.card", x: this.#screen.inset, y: top, width: detail.width, height: detail.height, card: owned.card, rarity: rarityOf(this.#app, owned.definitionId) }));
     }
-    const x = INSET + DETAIL.width + INSET;
-    const width = COLUMNS.right.width - x - INSET;
+    const x = this.#screen.inset + detail.width + this.#screen.inset;
+    const width = this.#screen.columns.right.width - x - this.#screen.inset;
     const rarity = rarityOf(this.#app, owned.definitionId);
     panel.add(new Label({ x, y: top, width, height: 40, text: card.name, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     panel.add(new Label({ id: "collection.rarity", x, y: top + 42, width, height: 28, text: rarity === null ? "Rarity unknown" : rarityLabel(rarity), weight: "bold", align: "left", colorKey: rarityColorKey(rarity) }));
@@ -242,7 +279,7 @@ export class CollectionScene extends Scene {
       panel.add(new Label({ id: "collection.fresh", x, y: copiesTop - 4, width, height: 28, text: `New: ${fresh.count} cop${fresh.count === 1 ? "y" : "ies"} just received`, size: "small", weight: "bold", align: "left", colorKey: "success", fit: true }));
       copiesTop += FRESH_LINE;
     }
-    const list = panel.add(new ScrollList({ id: COPIES_ID, x, y: copiesTop, width, height: DETAIL.height - (copiesTop - top) }));
+    const list = panel.add(new ScrollList({ id: COPIES_ID, x, y: copiesTop, width, height: detail.height - (copiesTop - top) }));
     // The copies received with the notification (when their serials are known) come first, lit.
     const isNew = (/** @type {{ serial: number }} */ copy) => fresh?.serials.has(copy.serial) ?? false;
     const copies = [...owned.copies].sort((left, right) => Number(isNew(right)) - Number(isNew(left)) || left.edition.localeCompare(right.edition) || left.serial - right.serial);
@@ -250,9 +287,9 @@ export class CollectionScene extends Scene {
       const status = copy.status === "active" ? "" : ` · ${copy.status}`;
       const lit = isNew(copy);
       const colorKey = copy.status === "active" ? "text" : "disabledText";
-      list.add(new Label({ x: 0, y: index * COPY_ROW, width: list.rowWidth, height: COPY_ROW, text: `#${copy.serial} · ${copy.edition}${status}${lit ? " · new" : ""}`, size: "small", weight: lit ? "bold" : "normal", align: "left", colorKey: lit ? "success" : colorKey, fit: true }));
+      list.add(new Label({ x: 0, y: index * copyRow, width: list.rowWidth, height: copyRow, text: `#${copy.serial} · ${copy.edition}${status}${lit ? " · new" : ""}`, size: "small", weight: lit ? "bold" : "normal", align: "left", colorKey: lit ? "success" : colorKey, fit: true }));
     });
-    list.contentHeight = copies.length * COPY_ROW;
+    list.contentHeight = copies.length * copyRow;
   }
 
   /** @param {import("../../application/content/CardFilter.js").CardFilter} filter */

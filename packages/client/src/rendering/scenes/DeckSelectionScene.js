@@ -7,6 +7,7 @@
  * decks you built); offline, the preconstructed decks too. Each deck is a
  * banner row striped with its faction mix; decks that break the rules are shown
  * disabled with the first problem so the player knows to fix them.
+ * On a compact screen the panel fills it and the footer is one row.
  */
 import { BasicAiController } from "../../application/match/BasicAiController.js";
 import { DeckSource } from "../../application/decks/DeckSelectionService.js";
@@ -23,12 +24,39 @@ import { ScrollList } from "../ui/ScrollList.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
-const PANEL = Object.freeze({ width: 1200, height: 780 });
-const INSET = 60;
-const ROW = Object.freeze({ height: 72, gap: 12 });
-const LIST_TOP = 150;
-const LIST_BOTTOM = 170;
-const FOOTER = Object.freeze({ height: 60, gap: 20 });
+/**
+ * @typedef {Readonly<{
+ *   panel: { width: number, height: number }, inset: number, row: { height: number, gap: number },
+ *   title: { y: number, height: number }, subtitle: { y: number, height: number }, ornamentY: number | null,
+ *   listTop: number, listBottom: number, footer: { height: number, gap: number, oneRow: boolean },
+ * }>} SelectionLayout `listBottom`: room under the list for the footer; `footer.oneRow`: Back, Deck builder and Start side by side
+ */
+/** @type {SelectionLayout} */
+const WIDE = Object.freeze({
+  panel: Object.freeze({ width: 1200, height: 780 }),
+  inset: 60,
+  row: Object.freeze({ height: 72, gap: 12 }),
+  title: Object.freeze({ y: 24, height: 56 }),
+  subtitle: Object.freeze({ y: 80, height: 28 }),
+  ornamentY: 112,
+  listTop: 150,
+  listBottom: 170,
+  footer: Object.freeze({ height: 60, gap: 20, oneRow: false }),
+});
+/** The compact panel's margin from the screen's edges; its size is the screen's. */
+const COMPACT_MARGIN = 8;
+const COMPACT = Object.freeze({
+  inset: 22,
+  row: Object.freeze({ height: 60, gap: 8 }),
+  title: Object.freeze({ y: 12, height: 40 }),
+  subtitle: Object.freeze({ y: 48, height: 22 }),
+  ornamentY: null,
+  listTop: 76,
+  listBottom: 76,
+  footer: Object.freeze({ height: 48, gap: 12, oneRow: true }),
+});
+/** In the compact footer: Back and Deck builder take these widths, Start the rest. */
+const COMPACT_FOOTER = Object.freeze({ back: 140, builder: 190 });
 const HUMAN_SEAT = Object.freeze({ id: "player", name: "You" });
 const AI_SEAT = Object.freeze({ id: "ai", name: "Opponent" });
 const LIST_ID = "decks";
@@ -61,27 +89,48 @@ export class DeckSelectionScene extends Scene {
     super.render(context);
   }
 
+  relayout() {
+    this.#rememberScroll();
+    this.#rebuild();
+  }
+
+  /** @returns {SelectionLayout} */
+  #layout() {
+    const { viewport } = this.services;
+    if (!viewport.compact) {
+      return WIDE;
+    }
+    return { ...COMPACT, panel: { width: viewport.logicalWidth - 2 * COMPACT_MARGIN, height: viewport.logicalHeight - 2 * COMPACT_MARGIN } };
+  }
+
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
     const { viewport } = this.services;
-    const panel = this.root.add(new Panel({ x: (viewport.logicalWidth - PANEL.width) / 2, y: (viewport.logicalHeight - PANEL.height) / 2, width: PANEL.width, height: PANEL.height }));
-    panel.add(new Label({ x: 0, y: 24, width: PANEL.width, height: 56, text: "Choose your deck", size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
-    panel.add(new Label({ x: 0, y: 80, width: PANEL.width, height: 28, text: "The opponent plays one of the preconstructed decks.", size: "small", colorKey: "textMuted" }));
-    panel.add(new Ornament({ x: PANEL.width / 2 - 160, y: 112, width: 320, height: 14 }));
-    this.#buildList(panel);
-    const start = this.#buildFooter(panel);
+    const layout = this.#layout();
+    const { panel: size } = layout;
+    const panel = this.root.add(new Panel({ x: (viewport.logicalWidth - size.width) / 2, y: (viewport.logicalHeight - size.height) / 2, width: size.width, height: size.height }));
+    panel.add(new Label({ x: 0, y: layout.title.y, width: size.width, height: layout.title.height, text: "Choose your deck", size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
+    panel.add(new Label({ x: layout.inset, y: layout.subtitle.y, width: size.width - 2 * layout.inset, height: layout.subtitle.height, text: "The opponent plays one of the preconstructed decks.", size: "small", colorKey: "textMuted", fit: true }));
+    if (layout.ornamentY !== null) {
+      panel.add(new Ornament({ x: size.width / 2 - 160, y: layout.ornamentY, width: 320, height: 14 }));
+    }
+    this.#buildList(panel, layout);
+    const start = this.#buildFooter(panel, layout);
     this.focus(this.root.findById(focusedId) ?? (this.#selectedDeckId === null ? null : start));
     this.services.requestRender();
   }
 
-  /** @param {Panel} panel */
-  #buildList(panel) {
+  /**
+   * @param {Panel} panel
+   * @param {SelectionLayout} layout
+   */
+  #buildList(panel, { panel: size, inset, row: ROW, listTop, listBottom }) {
     const options = this.#app.deckSelection.listDecks();
-    const width = PANEL.width - 2 * INSET;
-    const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: LIST_TOP, width, height: PANEL.height - LIST_TOP - LIST_BOTTOM }));
+    const width = size.width - 2 * inset;
+    const list = panel.add(new ScrollList({ id: LIST_ID, x: inset, y: listTop, width, height: size.height - listTop - listBottom }));
     if (options.length === 0) {
-      list.add(new Label({ x: 0, y: 0, width, height: ROW.height, text: this.#app.account?.needsStarter ? "No decks yet: take your free starter deck from the main menu." : "No decks are available.", colorKey: "textMuted" }));
+      list.add(new Label({ x: 0, y: 0, width, height: ROW.height, text: this.#app.account?.needsStarter ? "No decks yet: take your free starter deck from the main menu." : "No decks are available.", colorKey: "textMuted", fit: true }));
       list.contentHeight = ROW.height;
       return;
     }
@@ -110,25 +159,40 @@ export class DeckSelectionScene extends Scene {
 
   /**
    * @param {Panel} panel
+   * @param {SelectionLayout} layout
    * @returns {Button} the Start button
    */
-  #buildFooter(panel) {
+  #buildFooter(panel, { panel: size, inset, listBottom, footer }) {
     const { navigate, hasScene } = this.services;
-    const width = PANEL.width - 2 * INSET;
-    const half = (width - FOOTER.gap) / 2;
-    const top = PANEL.height - LIST_BOTTOM + 20;
-    const start = panel.add(new Button({ id: "startMatch", x: INSET, y: top, width, height: FOOTER.height, variant: "primary", enabled: this.#selectedDeckId !== null, text: "Start match", onActivate: () => this.#startMatch() }));
-    panel.add(new Button({ id: "backToMenu", x: INSET, y: top + FOOTER.height + FOOTER.gap, width: half, height: 50, text: "Back", onActivate: () => navigate(SceneId.MAIN_MENU) }));
-    panel.add(new Button({ id: "editDecks", x: INSET + half + FOOTER.gap, y: top + FOOTER.height + FOOTER.gap, width: half, height: 50, text: "Deck builder", enabled: hasScene(SceneId.DECK_BUILDER), onActivate: () => navigate(SceneId.DECK_BUILDER) }));
+    const width = size.width - 2 * inset;
+    const startSpec = { id: "startMatch", variant: /** @type {const} */ ("primary"), enabled: this.#selectedDeckId !== null, text: "Start match", onActivate: () => this.#startMatch() };
+    const back = { id: "backToMenu", text: "Back", onActivate: () => navigate(SceneId.MAIN_MENU) };
+    const builder = { id: "editDecks", text: "Deck builder", enabled: hasScene(SceneId.DECK_BUILDER), onActivate: () => navigate(SceneId.DECK_BUILDER) };
+    if (footer.oneRow) {
+      const y = size.height - inset / 2 - footer.height;
+      panel.add(new Button({ ...back, x: inset, y, width: COMPACT_FOOTER.back, height: footer.height }));
+      panel.add(new Button({ ...builder, x: inset + COMPACT_FOOTER.back + footer.gap, y, width: COMPACT_FOOTER.builder, height: footer.height }));
+      const startX = inset + COMPACT_FOOTER.back + COMPACT_FOOTER.builder + 2 * footer.gap;
+      return panel.add(new Button({ ...startSpec, x: startX, y, width: inset + width - startX, height: footer.height }));
+    }
+    const half = (width - footer.gap) / 2;
+    const top = size.height - listBottom + 20;
+    const start = panel.add(new Button({ ...startSpec, x: inset, y: top, width, height: footer.height }));
+    panel.add(new Button({ ...back, x: inset, y: top + footer.height + footer.gap, width: half, height: 50 }));
+    panel.add(new Button({ ...builder, x: inset + half + footer.gap, y: top + footer.height + footer.gap, width: half, height: 50 }));
     return start;
   }
 
   /** @param {string} deckId */
   #select(deckId) {
     this.#selectedDeckId = deckId;
+    this.#rememberScroll();
+    this.#rebuild();
+  }
+
+  #rememberScroll() {
     const list = this.root.findById(LIST_ID);
     this.#scrollY = list instanceof ScrollList ? list.scrollY : 0;
-    this.#rebuild();
   }
 
   #startMatch() {

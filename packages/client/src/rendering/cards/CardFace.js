@@ -9,6 +9,9 @@
  *
  * Layout is proportional to the frame; a profile chooses the type sizes
  * so a compact board card and a full-size inspect card each stay legible.
+ * The mini profile is for cards a phone's board shows about 80 units wide:
+ * no rules text nor type words (read them by inspecting the card), but a
+ * larger name, cost and stats, and the keywords in the text box.
  */
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
@@ -32,8 +35,9 @@ const ELLIPSIS = "…";
  * @typedef {Readonly<{
  *   id: string,
  *   nameRatio: number, textRatio: number, typeRatio: number, statRatio: number, costRatio: number,
- *   lineGapRatio: number, keywordsLine: boolean,
- * }>} CardFaceProfile ratios are fractions of the frame height (cost: of the width)
+ *   lineGapRatio: number, keywordsLine: boolean, keywordsOnly?: boolean, band?: Readonly<Partial<Record<keyof typeof BAND_DEFAULTS, number>>>,
+ * }>} CardFaceProfile ratios are fractions of the frame height (cost: of the width); `typeRatio` 0 leaves the type ribbon
+ *   without words; `keywordsOnly`: the text box holds the keywords and no rules text; `band`: vertical proportions of its own
  *
  * @typedef {Readonly<{
  *   frame: Rect, header: Rect, cost: { x: number, y: number, radius: number }, art: Rect, typeLine: Rect, textBox: Rect,
@@ -44,14 +48,15 @@ const ELLIPSIS = "…";
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
  */
 
-/** @type {Readonly<Record<"COMPACT" | "FULL", CardFaceProfile>>} */
+/** Vertical proportions shared by the profiles (a profile's `band` may override some). */
+const BAND_DEFAULTS = Object.freeze({ headerTop: 0.03, headerHeight: 0.09, artTop: 0.13, gap: 0.008, typeHeight: 0.055, creatureTextBottom: 0.85, spellTextBottom: 0.95, statsY: 0.925 });
+
+/** @type {Readonly<Record<"COMPACT" | "FULL" | "MINI", CardFaceProfile>>} */
 export const CardFaceProfile = Object.freeze({
   COMPACT: Object.freeze({ id: "compact", nameRatio: 0.066, textRatio: 0.05, typeRatio: 0.046, statRatio: 0.07, costRatio: 0.095, lineGapRatio: 0.005, keywordsLine: false }),
   FULL: Object.freeze({ id: "full", nameRatio: 0.058, textRatio: 0.036, typeRatio: 0.03, statRatio: 0.055, costRatio: 0.075, lineGapRatio: 0.009, keywordsLine: true }),
+  MINI: Object.freeze({ id: "mini", nameRatio: 0.092, textRatio: 0.082, typeRatio: 0, statRatio: 0.098, costRatio: 0.13, lineGapRatio: 0.012, keywordsLine: true, keywordsOnly: true, band: Object.freeze({ headerHeight: 0.12, artTop: 0.16, typeHeight: 0.04, statsY: 0.9 }) }),
 });
-
-/** Vertical proportions shared by both profiles. */
-const BAND = Object.freeze({ headerTop: 0.03, headerHeight: 0.09, artTop: 0.13, gap: 0.008, typeHeight: 0.055, creatureTextBottom: 0.85, spellTextBottom: 0.95, statsY: 0.925 });
 /** Width over height of the painted illustrations (1344×768): the art window keeps it, so nothing is cropped. */
 const ART_ASPECT = 7 / 4;
 const SIDE_INSET = 0.06;
@@ -68,22 +73,23 @@ const STATUS_TEXT = Object.freeze({ summoningSick: "Summoning sick", exhausted: 
  */
 export function cardFaceLayout(frame, profile, type) {
   const { x, y, width, height } = frame;
+  const band = { ...BAND_DEFAULTS, ...profile.band };
   const costRadius = width * profile.costRatio;
-  const artTop = y + height * BAND.artTop;
+  const artTop = y + height * band.artTop;
   const art = { x: x + width * SIDE_INSET, y: artTop, width: width * (1 - 2 * SIDE_INSET), height: (width * (1 - 2 * SIDE_INSET)) / ART_ASPECT };
-  const typeLine = { x: art.x, y: art.y + art.height + height * BAND.gap, width: art.width, height: height * BAND.typeHeight };
-  const textTop = typeLine.y + typeLine.height + height * BAND.gap;
-  const textBottom = y + height * (type === CardType.CREATURE ? BAND.creatureTextBottom : BAND.spellTextBottom);
+  const typeLine = { x: art.x, y: art.y + art.height + height * band.gap, width: art.width, height: height * band.typeHeight };
+  const textTop = typeLine.y + typeLine.height + height * band.gap;
+  const textBottom = y + height * (type === CardType.CREATURE ? band.creatureTextBottom : band.spellTextBottom);
   const textFont = height * profile.textRatio;
   const lineHeight = textFont + height * profile.lineGapRatio;
   const textBox = { x: art.x, y: textTop, width: art.width, height: Math.max(0, textBottom - textTop) };
-  const textInset = height * BAND.gap;
+  const textInset = height * band.gap;
   const statRadius = height * profile.statRatio;
-  const statsY = y + height * BAND.statsY;
+  const statsY = y + height * band.statsY;
   return Object.freeze({
     frame,
-    header: { x: x + costRadius * 2 + width * SIDE_INSET + width * 0.03, y: y + height * BAND.headerTop, width: width * (1 - SIDE_INSET * 2) - costRadius * 2 - width * 0.03, height: height * BAND.headerHeight },
-    cost: { x: x + width * SIDE_INSET + costRadius, y: y + height * BAND.headerTop + height * BAND.headerHeight / 2, radius: costRadius },
+    header: { x: x + costRadius * 2 + width * SIDE_INSET + width * 0.03, y: y + height * band.headerTop, width: width * (1 - SIDE_INSET * 2) - costRadius * 2 - width * 0.03, height: height * band.headerHeight },
+    cost: { x: x + width * SIDE_INSET + costRadius, y: y + height * band.headerTop + height * band.headerHeight / 2, radius: costRadius },
     art,
     typeLine,
     textBox,
@@ -198,18 +204,33 @@ function paintTypeLine({ context, theme, model, tones, layout, profile, rarity }
   fillRoundedRect(context, typeLine, { fill: verticalGradient(context, typeLine, [[0, tones.base], [1, shade(tones.base, -0.4)]]), stroke: withAlpha(theme.colors.accent, 0.4), radius: typeLine.height / 2, lineWidth: 1 });
   const gem = rarity ? typeLine.height * 0.42 : 0;
   const textArea = rarity ? { ...typeLine, x: typeLine.x + gem * 2, width: typeLine.width - gem * 4 } : typeLine;
+  if (profile.typeRatio <= 0) {
+    paintRarityGem(context, typeLine, rarity === null ? null : rarityColor(theme, rarity));
+    return;
+  }
   const text = typeLineFor(model, profile.keywordsLine ? rarity : null);
   const font = bodyFont(theme, frame.height * profile.typeRatio, "bold");
   context.font = font;
   // The gem narrows the ribbon: only then may the text need shortening.
   const fitted = rarity ? ellipsize((value) => context.measureText(value).width, text, textArea.width) : text;
   drawOutlinedText(context, fitted, textArea, { font, color: theme.colors.text, outline: withAlpha(tones.dark, 0.8), outlineWidth: Math.max(1, frame.height * 0.008) });
-  if (rarity) {
-    const color = rarityColor(theme, rarity);
-    const center = { x: typeLine.x + typeLine.width - typeLine.height / 2, y: typeLine.y + typeLine.height / 2 };
-    const box = { x: center.x - gem, y: center.y - gem, width: gem * 2, height: gem * 2 };
-    drawGem(context, center, gem, { fill: verticalGradient(context, box, [[0, mix(color, "#ffffff", 0.35)], [1, shade(color, -0.35)]]), rim: shade(color, -0.55), highlight: withAlpha("#ffffff", 0.4), sides: 4, rimWidth: Math.max(0.6, gem * 0.18) });
+  paintRarityGem(context, typeLine, rarity ? rarityColor(theme, rarity) : null);
+}
+
+/**
+ * The rarity's gem at the right end of the type ribbon.
+ * @param {CanvasRenderingContext2D} context
+ * @param {Rect} typeLine
+ * @param {string | null} color null: rarity unknown, no gem
+ */
+function paintRarityGem(context, typeLine, color) {
+  if (color === null) {
+    return;
   }
+  const gem = typeLine.height * 0.42;
+  const center = { x: typeLine.x + typeLine.width - typeLine.height / 2, y: typeLine.y + typeLine.height / 2 };
+  const box = { x: center.x - gem, y: center.y - gem, width: gem * 2, height: gem * 2 };
+  drawGem(context, center, gem, { fill: verticalGradient(context, box, [[0, mix(color, "#ffffff", 0.35)], [1, shade(color, -0.35)]]), rim: shade(color, -0.55), highlight: withAlpha("#ffffff", 0.4), sides: 4, rimWidth: Math.max(0.6, gem * 0.18) });
 }
 
 /**
@@ -229,6 +250,15 @@ function paintRulesText({ context, theme, model, tones, layout, profile }) {
   context.font = font;
   const measure = (text) => context.measureText(text).width;
   const keywords = profile.keywordsLine ? (model.keywords ?? []) : [];
+  if (profile.keywordsOnly === true) {
+    // Each keyword on a line of its own, in bold: a mini card has no room for the rules.
+    const lines = fitLines(keywords.map(capitalize), textLines, measure, width);
+    const bold = bodyFont(theme, textFont, "bold");
+    lines.forEach((line, index) => {
+      drawTextInRect(context, line, { x: textBox.x + padding, y: textBox.y + textInset + index * lineHeight, width, height: lineHeight }, { font: bold, color: theme.colors.accentLight });
+    });
+    return;
+  }
   const keywordLines = keywords.length === 0 ? [] : [keywords.join(" · ")];
   const lines = fitLines([...keywordLines, ...wrapText(measure, model.text, width)], textLines, measure, width);
   lines.forEach((line, index) => {

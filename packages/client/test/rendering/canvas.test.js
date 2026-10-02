@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { CanvasHost } from "../../src/rendering/canvas/CanvasHost.js";
 import { GameLoop } from "../../src/rendering/canvas/GameLoop.js";
-import { Viewport } from "../../src/rendering/canvas/Viewport.js";
+import { COMPACT, LayoutProfile, Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { validateTheme } from "../../src/rendering/theme/Theme.js";
 import { ellipsize, wrapText } from "../../src/rendering/text/textUtils.js";
 import { FakeCanvas, FakeFrames, FakeWindow, themeRaw } from "./fakes.js";
@@ -11,12 +11,13 @@ import { FakeCanvas, FakeFrames, FakeWindow, themeRaw } from "./fakes.js";
 describe("Viewport", () => {
   it("scales uniformly and centres with letterboxing", () => {
     const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
-    viewport.resize({ cssWidth: 800, cssHeight: 600, devicePixelRatio: 2 });
-    assert.equal(viewport.scale, 0.5);
-    assert.deepEqual(viewport.letterbox, { x: 0, y: 75, cssWidth: 800, cssHeight: 600 });
-    assert.deepEqual(viewport.deviceSize, { width: 1600, height: 1200 });
-    assert.deepEqual(viewport.toLogical(400, 300), { x: 800, y: 450 });
-    assert.deepEqual(viewport.toCss(800, 450), { x: 400, y: 300 });
+    viewport.resize({ cssWidth: 1200, cssHeight: 900, devicePixelRatio: 2 });
+    assert.equal(viewport.scale, 0.75);
+    assert.equal(viewport.profile, LayoutProfile.WIDE);
+    assert.deepEqual(viewport.letterbox, { x: 0, y: 112.5, cssWidth: 1200, cssHeight: 900 });
+    assert.deepEqual(viewport.deviceSize, { width: 2400, height: 1800 });
+    assert.deepEqual(viewport.toLogical(600, 450), { x: 800, y: 450 });
+    assert.deepEqual(viewport.toCss(800, 450), { x: 600, y: 450 });
     assert.deepEqual(viewport.toLogical(0, 0), { x: 0, y: -150 }, "points in the letterbox map outside the logical area");
     assert.deepEqual(viewport.bounds, { x: 0, y: -150, width: 1600, height: 1200 }, "bounds cover the whole canvas, the design area centred");
   });
@@ -39,8 +40,54 @@ describe("Viewport", () => {
   it("clamps degenerate sizes and DPR", () => {
     const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
     viewport.resize({ cssWidth: 0, cssHeight: 0, devicePixelRatio: 10 });
-    assert.equal(viewport.devicePixelRatio, 4);
+    assert.equal(viewport.devicePixelRatio, 2, "a screen that small is compact: capped at 2");
     assert.ok(viewport.scale > 0);
+    viewport.resize({ cssWidth: 1600, cssHeight: 900, devicePixelRatio: 10 });
+    assert.equal(viewport.devicePixelRatio, 4);
+  });
+
+  it("switches to the compact profile on a phone in landscape: a 400-unit-tall design area as wide as the screen allows", () => {
+    const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
+    viewport.resize({ cssWidth: 844, cssHeight: 390, devicePixelRatio: 3 });
+    assert.equal(viewport.profile, LayoutProfile.COMPACT);
+    assert.equal(viewport.compact, true);
+    assert.equal(viewport.logicalHeight, COMPACT.height);
+    assert.equal(viewport.scale, 390 / 400);
+    assert.equal(viewport.logicalWidth, Math.round(844 / (390 / 400)));
+    assert.equal(viewport.devicePixelRatio, 2);
+    assert.deepEqual(viewport.deviceSize, { width: 1688, height: 780 });
+    // iPhone SE, the smallest supported: the minimum width decides the scale, the spare height is margin.
+    viewport.resize({ cssWidth: 667, cssHeight: 375 });
+    assert.equal(viewport.logicalWidth, COMPACT.minWidth);
+    assert.equal(viewport.scale, 667 / COMPACT.minWidth);
+    assert.ok(viewport.scale * 20 >= 17, "body text stays readable");
+    assert.ok(viewport.bounds.height > COMPACT.height);
+    // A short, very wide window: the design area stops at its widest, centred.
+    viewport.resize({ cssWidth: 2400, cssHeight: 500 });
+    assert.equal(viewport.logicalWidth, COMPACT.maxWidth);
+    assert.ok(viewport.bounds.x < 0);
+    // Back to a desktop window: the wide design again.
+    viewport.resize({ cssWidth: 1600, cssHeight: 900 });
+    assert.deepEqual([viewport.profile, viewport.logicalWidth, viewport.logicalHeight, viewport.scale], [LayoutProfile.WIDE, 1600, 900, 1]);
+  });
+
+  it("keeps the design area clear of the screen's unsafe edges while bounds still cover them", () => {
+    const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
+    viewport.resize({ cssWidth: 844, cssHeight: 390, insets: { left: 47, right: 47, bottom: 21 } });
+    const scale = Math.min((390 - 21) / 400, (844 - 94) / COMPACT.minWidth);
+    assert.equal(viewport.scale, scale);
+    const origin = viewport.toCss(0, 0);
+    assert.ok(origin.x >= 47, "the design area starts right of the notch");
+    const end = viewport.toCss(viewport.logicalWidth, viewport.logicalHeight);
+    assert.ok(end.x <= 844 - 47 + 1e-9 && end.y <= 390 - 21 + 1e-9);
+    assert.deepEqual([viewport.bounds.width * scale, viewport.bounds.height * scale].map(Math.round), [844, 390]);
+    const safe = viewport.safeBounds;
+    assert.deepEqual([viewport.toCss(safe.x, safe.y).x, viewport.toCss(safe.x + safe.width, safe.y + safe.height).y].map(Math.round), [47, 369], "safe bounds stop at the insets");
+    viewport.resize({ cssWidth: 1600, cssHeight: 900 });
+    assert.deepEqual(viewport.safeBounds, viewport.bounds, "no insets: the same as bounds");
+    viewport.resize({ cssWidth: 844, cssHeight: 390, insets: { left: 47, right: 47, bottom: 21 } });
+    viewport.resize({ cssWidth: 844, cssHeight: 390, insets: { left: Number.NaN, right: 10_000 } });
+    assert.ok(viewport.logicalWidth >= COMPACT.minWidth, "nonsense insets are clamped");
   });
 });
 
@@ -62,6 +109,22 @@ describe("CanvasHost", () => {
     window.dispatch("resize", {});
     assert.equal(canvas.width, 800, "detached: no longer listening");
     assert.deepEqual(host.boundingRect().left, 10);
+  });
+
+  it("hands the viewport the screen's unsafe edges and follows orientation changes", () => {
+    const canvas = new FakeCanvas(844, 390);
+    const window = new FakeWindow(1);
+    const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
+    let notch = 0;
+    const host = new CanvasHost({ canvas, viewport, window, insets: () => ({ left: notch }) });
+    host.attach();
+    const before = viewport.toCss(0, 0).x;
+    notch = 47;
+    [canvas.clientWidth, canvas.clientHeight] = [844, 390];
+    window.dispatch("orientationchange", {});
+    assert.ok(viewport.toCss(0, 0).x > before);
+    host.detach();
+    assert.ok([...window.listeners.values()].every((handlers) => handlers.length === 0));
   });
 
   it("throws without a 2D context", () => {

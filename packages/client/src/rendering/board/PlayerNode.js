@@ -6,6 +6,9 @@
  * marks it targetable it becomes tappable and shows a highlight halo.
  * When the life total moves the crystal swells and throws off a ring —
  * red for damage, green for healing — and a blow shakes the whole plate.
+ *
+ * Its insides are drawn for a 200×184 plate; a smaller one (a phone's board)
+ * shrinks them all alike, type included (never below MIN_FONT).
  */
 import { Highlight } from "../../input/interaction/MatchInteraction.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
@@ -16,6 +19,8 @@ import { drawAvatar } from "../ui/avatar.js";
 import { drawCardStackIcon, drawGem, drawOrb } from "../ui/shapes.js";
 import { UiNode } from "../ui/UiNode.js";
 
+/** The plate its insides are drawn for, and their sizes on it. */
+const DESIGN = Object.freeze({ width: 200, height: 184 });
 const PAD = 12;
 const NAME_HEIGHT = 26;
 const CRYSTAL_RADIUS = 30;
@@ -23,6 +28,8 @@ const ORB_RADIUS = 7;
 const ORB_GAP = 4;
 const MAX_ORBS = 12;
 const STACK_ICON = Object.freeze({ width: 18, height: 24 });
+/** The smallest type a shrunken plate uses (logical px). */
+const MIN_FONT = 9;
 /** The small stacks along the foot of the plate, in drawing order. */
 export const HudStack = Object.freeze({ HAND: "hand", DECK: "deck", GRAVE: "grave" });
 /** @type {readonly string[]} */
@@ -121,16 +128,19 @@ export class PlayerNode extends UiNode {
   #paintName(context, theme) {
     const area = this.bounds;
     const { colors } = theme;
-    const line = { x: area.x + PAD, y: area.y + PAD, width: area.width - 2 * PAD, height: NAME_HEIGHT };
-    const portrait = this.avatar === null ? 0 : NAME_HEIGHT + 8;
+    const s = scaleOf(area);
+    const nameHeight = NAME_HEIGHT * s;
+    const line = { x: area.x + PAD * s, y: area.y + PAD * s, width: area.width - 2 * PAD * s, height: nameHeight };
+    const portrait = this.avatar === null ? 0 : nameHeight + 8 * s;
     if (this.avatar !== null) {
-      drawAvatar(context, theme, { account: this.avatar, center: { x: line.x + NAME_HEIGHT / 2, y: line.y + NAME_HEIGHT / 2 }, radius: NAME_HEIGHT / 2 });
+      drawAvatar(context, theme, { account: this.avatar, center: { x: line.x + nameHeight / 2, y: line.y + nameHeight / 2 }, radius: nameHeight / 2 });
     }
-    drawTextInRect(context, this.player.name, { ...line, x: line.x + portrait, width: line.width - portrait }, { font: fontFor(theme, "body", "bold"), color: this.isActive ? colors.accentLight : colors.text, align: "left" });
+    const tagWidth = this.isMe ? 44 * s : 0;
+    drawTextInRect(context, this.player.name, { ...line, x: line.x + portrait, width: line.width - portrait - (s < 1 ? tagWidth : 0) }, { font: fontAt(theme, "body", s, "bold"), color: this.isActive ? colors.accentLight : colors.text, align: "left" });
     if (this.isMe) {
-      const tag = { x: line.x + line.width - 44, y: line.y + 3, width: 44, height: NAME_HEIGHT - 6 };
+      const tag = { x: line.x + line.width - tagWidth, y: line.y + 3 * s, width: tagWidth, height: nameHeight - 6 * s };
       fillRoundedRect(context, tag, { fill: withAlpha(colors.accent, 0.2), stroke: withAlpha(colors.accent, 0.7), radius: tag.height / 2, lineWidth: 1 });
-      drawTextInRect(context, SEAT_TAG, tag, { font: bodyFont(theme, 11, "bold"), color: colors.accentLight });
+      drawTextInRect(context, SEAT_TAG, tag, { font: bodyFont(theme, Math.max(MIN_FONT, 11 * s), "bold"), color: colors.accentLight });
     }
   }
 
@@ -143,26 +153,28 @@ export class PlayerNode extends UiNode {
   #paintLife(context, theme, kick) {
     const area = this.bounds;
     const { colors } = theme;
+    const s = scaleOf(area);
     const center = lifeCrystalCentre(area);
+    const crystal = center.radius;
     const life = this.lifeShown();
     const color = life <= 5 ? colors.danger : colors.health;
-    const box = { x: center.x - CRYSTAL_RADIUS, y: center.y - CRYSTAL_RADIUS, width: CRYSTAL_RADIUS * 2, height: CRYSTAL_RADIUS * 2 };
+    const box = { x: center.x - crystal, y: center.y - crystal, width: crystal * 2, height: crystal * 2 };
     const fresh = kick === null ? 0 : (1 - kick.progress) ** 2;
-    const radius = CRYSTAL_RADIUS * (1 + KICK.swell * fresh);
+    const radius = crystal * (1 + KICK.swell * fresh);
     const pulse = kick === null ? color : kickColor(theme, kick);
     if (kick !== null) {
       paintKickRing(context, center, pulse, kick.progress);
     }
     context.save();
     context.shadowColor = withAlpha(mix(color, pulse, fresh), 0.75);
-    context.shadowBlur = CRYSTAL_RADIUS * (0.6 + KICK.glow * fresh);
+    context.shadowBlur = crystal * (0.6 + KICK.glow * fresh);
     drawGem(context, center, radius, { fill: verticalGradient(context, box, [[0, shade(color, 0.25)], [1, shade(color, -0.55)]]), rim: colors.accent, highlight: withAlpha("#ffffff", 0.3), sides: 6, rimWidth: 2.5 });
     context.restore();
     drawOutlinedText(context, String(life), box, { font: bodyFont(theme, radius * 1.05, "bold"), color: mix(colors.text, pulse, fresh), outline: withAlpha("#000000", 0.85), outlineWidth: 4 });
-    const column = { x: box.x + box.width + 10, width: area.width - 2 * PAD - box.width - 10 };
-    drawTextInRect(context, "life", { ...column, y: center.y - CRYSTAL_RADIUS + 2, height: 18 }, { font: fontFor(theme, "small"), color: colors.textMuted, align: "left" });
-    drawTextInRect(context, `${this.player.resources.current} / ${this.player.resources.max}`, { ...column, y: center.y - 2, height: 22 }, { font: fontFor(theme, "body", "bold"), color: colors.resource, align: "left" });
-    drawTextInRect(context, "resources", { ...column, y: center.y + 18, height: 14 }, { font: fontFor(theme, "micro"), color: colors.textMuted, align: "left" });
+    const column = { x: box.x + box.width + 10 * s, width: area.width - 2 * PAD * s - box.width - 10 * s };
+    drawTextInRect(context, "life", { ...column, y: center.y - crystal + 2 * s, height: 18 * s }, { font: fontAt(theme, "small", s), color: colors.textMuted, align: "left" });
+    drawTextInRect(context, `${this.player.resources.current} / ${this.player.resources.max}`, { ...column, y: center.y - 2 * s, height: 22 * s }, { font: fontAt(theme, "body", s, "bold"), color: colors.resource, align: "left" });
+    drawTextInRect(context, "resources", { ...column, y: center.y + 18 * s, height: 14 * s }, { font: fontAt(theme, "micro", s), color: colors.textMuted, align: "left" });
   }
 
   /**
@@ -175,11 +187,13 @@ export class PlayerNode extends UiNode {
     const { colors } = theme;
     const { current, max } = this.player.resources;
     const count = Math.min(MAX_ORBS, Math.max(0, max));
-    const y = area.y + PAD + NAME_HEIGHT + 8 + CRYSTAL_RADIUS * 2 + 14;
+    const s = scaleOf(area);
+    const orb = ORB_RADIUS * s;
+    const y = area.y + (PAD + NAME_HEIGHT + 8 + CRYSTAL_RADIUS * 2 + 14) * s;
     for (let index = 0; index < count; index += 1) {
       const lit = index < current;
-      const center = { x: area.x + PAD + ORB_RADIUS + index * (ORB_RADIUS * 2 + ORB_GAP), y };
-      drawOrb(context, center, ORB_RADIUS, {
+      const center = { x: area.x + PAD * s + orb + index * (orb * 2 + ORB_GAP * s), y };
+      drawOrb(context, center, orb, {
         fill: lit ? colors.resource : withAlpha(colors.resource, 0.18),
         rim: lit ? shade(colors.resource, 0.3) : withAlpha(colors.resource, 0.4),
         highlight: lit ? withAlpha("#ffffff", 0.55) : withAlpha("#ffffff", 0.08),
@@ -198,11 +212,14 @@ export class PlayerNode extends UiNode {
     const values = { [HudStack.HAND]: this.player.handSize, [HudStack.DECK]: this.player.librarySize, [HudStack.GRAVE]: this.player.graveyard.length };
     const entries = STACKS.map((label) => ({ label, value: values[label] }));
     const column = stackColumn(area);
+    const s = scaleOf(area);
+    const icon = { width: STACK_ICON.width * s, height: STACK_ICON.height * s };
+    const gap = 6 * s;
     entries.forEach((entry) => {
       const { x, y } = stackIcon(area, entry.label);
-      drawCardStackIcon(context, { x, y, width: STACK_ICON.width, height: STACK_ICON.height }, { fill: shade(colors.panelDark, -0.3), stroke: withAlpha(colors.accent, 0.6), layers: Math.min(4, Math.max(1, entry.value)) });
-      drawTextInRect(context, String(entry.value), { x: x + STACK_ICON.width + 6, y, width: column - STACK_ICON.width - 6, height: STACK_ICON.height / 2 + 2 }, { font: fontFor(theme, "small", "bold"), color: colors.text, align: "left" });
-      drawTextInRect(context, entry.label, { x: x + STACK_ICON.width + 6, y: y + STACK_ICON.height / 2, width: column - STACK_ICON.width - 6, height: STACK_ICON.height / 2 }, { font: fontFor(theme, "micro"), color: colors.textMuted, align: "left" });
+      drawCardStackIcon(context, { x, y, ...icon }, { fill: shade(colors.panelDark, -0.3), stroke: withAlpha(colors.accent, 0.6), layers: Math.min(4, Math.max(1, entry.value)) });
+      drawTextInRect(context, String(entry.value), { x: x + icon.width + gap, y, width: column - icon.width - gap, height: icon.height / 2 + 2 * s }, { font: fontAt(theme, "small", s, "bold"), color: colors.text, align: "left" });
+      drawTextInRect(context, entry.label, { x: x + icon.width + gap, y: y + icon.height / 2, width: column - icon.width - gap, height: icon.height / 2 }, { font: fontAt(theme, "micro", s), color: colors.textMuted, align: "left" });
     });
   }
 
@@ -215,9 +232,28 @@ export class PlayerNode extends UiNode {
   }
 }
 
+/**
+ * How much a plate's insides shrink: 1 on a plate the design size or larger.
+ * @param {{ width: number, height: number }} hud
+ */
+function scaleOf(hud) {
+  return Math.min(1, hud.width / DESIGN.width, hud.height / DESIGN.height);
+}
+
+/**
+ * A theme size shrunk with the plate (exactly the theme's font on a full-size one).
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {import("../theme/Theme.js").FontSize} size
+ * @param {number} scale
+ * @param {"normal" | "bold"} [weight]
+ */
+function fontAt(theme, size, scale, weight = "normal") {
+  return scale >= 1 ? fontFor(theme, size, weight) : bodyFont(theme, Math.max(MIN_FONT, theme.fonts.sizes[size] * scale), weight);
+}
+
 /** @param {import("@magic8/engine/shared/geometry.js").Rect} hud */
 function stackColumn(hud) {
-  return (hud.width - 2 * PAD) / STACKS.length;
+  return (hud.width - 2 * PAD * scaleOf(hud)) / STACKS.length;
 }
 
 /**
@@ -226,7 +262,8 @@ function stackColumn(hud) {
  * @param {string} stack a HudStack
  */
 function stackIcon(hud, stack) {
-  return { x: hud.x + PAD + STACKS.indexOf(stack) * stackColumn(hud), y: hud.y + hud.height - PAD - STACK_ICON.height };
+  const s = scaleOf(hud);
+  return { x: hud.x + PAD * s + STACKS.indexOf(stack) * stackColumn(hud), y: hud.y + hud.height - (PAD + STACK_ICON.height) * s };
 }
 
 /**
@@ -238,7 +275,8 @@ function stackIcon(hud, stack) {
  */
 export function hudStackCentre(hud, stack) {
   const { x, y } = stackIcon(hud, stack);
-  return { x: x + STACK_ICON.width / 2, y: y + STACK_ICON.height / 2 };
+  const s = scaleOf(hud);
+  return { x: x + (STACK_ICON.width / 2) * s, y: y + (STACK_ICON.height / 2) * s };
 }
 
 /**
@@ -247,7 +285,8 @@ export function hudStackCentre(hud, stack) {
  * @returns {{ x: number, y: number, radius: number }}
  */
 export function lifeCrystalCentre(hud) {
-  return { x: hud.x + PAD + CRYSTAL_RADIUS, y: hud.y + PAD + NAME_HEIGHT + 8 + CRYSTAL_RADIUS, radius: CRYSTAL_RADIUS };
+  const s = scaleOf(hud);
+  return { x: hud.x + (PAD + CRYSTAL_RADIUS) * s, y: hud.y + (PAD + NAME_HEIGHT + 8 + CRYSTAL_RADIUS) * s, radius: CRYSTAL_RADIUS * s };
 }
 
 /**
@@ -274,19 +313,20 @@ function shakeOf(kick) {
 /**
  * A ring spreading out of the crystal and fading.
  * @param {CanvasRenderingContext2D} context
- * @param {{ x: number, y: number }} center
+ * @param {{ x: number, y: number, radius: number }} center the crystal's centre and radius
  * @param {string} color
  * @param {number} progress
  */
 function paintKickRing(context, center, color, progress) {
+  const crystal = center.radius;
   context.save();
   context.globalAlpha = 1 - progress;
   context.strokeStyle = color;
   context.shadowColor = withAlpha(color, 0.9);
-  context.shadowBlur = CRYSTAL_RADIUS * 0.5;
+  context.shadowBlur = crystal * 0.5;
   context.lineWidth = KICK.ringWidth;
   context.beginPath();
-  context.arc(center.x, center.y, CRYSTAL_RADIUS * (1 + KICK.ringSpread * progress), 0, Math.PI * 2);
+  context.arc(center.x, center.y, crystal * (1 + KICK.ringSpread * progress), 0, Math.PI * 2);
   context.stroke();
   context.restore();
 }

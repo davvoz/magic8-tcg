@@ -5,6 +5,8 @@
  * leave first. A toast about another player (a challenge) shows their
  * portrait. A click on a toast calls `onOpen` and dismisses it; clicks
  * elsewhere reach the scene. The SceneManager draws it after the scene.
+ * On a compact screen (a phone in landscape) toasts keep clear of a notch,
+ * take at most half the width, and only the newest two are shown.
  */
 import { containsPoint } from "@magic8/engine/shared/geometry.js";
 import { ellipsize, wrapText } from "../text/textUtils.js";
@@ -15,6 +17,8 @@ import { drawTextInRect, fillRoundedRect, glowRoundedRect } from "./drawing.js";
 
 const TOAST = Object.freeze({ width: 440, height: 92, gap: 12, margin: 20, stripe: 6, padding: 16 });
 const MAX_TOASTS = 3;
+/** A compact screen's toasts: how many show at once, how close to its edge, and their largest share of its width. */
+const COMPACT_TOASTS = Object.freeze({ shown: 2, margin: 8, widthShare: 0.5 });
 const LIFE_MS = 6000;
 const FADE_MS = 250;
 const TONE_KEYS = Object.freeze({ good: "success", bad: "danger", info: "accent" });
@@ -34,7 +38,7 @@ export class ToastLayer {
   #toasts = [];
 
   /**
-   * @param {{ viewport: { bounds: import("@magic8/engine/shared/geometry.js").Rect }, onOpen: (message: ToastMessage) => void, requestRender: () => void }} deps
+   * @param {{ viewport: { bounds: import("@magic8/engine/shared/geometry.js").Rect, safeBounds?: import("@magic8/engine/shared/geometry.js").Rect, compact?: boolean }, onOpen: (message: ToastMessage) => void, requestRender: () => void }} deps
    */
   constructor({ viewport, onOpen, requestRender }) {
     this.#viewport = viewport;
@@ -79,7 +83,7 @@ export class ToastLayer {
     if (input.type === "wheel") {
       return false;
     }
-    const index = this.#toasts.findIndex((_toast, position) => containsPoint(this.#frame(position), input));
+    const index = this.#shown().findIndex((_toast, position) => containsPoint(this.#frame(position), input));
     if (index < 0) {
       return false;
     }
@@ -96,13 +100,21 @@ export class ToastLayer {
    * @param {import("../theme/Theme.js").Theme} theme
    */
   render(context, theme) {
-    this.#toasts.forEach((toast, index) => this.#paint(context, theme, toast, this.#frame(index)));
+    this.#shown().forEach((toast, index) => this.#paint(context, theme, toast, this.#frame(index)));
+  }
+
+  /** The toasts on screen, newest first: all of them, or the newest few on a compact screen. */
+  #shown() {
+    return this.#viewport.compact === true ? this.#toasts.slice(0, COMPACT_TOASTS.shown) : this.#toasts;
   }
 
   /** @param {number} index */
   #frame(index) {
-    const screen = this.#viewport.bounds;
-    return { x: screen.x + screen.width - TOAST.margin - TOAST.width, y: screen.y + TOAST.margin + index * (TOAST.height + TOAST.gap), width: TOAST.width, height: TOAST.height };
+    const compact = this.#viewport.compact === true;
+    const screen = (compact ? this.#viewport.safeBounds : undefined) ?? this.#viewport.bounds;
+    const margin = compact ? COMPACT_TOASTS.margin : TOAST.margin;
+    const width = compact ? Math.min(TOAST.width, screen.width * COMPACT_TOASTS.widthShare) : TOAST.width;
+    return { x: screen.x + screen.width - margin - width, y: screen.y + margin + index * (TOAST.height + TOAST.gap), width, height: TOAST.height };
   }
 
   /**

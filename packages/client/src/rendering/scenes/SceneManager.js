@@ -7,6 +7,9 @@
  * letterbox colour, so screens follow one another instead of cutting; the
  * new scene takes input at once, the fade is only drawn over it.
  *
+ * It also remembers how the player is playing — by touch or with mouse and
+ * keyboard, from their last input — for every scene to ask (`usingTouch`).
+ *
  * @typedef {{ update: (dtMs: number) => boolean, render: (context: CanvasRenderingContext2D, theme: import("../theme/Theme.js").Theme) => void, onPointer: (input: { type: string, x: number, y: number }) => boolean }} SceneOverlay
  */
 import { Easing } from "../animation/Tween.js";
@@ -28,12 +31,20 @@ export class SceneManager {
   #overlay = null;
   /** The fade-in of the current scene: how far through it is, and how long it lasts; null once it is over. @type {{ elapsedMs: number, durationMs: number } | null} */
   #fade = null;
+  /** Whether the last input was a finger or a pen (rather than a mouse or a key). */
+  #touch = false;
+  /** @type {import("./Scene.js").TextEntry | undefined} */
+  #textEntry;
 
   /**
-   * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void }} deps
+   * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void, textEntry?: import("./Scene.js").TextEntry, touchFirst?: boolean }} deps
+   *   `textEntry`: the device's own text input, for fields tapped with a finger (none under test);
+   *   `touchFirst`: the device is mainly played by touch (a phone), assumed until the first input says otherwise
    */
-  constructor({ theme, viewport, logger, requestRender }) {
+  constructor({ theme, viewport, logger, requestRender, textEntry, touchFirst = false }) {
     this.#requestRender = requestRender;
+    this.#touch = touchFirst;
+    this.#textEntry = textEntry;
     this.#services = Object.freeze({
       theme,
       viewport,
@@ -41,7 +52,14 @@ export class SceneManager {
       requestRender,
       navigate: (sceneId, params) => this.navigate(sceneId, params),
       hasScene: (sceneId) => this.#factories.has(sceneId),
+      usingTouch: () => this.#touch,
+      ...(textEntry === undefined ? {} : { textEntry }),
     });
+  }
+
+  /** Whether the player is playing by touch: their last input was a finger or a pen. */
+  get usingTouch() {
+    return this.#touch;
   }
 
   /**
@@ -85,6 +103,7 @@ export class SceneManager {
       this.#services.logger.error("unknown scene", { sceneId });
       return false;
     }
+    this.#textEntry?.close();
     this.#current?.exit();
     const scene = factory(this.#services);
     this.#current = scene;
@@ -150,6 +169,9 @@ export class SceneManager {
 
   /** @param {import("../../input/InputManager.js").PointerInput | import("../../input/InputManager.js").WheelInput} input */
   onPointer(input) {
+    if (input.type === "down") {
+      this.#touch = "pointerType" in input && input.pointerType !== "mouse";
+    }
     if (this.#overlay?.onPointer(/** @type {{ type: string, x: number, y: number }} */ (input))) {
       return;
     }
@@ -163,6 +185,7 @@ export class SceneManager {
 
   /** @param {import("../../input/InputManager.js").KeyInput} input */
   onKey(input) {
+    this.#touch = false;
     this.#current?.onKey(input);
   }
 }

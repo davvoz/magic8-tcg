@@ -12,10 +12,14 @@ export class CanvasHost {
   /** @type {(() => void) | null} */
   #detach = null;
 
+  /** @type {() => Partial<import("./Viewport.js").Insets>} */
+  #insets;
+
   /**
-   * @param {{ canvas: HTMLCanvasElement, viewport: import("./Viewport.js").Viewport, window: Pick<Window, "addEventListener" | "removeEventListener" | "devicePixelRatio">, onResize?: () => void }} deps
+   * @param {{ canvas: HTMLCanvasElement, viewport: import("./Viewport.js").Viewport, window: Pick<Window, "addEventListener" | "removeEventListener" | "devicePixelRatio">, onResize?: () => void, insets?: () => Partial<import("./Viewport.js").Insets> }} deps
+   *   `insets`: the screen's unsafe edges (notch, home indicator) in CSS pixels, read at every resize
    */
-  constructor({ canvas, viewport, window, onResize = () => undefined }) {
+  constructor({ canvas, viewport, window, onResize = () => undefined, insets = () => ({}) }) {
     const context = canvas.getContext("2d");
     if (context === null) {
       throw new Error("CanvasHost: 2D context unavailable");
@@ -25,6 +29,7 @@ export class CanvasHost {
     this.#viewport = viewport;
     this.#window = window;
     this.#onResize = onResize;
+    this.#insets = insets;
   }
 
   get context() {
@@ -35,11 +40,15 @@ export class CanvasHost {
     return this.#canvas;
   }
 
-  /** Starts tracking window resizes. */
+  /** Starts tracking window resizes (a phone turning reports one too, sometimes only as an orientation change). */
   attach() {
     const handler = () => this.syncSize();
     this.#window.addEventListener("resize", handler);
-    this.#detach = () => this.#window.removeEventListener("resize", handler);
+    this.#window.addEventListener("orientationchange", handler);
+    this.#detach = () => {
+      this.#window.removeEventListener("resize", handler);
+      this.#window.removeEventListener("orientationchange", handler);
+    };
     this.syncSize();
   }
 
@@ -52,7 +61,7 @@ export class CanvasHost {
   syncSize() {
     const cssWidth = this.#canvas.clientWidth;
     const cssHeight = this.#canvas.clientHeight;
-    this.#viewport.resize({ cssWidth, cssHeight, devicePixelRatio: this.#window.devicePixelRatio || 1 });
+    this.#viewport.resize({ cssWidth, cssHeight, devicePixelRatio: this.#window.devicePixelRatio || 1, insets: this.#insets() });
     const { width, height } = this.#viewport.deviceSize;
     if (this.#canvas.width !== width || this.#canvas.height !== height) {
       this.#canvas.width = width;

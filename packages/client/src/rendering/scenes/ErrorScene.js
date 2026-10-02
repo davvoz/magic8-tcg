@@ -11,7 +11,7 @@ export class ErrorScene extends Scene {
   /** @param {Readonly<Record<string, unknown>>} params `{ title?: string, message?: string }` */
   enter(params) {
     const { viewport } = this.services;
-    const width = 900;
+    const width = Math.min(900, viewport.logicalWidth - 20);
     const height = 260;
     const panel = this.root.add(new Panel({ x: (viewport.logicalWidth - width) / 2, y: (viewport.logicalHeight - height) / 2, width, height, strokeKey: "danger" }));
     panel.add(new Label({ x: 0, y: 40, width, height: 60, text: String(params.title ?? "Something went wrong"), size: "heading", weight: "bold", colorKey: "danger" }));

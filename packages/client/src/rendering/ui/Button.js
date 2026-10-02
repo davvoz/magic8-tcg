@@ -40,7 +40,10 @@ const PLATE = Object.freeze({
  * `textSize: "small"` fits short labels into narrow buttons (filter rows).
  * A body-size button wide enough for them is laid on a painted plate
  * instead (Theme.uiArt) once its image is ready: its ornate ends kept whole,
- * its plain middle stretched to the width.
+ * its plain middle stretched to the width. A label the ends would crowd
+ * into an ellipsis keeps the drawn slab and is shown whole (narrow buttons
+ * on a phone); one still too long for it is set in the small size before
+ * it is ever shortened.
  */
 export class Button extends UiNode {
   text;
@@ -80,14 +83,16 @@ export class Button extends UiNode {
   paint(context, theme) {
     const area = this.bounds;
     const look = this.#look(theme);
-    const plate = this.#plate(theme);
+    const fitted = this.#plate(theme);
+    const platePadding = fitted === null ? 0 : Math.max(TEXT_PADDING.body, Math.max(fitted.caps.left, fitted.caps.right) * fitted.scale * PLATE.textClearance);
+    const plate = fitted !== null && this.#labelFits(context, theme, platePadding) ? fitted : null;
     const radius = plate === null ? theme.spacing.radius : plate.radius;
     if (look.halo !== null) {
       glowRoundedRect(context, area, { color: look.halo, radius, blur: GLOW_BLUR, lineWidth: 2, alpha: 0.9 });
     }
     if (plate !== null) {
       this.#paintPlate(context, theme, plate);
-      this.#paintText(context, theme, this.#plateTextColor(theme), Math.max(TEXT_PADDING.body, Math.max(plate.caps.left, plate.caps.right) * plate.scale * PLATE.textClearance));
+      this.#paintText(context, theme, this.#plateTextColor(theme), platePadding);
       return;
     }
     fillRoundedRect(context, area, { fill: verticalGradient(context, area, look.gradient), stroke: look.stroke, radius, lineWidth: this.focused ? FOCUS_LINE_WIDTH : 1.5 });
@@ -206,10 +211,27 @@ export class Button extends UiNode {
    * @param {string} color
    * @param {number} padding
    */
+  /**
+   * Whether the whole label fits between paddings this wide.
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   * @param {number} padding
+   */
+  #labelFits(context, theme, padding) {
+    context.font = fontFor(theme, this.textSize, "bold");
+    return context.measureText(this.text).width <= this.width - 2 * padding;
+  }
+
   #paintText(context, theme, color, padding) {
-    const font = fontFor(theme, this.textSize, "bold");
+    const budget = Math.max(0, this.width - 2 * padding);
+    let font = fontFor(theme, this.textSize, "bold");
     context.font = font;
-    const text = ellipsize((candidate) => context.measureText(candidate).width, this.text, Math.max(0, this.width - 2 * padding));
+    if (this.textSize === "body" && context.measureText(this.text).width > budget) {
+      // Too long for the body size (a narrow button on a phone): the small size before an ellipsis.
+      font = fontFor(theme, "small", "bold");
+      context.font = font;
+    }
+    const text = ellipsize((candidate) => context.measureText(candidate).width, this.text, budget);
     drawTextInRect(context, text, this.bounds, { font, color, align: this.align, padding });
   }
 

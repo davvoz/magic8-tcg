@@ -11,6 +11,8 @@ import { UiNode } from "../../ui/UiNode.js";
 const CARD = Object.freeze({ width: 150, height: 210 });
 /** Cards hang from a pivot well below the area, so they fan like a hand; `top` is where the middle card starts. */
 const FAN = Object.freeze({ count: 5, spreadRadians: 0.5, pivotBelow: 260, top: 30 });
+/** The area height the fan's sizes are given for: a shorter area (a phone's menu) draws it smaller. */
+const DESIGN_HEIGHT = 280;
 
 export class HeroNode extends UiNode {
   /**
@@ -32,15 +34,17 @@ export class HeroNode extends UiNode {
     context.fillStyle = radialGradient(context, center, area.height * 0.9, [[0, withAlpha(theme.colors.accent, 0.35)], [0.5, withAlpha(theme.colors.accent, 0.08)], [1, withAlpha(theme.colors.accent, 0)]]);
     context.fillRect(area.x, area.y, area.width, area.height);
     context.restore();
-    const pivot = { x: center.x, y: area.y + area.height + FAN.pivotBelow };
+    const scale = Math.min(1, area.height / DESIGN_HEIGHT);
+    const card = { width: CARD.width * scale, height: CARD.height * scale };
+    const pivot = { x: center.x, y: area.y + area.height + FAN.pivotBelow * scale };
     for (let index = 0; index < FAN.count; index += 1) {
       const angle = (index / (FAN.count - 1) - 0.5) * FAN.spreadRadians;
       context.save();
       context.translate(pivot.x, pivot.y);
       context.rotate(angle);
       context.shadowColor = withAlpha(theme.colors.letterbox, 0.8);
-      context.shadowBlur = 24;
-      drawCardBack(context, theme, { x: -CARD.width / 2, y: area.y + FAN.top - pivot.y, width: CARD.width, height: CARD.height });
+      context.shadowBlur = 24 * scale;
+      drawCardBack(context, theme, { x: -card.width / 2, y: area.y + FAN.top * scale - pivot.y, width: card.width, height: card.height });
       context.restore();
     }
   }

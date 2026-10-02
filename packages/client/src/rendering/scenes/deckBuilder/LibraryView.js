@@ -13,13 +13,17 @@ import { Label } from "../../ui/Label.js";
 import { OptionRow } from "../../ui/OptionRow.js";
 import { Panel } from "../../ui/Panel.js";
 import { ScrollList } from "../../ui/ScrollList.js";
-import { ACTION, COLUMNS, INSET, ROW, rowY, rowsHeight } from "./layout.js";
 
 const LIST_ID = "library.decks";
 const NEW_DECK_HEIGHT = 56;
 
 export class LibraryView {
   #host;
+
+  /** The frame for the screen in use (the compact one on a phone). */
+  get #screen() {
+    return this.#host.screen();
+  }
 
   /** @param {import("./layout.js").BuilderHost} host */
   constructor(host) {
@@ -31,26 +35,26 @@ export class LibraryView {
    * @returns {import("../../ui/UiNode.js").UiNode | null} node to focus initially
    */
   build(root) {
-    const decksPanel = root.add(new Panel({ x: COLUMNS.left.x, y: COLUMNS.top, width: COLUMNS.left.width, height: COLUMNS.height }));
-    decksPanel.add(new Label({ x: INSET, y: 14, width: COLUMNS.left.width - 2 * INSET, height: 36, text: "Your decks", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    const decksPanel = root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width: this.#screen.columns.left.width, height: this.#screen.columns.height }));
+    decksPanel.add(new Label({ x: this.#screen.inset, y: 14, width: this.#screen.columns.left.width - 2 * this.#screen.inset, height: 36, text: "Your decks", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
     this.#buildDeckList(decksPanel);
 
-    const createPanel = root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
+    const createPanel = root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
     return this.#buildCreatePanel(createPanel);
   }
 
   /** @param {Panel} panel */
   #buildDeckList(panel) {
     const options = this.#host.app.deckSelection.listDecks();
-    const width = COLUMNS.left.width - 2 * INSET;
-    const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: 60, width, height: COLUMNS.height - 60 - INSET }));
+    const width = this.#screen.columns.left.width - 2 * this.#screen.inset;
+    const list = panel.add(new ScrollList({ id: LIST_ID, x: this.#screen.inset, y: 60, width, height: this.#screen.columns.height - 60 - this.#screen.inset }));
     if (options.length === 0) {
-      list.add(new Label({ x: 0, y: 0, width, height: ROW.height, text: "No decks yet — create one on the right.", colorKey: "textMuted" }));
-      list.contentHeight = ROW.height;
+      list.add(new Label({ x: 0, y: 0, width, height: this.#screen.row.height, text: "No decks yet — create one on the right.", colorKey: "textMuted" }));
+      list.contentHeight = this.#screen.row.height;
       return;
     }
     options.forEach((option, index) => this.#buildDeckRow(list, option, index));
-    list.contentHeight = rowsHeight(options.length);
+    list.contentHeight = this.#screen.rowsHeight(options.length);
     list.scrollTo(this.#host.scroll[LIST_ID] ?? 0);
   }
 
@@ -60,16 +64,16 @@ export class LibraryView {
    * @param {number} index
    */
   #buildDeckRow(list, { deck, source, report }, index) {
-    const y = rowY(index);
+    const y = this.#screen.rowY(index);
     const custom = source === DeckSource.CUSTOM;
-    const actionsWidth = custom ? 2 * ACTION.width + ACTION.gap : ACTION.width;
-    const labelWidth = list.rowWidth - actionsWidth - ACTION.gap;
+    const actionsWidth = custom ? 2 * this.#screen.action.width + this.#screen.action.gap : this.#screen.action.width;
+    const labelWidth = list.rowWidth - actionsWidth - this.#screen.action.gap;
 
     const mix = deckMix(this.#host.app.content, deck.entries);
-    list.add(new OptionRow({ id: `library.deck.${deck.id}`, x: 0, y, width: labelWidth, height: ROW.height, text: deck.name, subtitle: deckSummary(deck.totalCards, mix, [...(custom ? [] : ["preconstructed"]), ...(report.valid ? [] : ["not playable"])]), stripe: mixBands(this.#host.theme, mix), onActivate: () => this.#edit(deck) }));
-    list.add(new Button({ id: `library.edit.${deck.id}`, x: labelWidth + ACTION.gap, y, width: ACTION.width, height: ROW.height, text: custom ? "Edit" : "Copy", onActivate: () => this.#edit(deck) }));
+    list.add(new OptionRow({ id: `library.deck.${deck.id}`, x: 0, y, width: labelWidth, height: this.#screen.row.height, text: deck.name, subtitle: deckSummary(deck.totalCards, mix, [...(custom ? [] : ["preconstructed"]), ...(report.valid ? [] : ["not playable"])]), stripe: mixBands(this.#host.theme, mix), onActivate: () => this.#edit(deck) }));
+    list.add(new Button({ id: `library.edit.${deck.id}`, x: labelWidth + this.#screen.action.gap, y, width: this.#screen.action.width, height: this.#screen.row.height, text: custom ? "Edit" : "Copy", onActivate: () => this.#edit(deck) }));
     if (custom) {
-      list.add(new Button({ id: `library.delete.${deck.id}`, x: labelWidth + 2 * ACTION.gap + ACTION.width, y, width: ACTION.width, height: ROW.height, text: "Delete", variant: "danger", textSize: "small", onActivate: () => this.#confirmDelete(deck) }));
+      list.add(new Button({ id: `library.delete.${deck.id}`, x: labelWidth + 2 * this.#screen.action.gap + this.#screen.action.width, y, width: this.#screen.action.width, height: this.#screen.row.height, text: "Delete", variant: "danger", textSize: "small", onActivate: () => this.#confirmDelete(deck) }));
     }
   }
 
@@ -80,16 +84,18 @@ export class LibraryView {
   #buildCreatePanel(panel) {
     const { app } = this.#host;
     const rules = app.deckBuilding.rules;
-    const width = COLUMNS.right.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "New deck", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    const width = this.#screen.columns.right.width - 2 * this.#screen.inset;
+    panel.add(new Label({ x: this.#screen.inset, y: 14, width, height: 36, text: "New deck", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
     const hints = [
       `${rules.minSize}–${rules.maxSize} cards, at most ${rules.maxCopies} copies of a card.`,
       "Any card may go in; the coloured band shows the deck's mix of factions.",
       app.account?.state.account ? `Decks are ${deckStorageText(app)}; only cards you own can go in.` : `Decks are ${deckStorageText(app)}.`,
     ];
-    hints.forEach((text, index) => panel.add(new Label({ x: INSET, y: 60 + index * 28, width, height: 26, text, size: "small", align: "left", colorKey: "textMuted", fit: true })));
+    hints.forEach((text, index) => panel.add(new Label({ x: this.#screen.inset, y: 60 + index * 28, width, height: 26, text, size: "small", align: "left", colorKey: "textMuted", fit: true })));
 
-    return panel.add(new Button({ id: "library.new", x: INSET, y: 160, width, height: NEW_DECK_HEIGHT, text: "New deck", variant: "primary", onActivate: () => this.#startNew() }));
+    // Under the hints: where the wide panel has always put it, or right below them on a phone.
+    const top = this.#screen.compact ? 60 + hints.length * 28 + 12 : 160;
+    return panel.add(new Button({ id: "library.new", x: this.#screen.inset, y: top, width, height: NEW_DECK_HEIGHT, text: "New deck", variant: "primary", onActivate: () => this.#startNew() }));
   }
 
   #startNew() {

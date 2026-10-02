@@ -16,13 +16,18 @@
  * revealed, pack by pack. Every price shown is the server's. The header
  * shows the player's budget, what their wallet holds in STEEM: what it
  * cannot pay for is not offered for payment.
+ *
+ * On a compact screen (a phone in landscape) the same two columns are
+ * tighter: the card filter is one button, a single's card is small (tap it
+ * to read it), the purchase controls are two rows under the status line,
+ * and the cart and the reveal fill the screen.
  */
 import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
 import { deckMix } from "../../application/decks/deckMix.js";
 import { ShopCategory, cartSummary, deckBreakdown, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
 import { mixBands, mixText } from "../cards/deckStripe.js";
-import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
+import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardFan } from "../cards/CardFan.js";
 import { CardStrip } from "../cards/CardStrip.js";
@@ -32,35 +37,73 @@ import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
+import { Hotspot } from "../ui/Hotspot.js";
 import { Label } from "../ui/Label.js";
 import { Modal } from "../ui/Modal.js";
 import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
-import { ACTION, COLUMNS, HEADER, INSET, ROW, rowY, rowsHeight } from "./deckBuilder/layout.js";
+import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "shop.list";
-const LINE = 28;
-const TABS = Object.freeze({ top: 20, height: 40, gap: 8 });
-const FILTER_TOP = 72;
-const LIST_TOP = Object.freeze({ plain: 76, filtered: FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12 });
-const PRICE_WIDTH = 170;
-const QUANTITY = Object.freeze({ height: 52, width: 80 });
-const BUY = Object.freeze({ height: 60, width: 420 });
-const SINGLE = Object.freeze({ card: Object.freeze({ width: 300, height: 442 }), legendColumn: 120 });
-/** A deck's cards as thumbnails: the card, "copies × price each", its rarity. */
-const DECK_THUMB = Object.freeze({ width: 84, gap: 12, rarity: 20 });
-const REVEAL = Object.freeze({ width: 1100, height: 780, row: 44, gap: 6, packGap: 16 });
-/** The cart: a grid of tiles, each the product's cards over its name, price and quantity. */
-/** `step`: the − and + buttons (wide enough for their sign past the button's padding). */
-const CART = Object.freeze({ width: 1100, height: 860, footer: 56, perRow: 3, gap: 16, tile: 300, fan: 170, step: Object.freeze({ width: 56, height: 44 }), remove: 48 });
+/**
+ * Every size of the shop, wide and compact.
+ * @typedef {Readonly<{
+ *   line: number, tabs: { top: number, height: number, gap: number }, filterTop: number, listTop: { plain: number, filtered: number }, filterButton: boolean,
+ *   priceWidth: number, quantity: { height: number, width: number }, buy: { height: number, width: number }, rowGap: number, compactPurchase: boolean,
+ *   single: { card: { width: number, height: number }, legendColumn: number, legend: boolean, nameHeight: number },
+ *   deckThumb: { width: number, gap: number, rarity: number }, top: { title: number, titleHeight: number, description: number, content: number }, descriptionLines: number,
+ *   reveal: { width: number, height: number, row: number, gap: number, packGap: number, title: number, button: number, serial: number },
+ *   cart: { width: number, height: number, footer: number, perRow: number, gap: number, tile: number, fan: number, step: { width: number, height: number }, remove: number, title: number },
+ * }>} ShopMetrics `compactPurchase`: the status line on top, then quantity, then Buy beside Add to cart;
+ *   cart `step`: the − and + buttons (wide enough for their sign past the button's padding); `0` sizes in `reveal`/`cart` mean "as large as the screen allows"
+ */
+/** @type {ShopMetrics} */
+const WIDE = Object.freeze({
+  line: 28,
+  tabs: Object.freeze({ top: 20, height: 40, gap: 8 }),
+  filterTop: 72,
+  listTop: Object.freeze({ plain: 76, filtered: 72 + CARD_FILTER_BAR_HEIGHT + 12 }),
+  filterButton: false,
+  priceWidth: 170,
+  quantity: Object.freeze({ height: 52, width: 80 }),
+  buy: Object.freeze({ height: 60, width: 420 }),
+  rowGap: 0,
+  compactPurchase: false,
+  single: Object.freeze({ card: Object.freeze({ width: 300, height: 442 }), legendColumn: 120, legend: true, nameHeight: 40 }),
+  /** A deck's cards as thumbnails: the card, "copies × price each", its rarity. */
+  deckThumb: Object.freeze({ width: 84, gap: 12, rarity: 20 }),
+  top: Object.freeze({ title: 14, titleHeight: 40, description: 62, content: 150 }),
+  descriptionLines: 3,
+  reveal: Object.freeze({ width: 1100, height: 780, row: 44, gap: 6, packGap: 16, title: 80, button: 56, serial: 210 }),
+  /** The cart: a grid of tiles, each the product's cards over its name, price and quantity. */
+  cart: Object.freeze({ width: 1100, height: 860, footer: 56, perRow: 3, gap: 16, tile: 300, fan: 170, step: Object.freeze({ width: 56, height: 44 }), remove: 48, title: 60 }),
+});
+/** @type {ShopMetrics} */
+const COMPACT = Object.freeze({
+  line: 22,
+  tabs: Object.freeze({ top: 12, height: 46, gap: 6 }),
+  filterTop: 66,
+  listTop: Object.freeze({ plain: 68, filtered: 66 + CARD_FILTER_BUTTON_HEIGHT + 10 }),
+  filterButton: true,
+  priceWidth: 124,
+  quantity: Object.freeze({ height: 46, width: 52 }),
+  buy: Object.freeze({ height: 46, width: 0 }),
+  rowGap: 6,
+  compactPurchase: true,
+  single: Object.freeze({ card: Object.freeze({ width: 112, height: 157 }), legendColumn: 0, legend: false, nameHeight: 34 }),
+  deckThumb: Object.freeze({ width: 56, gap: 8, rarity: 16 }),
+  top: Object.freeze({ title: 8, titleHeight: 34, description: 42, content: 88 }),
+  descriptionLines: 2,
+  reveal: Object.freeze({ width: 0, height: 0, row: 44, gap: 6, packGap: 12, title: 56, button: 46, serial: 90 }),
+  cart: Object.freeze({ width: 0, height: 0, footer: 46, perRow: 3, gap: 10, tile: 196, fan: 84, step: Object.freeze({ width: 48, height: 40 }), remove: 40, title: 50 }),
+});
+/** How far a compact dialog (the cart, the reveal) keeps from the screen's edges. */
+const COMPACT_DIALOG_MARGIN = 8;
 const CART_LIST_ID = "cart.lines";
-const DETAIL_WIDTH = COLUMNS.right.width - 2 * INSET;
-/** Where the purchase controls start in the detail panel; everything else fits above. */
-const PURCHASE_TOP = COLUMNS.height - INSET - 2 * LINE - 8 - BUY.height - INSET - QUANTITY.height;
 
 const TAB_TITLES = Object.freeze({ [ShopCategory.PACKS]: "Packs", [ShopCategory.DECKS]: "Decks", [ShopCategory.SINGLES]: "Singles", [ShopCategory.OFFERS]: "Offers" });
 /** Rarities drawn in theme colours, commonest to rarest. */
@@ -88,6 +131,41 @@ const priceText = (product) => `${priceOf(product).amount} ${priceOf(product).as
 const cardsText = (count) => `${count} card${count === 1 ? "" : "s"}`;
 
 export class ShopScene extends Scene {
+  /** The frame for the screen in use (the compact one on a phone). */
+  get #screen() {
+    return screenLayout(this.services.viewport);
+  }
+
+  /** @returns {ShopMetrics} */
+  get #m() {
+    return this.#screen.compact ? COMPACT : WIDE;
+  }
+
+  /** The width of the detail panel's content. */
+  get #detailWidth() {
+    const screen = this.#screen;
+    return screen.columns.right.width - 2 * screen.inset;
+  }
+
+  /** Where the purchase controls start in the detail panel; everything else fits above. */
+  get #purchaseTop() {
+    const { columns, inset } = this.#screen;
+    const { line, buy, quantity, rowGap, compactPurchase } = this.#m;
+    if (compactPurchase) {
+      return columns.height - inset - buy.height - rowGap - quantity.height - rowGap - 2 * line;
+    }
+    return columns.height - inset - 2 * line - 8 - buy.height - inset - quantity.height;
+  }
+
+  /**
+   * A dialog's size: the metrics' own, or (compact) the screen's less a margin.
+   * @param {{ width: number, height: number }} size
+   */
+  #dialogSize({ width, height }) {
+    const { viewport } = this.services;
+    return { width: width || viewport.logicalWidth - 2 * COMPACT_DIALOG_MARGIN, height: height || viewport.logicalHeight - 2 * COMPACT_DIALOG_MARGIN };
+  }
+
   #app;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
@@ -155,6 +233,10 @@ export class ShopScene extends Scene {
     super.render(context);
   }
 
+  relayout() {
+    this.#rebuild();
+  }
+
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     const scrollY = this.#takeScroll();
@@ -164,7 +246,7 @@ export class ShopScene extends Scene {
     this.root.clear();
     const shelves = this.#shelves();
     const back = this.#buildHeader();
-    const listPanel = this.root.add(new Panel({ x: COLUMNS.left.x, y: COLUMNS.top, width: COLUMNS.left.width, height: COLUMNS.height }));
+    const listPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width: this.#screen.columns.left.width, height: this.#screen.columns.height }));
     const firstControl = this.#buildShelfControls(listPanel, shelves);
     const firstRow = this.#buildList(listPanel, shelves, scrollY);
     const buy = this.#buildDetail(shelves);
@@ -206,41 +288,48 @@ export class ShopScene extends Scene {
     const options = cardFilterOptions(this.#app);
     const rarities = this.#shop().state.listing?.rarities ?? [];
     const shelfOptions = rarities.length === 0 ? options : Object.freeze({ ...options, rarity: Object.freeze([ANY, ...rarities]) });
-    return buildCardFilterBar(panel, { id: "shop.filter", x: INSET, y: FILTER_TOP, width: COLUMNS.left.width - 2 * INSET, filter: this.#filter, options: shelfOptions, onChange: (filter) => this.#changeFilter(filter) });
+    const bar = { id: "shop.filter", x: this.#screen.inset, y: this.#m.filterTop, width: this.#screen.columns.left.width - 2 * this.#screen.inset, filter: this.#filter, options: shelfOptions, onChange: (/** @type {import("../../application/content/CardFilter.js").CardFilter} */ filter) => this.#changeFilter(filter) };
+    if (this.#m.filterButton) {
+      return buildCardFilterButton(panel, { ...bar, dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() } });
+    }
+    return buildCardFilterBar(panel, bar);
   }
 
   /** @returns {Button} */
   #buildHeader() {
     const { viewport } = this.services;
     const account = this.#app.account?.state.account ?? null;
-    this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 200, height: HEADER.height, text: "Shop", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    const { header } = this.#screen;
+    const title = this.#screen.compact ? 90 : 200;
+    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: title, height: header.height, text: "Shop", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const market = this.services.hasScene(SceneId.MARKET);
     const buttons = market ? 3 : 2;
-    const noteWidth = viewport.logicalWidth - 2 * HEADER.sideMargin - 200 - buttons * (HEADER.backWidth + 16);
+    const noteX = header.sideMargin + title;
+    const noteWidth = viewport.logicalWidth - 2 * header.sideMargin - title - buttons * (header.backWidth + 16);
     if (account === null) {
-      this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y, width: noteWidth, height: HEADER.height, text: "Sign in with Keychain to buy. Prices are paid in STEEM, straight from your wallet.", size: "small", align: "left", colorKey: "textMuted", fit: true }));
+      this.root.add(new Label({ x: noteX, y: header.y, width: noteWidth, height: header.height, text: "Sign in with Keychain to buy. Prices are paid in STEEM, straight from your wallet.", size: "small", align: "left", colorKey: "textMuted", fit: true }));
     } else {
       const budget = this.#budgetLine();
-      this.root.add(new Label({ id: "shop.budget", x: HEADER.sideMargin + 200, y: HEADER.y, width: noteWidth, height: HEADER.height / 2, text: budget.text, weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
-      this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y + HEADER.height / 2, width: noteWidth, height: HEADER.height / 2, text: `Buying as @${account}. Payments go straight from your wallet; nothing is stored in the game.`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+      this.root.add(new Label({ id: "shop.budget", x: noteX, y: header.y, width: noteWidth, height: header.height / 2, text: budget.text, weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
+      this.root.add(new Label({ x: noteX, y: header.y + header.height / 2, width: noteWidth, height: header.height / 2, text: `Buying as @${account}. Payments go straight from your wallet; nothing is stored in the game.`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
     }
     const inCart = this.#shop().state.cart.reduce((sum, line) => sum + line.quantity, 0);
     this.root.add(
       new Button({
         id: "shop.cart",
-        x: viewport.logicalWidth - HEADER.sideMargin - buttons * HEADER.backWidth - (buttons - 1) * 16,
-        y: HEADER.y + 4,
-        width: HEADER.backWidth,
-        height: HEADER.height - 8,
+        x: viewport.logicalWidth - this.#screen.header.sideMargin - buttons * this.#screen.header.backWidth - (buttons - 1) * 16,
+        y: this.#screen.header.y + 4,
+        width: this.#screen.header.backWidth,
+        height: this.#screen.header.height - 8,
         text: inCart === 0 ? "Cart" : `Cart (${inCart})`,
         variant: inCart === 0 ? "secondary" : "primary",
         onActivate: () => this.#showCart(true),
       }),
     );
     if (market) {
-      this.root.add(new Button({ id: "shop.market", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
+      this.root.add(new Button({ id: "shop.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
     }
-    return this.root.add(new Button({ id: "shop.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back to menu", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
+    return this.root.add(new Button({ id: "shop.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
   }
 
   /**
@@ -250,7 +339,8 @@ export class ShopScene extends Scene {
    */
   #buildTabs(panel, shelves) {
     const categories = [ShopCategory.PACKS, ShopCategory.DECKS, ShopCategory.SINGLES, ...(shelves.offers.length > 0 ? [ShopCategory.OFFERS] : [])];
-    const inner = COLUMNS.left.width - 2 * INSET;
+    const inner = this.#screen.columns.left.width - 2 * this.#screen.inset;
+    const TABS = this.#m.tabs;
     const width = (inner - (categories.length - 1) * TABS.gap) / categories.length;
     /** @type {Button | null} */
     let first = null;
@@ -259,11 +349,12 @@ export class ShopScene extends Scene {
       const tab = panel.add(
         new Button({
           id: `shop.tab.${category}`,
-          x: INSET + index * (width + TABS.gap),
+          x: this.#screen.inset + index * (width + TABS.gap),
           y: TABS.top,
           width,
           height: TABS.height,
-          text: count > 0 ? `${TAB_TITLES[category]} (${count})` : TAB_TITLES[category],
+          // A phone's tabs have room for the shelf's name alone.
+          text: count > 0 && !this.#screen.compact ? `${TAB_TITLES[category]} (${count})` : TAB_TITLES[category],
           variant: category === this.#category ? "primary" : "secondary",
           onActivate: () => this.#show(category),
         }),
@@ -281,8 +372,8 @@ export class ShopScene extends Scene {
    * @returns {Button | null} the first row
    */
   #buildList(panel, shelves, scrollY) {
-    const top = this.#category === ShopCategory.SINGLES ? LIST_TOP.filtered : LIST_TOP.plain;
-    const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: top, width: COLUMNS.left.width - 2 * INSET, height: COLUMNS.height - top - INSET }));
+    const top = this.#category === ShopCategory.SINGLES ? this.#m.listTop.filtered : this.#m.listTop.plain;
+    const list = panel.add(new ScrollList({ id: LIST_ID, x: this.#screen.inset, y: top, width: this.#screen.columns.left.width - 2 * this.#screen.inset, height: this.#screen.columns.height - top - this.#screen.inset }));
     const keys = this.#entryKeys(shelves);
     if (!keys.includes(this.#selected[this.#category] ?? "")) {
       this.#selected[this.#category] = keys[0] ?? null;
@@ -291,12 +382,12 @@ export class ShopScene extends Scene {
     if (keys.length === 0) {
       const { status, error } = this.#shop().state;
       const text = { [ShopStatus.FAILED]: `The shop could not be loaded: ${error?.message ?? "unknown error"}`, [ShopStatus.READY]: this.#emptyShelfText() }[status] ?? "Loading the shop…";
-      list.add(new Label({ id: "shop.empty", x: 0, y: 0, width: list.rowWidth, height: ROW.height, text, colorKey: status === ShopStatus.FAILED ? "danger" : "textMuted", fit: true }));
-      list.contentHeight = ROW.height;
+      list.add(new Label({ id: "shop.empty", x: 0, y: 0, width: list.rowWidth, height: this.#screen.row.height, text, colorKey: status === ShopStatus.FAILED ? "danger" : "textMuted", fit: true }));
+      list.contentHeight = this.#screen.row.height;
       return null;
     }
     const rows = this.#category === ShopCategory.SINGLES ? this.#singleRows(list, this.#visibleSingles(shelves)) : this.#productRows(list, /** @type {readonly Product[]} */ (shelves[/** @type {"packs" | "decks" | "offers"} */ (this.#category)]));
-    list.contentHeight = rowsHeight(keys.length);
+    list.contentHeight = this.#screen.rowsHeight(keys.length);
     list.scrollTo(scrollY);
     return rows[0] ?? null;
   }
@@ -316,7 +407,7 @@ export class ShopScene extends Scene {
         [ShopCategory.PACKS]: () => `${product.cards} unknown cards · ${priceText(product)}`,
         [ShopCategory.DECKS]: () => [cardsText(product.cards), priceText(product), deck === undefined ? "" : mixText(this.#mixOf(deck))].filter((part) => part.length > 0).join(" · "),
       }[this.#category] ?? (() => `${cardsText(product.cards)} · ${priceText(product)}`);
-      return list.add(new OptionRow({ id: `shop.product.${product.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: product.name, subtitle: subtitle(), stripe: this.#stripeOf(deck), selected: product.id === this.#selected[this.#category], onActivate: () => this.#select(product.id) }));
+      return list.add(new OptionRow({ id: `shop.product.${product.id}`, x: 0, y: this.#screen.rowY(index), width: list.rowWidth, height: this.#screen.row.height, text: product.name, subtitle: subtitle(), stripe: this.#stripeOf(deck), selected: product.id === this.#selected[this.#category], onActivate: () => this.#select(product.id) }));
     });
   }
 
@@ -343,12 +434,13 @@ export class ShopScene extends Scene {
    * @param {readonly SingleOffer[]} singles
    */
   #singleRows(list, singles) {
-    const stripWidth = list.rowWidth - PRICE_WIDTH - ACTION.gap;
+    const PRICE_WIDTH = this.#m.priceWidth;
+    const stripWidth = list.rowWidth - PRICE_WIDTH - this.#screen.action.gap;
     return singles.map((offer, index) => {
       const card = this.#app.content.catalog.get(offer.cardId);
       const selected = offer.cardId === this.#selected[ShopCategory.SINGLES];
-      list.add(new CardStrip({ x: 0, y: rowY(index), width: stripWidth, height: ROW.height, card: card ?? unknownCard(offer.cardId), broken: card === undefined, muted: !selected, rarity: offer.rarity ?? rarityOf(this.#app, offer.cardId) }));
-      return list.add(new Button({ id: `shop.card.${offer.cardId}`, x: stripWidth + ACTION.gap, y: rowY(index), width: PRICE_WIDTH, height: ROW.height, text: priceText(offer.product), variant: selected ? "primary" : "secondary", textSize: "small", onActivate: () => this.#select(offer.cardId) }));
+      list.add(new CardStrip({ x: 0, y: this.#screen.rowY(index), width: stripWidth, height: this.#screen.row.height, card: card ?? unknownCard(offer.cardId), broken: card === undefined, muted: !selected, rarity: offer.rarity ?? rarityOf(this.#app, offer.cardId) }));
+      return list.add(new Button({ id: `shop.card.${offer.cardId}`, x: stripWidth + this.#screen.action.gap, y: this.#screen.rowY(index), width: PRICE_WIDTH, height: this.#screen.row.height, text: priceText(offer.product), variant: selected ? "primary" : "secondary", textSize: "small", onActivate: () => this.#select(offer.cardId) }));
     });
   }
 
@@ -357,7 +449,7 @@ export class ShopScene extends Scene {
    * @returns {Button | null} the Buy button
    */
   #buildDetail(shelves) {
-    const panel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
     const selected = this.#selected[this.#category];
     if (this.#category === ShopCategory.SINGLES) {
       const offer = shelves.singles.find((candidate) => candidate.cardId === selected);
@@ -368,24 +460,44 @@ export class ShopScene extends Scene {
     if (product === undefined) {
       return null;
     }
-    this.#buildTitle(panel, product);
     const deck = this.#deckOf(product);
+    this.#buildTitle(panel, product, deck === undefined || !this.#screen.compact);
     if (deck !== undefined) {
       this.#buildDeckContents(panel, product, deck, shelves.singles);
     } else {
-      const lines = [...this.#contentLines(product), ...this.#oddsLines(product)];
-      lines.forEach((line, index) => panel.add(new Label({ x: INSET, y: 150 + index * LINE, width: DETAIL_WIDTH, height: LINE, text: line.text, size: "small", align: "left", colorKey: line.colorKey, fit: true })));
+      this.#buildContentLines(panel, [...this.#contentLines(product), ...this.#oddsLines(product)]);
     }
     return this.#buildPurchase(panel, product);
   }
 
   /**
+   * What a pack or an offer holds and its odds, line by line; scrolling on a compact screen, where they may not fit above the purchase.
+   * @param {Panel} panel
+   * @param {{ text: string, colorKey: string }[]} lines
+   */
+  #buildContentLines(panel, lines) {
+    const { line: LINE, top } = this.#m;
+    const parent = this.#screen.compact ? panel.add(new ScrollList({ id: "shop.contents", x: this.#screen.inset, y: top.content, width: this.#detailWidth, height: this.#purchaseTop - 6 - top.content })) : panel;
+    const x = this.#screen.compact ? 0 : this.#screen.inset;
+    const y = this.#screen.compact ? 0 : top.content;
+    const width = parent instanceof ScrollList ? parent.rowWidth : this.#detailWidth;
+    lines.forEach((line, index) => parent.add(new Label({ x, y: y + index * LINE, width, height: LINE, text: line.text, size: "small", align: "left", colorKey: line.colorKey, fit: true })));
+    if (parent instanceof ScrollList) {
+      parent.contentHeight = lines.length * LINE;
+    }
+  }
+
+  /**
    * @param {Panel} panel
    * @param {Product} product
+   * @param {boolean} described whether its description is shown (a compact deck gives its room to the cards)
    */
-  #buildTitle(panel, product) {
-    panel.add(new Label({ x: INSET, y: 14, width: DETAIL_WIDTH, height: 40, text: product.name, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    panel.add(new TextBlock({ x: INSET, y: 62, width: DETAIL_WIDTH, height: 3 * LINE, text: product.description, size: "small", colorKey: "textMuted" }));
+  #buildTitle(panel, product, described) {
+    const { top, line, descriptionLines } = this.#m;
+    panel.add(new Label({ x: this.#screen.inset, y: top.title, width: this.#detailWidth, height: top.titleHeight, text: product.name, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    if (described) {
+      panel.add(new TextBlock({ x: this.#screen.inset, y: top.description, width: this.#detailWidth, height: descriptionLines * line, text: product.description, size: "small", colorKey: "textMuted" }));
+    }
   }
 
   /**
@@ -397,10 +509,12 @@ export class ShopScene extends Scene {
    */
   #buildDeckContents(panel, product, deck, singles) {
     const { lines, total } = deckBreakdown(deck.entries, singles);
-    const top = 150;
-    const bottom = PURCHASE_TOP - INSET - LINE;
-    panel.add(new Label({ x: INSET, y: top, width: DETAIL_WIDTH, height: LINE, text: `${mixText(this.#mixOf(deck))} · ${cardsText(product.cards)}, ${lines.length} different · copies × price as a single · tap a card for its details`, size: "small", align: "left", colorKey: "accentLight", fit: true }));
-    const list = panel.add(new ScrollList({ id: "shop.deckCards", x: INSET, y: top + LINE + 6, width: DETAIL_WIDTH, height: bottom - top - LINE - 6 }));
+    const { line: LINE, deckThumb: DECK_THUMB } = this.#m;
+    const compact = this.#screen.compact;
+    const top = compact ? this.#m.top.description : this.#m.top.content;
+    const bottom = this.#purchaseTop - (compact ? 4 : this.#screen.inset) - LINE;
+    panel.add(new Label({ x: this.#screen.inset, y: top, width: this.#detailWidth, height: LINE, text: `${mixText(this.#mixOf(deck))} · ${cardsText(product.cards)}, ${lines.length} different · copies × price as a single · tap a card for its details`, size: "small", align: "left", colorKey: "accentLight", fit: true }));
+    const list = panel.add(new ScrollList({ id: "shop.deckCards", x: this.#screen.inset, y: top + LINE + 6, width: this.#detailWidth, height: bottom - top - LINE - 6 }));
     const perRow = Math.max(1, Math.floor((list.rowWidth + DECK_THUMB.gap) / (DECK_THUMB.width + DECK_THUMB.gap)));
     const cellHeight = CardThumb.heightFor(DECK_THUMB.width) + DECK_THUMB.rarity + DECK_THUMB.gap;
     lines.forEach((line, index) => {
@@ -424,7 +538,7 @@ export class ShopScene extends Scene {
     });
     list.contentHeight = Math.ceil(lines.length / perRow) * cellHeight - DECK_THUMB.gap;
     const sum = total === null ? "" : `Sum of the cards: ${total} ${priceOf(product).asset} · `;
-    panel.add(new Label({ id: "shop.deckTotal", x: INSET, y: bottom, width: DETAIL_WIDTH, height: LINE, text: `${sum}Deck price: ${priceText(product)}`, size: "small", weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
+    panel.add(new Label({ id: "shop.deckTotal", x: this.#screen.inset, y: bottom, width: this.#detailWidth, height: LINE, text: `${sum}Deck price: ${priceText(product)}`, size: "small", weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
   }
 
   /**
@@ -456,19 +570,45 @@ export class ShopScene extends Scene {
    */
   #buildSingleDetail(panel, offer) {
     const card = this.#app.content.catalog.get(offer.cardId);
-    if (card !== undefined) {
-      panel.add(new CardDetail({ id: "shop.cardDetail", x: INSET, y: INSET, width: SINGLE.card.width, height: SINGLE.card.height, card, rarity: offer.rarity ?? rarityOf(this.#app, offer.cardId) }));
-    }
-    const x = INSET + SINGLE.card.width + INSET;
-    const width = COLUMNS.right.width - x - INSET;
-    panel.add(new Label({ x, y: INSET, width, height: 40, text: card?.name ?? offer.cardId, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    panel.add(new Label({ id: "shop.rarity", x, y: INSET + 44, width, height: LINE, text: rarityLabel(offer.rarity), weight: "bold", align: "left", colorKey: rarityColor(offer.rarity) }));
+    const { single: SINGLE, line: LINE } = this.#m;
+    const compact = this.#screen.compact;
+    const top = compact ? this.#m.top.title : this.#screen.inset;
     const owned = this.#ownedCopies(offer.cardId);
-    if (owned !== null) {
-      panel.add(new Label({ id: "shop.owned", x, y: INSET + 44 + LINE, width, height: LINE, text: owned === 0 ? "Not in your collection yet" : `You own ${owned}`, size: "small", align: "left", colorKey: "textMuted" }));
+    if (card !== undefined) {
+      this.#buildSingleCard(panel, card, { offer, top, owned });
     }
-    this.#buildPriceLegend(panel, { x, y: INSET + 44 + 2 * LINE + 16, width }, offer.rarity);
+    const x = this.#screen.inset + SINGLE.card.width + this.#screen.inset;
+    const width = this.#screen.columns.right.width - x - this.#screen.inset;
+    panel.add(new Label({ x, y: top, width, height: SINGLE.nameHeight, text: card?.name ?? offer.cardId, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    const rarityY = top + SINGLE.nameHeight + 4;
+    panel.add(new Label({ id: "shop.rarity", x, y: rarityY, width, height: LINE, text: rarityLabel(offer.rarity), weight: "bold", align: "left", colorKey: rarityColor(offer.rarity) }));
+    if (owned !== null) {
+      panel.add(new Label({ id: "shop.owned", x, y: rarityY + LINE, width, height: LINE, text: owned === 0 ? "Not in your collection yet" : `You own ${owned}`, size: "small", align: "left", colorKey: "textMuted" }));
+    }
+    if (SINGLE.legend) {
+      this.#buildPriceLegend(panel, { x, y: rarityY + 2 * LINE + 16, width }, offer.rarity);
+    } else if (card !== undefined) {
+      panel.add(new Label({ x, y: rarityY + 2 * LINE + 4, width, height: LINE, text: "Tap the card to read it", size: "small", align: "left", colorKey: "accent", fit: true }));
+    }
     return this.#buildPurchase(panel, offer.product);
+  }
+
+  /**
+   * A single's card; on a compact screen, where it is too small to read, a tap shows it at full size.
+   * @param {Panel} panel
+   * @param {import("../cards/CardDetail.js").CardLike} card
+   * @param {{ offer: SingleOffer, top: number, owned: number | null }} where its offer, where it goes, and how many the player owns
+   */
+  #buildSingleCard(panel, card, { offer, top, owned }) {
+    const { card: size } = this.#m.single;
+    const rarity = offer.rarity ?? rarityOf(this.#app, offer.cardId);
+    const area = { x: this.#screen.inset, y: top, width: size.width, height: size.height };
+    panel.add(new CardDetail({ id: "shop.cardDetail", ...area, card, rarity }));
+    if (!this.#screen.compact) {
+      return;
+    }
+    const lines = [[rarityLabel(rarity), ...(owned === null ? [] : [ownedText(owned)])].join(" · "), `Price: ${priceText(offer.product)}`];
+    panel.add(new Hotspot({ id: "shop.cardInfo", ...area, onActivate: () => this.openModal(buildCardInfoModal({ viewport: this.services.viewport, card, rarity, lines, onClose: () => this.closeModal() })) }));
   }
 
   /**
@@ -482,7 +622,8 @@ export class ShopScene extends Scene {
     if (priceList === undefined) {
       return;
     }
-    const column = SINGLE.legendColumn;
+    const { line: LINE } = this.#m;
+    const column = this.#m.single.legendColumn;
     /** @type {readonly { width: number, align: CanvasTextAlign }[]} */
     const columns = [
       { width: width - column, align: "left" },
@@ -520,18 +661,22 @@ export class ShopScene extends Scene {
   #buildPurchase(panel, product) {
     const shop = this.#shop();
     const { purchase } = shop.state;
-    const quantityY = PURCHASE_TOP;
-    panel.add(new Button({ id: "shop.less", x: INSET, y: quantityY, width: ACTION.small, height: QUANTITY.height, text: "−", enabled: this.#quantity > 1, onActivate: () => this.#changeQuantity(-1, product) }));
-    panel.add(new Label({ id: "shop.quantity", x: INSET + ACTION.small, y: quantityY, width: QUANTITY.width, height: QUANTITY.height, text: String(this.#quantity), size: "heading", weight: "bold" }));
-    panel.add(new Button({ id: "shop.more", x: INSET + ACTION.small + QUANTITY.width, y: quantityY, width: ACTION.small, height: QUANTITY.height, text: "+", enabled: this.#quantity < product.perOrder, onActivate: () => this.#changeQuantity(1, product) }));
+    if (this.#m.compactPurchase) {
+      return this.#buildCompactPurchase(panel, product);
+    }
+    const { line: LINE, quantity: QUANTITY, buy: BUY } = this.#m;
+    const quantityY = this.#purchaseTop;
+    panel.add(new Button({ id: "shop.less", x: this.#screen.inset, y: quantityY, width: this.#screen.action.small, height: QUANTITY.height, text: "−", enabled: this.#quantity > 1, onActivate: () => this.#changeQuantity(-1, product) }));
+    panel.add(new Label({ id: "shop.quantity", x: this.#screen.inset + this.#screen.action.small, y: quantityY, width: QUANTITY.width, height: QUANTITY.height, text: String(this.#quantity), size: "heading", weight: "bold" }));
+    panel.add(new Button({ id: "shop.more", x: this.#screen.inset + this.#screen.action.small + QUANTITY.width, y: quantityY, width: this.#screen.action.small, height: QUANTITY.height, text: "+", enabled: this.#quantity < product.perOrder, onActivate: () => this.#changeQuantity(1, product) }));
     const each = this.#quantity > 1 ? `${this.#quantity} × ${priceText(product)}` : `Up to ${product.perOrder} per order`;
-    panel.add(new Label({ id: "shop.each", x: INSET + 2 * ACTION.small + QUANTITY.width + INSET, y: quantityY, width: DETAIL_WIDTH - 2 * ACTION.small - QUANTITY.width - INSET, height: QUANTITY.height, text: each, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    panel.add(new Label({ id: "shop.each", x: this.#screen.inset + 2 * this.#screen.action.small + QUANTITY.width + this.#screen.inset, y: quantityY, width: this.#detailWidth - 2 * this.#screen.action.small - QUANTITY.width - this.#screen.inset, height: QUANTITY.height, text: each, size: "small", align: "left", colorKey: "textMuted", fit: true }));
     const price = priceOf(product);
-    const buyY = quantityY + QUANTITY.height + INSET;
+    const buyY = quantityY + QUANTITY.height + this.#screen.inset;
     const buy = panel.add(
       new Button({
         id: "shop.buy",
-        x: INSET,
+        x: this.#screen.inset,
         y: buyY,
         width: BUY.width,
         height: BUY.height,
@@ -545,15 +690,58 @@ export class ShopScene extends Scene {
       }),
     );
     const status = this.#statusLine(purchase, multiplyAmount(price.amount, this.#quantity), price.asset);
-    panel.add(new TextBlock({ id: "shop.status", x: INSET, y: buyY + BUY.height + 8, width: DETAIL_WIDTH, height: 2 * LINE, text: status.text, size: "small", colorKey: status.colorKey }));
-    const x = INSET + BUY.width + INSET;
-    const side = COLUMNS.right.width - x - INSET;
+    panel.add(new TextBlock({ id: "shop.status", x: this.#screen.inset, y: buyY + BUY.height + 8, width: this.#detailWidth, height: 2 * LINE, text: status.text, size: "small", colorKey: status.colorKey }));
+    const x = this.#screen.inset + BUY.width + this.#screen.inset;
+    const side = this.#screen.columns.right.width - x - this.#screen.inset;
     if (purchase.stage === PurchaseStage.FAILED && purchase.order?.payment) {
-      const half = (side - ACTION.gap) / 2;
+      const half = (side - this.#screen.action.gap) / 2;
       panel.add(new Button({ id: "shop.payAgain", x, y: buyY, width: half, height: BUY.height, text: "Pay again", onActivate: () => shop.payAgain() }));
-      panel.add(new Button({ id: "shop.cancel", x: x + half + ACTION.gap, y: buyY, width: half, height: BUY.height, text: "Cancel order", variant: "danger", textSize: "small", onActivate: () => shop.cancel() }));
+      panel.add(new Button({ id: "shop.cancel", x: x + half + this.#screen.action.gap, y: buyY, width: half, height: BUY.height, text: "Cancel order", variant: "danger", textSize: "small", onActivate: () => shop.cancel() }));
     } else {
       panel.add(new Button({ id: "shop.addToCart", x, y: buyY, width: side, height: BUY.height, text: "Add to cart", enabled: shop.state.status === ShopStatus.READY, onActivate: () => this.#addToCart(product) }));
+    }
+    return buy;
+  }
+
+  /**
+   * The purchase on a compact screen: the status line, then − quantity +,
+   * then Buy beside Add to cart (or Pay again and Cancel after a failed payment).
+   * @param {Panel} panel
+   * @param {Product} product
+   * @returns {Button} the Buy button
+   */
+  #buildCompactPurchase(panel, product) {
+    const shop = this.#shop();
+    const { purchase } = shop.state;
+    const { line, quantity, buy: buyRow, rowGap } = this.#m;
+    const { inset, action } = this.#screen;
+    const width = this.#detailWidth;
+    const statusY = this.#purchaseTop;
+    const price = priceOf(product);
+    const amount = multiplyAmount(price.amount, this.#quantity);
+    const status = this.#statusLine(purchase, amount, price.asset);
+    panel.add(new TextBlock({ id: "shop.status", x: inset, y: statusY, width, height: 2 * line, text: status.text, size: "small", colorKey: status.colorKey }));
+    const quantityY = statusY + 2 * line + rowGap;
+    panel.add(new Button({ id: "shop.less", x: inset, y: quantityY, width: action.small, height: quantity.height, text: "−", enabled: this.#quantity > 1, onActivate: () => this.#changeQuantity(-1, product) }));
+    panel.add(new Label({ id: "shop.quantity", x: inset + action.small, y: quantityY, width: quantity.width, height: quantity.height, text: String(this.#quantity), size: "heading", weight: "bold" }));
+    panel.add(new Button({ id: "shop.more", x: inset + action.small + quantity.width, y: quantityY, width: action.small, height: quantity.height, text: "+", enabled: this.#quantity < product.perOrder, onActivate: () => this.#changeQuantity(1, product) }));
+    const eachX = inset + 2 * action.small + quantity.width + action.gap;
+    const each = this.#quantity > 1 ? `${this.#quantity} × ${priceText(product)}` : `Up to ${product.perOrder} per order`;
+    panel.add(new Label({ id: "shop.each", x: eachX, y: quantityY, width: inset + width - eachX, height: quantity.height, text: each, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    const buyY = quantityY + quantity.height + rowGap;
+    const buyWidth = Math.round(width * 0.6);
+    const buy = panel.add(new Button({ id: "shop.buy", x: inset, y: buyY, width: buyWidth, height: buyRow.height, text: `Buy for ${amount} ${price.asset}`, variant: "primary", enabled: this.#canBuy() && !this.#isShort(amount, price.asset), onActivate: () => {
+      this.#notice = null;
+      shop.buy({ productId: product.id, quantity: this.#quantity, asset: price.asset });
+    } }));
+    const sideX = inset + buyWidth + action.gap;
+    const side = inset + width - sideX;
+    if (purchase.stage === PurchaseStage.FAILED && purchase.order?.payment) {
+      const half = (side - action.gap) / 2;
+      panel.add(new Button({ id: "shop.payAgain", x: sideX, y: buyY, width: half, height: buyRow.height, text: "Pay again", textSize: "small", onActivate: () => shop.payAgain() }));
+      panel.add(new Button({ id: "shop.cancel", x: sideX + half + action.gap, y: buyY, width: half, height: buyRow.height, text: "Cancel", variant: "danger", textSize: "small", onActivate: () => shop.cancel() }));
+    } else {
+      panel.add(new Button({ id: "shop.addToCart", x: sideX, y: buyY, width: side, height: buyRow.height, text: "Add to cart", enabled: shop.state.status === ShopStatus.READY, onActivate: () => this.#addToCart(product) }));
     }
     return buy;
   }
@@ -692,21 +880,22 @@ export class ShopScene extends Scene {
       this.#revealClosed = true;
       this.#shop().dismiss();
     };
+    const REVEAL = { ...this.#m.reveal, ...this.#dialogSize(this.#m.reveal) };
     const modal = new Modal({ id: "reveal", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: REVEAL.width, panelHeight: REVEAL.height, onDismiss: close });
     const { panel } = modal;
-    const width = REVEAL.width - 2 * INSET;
+    const width = REVEAL.width - 2 * this.#screen.inset;
     const total = fulfilment.cards.length + fulfilment.packs.reduce((sum, pack) => sum + pack.cards.length, 0);
-    panel.add(new Label({ x: INSET, y: INSET, width, height: 44, text: `You received ${cardsText(total)}`, size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
-    this.#buildRevealList(panel.add(new ScrollList({ id: "reveal.cards", x: INSET, y: 80, width, height: REVEAL.height - 80 - 2 * INSET - 56 })), fulfilment);
-    const buttonWidth = (width - ACTION.gap) / 2;
-    const buttonsY = REVEAL.height - INSET - 56;
+    panel.add(new Label({ x: this.#screen.inset, y: this.#screen.compact ? 8 : this.#screen.inset, width, height: 44, text: `You received ${cardsText(total)}`, size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
+    this.#buildRevealList(panel.add(new ScrollList({ id: "reveal.cards", x: this.#screen.inset, y: REVEAL.title, width, height: REVEAL.height - REVEAL.title - 2 * this.#screen.inset - REVEAL.button })), fulfilment);
+    const buttonWidth = (width - this.#screen.action.gap) / 2;
+    const buttonsY = REVEAL.height - this.#screen.inset - REVEAL.button;
     const view = panel.add(
       new Button({
         id: "reveal.collection",
-        x: INSET,
+        x: this.#screen.inset,
         y: buttonsY,
         width: buttonWidth,
-        height: 56,
+        height: REVEAL.button,
         text: "View collection",
         variant: "primary",
         enabled: this.services.hasScene(SceneId.COLLECTION),
@@ -716,7 +905,7 @@ export class ShopScene extends Scene {
         },
       }),
     );
-    panel.add(new Button({ id: "reveal.close", x: INSET + buttonWidth + ACTION.gap, y: buttonsY, width: buttonWidth, height: 56, text: "Keep shopping", onActivate: close }));
+    panel.add(new Button({ id: "reveal.close", x: this.#screen.inset + buttonWidth + this.#screen.action.gap, y: buttonsY, width: buttonWidth, height: REVEAL.button, text: "Keep shopping", onActivate: close }));
     this.openModal(modal);
     return view;
   }
@@ -735,22 +924,26 @@ export class ShopScene extends Scene {
     const shop = this.#shop();
     const summary = cartSummary(shop.state.cart, shop.state.listing?.products ?? []);
     const { viewport } = this.services;
+    const CART = { ...this.#m.cart, ...this.#dialogSize(this.#m.cart) };
+    const { line: LINE } = this.#m;
     const modal = new Modal({ id: "cart", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: CART.width, panelHeight: CART.height, onDismiss: () => this.#showCart(false) });
     const { panel } = modal;
-    const width = CART.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: INSET, width: width / 2, height: 44, text: "Your cart", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    panel.add(new Label({ id: "cart.count", x: INSET + width / 2, y: INSET, width: width / 2, height: 44, text: cartCountText(summary), size: "small", align: "right", colorKey: "textMuted" }));
-    const footerY = CART.height - INSET - CART.footer;
-    const totalY = footerY - INSET - 2 * LINE;
-    this.#buildCartLines(panel.add(new ScrollList({ id: CART_LIST_ID, x: INSET, y: INSET + 60, width, height: totalY - INSET - 60 - INSET })), summary, scrollY);
-    panel.add(new Label({ id: "cart.total", x: INSET, y: totalY, width, height: LINE, text: summary.asset === null ? "" : `Total: ${summary.total} ${summary.asset}`, size: "body", weight: "bold", align: "right", colorKey: "accentLight" }));
+    const width = CART.width - 2 * this.#screen.inset;
+    const titleY = this.#screen.compact ? 6 : this.#screen.inset;
+    panel.add(new Label({ x: this.#screen.inset, y: titleY, width: width / 2, height: 44, text: "Your cart", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    panel.add(new Label({ id: "cart.count", x: this.#screen.inset + width / 2, y: titleY, width: width / 2, height: 44, text: cartCountText(summary), size: "small", align: "right", colorKey: "textMuted" }));
+    const footerY = CART.height - this.#screen.inset - CART.footer;
+    const totalY = footerY - (this.#screen.compact ? 4 : this.#screen.inset) - 2 * LINE;
+    const listY = titleY + CART.title;
+    this.#buildCartLines(panel.add(new ScrollList({ id: CART_LIST_ID, x: this.#screen.inset, y: listY, width, height: totalY - listY - 6 })), summary, scrollY);
+    panel.add(new Label({ id: "cart.total", x: this.#screen.inset, y: totalY, width, height: LINE, text: summary.asset === null ? "" : `Total: ${summary.total} ${summary.asset}`, size: "body", weight: "bold", align: "right", colorKey: "accentLight" }));
     if (this.#signedIn()) {
       const budget = this.#budgetLine();
-      panel.add(new Label({ id: "cart.budget", x: INSET, y: totalY, width: width / 2, height: LINE, text: budget.text, size: "small", weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
+      panel.add(new Label({ id: "cart.budget", x: this.#screen.inset, y: totalY, width: width / 2, height: LINE, text: budget.text, size: "small", weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
     }
     const hint = this.#cartHint(summary);
-    panel.add(new Label({ id: "cart.status", x: INSET, y: totalY + LINE, width, height: LINE, text: hint.text, size: "small", align: "right", colorKey: hint.colorKey, fit: true }));
-    const buttons = this.#buildCartButtons(panel, summary, footerY);
+    panel.add(new Label({ id: "cart.status", x: this.#screen.inset, y: totalY + LINE, width, height: LINE, text: hint.text, size: "small", align: "right", colorKey: hint.colorKey, fit: true }));
+    const buttons = this.#buildCartButtons(panel, summary, { y: footerY, width: CART.width, height: CART.footer });
     this.openModal(modal);
     const kept = modal.findById(focusedId);
     return [kept, ...buttons].find((node) => node?.isEffectivelyEnabled) ?? null;
@@ -763,6 +956,7 @@ export class ShopScene extends Scene {
    * @param {number} scrollY
    */
   #buildCartLines(list, summary, scrollY) {
+    const { line: LINE, cart: CART } = this.#m;
     if (summary.lines.length === 0) {
       list.add(new TextBlock({ id: "cart.empty", x: 0, y: 0, width: list.rowWidth, height: 2 * LINE, text: "Your cart is empty. Choose packs, decks or cards on any shelf and press Add to cart: you pay for all of them at once.", size: "body", colorKey: "textMuted" }));
       list.contentHeight = 2 * LINE;
@@ -789,13 +983,15 @@ export class ShopScene extends Scene {
   #buildCartTile(list, line, { x, y, width }) {
     const shop = this.#shop();
     const { productId, quantity, product } = line;
+    const { cart: CART } = this.#m;
     const inner = width - 2 * 10;
     list.add(new Panel({ id: `cart.line.${productId}`, x, y, width, height: CART.tile }));
     list.add(new CardFan({ id: `cart.visual.${productId}`, x: x + 10, y: y + 10, width: inner, height: CART.fan, ...this.#fanOf(product, productId), badge: `×${quantity}` }));
     list.add(new Button({ id: `cart.remove.${productId}`, x: x + width - 8 - CART.remove, y: y + 8, width: CART.remove, height: CART.remove, text: "×", variant: "danger", onActivate: () => shop.removeFromCart(productId) }));
-    list.add(new Label({ id: `cart.name.${productId}`, x: x + 10, y: y + CART.fan + 16, width: inner, height: 26, text: product?.name ?? productId, weight: "bold", colorKey: product === null ? "danger" : "text", fit: true }));
+    const nameY = y + CART.fan + (this.#screen.compact ? 10 : 16);
+    list.add(new Label({ id: `cart.name.${productId}`, x: x + 10, y: nameY, width: inner, height: 26, text: product?.name ?? productId, weight: "bold", colorKey: product === null ? "danger" : "text", fit: true }));
     const each = product === null ? "No longer on sale: remove it" : `${priceText(product)} each · ${cardsText(product.cards)}`;
-    list.add(new Label({ x: x + 10, y: y + CART.fan + 42, width: inner, height: 22, text: each, size: "small", colorKey: product === null ? "danger" : "textMuted", fit: true }));
+    list.add(new Label({ x: x + 10, y: nameY + 26, width: inner, height: 22, text: each, size: "small", colorKey: product === null ? "danger" : "textMuted", fit: true }));
     const controlsY = y + CART.tile - 12 - CART.step.height;
     const step = { width: CART.step.width, height: CART.step.height };
     const limit = product?.perOrder ?? quantity;
@@ -804,7 +1000,7 @@ export class ShopScene extends Scene {
     list.add(new Button({ id: `cart.more.${productId}`, x: x + 10 + 2 * step.width, y: controlsY, ...step, text: "+", enabled: quantity < limit, onActivate: () => shop.setCartQuantity(productId, quantity + 1) }));
     const amountX = x + 10 + 3 * step.width + 8;
     const amount = line.amount === null ? "—" : `${line.amount} ${priceOf(/** @type {Product} */ (product)).asset}`;
-    list.add(new Label({ id: `cart.amount.${productId}`, x: amountX, y: controlsY, width: x + width - 10 - amountX, height: step.height, text: amount, weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
+    list.add(new Label({ id: `cart.amount.${productId}`, x: amountX, y: controlsY, width: x + width - 10 - amountX, height: step.height, text: amount, size: this.#screen.compact ? "small" : "body", weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
   }
 
   /**
@@ -839,21 +1035,21 @@ export class ShopScene extends Scene {
    * Empty cart, Keep shopping and Pay.
    * @param {Panel} panel
    * @param {import("../../application/shop/shopCatalog.js").CartSummary} summary
-   * @param {number} y
+   * @param {{ y: number, width: number, height: number }} footer where the row goes, the dialog's width and the buttons' height
    * @returns {Button[]} the buttons to focus first, in order of preference
    */
-  #buildCartButtons(panel, summary, y) {
+  #buildCartButtons(panel, summary, { y, width, height }) {
     const shop = this.#shop();
-    const third = (CART.width - 2 * INSET - 2 * ACTION.gap) / 3;
-    const clear = panel.add(new Button({ id: "cart.clear", x: INSET, y, width: third, height: CART.footer, text: "Empty cart", variant: "danger", enabled: summary.lines.length > 0, onActivate: () => shop.clearCart() }));
-    const keep = panel.add(new Button({ id: "cart.close", x: INSET + third + ACTION.gap, y, width: third, height: CART.footer, text: "Keep shopping", onActivate: () => this.#showCart(false) }));
+    const third = (width - 2 * this.#screen.inset - 2 * this.#screen.action.gap) / 3;
+    const clear = panel.add(new Button({ id: "cart.clear", x: this.#screen.inset, y, width: third, height, text: "Empty cart", variant: "danger", enabled: summary.lines.length > 0, onActivate: () => shop.clearCart() }));
+    const keep = panel.add(new Button({ id: "cart.close", x: this.#screen.inset + third + this.#screen.action.gap, y, width: third, height, text: "Keep shopping", onActivate: () => this.#showCart(false) }));
     const pay = panel.add(
       new Button({
         id: "cart.pay",
-        x: INSET + 2 * (third + ACTION.gap),
+        x: this.#screen.inset + 2 * (third + this.#screen.action.gap),
         y,
         width: third,
-        height: CART.footer,
+        height,
         text: summary.payable ? `Pay ${summary.total} ${summary.asset}` : "Pay",
         variant: "primary",
         enabled: summary.payable && this.#canBuy() && !this.#isShort(summary.total, /** @type {string} */ (summary.asset)),
@@ -918,6 +1114,7 @@ export class ShopScene extends Scene {
    * @param {import("../../application/ports/MarketApi.contract.js").Fulfilment} fulfilment
    */
   #buildRevealList(list, fulfilment) {
+    const { reveal: REVEAL } = this.#m;
     let y = 0;
     const groups = [...(fulfilment.cards.length > 0 ? [{ title: null, cards: fulfilment.cards }] : []), ...fulfilment.packs.map((pack) => ({ title: `Pack ${pack.index + 1}`, cards: pack.cards }))];
     for (const group of groups) {
@@ -927,8 +1124,8 @@ export class ShopScene extends Scene {
       }
       for (const card of group.cards) {
         const definition = this.#app.content.catalog.get(card.definitionId);
-        list.add(new CardStrip({ x: 0, y, width: list.rowWidth - 220, height: REVEAL.row, card: definition ?? unknownCard(card.definitionId), broken: definition === undefined, rarity: rarityOf(this.#app, card.definitionId) }));
-        list.add(new Label({ x: list.rowWidth - 210, y, width: 210, height: REVEAL.row, text: `#${card.serial}`, size: "small", align: "left", colorKey: "textMuted" }));
+        list.add(new CardStrip({ x: 0, y, width: list.rowWidth - REVEAL.serial - 10, height: REVEAL.row, card: definition ?? unknownCard(card.definitionId), broken: definition === undefined, rarity: rarityOf(this.#app, card.definitionId) }));
+        list.add(new Label({ x: list.rowWidth - REVEAL.serial, y, width: REVEAL.serial, height: REVEAL.row, text: `#${card.serial}`, size: "small", align: "left", colorKey: "textMuted" }));
         y += REVEAL.row + REVEAL.gap;
       }
       y += REVEAL.packGap;
@@ -1016,6 +1213,14 @@ export class ShopScene extends Scene {
     }
     return this.#app.shop;
   }
+}
+
+/**
+ * How many copies of a card the player owns, in words.
+ * @param {number} owned
+ */
+function ownedText(owned) {
+  return owned === 0 ? "not in your collection yet" : `you own ${owned}`;
 }
 
 /**

@@ -6,7 +6,7 @@
  * filtered by faction, rarity and type. The server holds the offered copies in escrow.
  */
 import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
-import { CARD_FILTER_BAR_HEIGHT, buildCardFilterBar } from "../cards/cardFilterBar.js";
+import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardThumb } from "../cards/CardThumb.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
 import { rarityLabel } from "../theme/rarity.js";
@@ -20,13 +20,22 @@ import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
-import { ACTION, COLUMNS, HEADER, INSET, ROW, rowY, rowsHeight } from "./deckBuilder/layout.js";
+import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const MAX_CARDS = 10;
 const MAX_ASK = 3;
-const THUMB = Object.freeze({ width: 92, gap: 10 });
+/**
+ * Sizes, wide and compact (a phone in landscape: the recipient and the filter share a row, thumbnails are smaller).
+ * @typedef {Readonly<{ thumb: { width: number, gap: number }, title: number, statusX: number, field: { y: number, height: number }, filterButton: boolean, button: number }>} TradesMetrics
+ */
+/** @type {TradesMetrics} */
+const WIDE = Object.freeze({ thumb: Object.freeze({ width: 92, gap: 10 }), title: 320, statusX: 180, field: Object.freeze({ y: 16, height: 52 }), filterButton: false, button: 52 });
+/** @type {TradesMetrics} */
+const COMPACT = Object.freeze({ thumb: Object.freeze({ width: 64, gap: 8 }), title: 120, statusX: 120, field: Object.freeze({ y: 8, height: CARD_FILTER_BUTTON_HEIGHT }), filterButton: true, button: 46 });
+/** On a compact screen: how much of the composer's first row the recipient takes (the filter has the rest), and where its lists start. */
+const COMPACT_COMPOSER = Object.freeze({ field: 0.58, titlesTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 6, listsTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 32 });
 const DAY = 24 * 60 * 60 * 1000;
 const ACCOUNT_PATTERN = /^[a-z][a-z0-9.-]{2,15}$/;
 /** The composer, top to bottom: recipient, card filter, list titles, the two lists. */
@@ -50,6 +59,20 @@ export function tradeSubtitle(trade, now) {
 }
 
 export class TradesScene extends Scene {
+  /** The frame for the screen in use (the compact one on a phone). */
+  get #screen() {
+    return screenLayout(this.services.viewport);
+  }
+
+  /** @returns {TradesMetrics} */
+  get #m() {
+    return this.#screen.compact ? COMPACT : WIDE;
+  }
+
+  relayout() {
+    this.#rebuild();
+  }
+
   #app;
   #now;
   /** @type {(() => void) | null} */
@@ -122,43 +145,46 @@ export class TradesScene extends Scene {
   #buildHeader() {
     const { viewport } = this.services;
     const state = this.#trading().state;
-    this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 320, height: HEADER.height, text: "Trades", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    const { title, statusX } = this.#m;
+    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: title, height: this.#screen.header.height, text: "Trades", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const message = state.error ?? state.notice ?? "Card for card. Offered cards are held until the offer is answered or expires.";
-    this.root.add(new Label({ id: "trades.status", x: HEADER.sideMargin + 180, y: HEADER.y, width: viewport.logicalWidth - 2 * HEADER.sideMargin - 2 * HEADER.backWidth - 200, height: HEADER.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
-    this.root.add(new Button({ id: "trades.new", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: this.#composing ? "Back to trades" : "New offer", onActivate: () => this.#toggleComposer() }));
-    return this.root.add(new Button({ id: "trades.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Collection", onActivate: () => this.services.navigate(SceneId.COLLECTION) }));
+    this.root.add(new Label({ id: "trades.status", x: this.#screen.header.sideMargin + statusX, y: this.#screen.header.y, width: viewport.logicalWidth - 2 * this.#screen.header.sideMargin - 2 * (this.#screen.header.backWidth + 16) - statusX, height: this.#screen.header.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
+    this.root.add(new Button({ id: "trades.new", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#newOfferText(), onActivate: () => this.#toggleComposer() }));
+    return this.root.add(new Button({ id: "trades.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Collection", onActivate: () => this.services.navigate(SceneId.COLLECTION) }));
   }
 
   #buildList() {
-    const panel = this.root.add(new Panel({ x: COLUMNS.left.x, y: COLUMNS.top, width: COLUMNS.left.width, height: COLUMNS.height }));
-    const width = COLUMNS.left.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "Your trades", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
-    const list = panel.add(new ScrollList({ id: "trades.list", x: INSET, y: 60, width, height: COLUMNS.height - 60 - INSET }));
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width: this.#screen.columns.left.width, height: this.#screen.columns.height }));
+    const width = this.#screen.columns.left.width - 2 * this.#screen.inset;
+    const titleY = this.#screen.compact ? 8 : 14;
+    const listY = this.#screen.compact ? 50 : 60;
+    panel.add(new Label({ x: this.#screen.inset, y: titleY, width, height: 36, text: "Your trades", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    const list = panel.add(new ScrollList({ id: "trades.list", x: this.#screen.inset, y: listY, width, height: this.#screen.columns.height - listY - this.#screen.inset }));
     const { trades, loading } = this.#trading().state;
     if (trades.length === 0) {
-      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * ROW.height, text: loading ? "Loading…" : "No trades yet. Offer some of your bought cards to another player.", size: "small", colorKey: "textMuted" }));
-      list.contentHeight = 2 * ROW.height;
+      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * this.#screen.row.height, text: loading ? "Loading…" : "No trades yet. Offer some of your bought cards to another player.", size: "small", colorKey: "textMuted" }));
+      list.contentHeight = 2 * this.#screen.row.height;
       return;
     }
     const now = this.#now();
     trades.forEach((trade, index) => {
       const other = trade.role === "proposer" ? trade.counterparty : trade.proposer;
       const arrow = trade.role === "proposer" ? `to @${other}` : `from @${other}`;
-      list.add(new OptionRow({ id: `trades.row.${trade.id}`, x: 0, y: rowY(index), width: list.rowWidth, height: ROW.height, text: arrow, subtitle: tradeSubtitle(trade, now), avatar: other, selected: trade.id === this.#selectedId, onActivate: () => this.#select(trade.id) }));
+      list.add(new OptionRow({ id: `trades.row.${trade.id}`, x: 0, y: this.#screen.rowY(index), width: list.rowWidth, height: this.#screen.row.height, text: arrow, subtitle: tradeSubtitle(trade, now), avatar: other, selected: trade.id === this.#selectedId, onActivate: () => this.#select(trade.id) }));
     });
-    list.contentHeight = rowsHeight(trades.length);
+    list.contentHeight = this.#screen.rowsHeight(trades.length);
   }
 
   #buildDetail() {
-    const panel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
-    const width = COLUMNS.right.width - 2 * INSET;
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
+    const width = this.#screen.columns.right.width - 2 * this.#screen.inset;
     const trade = this.#trading().state.trades.find((candidate) => candidate.id === this.#selectedId);
     if (trade === undefined) {
-      panel.add(new TextBlock({ x: INSET, y: 20, width, height: 60, text: "Pick a trade to see it, or make a new offer.", size: "body", colorKey: "textMuted" }));
+      panel.add(new TextBlock({ x: this.#screen.inset, y: 20, width, height: 60, text: "Pick a trade to see it, or make a new offer.", size: "body", colorKey: "textMuted" }));
       return;
     }
-    const listHeight = trade.status === "OPEN" ? COLUMNS.height - 2 * INSET - 52 - 16 : COLUMNS.height - 2 * INSET;
-    const list = panel.add(new ScrollList({ id: "trades.detail", x: INSET, y: INSET, width, height: listHeight }));
+    const listHeight = trade.status === "OPEN" ? this.#screen.columns.height - 2 * this.#screen.inset - this.#m.button - 16 : this.#screen.columns.height - 2 * this.#screen.inset;
+    const list = panel.add(new ScrollList({ id: "trades.detail", x: this.#screen.inset, y: this.#screen.inset, width, height: listHeight }));
     const copyThumbs = (copies) => copies.map((copy) => ({ definitionId: copy.definitionId, caption: `#${copy.serial}`, lines: [`Copy #${copy.serial}`] }));
     const sections = [
       { title: `@${trade.proposer} offers`, avatar: trade.proposer, thumbs: copyThumbs(trade.give), empty: "nothing" },
@@ -191,6 +217,7 @@ export class TradesScene extends Scene {
     if (thumbs.length === 0) {
       return y;
     }
+    const THUMB = this.#m.thumb;
     const perRow = Math.max(1, Math.floor((list.rowWidth + THUMB.gap) / (THUMB.width + THUMB.gap)));
     const height = CardThumb.heightFor(THUMB.width);
     thumbs.forEach((thumb, index) => {
@@ -219,7 +246,7 @@ export class TradesScene extends Scene {
    * @param {{ id: string, x: number, y: number, definitionId: string, lines: readonly string[] }} button
    */
   #infoButton(list, { id, x, y, definitionId, lines }) {
-    list.add(new Button({ id, x, y, width: ACTION.small, height: ROW.height, text: "i", enabled: this.#app.content.catalog.has(definitionId), onActivate: () => this.#showCard(definitionId, lines) }));
+    list.add(new Button({ id, x, y, width: this.#screen.action.small, height: this.#screen.row.height, text: "i", enabled: this.#app.content.catalog.has(definitionId), onActivate: () => this.#showCard(definitionId, lines) }));
   }
 
   /**
@@ -243,32 +270,43 @@ export class TradesScene extends Scene {
       return;
     }
     const busy = this.#trading().state.busy;
-    const y = COLUMNS.height - INSET - 52;
+    const height = this.#m.button;
+    const y = this.#screen.columns.height - this.#screen.inset - height;
     const trading = this.#trading();
     if (trade.role === "proposer") {
-      panel.add(new Button({ id: "trades.cancel", x: INSET, y, width, height: 52, text: "Cancel offer", variant: "danger", enabled: !busy, onActivate: () => trading.cancel(trade.id) }));
+      panel.add(new Button({ id: "trades.cancel", x: this.#screen.inset, y, width, height, text: "Cancel offer", variant: "danger", enabled: !busy, onActivate: () => trading.cancel(trade.id) }));
       return;
     }
     const half = (width - 16) / 2;
-    panel.add(new Button({ id: "trades.accept", x: INSET, y, width: half, height: 52, text: "Accept", variant: "primary", enabled: !busy, onActivate: () => trading.accept(trade.id) }));
-    panel.add(new Button({ id: "trades.decline", x: INSET + half + 16, y, width: half, height: 52, text: "Decline", enabled: !busy, onActivate: () => trading.decline(trade.id) }));
+    panel.add(new Button({ id: "trades.accept", x: this.#screen.inset, y, width: half, height, text: "Accept", variant: "primary", enabled: !busy, onActivate: () => trading.accept(trade.id) }));
+    panel.add(new Button({ id: "trades.decline", x: this.#screen.inset + half + 16, y, width: half, height, text: "Decline", enabled: !busy, onActivate: () => trading.decline(trade.id) }));
   }
 
   #buildComposer() {
-    const panel = this.root.add(new Panel({ x: COLUMNS.right.x, y: COLUMNS.top, width: COLUMNS.right.width, height: COLUMNS.height }));
-    const width = COLUMNS.right.width - 2 * INSET;
-    const fieldWidth = width - RECIPIENT.height - RECIPIENT.gap;
-    panel.add(new TextField({ id: "trades.to", x: INSET, y: RECIPIENT.top, width: fieldWidth, height: RECIPIENT.height, value: this.#to, placeholder: "Player account", maxLength: 16, onChange: (value) => this.#changeRecipient(value) }));
-    panel.add(new AvatarNode({ id: "trades.to.avatar", x: INSET + fieldWidth + RECIPIENT.gap, y: RECIPIENT.top, size: RECIPIENT.height, account: this.#to, visible: ACCOUNT_PATTERN.test(this.#to) }));
-    buildCardFilterBar(panel, { id: "trades.filter", x: INSET, y: COMPOSER.filterTop, width, filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (filter) => this.#changeFilter(filter) });
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
+    const width = this.#screen.columns.right.width - 2 * this.#screen.inset;
+    const { field, filterButton, button } = this.#m;
+    const layout = filterButton ? COMPACT_COMPOSER : COMPOSER;
+    // The recipient's row: their field and portrait (and, on a phone, the card filter after them).
+    const recipientWidth = filterButton ? Math.round(width * COMPACT_COMPOSER.field) : width;
+    const fieldWidth = recipientWidth - field.height - RECIPIENT.gap;
+    panel.add(new TextField({ id: "trades.to", x: this.#screen.inset, y: field.y, width: fieldWidth, height: field.height, value: this.#to, placeholder: "Player account", maxLength: 16, keyboard: "account", onChange: (value) => this.#changeRecipient(value) }));
+    panel.add(new AvatarNode({ id: "trades.to.avatar", x: this.#screen.inset + fieldWidth + RECIPIENT.gap, y: field.y, size: field.height, account: this.#to, visible: ACCOUNT_PATTERN.test(this.#to) }));
+    const filter = { id: "trades.filter", filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (/** @type {import("../../application/content/CardFilter.js").CardFilter} */ chosen) => this.#changeFilter(chosen) };
+    if (filterButton) {
+      const x = this.#screen.inset + recipientWidth + 8;
+      buildCardFilterButton(panel, { ...filter, x, y: field.y, width: this.#screen.inset + width - x, dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() } });
+    } else {
+      buildCardFilterBar(panel, { ...filter, x: this.#screen.inset, y: COMPOSER.filterTop, width });
+    }
     const half = (width - 16) / 2;
-    panel.add(new Label({ x: INSET, y: COMPOSER.titlesTop, width: half, height: 28, text: `You give (${this.#give.size}/${MAX_CARDS})`, size: "small", weight: "bold", colorKey: "accent", align: "left" }));
-    panel.add(new Label({ x: INSET + half + 16, y: COMPOSER.titlesTop, width: half, height: 28, text: "You ask for (tap to add)", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
-    const listHeight = COLUMNS.height - COMPOSER.listsTop - 52 - 2 * INSET;
-    this.#buildGiveList(panel.add(new ScrollList({ id: "trades.give", x: INSET, y: COMPOSER.listsTop, width: half, height: listHeight })));
-    this.#buildAskList(panel.add(new ScrollList({ id: "trades.ask", x: INSET + half + 16, y: COMPOSER.listsTop, width: half, height: listHeight })));
+    panel.add(new Label({ x: this.#screen.inset, y: layout.titlesTop, width: half, height: 28, text: `You give (${this.#give.size}/${MAX_CARDS})`, size: "small", weight: "bold", colorKey: "accent", align: "left" }));
+    panel.add(new Label({ x: this.#screen.inset + half + 16, y: layout.titlesTop, width: half, height: 28, text: filterButton ? "You ask for (tap)" : "You ask for (tap to add)", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
+    const listHeight = this.#screen.columns.height - layout.listsTop - button - 2 * this.#screen.inset;
+    this.#buildGiveList(panel.add(new ScrollList({ id: "trades.give", x: this.#screen.inset, y: layout.listsTop, width: half, height: listHeight })));
+    this.#buildAskList(panel.add(new ScrollList({ id: "trades.ask", x: this.#screen.inset + half + 16, y: layout.listsTop, width: half, height: listHeight })));
     const ready = ACCOUNT_PATTERN.test(this.#to) && this.#give.size > 0 && !this.#trading().state.busy;
-    panel.add(new Button({ id: "trades.send", x: INSET, y: COLUMNS.height - INSET - 52, width, height: 52, text: "Send offer", variant: "primary", enabled: ready, onActivate: () => this.#send() }));
+    panel.add(new Button({ id: "trades.send", x: this.#screen.inset, y: this.#screen.columns.height - this.#screen.inset - button, width, height: button, text: "Send offer", variant: "primary", enabled: ready, onActivate: () => this.#send() }));
   }
 
   /** @param {ScrollList} list */
@@ -276,18 +314,18 @@ export class TradesScene extends Scene {
     const copies = this.#tradeableCopies().filter((copy) => this.#passes(copy.definitionId));
     if (copies.length === 0) {
       const text = isFiltering(this.#filter) ? `No ${describeCardFilter(this.#filter)} cards to give.` : "No tradeable cards: cards already offered in another trade cannot be offered again.";
-      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text, size: "small", colorKey: "textMuted" }));
-      list.contentHeight = 3 * ROW.height;
+      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * this.#screen.row.height, text, size: "small", colorKey: "textMuted" }));
+      list.contentHeight = 3 * this.#screen.row.height;
       return;
     }
-    const rowWidth = list.rowWidth - ACTION.small - ACTION.gap;
+    const rowWidth = list.rowWidth - this.#screen.action.small - this.#screen.action.gap;
     copies.forEach((copy, index) => {
       const chosen = this.#give.has(copy.id);
       const subtitle = [rarityLabel(rarityOf(this.#app, copy.definitionId)), `#${copy.serial}`].filter((part) => part.length > 0).join(" · ");
-      list.add(new OptionRow({ id: `trades.give.${copy.id}`, x: 0, y: rowY(index), width: rowWidth, height: ROW.height, text: this.#cardName(copy.definitionId), subtitle, selected: chosen, enabled: chosen || this.#give.size < MAX_CARDS, onActivate: () => this.#toggleGive(copy.id) }));
-      this.#infoButton(list, { id: `trades.give.info.${copy.id}`, x: rowWidth + ACTION.gap, y: rowY(index), definitionId: copy.definitionId, lines: [`Copy #${copy.serial}`] });
+      list.add(new OptionRow({ id: `trades.give.${copy.id}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, text: this.#cardName(copy.definitionId), subtitle, selected: chosen, enabled: chosen || this.#give.size < MAX_CARDS, onActivate: () => this.#toggleGive(copy.id) }));
+      this.#infoButton(list, { id: `trades.give.info.${copy.id}`, x: rowWidth + this.#screen.action.gap, y: this.#screen.rowY(index), definitionId: copy.definitionId, lines: [`Copy #${copy.serial}`] });
     });
-    list.contentHeight = rowsHeight(copies.length);
+    list.contentHeight = this.#screen.rowsHeight(copies.length);
   }
 
   /** @param {ScrollList} list */
@@ -295,26 +333,34 @@ export class TradesScene extends Scene {
     const askable = this.#trading().state.askable;
     const message = this.#askListMessage(askable);
     if (message !== null) {
-      list.add(new TextBlock({ id: "trades.ask.message", x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: message, size: "small", colorKey: askable !== null && askable.error !== null ? "danger" : "textMuted" }));
-      list.contentHeight = 3 * ROW.height;
+      list.add(new TextBlock({ id: "trades.ask.message", x: 0, y: 0, width: list.rowWidth, height: 3 * this.#screen.row.height, text: message, size: "small", colorKey: askable !== null && askable.error !== null ? "danger" : "textMuted" }));
+      list.contentHeight = 3 * this.#screen.row.height;
       return;
     }
     const cards = /** @type {NonNullable<typeof askable>} */ (askable).cards
       .filter(({ definitionId }) => this.#passes(definitionId))
       .map(({ definitionId, count }) => ({ definitionId, has: count, name: this.#cardName(definitionId) }))
       .sort((left, right) => left.name.localeCompare(right.name));
-    const rowWidth = list.rowWidth - ACTION.small - ACTION.gap;
+    const rowWidth = list.rowWidth - this.#screen.action.small - this.#screen.action.gap;
     cards.forEach(({ definitionId, has, name }, index) => {
       const count = this.#ask.get(definitionId) ?? 0;
       const rarity = rarityLabel(rarityOf(this.#app, definitionId));
       const asked = count === 0 ? `has ${has}` : `asking ${count} of ${has}`;
-      list.add(new OptionRow({ id: `trades.ask.${definitionId}`, x: 0, y: rowY(index), width: rowWidth, height: ROW.height, text: name, subtitle: rarity.length === 0 ? asked : `${rarity} · ${asked}`, selected: count > 0, onActivate: () => this.#cycleAsk(definitionId, has) }));
-      this.#infoButton(list, { id: `trades.ask.info.${definitionId}`, x: rowWidth + ACTION.gap, y: rowY(index), definitionId, lines: [`@${this.#to} has ${has}`] });
+      list.add(new OptionRow({ id: `trades.ask.${definitionId}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, text: name, subtitle: rarity.length === 0 ? asked : `${rarity} · ${asked}`, selected: count > 0, onActivate: () => this.#cycleAsk(definitionId, has) }));
+      this.#infoButton(list, { id: `trades.ask.info.${definitionId}`, x: rowWidth + this.#screen.action.gap, y: this.#screen.rowY(index), definitionId, lines: [`@${this.#to} has ${has}`] });
     });
     if (cards.length === 0) {
-      list.add(new TextBlock({ id: "trades.ask.message", x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: `@${this.#to} has no ${describeCardFilter(this.#filter)} cards to trade.`, size: "small", colorKey: "textMuted" }));
+      list.add(new TextBlock({ id: "trades.ask.message", x: 0, y: 0, width: list.rowWidth, height: 3 * this.#screen.row.height, text: `@${this.#to} has no ${describeCardFilter(this.#filter)} cards to trade.`, size: "small", colorKey: "textMuted" }));
     }
-    list.contentHeight = cards.length === 0 ? 3 * ROW.height : rowsHeight(cards.length);
+    list.contentHeight = cards.length === 0 ? 3 * this.#screen.row.height : this.#screen.rowsHeight(cards.length);
+  }
+
+  /** The header's toggle between the trades and the composer; a phone's header has room for a word or two. */
+  #newOfferText() {
+    if (this.#composing) {
+      return this.#screen.compact ? "Trades" : "Back to trades";
+    }
+    return this.#screen.compact ? "New" : "New offer";
   }
 
   /** @param {string} definitionId */

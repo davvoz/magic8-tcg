@@ -11,6 +11,9 @@
  *
  * The node covers the scene and takes pointer presses, so nothing on the
  * board underneath can be played while the coin is in the air.
+ *
+ * The toss is composed for a 1600×900 screen; on a smaller stage (a phone)
+ * all of it but the veil is drawn smaller, uniformly, so it fits.
  */
 import { CoinFace } from "../../application/match/CoinToss.js";
 import { withAlpha } from "../theme/color.js";
@@ -31,6 +34,8 @@ const TITLE = Object.freeze({ top: 290, font: 44, height: 56, subtitleFont: 20, 
 const VERDICT = Object.freeze({ top: 170, font: 60, height: 72, captionFont: 28, captionHeight: 40, spread: 400, rise: 24 });
 /** The emblems struck on each face: a sun for heads, a star for tails. */
 const EMBLEM = Object.freeze({ sunRadius: 0.52, sunRays: 12, sunInner: 0.72, sunDisc: 0.3, starRadius: 0.5, starPoints: 5, starInner: 0.45 });
+/** How far the composition reaches from the centre, either way: the plates sideways, the thrown coin and the title upwards. */
+const REACH = Object.freeze({ x: 620, y: 320 });
 
 const FACE_NAMES = Object.freeze({ [CoinFace.HEADS]: "Heads", [CoinFace.TAILS]: "Tails" });
 
@@ -44,20 +49,24 @@ export class CoinTossNode extends UiNode {
   #viewerId;
   #nameOf;
   #accountOf;
+  /** @type {import("@magic8/engine/shared/geometry.js").Rect | null} */
+  #stage;
 
   /**
-   * @param {{ flip: import("./CoinFlip.js").CoinFlip, x?: number, y?: number, width: number, height: number, viewerId: string | null, nameOf: (playerId: string) => string, accountOf?: (playerId: string) => string | null }} options
+   * @param {{ flip: import("./CoinFlip.js").CoinFlip, x?: number, y?: number, width: number, height: number, viewerId: string | null, nameOf: (playerId: string) => string, accountOf?: (playerId: string) => string | null, stage?: import("@magic8/engine/shared/geometry.js").Rect }} options
    *   `viewerId`: the player looking at the board (shown on the left and addressed as "you"), null for a spectator;
    *   `nameOf`: how to name a player on the plates;
-   *   `accountOf`: the STEEM account whose portrait leads a player's name, null for none (the local AI)
+   *   `accountOf`: the STEEM account whose portrait leads a player's name, null for none (the local AI);
+   *   `stage`: where the toss must fit (clear of a notch), the whole node by default
    */
-  constructor({ flip, x = 0, y = 0, width, height, viewerId, nameOf, accountOf = () => null }) {
+  constructor({ flip, x = 0, y = 0, width, height, viewerId, nameOf, accountOf = () => null, stage }) {
     super({ id: "coinToss", x, y, width, height });
     this.interactive = true;
     this.#flip = flip;
     this.#viewerId = viewerId;
     this.#nameOf = nameOf;
     this.#accountOf = accountOf;
+    this.#stage = stage ?? null;
   }
 
   /** Presses land here and go no further while the coin is tossed. */
@@ -76,13 +85,21 @@ export class CoinTossNode extends UiNode {
    * @param {import("../theme/Theme.js").Theme} theme
    */
   paint(context, theme) {
-    const area = this.bounds;
-    const centre = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
+    const stage = this.#stage ?? this.bounds;
+    const centre = { x: stage.x + stage.width / 2, y: stage.y + stage.height / 2 };
     this.#paintVeil(context, theme, centre);
+    const scale = Math.min(1, stage.width / (2 * REACH.x), stage.height / (2 * REACH.y));
+    context.save();
+    if (scale < 1) {
+      context.translate(centre.x, centre.y);
+      context.scale(scale, scale);
+      context.translate(-centre.x, -centre.y);
+    }
     this.#paintTitle(context, theme, centre);
     this.#paintPlates(context, theme, centre);
     this.#paintCoin(context, theme, centre);
     this.#paintVerdict(context, theme, centre);
+    context.restore();
   }
 
   /**

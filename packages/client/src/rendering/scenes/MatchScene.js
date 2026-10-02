@@ -38,6 +38,11 @@
  * itself (GameOverSequence, drawn by GameOverNode over the board): the
  * fallen crystal breaks, the table darkens, the outcome comes down. Only
  * then is the result offered.
+ *
+ * On a compact screen (a phone in landscape) the board is the compact one:
+ * a slim action column instead of the sidebar, its last row opening the
+ * battle log and conceding; and on a phone, or played by touch, a hand card
+ * is picked first — held up large to be read — and played with "Play".
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { ControllerKind } from "../../application/match/PlayerController.contract.js";
@@ -55,7 +60,9 @@ import { GameOverNode } from "../board/GameOverNode.js";
 import { GameOverMood, GameOverSequence } from "../board/GameOverSequence.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
+import { PickedCardNode } from "../board/PickedCardNode.js";
 import { PlayerNode, lifeCrystalCentre } from "../board/PlayerNode.js";
+import { boardFaceProfile } from "../cards/CardRenderer.js";
 import { splitIntoBeats } from "../board/StepBeats.js";
 import { LogKind, describeEvent } from "../board/eventLog.js";
 import { CardDetail } from "../cards/CardDetail.js";
@@ -74,10 +81,19 @@ const MAX_LOG_ENTRIES = 200;
 /** Updates allowed to wait their turn (however many beats each has); past this the oldest are shown at once, unanimated, so a fast match cannot leave the board far behind. */
 const MAX_BACKLOG = 6;
 const TOSS_BANNER = "Coin toss · who plays first?";
-const SIDEBAR = Object.freeze({ inset: 12, buttonHeight: 48, gap: 8, titleHeight: 36, phaseHeight: 26, promptTop: 84, promptHeight: 64, buttonsTop: 156 });
+const SIDEBAR = Object.freeze({ inset: 12, buttonHeight: 48, gap: 8, titleHeight: 36, phaseHeight: 26, promptTop: 84, promptHeight: 64, buttonsTop: 156, footerHeight: 0 });
+/** The compact board's action column; its footer row holds the log and leave buttons. */
+/** How much of the compact footer the log button takes; leaving (Concede) has the rest. */
+const COMPACT_LOG_SHARE = 0.36;
+const COMPACT_SIDEBAR = Object.freeze({ inset: 8, buttonHeight: 46, gap: 6, titleHeight: 30, phaseHeight: 20, promptTop: 54, promptHeight: 58, buttonsTop: 116, footerHeight: 46 });
 const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
+/** The battle log opened from a compact board's action column, as large as the screen allows. */
+const LOG_MODAL = Object.freeze({ width: 600, height: 380, margin: 10 });
 const GAME_OVER = Object.freeze({ width: 720, height: 320 });
+const COMPACT_GAME_OVER = Object.freeze({ width: 600, height: 280 });
 const INSPECT = Object.freeze({ width: 448, height: 640, card: Object.freeze({ width: 380, height: 540 }) });
+/** A compact screen's inspect view: the card on the left, Close beside it. */
+const COMPACT_INSPECT = Object.freeze({ width: 420, height: 376, card: Object.freeze({ width: 244, height: 342 }), close: Object.freeze({ width: 118, height: 46 }) });
 /** Marks that invite a tap, dropped while moves are held back. @type {ReadonlySet<string>} */
 const INVITING = new Set([Highlight.PLAYABLE, Highlight.TARGETABLE]);
 
@@ -157,7 +173,7 @@ export class MatchScene extends Scene {
     this.#backlog = [];
     this.#log = [];
     this.#logScroll = createLogScroll();
-    this.#interaction = new MatchInteraction(this.#playerId);
+    this.#interaction = new MatchInteraction(this.#playerId, { confirmPlays: this.#confirmsPlays() });
     const toss = session.openingToss;
     this.#coinFlip = toss === null ? null : new CoinFlip({ toss, animation: this.services.theme.animation });
     this.#unsubscribe = session.subscribe((update) => this.#onUpdate(update));
@@ -310,9 +326,12 @@ export class MatchScene extends Scene {
   /** The board re-fits to the new screen: cards snap to their new places, an open modal stays open. */
   onResize() {
     const snapshot = this.#snapshot;
+    if (this.#interaction !== null) {
+      this.#interaction.confirmPlays = this.#confirmsPlays();
+    }
     if (snapshot !== null && this.#layout !== null) {
       const modal = this.modal;
-      this.#layout = computeBoardLayout(snapshot, this.#playerId, this.services.viewport.bounds);
+      this.#layout = this.#layoutFor(snapshot);
       this.#presenter.apply(snapshot, [], this.#layout, { animate: false });
       this.#rebuild();
       if (modal !== null && this.modal === null) {
@@ -357,6 +376,20 @@ export class MatchScene extends Scene {
     return this.#ending;
   }
 
+  /**
+   * The board for the screen: the whole of it, clear of a notch; the compact board on a phone.
+   * @param {Snapshot} snapshot
+   */
+  #layoutFor(snapshot) {
+    const { viewport } = this.services;
+    return computeBoardLayout(snapshot, this.#playerId, viewport.safeBounds, { compact: viewport.compact });
+  }
+
+  /** Whether a hand card is picked before it is played: on a phone, or whenever played by touch. */
+  #confirmsPlays() {
+    return this.services.viewport.compact || this.services.usingTouch?.() === true;
+  }
+
   /** @param {import("../../application/match/MatchSession.js").SessionUpdate} update */
   #onUpdate(update) {
     if (this.#session === null) {
@@ -388,7 +421,7 @@ export class MatchScene extends Scene {
       return;
     }
     this.#snapshot = snapshot;
-    this.#layout = computeBoardLayout(snapshot, this.#playerId, this.services.viewport.bounds);
+    this.#layout = this.#layoutFor(snapshot);
     this.#presenter.apply(snapshot, events, this.#layout, { animate, outcome });
     const entries = events.map((event) => describeEvent(event, snapshot)).filter((entry) => entry !== null);
     this.#log = [...this.#log, ...entries].slice(-MAX_LOG_ENTRIES);
@@ -491,6 +524,7 @@ export class MatchScene extends Scene {
     this.root.add(new ClockNode({ x: layout.clock.x, y: layout.clock.y, size: layout.clock.width, clock: () => this.#clockView(), now: this.#now }));
     this.#buildPlayers(snapshot, layout, interaction);
     this.#buildCards(snapshot, layout, interaction);
+    this.#buildPicked(snapshot, layout, interaction);
     this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction), turnLabel: (playerId) => this.#turnLabel(snapshot, playerId) }));
     this.#buildSidebar(snapshot, layout, interaction);
     this.#buildLog(layout);
@@ -550,7 +584,21 @@ export class MatchScene extends Scene {
         continue;
       }
       const highlight = this.#highlightFor(interaction, card.instanceId);
-      this.root.add(new CardNode({ card, visual, slot, highlight, enabled: highlight !== null && highlight !== Highlight.ATTACKING, onTap: (id) => this.#tap(id) }));
+      this.root.add(new CardNode({ card, visual, slot, highlight, enabled: highlight !== null && highlight !== Highlight.ATTACKING, onTap: (id) => this.#tap(id), profile: boardFaceProfile(layout.face) }));
+    }
+  }
+
+  /**
+   * The hand card picked to be played, held up to be read until it is confirmed or put back.
+   * @param {Snapshot} snapshot
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   * @param {MatchInteraction} interaction
+   */
+  #buildPicked(snapshot, layout, interaction) {
+    const pickedId = interaction.pickedCardId;
+    const card = pickedId === null ? undefined : snapshot.players.find((player) => player.id === layout.me.id)?.hand?.find((candidate) => candidate.instanceId === pickedId);
+    if (card !== undefined && !this.isBusy) {
+      this.root.add(new PickedCardNode({ card, layout }));
     }
   }
 
@@ -573,20 +621,39 @@ export class MatchScene extends Scene {
    */
   #buildSidebar(snapshot, layout, interaction) {
     const { sidebar } = layout;
+    const metrics = layout.compact ? COMPACT_SIDEBAR : SIDEBAR;
     const panel = this.root.add(new Panel({ id: "sidebar", ...sidebar, textured: true }));
-    const width = sidebar.width - 2 * SIDEBAR.inset;
-    panel.add(new Label({ x: SIDEBAR.inset, y: SIDEBAR.inset, width, height: SIDEBAR.titleHeight, text: snapshot.isOver ? "Match over" : `Turn ${snapshot.turnNumber}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    panel.add(new Label({ x: SIDEBAR.inset, y: SIDEBAR.inset + SIDEBAR.titleHeight, width, height: SIDEBAR.phaseHeight, text: phaseName(snapshot.phase), size: "small", colorKey: "textMuted", align: "left", fit: true }));
+    const width = sidebar.width - 2 * metrics.inset;
+    panel.add(new Label({ x: metrics.inset, y: metrics.inset, width, height: metrics.titleHeight, text: snapshot.isOver ? "Match over" : `Turn ${snapshot.turnNumber}`, size: layout.compact && snapshot.isOver ? "body" : "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Label({ x: metrics.inset, y: metrics.inset + metrics.titleHeight, width, height: metrics.phaseHeight, text: phaseName(snapshot.phase), size: "small", colorKey: "textMuted", align: "left", fit: true }));
     const prompt = this.#promptFor(snapshot, interaction);
-    panel.add(new TextBlock({ x: SIDEBAR.inset, y: SIDEBAR.promptTop, width, height: SIDEBAR.promptHeight, text: prompt, size: "small", colorKey: "accent" }));
-    let y = SIDEBAR.buttonsTop;
-    for (const spec of this.#sidebarButtons(snapshot, interaction)) {
-      if (!spec.visible) {
-        continue;
-      }
+    panel.add(new TextBlock({ x: metrics.inset, y: metrics.promptTop, width, height: metrics.promptHeight, text: prompt, size: "small", colorKey: "accent" }));
+    const specs = this.#sidebarButtons(snapshot, interaction).filter((spec) => spec.visible);
+    // The compact column keeps leaving for its footer, beside the log.
+    const footer = layout.compact ? specs.filter((spec) => spec.id === "leave") : [];
+    let y = metrics.buttonsTop;
+    for (const spec of specs.filter((candidate) => !footer.includes(candidate))) {
       const held = spec.plays ? this.isBusy : this.isTossing;
-      panel.add(new Button({ id: spec.id, x: SIDEBAR.inset, y, width, height: SIDEBAR.buttonHeight, text: spec.text, enabled: spec.enabled && !held, variant: spec.variant, onActivate: spec.onActivate }));
-      y += SIDEBAR.buttonHeight + SIDEBAR.gap;
+      panel.add(new Button({ id: spec.id, x: metrics.inset, y, width, height: metrics.buttonHeight, text: spec.text, enabled: spec.enabled && !held, variant: spec.variant, onActivate: spec.onActivate }));
+      y += metrics.buttonHeight + metrics.gap;
+    }
+    if (layout.compact) {
+      this.#buildFooter(panel, footer, { width, height: sidebar.height, metrics });
+    }
+  }
+
+  /**
+   * The compact column's last row: the battle log, and leaving the match.
+   * @param {Panel} panel
+   * @param {{ id: string, text: string, shortText?: string, enabled: boolean, variant: import("../ui/Button.js").ButtonVariant, onActivate: () => void }[]} leave the leave button's spec, when shown
+   * @param {{ width: number, height: number, metrics: { inset: number, gap: number, footerHeight: number } }} column its inner width, its height, and its metrics
+   */
+  #buildFooter(panel, leave, { width, height, metrics }) {
+    const footerY = height - metrics.inset - metrics.footerHeight;
+    const logWidth = Math.round(width * COMPACT_LOG_SHARE);
+    panel.add(new Button({ id: "log.open", x: metrics.inset, y: footerY, width: logWidth, height: metrics.footerHeight, text: "Log", textSize: "small", onActivate: () => this.#showLog() }));
+    for (const spec of leave) {
+      panel.add(new Button({ id: spec.id, x: metrics.inset + logWidth + metrics.gap, y: footerY, width: width - logWidth - metrics.gap, height: metrics.footerHeight, text: spec.shortText ?? spec.text, enabled: spec.enabled && !this.isTossing, variant: spec.variant, textSize: "small", onActivate: spec.onActivate }));
     }
   }
 
@@ -614,7 +681,7 @@ export class MatchScene extends Scene {
     const viewerId = this.#spectating ? null : this.#playerId;
     const online = this.#isOnline(snapshot);
     const accountOf = (playerId) => (online ? snapshot.players.find((player) => player.id === playerId)?.name ?? null : null);
-    this.root.add(new CoinTossNode({ flip, ...viewport.bounds, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId), accountOf }));
+    this.root.add(new CoinTossNode({ flip, ...viewport.bounds, stage: viewport.safeBounds, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId), accountOf }));
   }
 
   /**
@@ -661,8 +728,8 @@ export class MatchScene extends Scene {
   /**
    * @param {Snapshot} snapshot
    * @param {MatchInteraction} interaction
-   * @returns {{ id: string, text: string, visible: boolean, enabled: boolean, plays: boolean, variant: import("../ui/Button.js").ButtonVariant, onActivate: () => void }[]}
-   *   `plays`: the button makes a move, so it waits while moves are held back
+   * @returns {{ id: string, text: string, shortText?: string, visible: boolean, enabled: boolean, plays: boolean, variant: import("../ui/Button.js").ButtonVariant, onActivate: () => void }[]}
+   *   `plays`: the button makes a move, so it waits while moves are held back; `shortText`: its label in a compact column's footer
    */
   #sidebarButtons(snapshot, interaction) {
     const moves = snapshot.legalMoves;
@@ -676,14 +743,22 @@ export class MatchScene extends Scene {
       { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: true, plays: true, variant: "primary", onActivate: () => this.#confirm() },
       { id: "cancel", text: "Cancel", visible: interaction.canCancel, enabled: true, plays: false, variant: "secondary", onActivate: () => this.onCancel() },
       { id: "endPhase", text: "End phase", visible: playing, enabled: moves?.canEndPhase === true && !busy, plays: true, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
-      { id: "endTurn", text: "End turn (E)", visible: playing, enabled: moves?.canEndTurn === true && !busy, plays: true, variant: "primary", onActivate: () => this.#submit(endTurn(this.#playerId)) },
-      { id: "leave", text: snapshot.isOver ? "Back to menu" : "Concede", visible: true, enabled: true, plays: false, variant: snapshot.isOver ? "secondary" : "danger", onActivate: () => (snapshot.isOver ? this.#leave(SceneId.MAIN_MENU) : this.#confirmConcede()) },
+      { id: "endTurn", text: this.#keyHints() ? "End turn (E)" : "End turn", visible: playing, enabled: moves?.canEndTurn === true && !busy, plays: true, variant: "primary", onActivate: () => this.#submit(endTurn(this.#playerId)) },
+      { id: "leave", text: snapshot.isOver ? "Back to menu" : "Concede", shortText: snapshot.isOver ? "Menu" : "Concede", visible: true, enabled: true, plays: false, variant: snapshot.isOver ? "secondary" : "danger", onActivate: () => (snapshot.isOver ? this.#leave(SceneId.MAIN_MENU) : this.#confirmConcede()) },
     ];
+  }
+
+  /** Keyboard shortcuts are worth naming only to someone with a keyboard at hand. */
+  #keyHints() {
+    return !this.services.viewport.compact && this.services.usingTouch?.() !== true;
   }
 
   /** @param {import("../board/BoardLayout.js").BoardLayout} layout */
   #buildLog(layout) {
     const { log } = layout;
+    if (log === null) {
+      return;
+    }
     const panel = this.root.add(new Panel({ id: "log", ...log, textured: true }));
     const width = log.width - 2 * LOG.inset;
     panel.add(new Label({ x: LOG.inset, y: LOG.inset, width, height: LOG.headerHeight, text: "Battle log", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
@@ -698,7 +773,26 @@ export class MatchScene extends Scene {
     const command = this.#interaction?.confirm() ?? null;
     if (command !== null) {
       this.#submit(command);
+      return;
     }
+    // A picked card that needs a target goes on to targeting.
+    this.#rebuild();
+  }
+
+  /** The battle log over the board (a compact board has no panel for it). */
+  #showLog() {
+    const { viewport } = this.services;
+    const panelWidth = Math.min(LOG_MODAL.width, viewport.logicalWidth - 2 * LOG_MODAL.margin);
+    const panelHeight = Math.min(LOG_MODAL.height, viewport.logicalHeight - 2 * LOG_MODAL.margin);
+    const modal = new Modal({ id: "logModal", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth, panelHeight, onDismiss: () => this.closeModal() });
+    const { panel } = modal;
+    const inset = LOG.inset + 8;
+    const closeWidth = 110;
+    panel.add(new Label({ x: inset, y: inset, width: panelWidth - 2 * inset - closeWidth, height: 36, text: "Battle log", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Button({ id: "logModal.close", x: panelWidth - inset - closeWidth, y: inset, width: closeWidth, height: 40, text: "Close", textSize: "small", onActivate: () => this.closeModal() }));
+    const top = inset + 48;
+    panel.add(new BattleLogNode({ id: "logModal.entries", x: inset, y: top, width: panelWidth - 2 * inset, height: panelHeight - top - inset, entries: this.#log, view: this.#logScroll }));
+    this.openModal(modal);
   }
 
   #confirmConcede() {
@@ -721,14 +815,16 @@ export class MatchScene extends Scene {
   /** @param {Snapshot} snapshot */
   #showGameOver(snapshot) {
     const { viewport } = this.services;
-    const modal = new Modal({ id: "gameOver", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: GAME_OVER.width, panelHeight: GAME_OVER.height, onDismiss: () => this.closeModal() });
+    const size = viewport.compact ? COMPACT_GAME_OVER : GAME_OVER;
+    const modal = new Modal({ id: "gameOver", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: size.width, panelHeight: size.height, onDismiss: () => this.closeModal() });
     const { panel } = modal;
-    const width = GAME_OVER.width - 2 * PANEL_INSET;
+    const width = size.width - 2 * PANEL_INSET;
     const victory = this.#spectating || snapshot.winnerId === this.#playerId;
-    panel.add(new Label({ x: PANEL_INSET, y: 40, width, height: 90, text: outcomeFor(snapshot, this.#viewer()), size: "title", weight: "bold", colorKey: victory ? "accentLight" : "danger", glow: true }));
-    panel.add(new Label({ x: PANEL_INSET, y: 140, width, height: 30, text: reasonFor(snapshot), size: "body", colorKey: "textMuted" }));
+    const top = viewport.compact ? 24 : 40;
+    panel.add(new Label({ x: PANEL_INSET, y: top, width, height: 90, text: outcomeFor(snapshot, this.#viewer()), size: "title", weight: "bold", colorKey: victory ? "accentLight" : "danger", glow: true }));
+    panel.add(new Label({ x: PANEL_INSET, y: top + 100, width, height: 30, text: reasonFor(snapshot), size: "body", colorKey: "textMuted" }));
     const third = (width - 2 * 14) / 3;
-    const y = GAME_OVER.height - 20 - 52;
+    const y = size.height - 20 - 52;
     panel.add(new Button({ id: "gameOver.again", x: PANEL_INSET, y, width: third, height: 52, text: this.#spectating ? "Watch another" : "Play again", variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
     panel.add(new Button({ id: "gameOver.menu", x: PANEL_INSET + third + 14, y, width: third, height: 52, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
     panel.add(new Button({ id: "gameOver.board", x: PANEL_INSET + 2 * (third + 14), y, width: third, height: 52, text: "View board", onActivate: () => this.closeModal() }));
@@ -738,10 +834,29 @@ export class MatchScene extends Scene {
   /** @param {import("../cards/CardDetail.js").CardLike} card */
   #showInspect(card) {
     const { viewport } = this.services;
+    if (viewport.compact) {
+      this.#showCompactInspect(card);
+      return;
+    }
     const modal = new Modal({ id: "inspect", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: INSPECT.width, panelHeight: INSPECT.height, onDismiss: () => this.closeModal() });
     const { panel } = modal;
     panel.add(new CardDetail({ id: "inspect.card", x: (INSPECT.width - INSPECT.card.width) / 2, y: 20, width: INSPECT.card.width, height: INSPECT.card.height, card, rarity: this.#rarityOf(card.definitionId ?? card.id ?? "") }));
     panel.add(new Button({ id: "inspect.close", x: (INSPECT.width - INSPECT.card.width) / 2, y: INSPECT.height - 20 - 48, width: INSPECT.card.width, height: 48, text: "Close", onActivate: () => this.closeModal() }));
+    this.openModal(modal);
+  }
+
+  /**
+   * The inspect view on a phone: the card as tall as the screen allows, Close beside it.
+   * @param {import("../cards/CardDetail.js").CardLike} card
+   */
+  #showCompactInspect(card) {
+    const { viewport } = this.services;
+    const size = COMPACT_INSPECT;
+    const modal = new Modal({ id: "inspect", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: size.width, panelHeight: size.height, onDismiss: () => this.closeModal() });
+    const { panel } = modal;
+    const margin = (size.height - size.card.height) / 2;
+    panel.add(new CardDetail({ id: "inspect.card", x: margin, y: margin, width: size.card.width, height: size.card.height, card, rarity: this.#rarityOf(card.definitionId ?? card.id ?? "") }));
+    panel.add(new Button({ id: "inspect.close", x: size.width - margin - size.close.width, y: margin, width: size.close.width, height: size.close.height, text: "Close", onActivate: () => this.closeModal() }));
     this.openModal(modal);
   }
 

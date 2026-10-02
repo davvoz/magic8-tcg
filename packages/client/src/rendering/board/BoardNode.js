@@ -100,6 +100,6 @@ export class BoardNode extends UiNode {
     context.strokeStyle = withAlpha(colors.accent, 0.6);
     context.stroke();
     context.restore();
-    drawOutlinedText(context, this.#banner, ribbon, { font: fontFor(theme, "body", "bold"), color: colors.accentLight, outline: withAlpha(colors.letterbox, 0.8), outlineWidth: 3 });
+    drawOutlinedText(context, this.#banner, ribbon, { font: fontFor(theme, this.#layout.compact ? "small" : "body", "bold"), color: colors.accentLight, outline: withAlpha(colors.letterbox, 0.8), outlineWidth: 3 });
   }
 }

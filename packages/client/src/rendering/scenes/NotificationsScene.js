@@ -19,13 +19,22 @@ import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
-import { HEADER, INSET } from "./deckBuilder/layout.js";
+import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
+/**
+ * Sizes of the feed, wide and compact (a phone in landscape: lower entries, fewer and smaller thumbnails, the text as wide as what is left).
+ * @typedef {Readonly<{ entry: { height: number, gap: number, textWidth: number | null, open: number, openHeight: number, avatar: number }, thumb: { width: number, gap: number, max: number }, title: number, statusX: number }>} FeedMetrics
+ *   `entry.textWidth`: null for whatever the thumbnails and Open leave; `entry.avatar`: the portrait leading a notification about another player
+ */
+/** @type {FeedMetrics} */
+const WIDE = Object.freeze({ entry: Object.freeze({ height: 140, gap: 12, textWidth: 640, open: 150, openHeight: 48, avatar: 56 }), thumb: Object.freeze({ width: 66, gap: 10, max: 6 }), title: 400, statusX: 300 });
+/** @type {FeedMetrics} */
+const COMPACT = Object.freeze({ entry: Object.freeze({ height: 110, gap: 8, textWidth: null, open: 96, openHeight: 46, avatar: 40 }), thumb: Object.freeze({ width: 48, gap: 6, max: 3 }), title: 220, statusX: 220 });
+/** The wide feed's panel; a compact one fills the frame's column area. */
 const PANEL = Object.freeze({ top: 100, height: 770 });
-const ENTRY = Object.freeze({ height: 140, gap: 12, textWidth: 640, open: 150, avatar: 56 });
-const THUMB = Object.freeze({ width: 66, gap: 10, max: 6 });
+
 const LIST_ID = "notifications.list";
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -61,6 +70,25 @@ export function timeAgo(at, now) {
 }
 
 export class NotificationsScene extends Scene {
+  /** The frame for the screen in use (the compact one on a phone). */
+  get #screen() {
+    return screenLayout(this.services.viewport);
+  }
+
+  /** @returns {FeedMetrics} */
+  get #m() {
+    return this.#screen.compact ? COMPACT : WIDE;
+  }
+
+  /** Where the feed's panel goes. */
+  get #panel() {
+    return this.#screen.compact ? { top: this.#screen.columns.top, height: this.#screen.columns.height } : PANEL;
+  }
+
+  relayout() {
+    this.#rebuild();
+  }
+
   #app;
   #now;
   /** @type {(() => void) | null} */
@@ -114,13 +142,14 @@ export class NotificationsScene extends Scene {
     this.root.clear();
     const { viewport } = this.services;
     const state = this.#notifications().state;
-    const width = viewport.logicalWidth - 2 * HEADER.sideMargin;
-    this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 400, height: HEADER.height, text: "Notifications", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    const width = viewport.logicalWidth - 2 * this.#screen.header.sideMargin;
+    const { title, statusX } = this.#m;
+    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: title, height: this.#screen.header.height, text: "Notifications", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
     const status = state.error ?? (state.status === NotificationStatus.LOADING ? "Loading…" : "What happened to your orders, trades and sales.");
-    this.root.add(new Label({ id: "notifications.status", x: HEADER.sideMargin + 300, y: HEADER.y, width: width - 300 - HEADER.backWidth - 16, height: HEADER.height, text: status, size: "small", align: "left", colorKey: state.error === null ? "textMuted" : "danger", fit: true }));
-    const back = this.root.add(new Button({ id: "notifications.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back to menu", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
-    const panel = this.root.add(new Panel({ x: HEADER.sideMargin, y: PANEL.top, width, height: PANEL.height }));
-    this.#buildList(panel, width - 2 * INSET, state);
+    this.root.add(new Label({ id: "notifications.status", x: this.#screen.header.sideMargin + statusX, y: this.#screen.header.y, width: width - statusX - this.#screen.header.backWidth - 16, height: this.#screen.header.height, text: status, size: "small", align: "left", colorKey: state.error === null ? "textMuted" : "danger", fit: true }));
+    const back = this.root.add(new Button({ id: "notifications.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.header.sideMargin, y: this.#panel.top, width, height: this.#panel.height }));
+    this.#buildList(panel, width - 2 * this.#screen.inset, state);
     this.focus(this.root.findById(focusedId) ?? back);
     this.services.requestRender();
   }
@@ -131,7 +160,8 @@ export class NotificationsScene extends Scene {
    * @param {import("../../application/notifications/NotificationService.js").NotificationState} state
    */
   #buildList(panel, width, state) {
-    const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: INSET, width, height: PANEL.height - 2 * INSET }));
+    const ENTRY = this.#m.entry;
+    const list = panel.add(new ScrollList({ id: LIST_ID, x: this.#screen.inset, y: this.#screen.inset, width, height: this.#panel.height - 2 * this.#screen.inset }));
     if (state.items.length === 0) {
       const empty = state.status === NotificationStatus.LOADING ? "Loading…" : "Nothing yet. When your cards arrive, someone answers a trade or buys your card, you will find it here.";
       list.add(new TextBlock({ id: "notifications.empty", x: 0, y: 0, width: list.rowWidth, height: 80, text: empty, size: "body", colorKey: "textMuted" }));
@@ -159,18 +189,21 @@ export class NotificationsScene extends Scene {
     const text = describeNotification(item, this.#app.content.catalog);
     const fresh = this.#notifications().state.unopened.has(item.id);
     const open = this.#followUp(item, text);
-    list.add(new Panel({ id: `notifications.entry.${item.id}`, x: 0, y, width: list.rowWidth, height: ENTRY.height, glowKey: fresh ? "accent" : null, onActivate: open }));
+    const { entry: ENTRY, thumb: THUMB } = this.#m;
+    list.add(new Panel({ id: `notifications.entry.${item.id}`, x: 0, y, width: list.rowWidth, height: ENTRY.height, glowKey: fresh ? "accent" : null, onActivate: open, smallCorners: this.#screen.compact }));
     // A notification about another player leads with their portrait; the texts move over for it.
     const lead = text.account === undefined ? 0 : ENTRY.avatar + 16;
     if (text.account !== undefined) {
       list.add(new AvatarNode({ id: `notifications.avatar.${item.id}`, x: 16, y: y + 12, size: ENTRY.avatar, account: text.account }));
     }
     const x = 16 + lead;
-    const textWidth = ENTRY.textWidth - lead;
+    // The texts' column: fixed when wide, whatever the thumbnails and Open leave on a phone.
+    const column = ENTRY.textWidth ?? list.rowWidth - 16 - THUMB.max * (THUMB.width + THUMB.gap) - ENTRY.open - 2 * 16;
+    const textWidth = column - lead;
     list.add(new Label({ id: `notifications.title.${item.id}`, x, y: y + 10, width: textWidth, height: 30, text: fresh ? `New · ${text.title}` : text.title, weight: "bold", align: "left", colorKey: TONE_KEYS[text.tone], fit: true }));
     list.add(new Label({ x, y: y + 40, width: textWidth, height: 22, text: timeAgo(item.createdAt, now), size: "tiny", align: "left", colorKey: "textMuted" }));
     list.add(new TextBlock({ id: `notifications.body.${item.id}`, x, y: y + 64, width: textWidth, height: ENTRY.height - 72, text: text.body, size: "small", colorKey: "text" }));
-    const thumbsX = 16 + ENTRY.textWidth + 20;
+    const thumbsX = 16 + column + (this.#screen.compact ? 12 : 20);
     text.cards.slice(0, THUMB.max).forEach((card, index) => {
       const definition = this.#app.content.catalog.get(card.definitionId);
       list.add(
@@ -187,7 +220,7 @@ export class NotificationsScene extends Scene {
       );
     });
     if (open !== null) {
-      list.add(new Button({ id: `notifications.open.${item.id}`, x: list.rowWidth - ENTRY.open - 16, y: y + (ENTRY.height - 48) / 2, width: ENTRY.open, height: 48, text: "Open", variant: fresh ? "primary" : "secondary", onActivate: open }));
+      list.add(new Button({ id: `notifications.open.${item.id}`, x: list.rowWidth - ENTRY.open - 16, y: y + (ENTRY.height - ENTRY.openHeight) / 2, width: ENTRY.open, height: ENTRY.openHeight, text: "Open", variant: fresh ? "primary" : "secondary", onActivate: open }));
     }
   }
 

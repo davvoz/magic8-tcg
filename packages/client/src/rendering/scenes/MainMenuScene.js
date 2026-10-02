@@ -3,6 +3,9 @@
  * buttons and a content summary. Buttons whose destination scene is not
  * registered are disabled rather than pretending to work. Signed in, the
  * top-right button opens the notifications and counts the unread ones.
+ *
+ * On a compact screen (a phone in landscape) the fan, the title and the
+ * summary take the left half and the buttons the right one.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
@@ -28,6 +31,23 @@ const SUMMARY = Object.freeze({ y: 718, lineHeight: 28, width: 900 });
 const BELL = Object.freeze({ width: 260, height: 48, margin: 40 });
 /** The signed-in player's portrait and name, in the top-left corner (the bell's mirror). */
 const PROFILE = Object.freeze({ size: 56, nameWidth: 320 });
+/**
+ * The compact layout: the header row (portrait, bell), the left half (fan,
+ * title, subtitle, summary lines from the bottom) and the button column
+ * centred in the right half below the header.
+ */
+const COMPACT = Object.freeze({
+  margin: 14,
+  header: Object.freeze({ y: 8, height: 48 }),
+  bell: Object.freeze({ width: 200 }),
+  profile: Object.freeze({ size: 46, nameWidth: 260 }),
+  hero: Object.freeze({ y: 40, width: 380, height: 210 }),
+  title: Object.freeze({ y: 124, height: 84 }),
+  subtitle: Object.freeze({ y: 206, height: 26 }),
+  ornament: Object.freeze({ y: 236, width: 300, height: 14 }),
+  summary: Object.freeze({ bottom: 392, lineHeight: 21 }),
+  button: Object.freeze({ maxWidth: 340, height: 46, gap: 8, top: 64, bottom: 394 }),
+});
 
 export class MainMenuScene extends Scene {
   #app;
@@ -66,11 +86,12 @@ export class MainMenuScene extends Scene {
     this.root.clear();
     const { viewport, hasScene, navigate } = this.services;
     const width = viewport.logicalWidth;
-    const centerX = width / 2;
-    this.root.add(new HeroNode({ x: centerX - 400, y: HERO.y, width: 800, height: HERO.height }));
-    this.root.add(new Label({ x: 0, y: TITLE.y, width, height: TITLE.height, text: "MAGIC8", size: "title", weight: "bold", colorKey: "accentLight", glow: true }));
-    this.root.add(new Label({ x: 0, y: SUBTITLE_Y, width, height: 36, text: "A canvas card game engine", size: "body", colorKey: "textMuted" }));
-    this.root.add(new Ornament({ x: centerX - 220, y: ORNAMENT_Y, width: 440, height: 16 }));
+    const layout = viewport.compact ? compactLayout(width) : wideLayout(width);
+    const { hero } = layout;
+    this.root.add(new HeroNode({ x: hero.centerX - hero.width / 2, y: hero.y, width: hero.width, height: hero.height }));
+    this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.title.y, width: hero.textWidth, height: layout.title.height, text: "MAGIC8", size: "title", weight: "bold", colorKey: "accentLight", glow: true }));
+    this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.subtitle.y, width: hero.textWidth, height: layout.subtitle.height, text: "A canvas card game engine", size: layout.subtitle.size, colorKey: "textMuted" }));
+    this.root.add(new Ornament({ x: hero.centerX - layout.ornament.width / 2, y: layout.ornament.y, width: layout.ornament.width, height: layout.ornament.height }));
 
     const entries = [
       ...this.#onlineEntries(),
@@ -82,14 +103,16 @@ export class MainMenuScene extends Scene {
     ];
     /** @type {Button | null} */
     let first = null;
+    const { buttons } = layout;
+    const buttonsTop = buttons.top + Math.max(0, (buttons.room - (entries.length * (buttons.height + buttons.gap) - buttons.gap)) / 2);
     entries.forEach((entry, index) => {
       const button = this.root.add(
         new Button({
           id: entry.id,
-          x: centerX - BUTTON_WIDTH / 2,
-          y: BUTTONS_Y + index * (BUTTON_HEIGHT + BUTTON_GAP),
-          width: BUTTON_WIDTH,
-          height: BUTTON_HEIGHT,
+          x: buttons.centerX - buttons.width / 2,
+          y: buttonsTop + index * (buttons.height + buttons.gap),
+          width: buttons.width,
+          height: buttons.height,
           text: entry.text,
           variant: /** @type {import("../ui/Button.js").ButtonVariant} */ (entry.variant),
           onActivate: entry.onActivate ?? (() => navigate(/** @type {string} entries without onActivate have a scene */ (entry.scene))),
@@ -99,8 +122,8 @@ export class MainMenuScene extends Scene {
       first ??= button;
     });
 
-    this.#buildBell(width);
-    this.#buildProfile();
+    this.#buildBell(layout);
+    this.#buildProfile(layout);
     const draft = this.#draftSummary();
     const lines = [
       { text: this.#accountSummary(), colorKey: "accentLight" },
@@ -109,8 +132,10 @@ export class MainMenuScene extends Scene {
       ...(draft === null ? [] : [{ text: draft, colorKey: "accent" }]),
       { text: this.#versionSummary(), colorKey: "disabledText" },
     ];
+    const { summary } = layout;
+    const summaryTop = summary.bottom === null ? summary.y : summary.bottom - lines.length * summary.lineHeight;
     lines.forEach((line, index) => {
-      this.root.add(new Label({ x: centerX - SUMMARY.width / 2, y: SUMMARY.y + index * SUMMARY.lineHeight, width: SUMMARY.width, height: SUMMARY.lineHeight, text: line.text, size: "small", colorKey: line.colorKey, fit: true }));
+      this.root.add(new Label({ x: summary.centerX - summary.width / 2, y: summaryTop + index * summary.lineHeight, width: summary.width, height: summary.lineHeight, text: line.text, size: index === 0 ? "small" : summary.size, colorKey: line.colorKey, fit: true }));
     });
     this.focus(this.root.findById(focusedId) ?? first);
     this.services.requestRender();
@@ -123,11 +148,15 @@ export class MainMenuScene extends Scene {
     super.render(context);
   }
 
+  relayout() {
+    this.#rebuild();
+  }
+
   /**
    * The notifications button, once signed in and the account is loaded.
-   * @param {number} width
+   * @param {MenuLayout} layout
    */
-  #buildBell(width) {
+  #buildBell({ bell }) {
     const notifications = this.#app.notifications;
     if (notifications === undefined || this.#app.account?.state.status !== AccountStatus.READY) {
       return;
@@ -137,10 +166,7 @@ export class MainMenuScene extends Scene {
     this.root.add(
       new Button({
         id: "notifications",
-        x: width - BELL.margin - BELL.width,
-        y: BELL.margin / 2,
-        width: BELL.width,
-        height: BELL.height,
+        ...bell,
         text: unread === 0 ? "Notifications" : `Notifications (${count})`,
         variant: unread === 0 ? "secondary" : "primary",
         enabled: this.services.hasScene(SceneId.NOTIFICATIONS),
@@ -149,16 +175,18 @@ export class MainMenuScene extends Scene {
     );
   }
 
-  /** The signed-in player's STEEM profile picture and name. */
-  #buildProfile() {
+  /**
+   * The signed-in player's STEEM profile picture and name.
+   * @param {MenuLayout} layout
+   */
+  #buildProfile({ profile }) {
     const state = this.#app.identity?.state;
     const user = state?.status === IdentityStatus.SIGNED_IN ? state.user : null;
     if (user === null || user === undefined) {
       return;
     }
-    const top = BELL.margin / 2 + (BELL.height - PROFILE.size) / 2;
-    this.root.add(new AvatarNode({ id: "profile.avatar", x: BELL.margin, y: top, size: PROFILE.size, account: user.account }));
-    this.root.add(new Label({ id: "profile.name", x: BELL.margin + PROFILE.size + 14, y: top, width: PROFILE.nameWidth, height: PROFILE.size, text: `@${user.account}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    this.root.add(new AvatarNode({ id: "profile.avatar", x: profile.x, y: profile.y, size: profile.size, account: user.account }));
+    this.root.add(new Label({ id: "profile.name", x: profile.x + profile.size + 12, y: profile.y, width: profile.nameWidth, height: profile.size, text: `@${user.account}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
   }
 
   /** Online play, once signed in and the account is loaded. */
@@ -249,4 +277,58 @@ export class MainMenuScene extends Scene {
     const { release, version } = this.#app.environment;
     return release === undefined ? `engine ${version}` : `Magic8 ${release} · engine ${version}`;
   }
+}
+
+/**
+ * @typedef {Readonly<{
+ *   hero: { centerX: number, y: number, width: number, height: number, textWidth: number },
+ *   title: { y: number, height: number },
+ *   subtitle: { y: number, height: number, size: import("../theme/Theme.js").FontSize },
+ *   ornament: { y: number, width: number, height: number },
+ *   buttons: { centerX: number, width: number, height: number, gap: number, top: number, room: number },
+ *   summary: { centerX: number, width: number, y: number, bottom: number | null, lineHeight: number, size: import("../theme/Theme.js").FontSize },
+ *   bell: { x: number, y: number, width: number, height: number },
+ *   profile: { x: number, y: number, size: number, nameWidth: number },
+ * }>} MenuLayout `buttons.room`: the height the column is centred in (0 starts it at `top`); `summary.bottom`: where its last line ends, when it is laid out from the bottom
+ */
+
+/**
+ * Everything centred on one column, as designed for 1600×900.
+ * @param {number} width
+ * @returns {MenuLayout}
+ */
+function wideLayout(width) {
+  const centerX = width / 2;
+  return Object.freeze({
+    hero: { centerX, y: HERO.y, width: 800, height: HERO.height, textWidth: width },
+    title: TITLE,
+    subtitle: { y: SUBTITLE_Y, height: 36, size: "body" },
+    ornament: { y: ORNAMENT_Y, width: 440, height: 16 },
+    buttons: { centerX, width: BUTTON_WIDTH, height: BUTTON_HEIGHT, gap: BUTTON_GAP, top: BUTTONS_Y, room: 0 },
+    summary: { centerX, width: SUMMARY.width, y: SUMMARY.y, bottom: null, lineHeight: SUMMARY.lineHeight, size: "small" },
+    bell: { x: width - BELL.margin - BELL.width, y: BELL.margin / 2, width: BELL.width, height: BELL.height },
+    profile: { x: BELL.margin, y: BELL.margin / 2 + (BELL.height - PROFILE.size) / 2, size: PROFILE.size, nameWidth: PROFILE.nameWidth },
+  });
+}
+
+/**
+ * Two halves for a phone in landscape: the fan, title and summary on the left, the buttons on the right.
+ * @param {number} width
+ * @returns {MenuLayout}
+ */
+function compactLayout(width) {
+  const half = width / 2;
+  const left = half / 2;
+  const { margin, header, button } = COMPACT;
+  const buttonWidth = Math.min(button.maxWidth, half - 2 * margin);
+  return Object.freeze({
+    hero: { centerX: left, y: COMPACT.hero.y, width: COMPACT.hero.width, height: COMPACT.hero.height, textWidth: half - 2 * margin },
+    title: COMPACT.title,
+    subtitle: { ...COMPACT.subtitle, size: "small" },
+    ornament: COMPACT.ornament,
+    buttons: { centerX: half + half / 2, width: buttonWidth, height: button.height, gap: button.gap, top: button.top, room: button.bottom - button.top },
+    summary: { centerX: left, width: half - 2 * margin, y: 0, bottom: COMPACT.summary.bottom, lineHeight: COMPACT.summary.lineHeight, size: "tiny" },
+    bell: { x: width - margin - COMPACT.bell.width, y: header.y, width: COMPACT.bell.width, height: header.height },
+    profile: { x: margin, y: header.y, size: COMPACT.profile.size, nameWidth: COMPACT.profile.nameWidth },
+  });
 }

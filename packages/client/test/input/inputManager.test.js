@@ -7,10 +7,10 @@ import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { FakeCanvas, FakeWindow, fakeEvent } from "../rendering/fakes.js";
 
 function setup() {
-  const canvas = new FakeCanvas(800, 450);
+  const canvas = new FakeCanvas(1200, 675);
   const window = new FakeWindow();
   const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
-  viewport.resize({ cssWidth: 800, cssHeight: 450 });
+  viewport.resize({ cssWidth: 1200, cssHeight: 675 });
   const received = { pointer: [], key: [] };
   const manager = new InputManager({
     canvas,
@@ -25,18 +25,29 @@ function setup() {
 describe("InputManager", () => {
   it("normalises pointer events into logical coordinates relative to the canvas", () => {
     const { canvas, window, received } = setup();
-    const downEvent = fakeEvent({ clientX: 10 + 400, clientY: 20 + 225, button: 0, pointerId: 7 });
+    const downEvent = fakeEvent({ clientX: 10 + 600, clientY: 20 + 337.5, button: 0, pointerId: 7 });
     canvas.dispatch("pointerdown", downEvent);
-    assert.deepEqual(received.pointer[0], { type: "down", x: 800, y: 450, button: 0, pointerId: 7 });
+    assert.deepEqual(received.pointer[0], { type: "down", x: 800, y: 450, button: 0, pointerId: 7, pointerType: "mouse" });
     assert.equal(downEvent.defaultPrevented, true);
     assert.deepEqual(canvas.captured, [7]);
     canvas.dispatch("pointermove", fakeEvent({ clientX: 10, clientY: 20, button: 0, pointerId: 7 }));
-    window.dispatch("pointerup", fakeEvent({ clientX: 10 + 800, clientY: 20 + 450, button: 0, pointerId: 7 }));
+    window.dispatch("pointerup", fakeEvent({ clientX: 10 + 1200, clientY: 20 + 675, button: 0, pointerId: 7 }));
     window.dispatch("pointercancel", fakeEvent({ clientX: 0, clientY: 0, pointerId: 7 }));
     assert.deepEqual(received.pointer.map((input) => input.type), ["down", "move", "up", "cancel"]);
     assert.deepEqual([received.pointer[1].x, received.pointer[1].y], [0, 0]);
     assert.deepEqual([received.pointer[2].x, received.pointer[2].y], [1600, 900]);
     assert.ok(Object.isFrozen(received.pointer[0]));
+  });
+
+  it("follows only the primary pointer and tells a finger from a mouse", () => {
+    const { canvas, window, received } = setup();
+    canvas.dispatch("pointerdown", fakeEvent({ clientX: 10, clientY: 20, pointerId: 3, pointerType: "touch", isPrimary: true }));
+    const second = fakeEvent({ clientX: 50, clientY: 50, pointerId: 4, pointerType: "touch", isPrimary: false });
+    canvas.dispatch("pointerdown", second);
+    window.dispatch("pointerup", fakeEvent({ clientX: 50, clientY: 50, pointerId: 4, pointerType: "touch", isPrimary: false }));
+    canvas.dispatch("pointerdown", fakeEvent({ clientX: 10, clientY: 20, pointerId: 5, pointerType: "pen" }));
+    assert.deepEqual(received.pointer.map((input) => [input.type, input.pointerType]), [["down", "touch"], ["down", "pen"]]);
+    assert.deepEqual(canvas.captured, [3, 5], "a second finger is not captured");
   });
 
   it("clamps wheel deltas and prevents the page from scrolling", () => {

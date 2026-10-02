@@ -3,7 +3,10 @@
  * market): faction stripe, cost gem, name in the display face, rarity (in
  * its colour, when known), type and keywords, the copy count and, for
  * creatures, attack and health gems. A `fresh` card (just received) is lit
- * and tagged "NEW". Decorative only; the row's buttons sit beside it.
+ * and tagged "NEW". Decorative only; the row's buttons sit beside it. On a
+ * strip too narrow to leave the name room (a phone's column) the stats, then
+ * the copy count, are written in the second line instead of drawn beside the
+ * name.
  */
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";
 import { shade, withAlpha } from "../theme/color.js";
@@ -22,6 +25,8 @@ const STAT_GAP = 8;
 const COUNT_WIDTH = 44;
 const NAME_SIZE = 19;
 const FRESH = Object.freeze({ label: "NEW", width: 50, blur: 14 });
+/** Below this much room for the name, the stat gems give theirs up. */
+const MIN_NAME_ROOM = 110;
 
 /**
  * @typedef {Readonly<{ name: string, type: string, faction: string, cost: number, attack: number, health: number, keywords?: readonly string[] }>} StripCard
@@ -78,9 +83,28 @@ export class CardStrip extends UiNode {
     context.fillRect(area.x, area.y, STRIPE_WIDTH, area.height);
     context.restore();
     this.#paintCost(context, theme, area);
-    const right = this.#paintRightSide(context, theme, area);
-    this.#paintName(context, theme, { x: area.x + STRIPE_WIDTH + PADDING + COST_RADIUS * 2 + PADDING, right });
+    const nameX = area.x + STRIPE_WIDTH + PADDING + COST_RADIUS * 2 + PADDING;
+    const room = this.#roomFor(area, nameX);
+    const right = this.#paintRightSide(context, theme, area, room);
+    this.#paintName(context, theme, { x: nameX, right, statsInText: !room.gems && this.card.type === CardType.CREATURE, countInText: !room.badge && this.count !== null && this.count > 0 });
     context.restore();
+  }
+
+  /**
+   * What fits beside the name and still leaves it room: the stat gems give theirs up first, then the count badge.
+   * @param {import("@magic8/engine/shared/geometry.js").Rect} area
+   * @param {number} nameX where the name starts
+   * @returns {{ gems: boolean, badge: boolean }}
+   */
+  #roomFor(area, nameX) {
+    const gems = this.card.type === CardType.CREATURE ? STAT_RADIUS * 4 + 2 * STAT_GAP : 0;
+    const badge = this.count !== null && this.count > 0 ? COUNT_WIDTH + STAT_GAP : 0;
+    // The NEW tag of a fresh card always shows: the others make room around it.
+    const free = area.x + area.width - PADDING - nameX - (this.fresh ? FRESH.width + STAT_GAP : 0);
+    if (free - gems - badge >= MIN_NAME_ROOM) {
+      return { gems: true, badge: true };
+    }
+    return { gems: false, badge: free - badge >= MIN_NAME_ROOM };
   }
 
   /**
@@ -98,22 +122,23 @@ export class CardStrip extends UiNode {
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
    * @param {import("@magic8/engine/shared/geometry.js").Rect} area
+   * @param {{ gems: boolean, badge: boolean }} room whether the stats are drawn as gems, and the count as a badge
    */
-  #paintRightSide(context, theme, area) {
+  #paintRightSide(context, theme, area, { gems, badge }) {
     const centerY = area.y + area.height / 2;
     let x = area.x + area.width - PADDING;
-    if (this.card.type === CardType.CREATURE) {
+    if (gems && this.card.type === CardType.CREATURE) {
       x -= STAT_RADIUS;
       drawStatGem(context, theme, { center: { x, y: centerY }, radius: STAT_RADIUS, value: this.card.health, color: theme.colors.health, icon: "shield" });
       x -= STAT_RADIUS * 2 + STAT_GAP;
       drawStatGem(context, theme, { center: { x, y: centerY }, radius: STAT_RADIUS, value: this.card.attack, color: theme.colors.attack, icon: "sword" });
       x -= STAT_RADIUS + STAT_GAP;
     }
-    if (this.count !== null && this.count > 0) {
+    if (badge && this.count !== null && this.count > 0) {
       x -= COUNT_WIDTH;
-      const badge = { x, y: centerY - 12, width: COUNT_WIDTH, height: 24 };
-      fillRoundedRect(context, badge, { fill: withAlpha(theme.colors.accent, 0.18), stroke: withAlpha(theme.colors.accent, 0.7), radius: 12, lineWidth: 1 });
-      drawTextInRect(context, `x${this.count}`, badge, { font: fontFor(theme, "small", "bold"), color: theme.colors.accentLight });
+      const box = { x, y: centerY - 12, width: COUNT_WIDTH, height: 24 };
+      fillRoundedRect(context, box, { fill: withAlpha(theme.colors.accent, 0.18), stroke: withAlpha(theme.colors.accent, 0.7), radius: 12, lineWidth: 1 });
+      drawTextInRect(context, `x${this.count}`, box, { font: fontFor(theme, "small", "bold"), color: theme.colors.accentLight });
       x -= STAT_GAP;
     }
     if (this.fresh) {
@@ -129,9 +154,9 @@ export class CardStrip extends UiNode {
   /**
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
-   * @param {{ x: number, right: number }} span
+   * @param {{ x: number, right: number, statsInText: boolean, countInText: boolean }} span `statsInText`, `countInText`: attack and health, the copy count lead the second line
    */
-  #paintName(context, theme, { x, right }) {
+  #paintName(context, theme, { x, right, statsInText, countInText }) {
     const area = this.bounds;
     const width = Math.max(0, right - x);
     const nameFont = displayFont(theme, NAME_SIZE);
@@ -139,7 +164,9 @@ export class CardStrip extends UiNode {
     const name = ellipsize((text) => context.measureText(text).width, this.card.name, width);
     drawTextInRect(context, name, { x, y: area.y, width, height: area.height * 0.58 }, { font: nameFont, color: this.broken ? theme.colors.danger : theme.colors.accentLight, align: "left" });
     const keywords = (this.card.keywords ?? []).join(" · ");
-    const subtitle = keywords.length === 0 ? capitalize(this.card.type) : `${capitalize(this.card.type)} · ${keywords}`;
+    const kind = keywords.length === 0 ? capitalize(this.card.type) : `${capitalize(this.card.type)} · ${keywords}`;
+    const lead = [...(countInText ? [`x${this.count}`] : []), ...(statsInText ? [`${this.card.attack}/${this.card.health}`] : [])];
+    const subtitle = [...lead, kind].join(" · ");
     const line = { x, y: area.y + area.height * 0.55, width, height: area.height * 0.4 };
     let offset = 0;
     if (this.rarity) {

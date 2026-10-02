@@ -2,9 +2,13 @@
  * Attaches DOM listeners (never inline handlers) and normalises mouse,
  * touch and pen into one pointer event type in logical coordinates, plus a
  * simplified keyboard event. Everything is forwarded to a single target —
- * the SceneManager — which decides what the input means.
+ * the SceneManager — which decides what the input means. Only the primary
+ * pointer is followed: a second finger on the glass is ignored, so it can
+ * neither press nor scroll anything.
  *
- * @typedef {Readonly<{ type: "down" | "move" | "up" | "cancel", x: number, y: number, button: number, pointerId: number }>} PointerInput
+ * @typedef {"mouse" | "touch" | "pen"} PointerKind
+ * @typedef {Readonly<{ type: "down" | "move" | "up" | "cancel", x: number, y: number, button: number, pointerId: number, pointerType: PointerKind }>} PointerInput
+ *   `pointerType`: a finger has no hover and no keyboard at hand, so scenes treat it differently
  * @typedef {Readonly<{ type: "wheel", x: number, y: number, deltaY: number }>} WheelInput
  * @typedef {Readonly<{ type: "keydown" | "keyup", key: string, repeat: boolean }>} KeyInput
  */
@@ -64,12 +68,15 @@ export class InputManager {
    * @param {PointerEvent} event
    */
   #pointer(type, event) {
+    if (event.isPrimary === false) {
+      return;
+    }
     if (type === "down") {
       event.preventDefault();
       this.#canvas.setPointerCapture?.(event.pointerId);
     }
     const { x, y } = this.#toLogical(event.clientX, event.clientY);
-    this.#target.onPointer(Object.freeze({ type, x, y, button: event.button ?? 0, pointerId: event.pointerId ?? 0 }));
+    this.#target.onPointer(Object.freeze({ type, x, y, button: event.button ?? 0, pointerId: event.pointerId ?? 0, pointerType: pointerKind(event.pointerType) }));
   }
 
   /** @param {WheelEvent} event */
@@ -85,6 +92,10 @@ export class InputManager {
    * @param {KeyboardEvent} event
    */
   #key(type, event) {
+    if (isTyping(event.target)) {
+      // Typed into an HTML input over the game (the phone keyboard's strip): that input handles it.
+      return;
+    }
     if (typeof event.key !== "string" || event.ctrlKey === true || event.metaKey === true || event.altKey === true) {
       // Browser/OS shortcuts (reload, tab switching, AltGr characters) are not game input.
       return;
@@ -103,4 +114,21 @@ export class InputManager {
     const rectangle = this.#canvas.getBoundingClientRect();
     return this.#viewport.toLogical(clientX - rectangle.left, clientY - rectangle.top);
   }
+}
+
+/**
+ * @param {unknown} type a PointerEvent's pointerType
+ * @returns {PointerKind}
+ */
+function pointerKind(type) {
+  return type === "touch" || type === "pen" ? type : "mouse";
+}
+
+/**
+ * @param {unknown} target a KeyboardEvent's target
+ * @returns {boolean} whether it is an HTML text input
+ */
+function isTyping(target) {
+  const tag = /** @type {{ tagName?: unknown } | null} */ (target)?.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA";
 }

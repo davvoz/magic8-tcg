@@ -28,21 +28,29 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
-import { COLUMNS, HEADER, INSET, ROW, rowY, rowsHeight } from "./deckBuilder/layout.js";
+import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "online.decks";
 const PLAYERS_ID = "online.players";
-const BUTTON = Object.freeze({ height: 60 });
-const MODE = Object.freeze({ y: 64, height: 48, gap: 12 });
+/**
+ * Sizes of the lobby, wide and compact (a phone in landscape: the three columns share its width).
+ * @typedef {Readonly<{ button: number, mode: { y: number, height: number, gap: number }, playerRow: { height: number, gap: number }, titleY: number, listTop: number, statusSize: "body" | "small", note: boolean, title: number }>} LobbyMetrics
+ *   `note`: the paragraph on how games are kept fair; `title`: the width of the screen's title
+ */
+/** @type {LobbyMetrics} */
+const WIDE = Object.freeze({ button: 60, mode: Object.freeze({ y: 64, height: 48, gap: 12 }), playerRow: Object.freeze({ height: 64, gap: 8 }), titleY: 14, listTop: 60, statusSize: "body", note: true, title: 400 });
+/** @type {LobbyMetrics} */
+const COMPACT = Object.freeze({ button: 46, mode: Object.freeze({ y: 50, height: 46, gap: 8 }), playerRow: Object.freeze({ height: 52, gap: 6 }), titleY: 8, listTop: 50, statusSize: "small", note: false, title: 200 });
 /** The three columns: your decks, the players online, the game. */
 const LAYOUT = Object.freeze({
   decks: Object.freeze({ x: 60, width: 440 }),
   players: Object.freeze({ x: 520, width: 500 }),
   game: Object.freeze({ x: 1040, width: 500 }),
 });
-const PLAYER_ROW = Object.freeze({ height: 64, gap: 8 });
+/** On a compact screen: the columns' share of the width (decks, players, game) and the gap between them. */
+const COMPACT_COLUMNS = Object.freeze({ shares: Object.freeze([0.32, 0.34, 0.34]), gap: 8 });
 const DIALOG = Object.freeze({ width: 680, height: 320, avatar: 72, buttonHeight: 52, gap: 14 });
 export const QueueMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
 /** @typedef {typeof QueueMode[keyof typeof QueueMode]} Mode */
@@ -68,6 +76,36 @@ const ACTIVITY_TEXT = Object.freeze({
 });
 
 export class OnlineScene extends Scene {
+  /** The frame for the screen in use (the compact one on a phone). */
+  get #screen() {
+    return screenLayout(this.services.viewport);
+  }
+
+  /** @returns {LobbyMetrics} */
+  get #m() {
+    return this.#screen.compact ? COMPACT : WIDE;
+  }
+
+  /** The three columns for the screen in use. */
+  get #columns() {
+    if (!this.#screen.compact) {
+      return LAYOUT;
+    }
+    const { sideMargin } = this.#screen.header;
+    const inner = this.services.viewport.logicalWidth - 2 * sideMargin - 2 * COMPACT_COLUMNS.gap;
+    const [decks, players] = COMPACT_COLUMNS.shares.map((share) => Math.round(inner * share));
+    const game = inner - decks - players;
+    return {
+      decks: { x: sideMargin, width: decks },
+      players: { x: sideMargin + decks + COMPACT_COLUMNS.gap, width: players },
+      game: { x: sideMargin + decks + players + 2 * COMPACT_COLUMNS.gap, width: game },
+    };
+  }
+
+  relayout() {
+    this.#rebuild();
+  }
+
   #app;
   /** @type {Array<() => void>} */
   #unsubscribes = [];
@@ -145,13 +183,13 @@ export class OnlineScene extends Scene {
     }
     this.root.clear();
     const { viewport } = this.services;
-    this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 400, height: HEADER.height, text: "Play online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    const back = this.root.add(new Button({ id: "online.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back to menu", onActivate: () => this.#leave() }));
+    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: this.#m.title, height: this.#screen.header.height, text: "Play online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    const back = this.root.add(new Button({ id: "online.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.#leave() }));
     if (this.#app.ranking !== undefined && this.services.hasScene(SceneId.LEADERBOARD)) {
-      this.root.add(new Button({ id: "online.leaderboard", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Leaderboard", onActivate: () => this.services.navigate(SceneId.LEADERBOARD) }));
+      this.root.add(new Button({ id: "online.leaderboard", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Leaderboard", onActivate: () => this.services.navigate(SceneId.LEADERBOARD) }));
     }
     if (this.services.hasScene(SceneId.LIVE_GAMES)) {
-      this.root.add(new Button({ id: "online.watch", x: viewport.logicalWidth - HEADER.sideMargin - 3 * HEADER.backWidth - 32, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Watch", onActivate: () => this.services.navigate(SceneId.LIVE_GAMES) }));
+      this.root.add(new Button({ id: "online.watch", x: viewport.logicalWidth - this.#screen.header.sideMargin - 3 * this.#screen.header.backWidth - 32, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Watch", onActivate: () => this.services.navigate(SceneId.LIVE_GAMES) }));
     }
     const firstDeck = this.#buildDecks();
     this.#buildPlayers();
@@ -163,17 +201,19 @@ export class OnlineScene extends Scene {
 
   /** @returns {Button | null} */
   #buildDecks() {
-    const panel = this.root.add(new Panel({ x: LAYOUT.decks.x, y: COLUMNS.top, width: LAYOUT.decks.width, height: COLUMNS.height }));
-    const width = LAYOUT.decks.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "Your decks", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
-    const list = panel.add(new ScrollList({ id: LIST_ID, x: INSET, y: 60, width, height: COLUMNS.height - 60 - INSET }));
+    const column = this.#columns.decks;
+    const { titleY, listTop } = this.#m;
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: column.x, y: this.#screen.columns.top, width: column.width, height: this.#screen.columns.height }));
+    const width = column.width - 2 * this.#screen.inset;
+    panel.add(new Label({ x: this.#screen.inset, y: titleY, width, height: 36, text: "Your decks", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    const list = panel.add(new ScrollList({ id: LIST_ID, x: this.#screen.inset, y: listTop, width, height: this.#screen.columns.height - listTop - this.#screen.inset }));
     const decks = this.#online().decks();
     if (!decks.some((deck) => deck.id === this.#selectedId && deck.playable)) {
       this.#selectedId = decks.find((deck) => deck.playable)?.id ?? null;
     }
     if (decks.length === 0) {
-      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * ROW.height, text: "You have no decks in your account yet. Take your free starter deck, or build a deck in the Deck Builder.", size: "small", colorKey: "textMuted" }));
-      list.contentHeight = 3 * ROW.height;
+      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * this.#screen.row.height, text: "You have no decks in your account yet. Take your free starter deck, or build a deck in the Deck Builder.", size: "small", colorKey: "textMuted" }));
+      list.contentHeight = 3 * this.#screen.row.height;
       return null;
     }
     /** @type {Button | null} */
@@ -183,9 +223,9 @@ export class OnlineScene extends Scene {
         new OptionRow({
           id: `online.deck.${deck.id}`,
           x: 0,
-          y: rowY(index),
+          y: this.#screen.rowY(index),
           width: list.rowWidth,
-          height: ROW.height,
+          height: this.#screen.row.height,
           text: deck.name,
           subtitle: deck.playable ? deckSummary(deck.totalCards, deck.mix) : `not playable: ${deck.problem ?? "fix it in the Deck Builder"}`,
           enabled: deck.playable,
@@ -199,22 +239,24 @@ export class OnlineScene extends Scene {
       );
       first ??= row;
     });
-    list.contentHeight = rowsHeight(decks.length);
+    list.contentHeight = this.#screen.rowsHeight(decks.length);
     list.scrollTo(this.#scroll[LIST_ID] ?? 0);
     return first;
   }
 
   /** The players online, the challenges received first. */
   #buildPlayers() {
-    const panel = this.root.add(new Panel({ x: LAYOUT.players.x, y: COLUMNS.top, width: LAYOUT.players.width, height: COLUMNS.height }));
-    const width = LAYOUT.players.width - 2 * INSET;
+    const column = this.#columns.players;
+    const { titleY, listTop, playerRow: PLAYER_ROW } = this.#m;
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: column.x, y: this.#screen.columns.top, width: column.width, height: this.#screen.columns.height }));
+    const width = column.width - 2 * this.#screen.inset;
     const lobby = this.#app.lobby;
     const players = lobby?.state.players ?? [];
-    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: "Players online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    panel.add(new Label({ x: this.#screen.inset, y: titleY, width: width - 40, height: 36, text: this.#screen.compact ? "Online" : "Players online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     if (lobby?.state.loaded) {
-      panel.add(new Label({ id: "online.players.count", x: INSET, y: 14, width, height: 36, text: String(players.length), size: "body", weight: "bold", colorKey: "textMuted", align: "right" }));
+      panel.add(new Label({ id: "online.players.count", x: this.#screen.inset, y: titleY, width, height: 36, text: String(players.length), size: "body", weight: "bold", colorKey: "textMuted", align: "right" }));
     }
-    const list = panel.add(new ScrollList({ id: PLAYERS_ID, x: INSET, y: 60, width, height: COLUMNS.height - 60 - INSET }));
+    const list = panel.add(new ScrollList({ id: PLAYERS_ID, x: this.#screen.inset, y: listTop, width, height: this.#screen.columns.height - listTop - this.#screen.inset }));
     if (lobby === undefined) {
       return;
     }
@@ -258,17 +300,26 @@ export class OnlineScene extends Scene {
   /** @returns {Button | null} the main action */
   #buildActions() {
     const state = this.#online().state;
-    const panel = this.root.add(new Panel({ x: LAYOUT.game.x, y: COLUMNS.top, width: LAYOUT.game.width, height: COLUMNS.height }));
-    const width = LAYOUT.game.width - 2 * INSET;
-    panel.add(new Label({ x: INSET, y: 14, width, height: 36, text: this.#mode === QueueMode.RANKED ? "Ranked game" : "Casual game", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    const column = this.#columns.game;
+    const { titleY, button, statusSize, note } = this.#m;
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: column.x, y: this.#screen.columns.top, width: column.width, height: this.#screen.columns.height }));
+    const width = column.width - 2 * this.#screen.inset;
+    panel.add(new Label({ x: this.#screen.inset, y: titleY, width, height: 36, text: this.#mode === QueueMode.RANKED ? "Ranked game" : "Casual game", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     const top = this.#buildModes(panel, width, state);
-    panel.add(new TextBlock({ id: "online.status", x: INSET, y: top, width, height: 4 * 28, text: this.#statusText(), size: "body", colorKey: "text" }));
+    const buttonY = this.#screen.columns.height - this.#screen.inset - button;
     const error = state.error ?? this.#app.lobby?.state.error ?? null;
+    // On a phone the error sits right above the button, the status takes what is left above it.
+    const errorY = note ? top + 120 : buttonY - 6 - 2 * 22;
+    const statusBottom = error === null ? buttonY - 6 : errorY;
+    const statusHeight = note ? 4 * 28 : Math.max(0, statusBottom - top);
+    panel.add(new TextBlock({ id: "online.status", x: this.#screen.inset, y: top, width, height: statusHeight, text: this.#statusText(), size: statusSize, colorKey: "text" }));
     if (error !== null) {
-      panel.add(new TextBlock({ id: "online.error", x: INSET, y: top + 120, width, height: 2 * 28, text: error.message, size: "small", colorKey: "danger" }));
+      panel.add(new TextBlock({ id: "online.error", x: this.#screen.inset, y: errorY, width, height: note ? 2 * 28 : 2 * 22, text: error.message, size: "small", colorKey: "danger" }));
     }
-    panel.add(new TextBlock({ x: INSET, y: top + 190, width, height: 5 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and every move of the game is recorded.", size: "small", colorKey: "textMuted" }));
-    return panel.add(new Button({ ...this.#mainAction(), x: INSET, y: COLUMNS.height - INSET - BUTTON.height, width, height: BUTTON.height }));
+    if (note) {
+      panel.add(new TextBlock({ x: this.#screen.inset, y: top + 190, width, height: 5 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and every move of the game is recorded.", size: "small", colorKey: "textMuted" }));
+    }
+    return panel.add(new Button({ ...this.#mainAction(), x: this.#screen.inset, y: buttonY, width, height: button }));
   }
 
   /** The challenge the player has out, while they wait for an answer (not once a game is on). */
@@ -324,6 +375,7 @@ export class OnlineScene extends Scene {
    */
   #buildModes(panel, width, state) {
     const ranking = this.#app.ranking;
+    const MODE = this.#m.mode;
     if (ranking === undefined) {
       return MODE.y;
     }
@@ -341,10 +393,11 @@ export class OnlineScene extends Scene {
      */
     const choice = (mode, x, text, enabled) =>
       panel.add(new Button({ id: `online.mode.${mode}`, x, y: MODE.y, width: half, height: MODE.height, text, variant: this.#mode === mode ? "primary" : "secondary", enabled: enabled && idle, onActivate: () => this.#choose(mode) }));
-    choice(QueueMode.CASUAL, INSET, "Casual", true);
-    choice(QueueMode.RANKED, INSET + half + MODE.gap, "Ranked", eligible);
-    panel.add(new TextBlock({ id: "online.standing", x: INSET, y: MODE.y + MODE.height + 10, width, height: 2 * 26, text: standingText(ranking.state), size: "small", colorKey: "textMuted" }));
-    return MODE.y + MODE.height + 70;
+    choice(QueueMode.CASUAL, this.#screen.inset, "Casual", true);
+    choice(QueueMode.RANKED, this.#screen.inset + half + MODE.gap, "Ranked", eligible);
+    const compact = this.#screen.compact;
+    panel.add(new TextBlock({ id: "online.standing", x: this.#screen.inset, y: MODE.y + MODE.height + (compact ? 4 : 10), width, height: 2 * (compact ? 22 : 26), text: standingText(ranking.state), size: "small", colorKey: "textMuted" }));
+    return MODE.y + MODE.height + (compact ? 52 : 70);
   }
 
   /**
@@ -471,15 +524,15 @@ export class OnlineScene extends Scene {
     const { viewport } = this.services;
     const modal = new Modal({ id: "challenge", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: DIALOG.width, panelHeight: DIALOG.height, onDismiss: () => this.#closeDialog() });
     const { panel } = modal;
-    const inner = DIALOG.width - 2 * INSET;
-    panel.add(new AvatarNode({ x: INSET, y: INSET, size: DIALOG.avatar, account }));
-    const textX = INSET + DIALOG.avatar + 20;
-    const textWidth = DIALOG.width - INSET - textX;
-    panel.add(new Label({ id: "challenge.title", x: textX, y: INSET + 4, width: textWidth, height: 40, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    panel.add(new TextBlock({ id: "challenge.message", x: textX, y: INSET + 52, width: textWidth, height: 4 * 26, text: message, size: "small", colorKey: "textMuted" }));
+    const inner = DIALOG.width - 2 * this.#screen.inset;
+    panel.add(new AvatarNode({ x: this.#screen.inset, y: this.#screen.inset, size: DIALOG.avatar, account }));
+    const textX = this.#screen.inset + DIALOG.avatar + 20;
+    const textWidth = DIALOG.width - this.#screen.inset - textX;
+    panel.add(new Label({ id: "challenge.title", x: textX, y: this.#screen.inset + 4, width: textWidth, height: 40, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new TextBlock({ id: "challenge.message", x: textX, y: this.#screen.inset + 52, width: textWidth, height: 4 * 26, text: message, size: "small", colorKey: "textMuted" }));
     const buttonWidth = (inner - (buttons.length - 1) * DIALOG.gap) / buttons.length;
-    const y = DIALOG.height - INSET - DIALOG.buttonHeight;
-    buttons.forEach((button, index) => panel.add(new Button({ ...button, x: INSET + index * (buttonWidth + DIALOG.gap), y, width: buttonWidth, height: DIALOG.buttonHeight })));
+    const y = DIALOG.height - this.#screen.inset - DIALOG.buttonHeight;
+    buttons.forEach((button, index) => panel.add(new Button({ ...button, x: this.#screen.inset + index * (buttonWidth + DIALOG.gap), y, width: buttonWidth, height: DIALOG.buttonHeight })));
     return modal;
   }
 

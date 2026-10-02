@@ -11,12 +11,17 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
-import { COLUMNS, HEADER, INSET, ROW, rowY, rowsHeight } from "./deckBuilder/layout.js";
+import { screenLayout } from "./deckBuilder/layout.js";
 import { standingText } from "./OnlineScene.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 export class LeaderboardScene extends Scene {
+  /** The frame for the screen in use (the compact one on a phone). */
+  get #screen() {
+    return screenLayout(this.services.viewport);
+  }
+
   #app;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
@@ -47,6 +52,10 @@ export class LeaderboardScene extends Scene {
     this.services.navigate(SceneId.ONLINE);
   }
 
+  relayout() {
+    this.#rebuild();
+  }
+
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
     drawSceneBackdrop(context, this.services.theme, this.services.viewport.bounds, { seed: "leaderboard" });
@@ -58,12 +67,15 @@ export class LeaderboardScene extends Scene {
     const { viewport } = this.services;
     const state = this.#ranking().state;
     const season = state.leaderboard?.season?.name ?? state.standing?.season?.name ?? null;
-    this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 900, height: HEADER.height, text: season === null ? "Leaderboard" : `Leaderboard — ${season}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    const back = this.root.add(new Button({ id: "leaderboard.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back", onActivate: () => this.onCancel() }));
-    const width = viewport.logicalWidth - 2 * COLUMNS.left.x;
-    const panel = this.root.add(new Panel({ x: COLUMNS.left.x, y: COLUMNS.top, width, height: COLUMNS.height }));
-    panel.add(new TextBlock({ id: "leaderboard.standing", x: INSET, y: 16, width: width - 2 * INSET, height: 30, text: standingText(state), size: "body", colorKey: "text" }));
-    const list = panel.add(new ScrollList({ id: "leaderboard.list", x: INSET, y: 60, width: width - 2 * INSET, height: COLUMNS.height - 60 - INSET }));
+    const titleWidth = Math.min(900, viewport.logicalWidth - 2 * this.#screen.header.sideMargin - this.#screen.header.backWidth - 16);
+    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: titleWidth, height: this.#screen.header.height, text: season === null ? "Leaderboard" : `Leaderboard — ${season}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
+    const back = this.root.add(new Button({ id: "leaderboard.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.onCancel() }));
+    const width = viewport.logicalWidth - 2 * this.#screen.columns.left.x;
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width, height: this.#screen.columns.height }));
+    const compact = this.#screen.compact;
+    const listTop = compact ? 46 : 60;
+    panel.add(new TextBlock({ id: "leaderboard.standing", x: this.#screen.inset, y: compact ? 10 : 16, width: width - 2 * this.#screen.inset, height: 30, text: standingText(state), size: compact ? "small" : "body", colorKey: "text" }));
+    const list = panel.add(new ScrollList({ id: "leaderboard.list", x: this.#screen.inset, y: listTop, width: width - 2 * this.#screen.inset, height: this.#screen.columns.height - listTop - this.#screen.inset }));
     this.#fill(list, state);
     this.focus(back);
     this.services.requestRender();
@@ -77,8 +89,8 @@ export class LeaderboardScene extends Scene {
     const entries = state.leaderboard?.entries ?? [];
     if (entries.length === 0) {
       const text = state.loading ? "Loading…" : "Nobody has played ranked yet this season.";
-      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * ROW.height, text, size: "small", colorKey: "textMuted" }));
-      list.contentHeight = 2 * ROW.height;
+      list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * this.#screen.row.height, text, size: "small", colorKey: "textMuted" }));
+      list.contentHeight = 2 * this.#screen.row.height;
       return;
     }
     const me = this.#app.identity?.state.user?.account ?? null;
@@ -88,9 +100,9 @@ export class LeaderboardScene extends Scene {
         new OptionRow({
           id: `leaderboard.row.${index + 1}`,
           x: 0,
-          y: rowY(index),
+          y: this.#screen.rowY(index),
           width: list.rowWidth,
-          height: ROW.height,
+          height: this.#screen.row.height,
           text: entry.rank === null ? `—  @${entry.account}` : `#${entry.rank}  @${entry.account}`,
           subtitle: `rating ${entry.rating}${entry.rank === null ? " (provisional)" : ""} · ${entry.wins}–${entry.losses}${draws} in ${entry.games} game(s)`,
           selected: entry.account === me,
@@ -99,7 +111,7 @@ export class LeaderboardScene extends Scene {
         }),
       );
     });
-    list.contentHeight = rowsHeight(entries.length);
+    list.contentHeight = this.#screen.rowsHeight(entries.length);
   }
 
   #ranking() {

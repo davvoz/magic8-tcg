@@ -22,6 +22,8 @@ export class UiNode {
   interactive = false;
   /** Whether keyboard focus can land here. */
   focusable = false;
+  /** A text field: it keeps focus when tapped with a finger, and the tap opens the device's keyboard for it. */
+  editsText = false;
   /** Purely decorative overlays set this so pointer queries look through them. */
   passthrough = false;
   /** Pointer queries reach its children wherever they are, not only inside its own rect (a scene's root, whose children may sit in the margin around the design area). */

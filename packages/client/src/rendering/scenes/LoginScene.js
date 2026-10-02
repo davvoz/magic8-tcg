@@ -12,10 +12,31 @@ import { TextField } from "../ui/TextField.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
-const PANEL = Object.freeze({ width: 720, height: 460 });
-const INSET = 60;
-const FIELD_HEIGHT = 64;
-const BUTTON = Object.freeze({ width: 280, height: 60, gap: 24 });
+/**
+ * Where everything goes in the panel, wide and on a compact screen (a phone in landscape).
+ * @typedef {Readonly<{ panel: { width: number, height: number }, inset: number, title: number, subtitle: number, field: { y: number, height: number }, buttons: { y: number, width: number, height: number, gap: number }, status: number }>} LoginLayout
+ *   `title`, `subtitle`, `status`: their tops
+ */
+/** @type {LoginLayout} */
+const WIDE = Object.freeze({
+  panel: Object.freeze({ width: 720, height: 460 }),
+  inset: 60,
+  title: 40,
+  subtitle: 104,
+  field: Object.freeze({ y: 160, height: 64 }),
+  buttons: Object.freeze({ y: 260, width: 280, height: 60, gap: 24 }),
+  status: 350,
+});
+/** @type {LoginLayout} */
+const COMPACT = Object.freeze({
+  panel: Object.freeze({ width: 640, height: 372 }),
+  inset: 40,
+  title: 22,
+  subtitle: 74,
+  field: Object.freeze({ y: 112, height: 56 }),
+  buttons: Object.freeze({ y: 190, width: 250, height: 52, gap: 20 }),
+  status: 262,
+});
 const ACCOUNT_MAX_LENGTH = 17;
 
 /** User-facing text for failure codes; anything else shows the server's message. */
@@ -53,21 +74,44 @@ export class LoginScene extends Scene {
 
   enter() {
     const identity = this.#requireIdentity();
-    const { viewport } = this.services;
-    const panel = this.root.add(new Panel({ x: (viewport.logicalWidth - PANEL.width) / 2, y: (viewport.logicalHeight - PANEL.height) / 2, width: PANEL.width, height: PANEL.height }));
-    const inner = PANEL.width - 2 * INSET;
-    panel.add(new Label({ x: 0, y: 40, width: PANEL.width, height: 56, text: "Sign in", size: "heading", weight: "bold", colorKey: "accentLight" }));
-    panel.add(new Label({ x: INSET, y: 104, width: inner, height: 30, text: `with ${identity.walletName}: your keys never leave the extension`, size: "small", colorKey: "textMuted", fit: true }));
-    this.#field = panel.add(
-      new TextField({ id: "login.account", x: INSET, y: 160, width: inner, height: FIELD_HEIGHT, placeholder: "Steem account name", maxLength: ACCOUNT_MAX_LENGTH, onSubmit: () => this.#signIn() }),
-    );
-    const buttonsY = 260;
-    const left = (PANEL.width - 2 * BUTTON.width - BUTTON.gap) / 2;
-    this.#submit = panel.add(new Button({ id: "login.submit", x: left, y: buttonsY, width: BUTTON.width, height: BUTTON.height, text: "Sign in", variant: "primary", onActivate: () => this.#signIn() }));
-    panel.add(new Button({ id: "login.back", x: left + BUTTON.width + BUTTON.gap, y: buttonsY, width: BUTTON.width, height: BUTTON.height, text: "Back", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
-    this.#status = panel.add(new Label({ x: INSET, y: 350, width: inner, height: 60, text: this.#initialStatus(identity), size: "small", colorKey: "textMuted", fit: true }));
+    this.#build(identity, "", { text: this.#initialStatus(identity), colorKey: "textMuted" });
     this.#unsubscribe = identity.subscribe((state) => this.#show(state));
+  }
+
+  /** The screen changed: the same form, laid out for it, keeping what was typed and the status. */
+  relayout() {
+    const identity = this.#requireIdentity();
+    const status = this.#status === null ? { text: this.#initialStatus(identity), colorKey: "textMuted" } : { text: this.#status.text, colorKey: this.#status.colorKey ?? "textMuted" };
+    const submitEnabled = this.#submit?.enabled ?? true;
+    this.#build(identity, this.#field?.value ?? "", status);
+    if (this.#submit !== null) {
+      this.#submit.enabled = submitEnabled;
+    }
+  }
+
+  /**
+   * @param {import("../../application/identity/IdentityService.js").IdentityService} identity
+   * @param {string} typed the account name typed so far
+   * @param {{ text: string, colorKey: string }} status
+   */
+  #build(identity, typed, status) {
+    const { viewport } = this.services;
+    const layout = viewport.compact ? COMPACT : WIDE;
+    const { panel: size, inset, buttons } = layout;
+    this.root.clear();
+    const panel = this.root.add(new Panel({ x: (viewport.logicalWidth - size.width) / 2, y: (viewport.logicalHeight - size.height) / 2, width: size.width, height: size.height }));
+    const inner = size.width - 2 * inset;
+    panel.add(new Label({ x: 0, y: layout.title, width: size.width, height: 56, text: "Sign in", size: "heading", weight: "bold", colorKey: "accentLight" }));
+    panel.add(new Label({ x: inset, y: layout.subtitle, width: inner, height: 30, text: `with ${identity.walletName}: your keys never leave the extension`, size: "small", colorKey: "textMuted", fit: true }));
+    this.#field = panel.add(
+      new TextField({ id: "login.account", x: inset, y: layout.field.y, width: inner, height: layout.field.height, value: typed, placeholder: "Steem account name", maxLength: ACCOUNT_MAX_LENGTH, keyboard: "account", onSubmit: () => this.#signIn() }),
+    );
+    const left = (size.width - 2 * buttons.width - buttons.gap) / 2;
+    this.#submit = panel.add(new Button({ id: "login.submit", x: left, y: buttons.y, width: buttons.width, height: buttons.height, text: "Sign in", variant: "primary", onActivate: () => this.#signIn() }));
+    panel.add(new Button({ id: "login.back", x: left + buttons.width + buttons.gap, y: buttons.y, width: buttons.width, height: buttons.height, text: "Back", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
+    this.#status = panel.add(new Label({ x: inset, y: layout.status, width: inner, height: 60, text: status.text, size: "small", colorKey: status.colorKey, fit: true }));
     this.focus(this.#field);
+    this.services.requestRender();
   }
 
   exit() {

@@ -23,7 +23,7 @@ import { hashString, unitSequence } from "@magic8/engine/shared/hash.js";
 import { GameEventType } from "@magic8/engine/domain/game/GameEventType.js";
 import { ZoneType } from "@magic8/engine/domain/game/ZoneType.js";
 import { CardVisual, blowLandsAfter } from "../cards/CardVisual.js";
-import { CARD_SIZE, slotsFor } from "./BoardLayout.js";
+import { slotsFor } from "./BoardLayout.js";
 import { CastReveal } from "./CastReveal.js";
 import { HudStack, hudStackCentre, lifeCrystalCentre } from "./PlayerNode.js";
 import { TargetRoulette } from "./TargetRoulette.js";
@@ -44,8 +44,6 @@ const MAX_REVEALS = 2;
  * shortest for our own, which we know already.
  */
 const HOLD = Object.freeze({ alone: 3, queued: 1.2, own: 0.5 });
-/** Size a revealed card is held at: the board card's proportions, 1.6 times over. */
-const REVEAL_SIZE = Object.freeze({ width: 210, height: 294 });
 /** How far down a card an anchor sits: floating numbers hang near the top, a target is marked through the middle. */
 const FLOAT_DEPTH = 1 / 3;
 const CENTRE = 1 / 2;
@@ -225,7 +223,7 @@ export class MatchPresenter {
     for (const playerId of new Set(leaving.map((event) => event.playerId))) {
       const seat = seatOf(layout, playerId);
       if (seat !== null) {
-        this.#playOutSeatLeaves(leaving.filter((event) => event.playerId === playerId), snapshot, { seat, backs: seatOf(before, playerId)?.handSlots ?? [], banner: layout.banner });
+        this.#playOutSeatLeaves(leaving.filter((event) => event.playerId === playerId), snapshot, { seat, backs: seatOf(before, playerId)?.handSlots ?? [], banner: layout.banner, sizes: layout.sizes });
       }
     }
   }
@@ -234,11 +232,11 @@ export class MatchPresenter {
    * One seat's cards leaving its piles, one after another.
    * @param {readonly GameEvent[]} leaving the seat's CARD_DISCARDED and CARD_MILLED events, in order
    * @param {Snapshot} snapshot
-   * @param {{ seat: import("./BoardLayout.js").SeatLayout, backs: readonly Rect[], banner: Rect }} where `backs`: the seat's hidden hand as it stood
+   * @param {{ seat: import("./BoardLayout.js").SeatLayout, backs: readonly Rect[], banner: Rect, sizes: BoardLayout["sizes"] }} where `backs`: the seat's hidden hand as it stood; `sizes`: the board's cards
    */
-  #playOutSeatLeaves(leaving, snapshot, { seat, backs, banner }) {
+  #playOutSeatLeaves(leaving, snapshot, { seat, backs, banner, sizes }) {
     const { mediumMs, longMs } = this.#animation;
-    const shown = slotsFor(leaving.length, { ...seat.hand, height: Math.max(seat.hand.height, CARD_SIZE.battlefield.height) }, CARD_SIZE.battlefield);
+    const shown = slotsFor(leaving.length, { ...seat.hand, height: Math.max(seat.hand.height, sizes.battlefield.height) }, sizes.battlefield);
     let backsLeft = backs.length;
     let waitMs = 0;
     leaving.forEach((event, index) => {
@@ -249,9 +247,9 @@ export class MatchPresenter {
       const discarded = event.type === GameEventType.CARD_DISCARDED;
       const seen = this.#visuals.get(card.instanceId);
       backsLeft -= discarded && seen === undefined ? 1 : 0;
-      const back = this.#doomedBacks.get(card.instanceId) ?? backs[backsLeft] ?? centredOn(seat.hand, CARD_SIZE.back);
+      const back = this.#doomedBacks.get(card.instanceId) ?? backs[backsLeft] ?? centredOn(seat.hand, sizes.back);
       this.#doomedBacks.delete(card.instanceId);
-      const deck = centredOn(pointAt(hudStackCentre(seat.hud, HudStack.DECK)), CARD_SIZE.back);
+      const deck = centredOn(pointAt(hudStackCentre(seat.hud, HudStack.DECK)), sizes.back);
       const hidden = discarded ? back : deck;
       const from = seen === undefined ? hidden : { ...seen.state };
       const visual = seen ?? new CardVisual(card.instanceId, { ...from, alpha: 1 });
@@ -524,7 +522,7 @@ export class MatchPresenter {
       return null;
     }
     const inHand = this.#visuals.get(card.instanceId);
-    const from = inHand === undefined ? centredOn(seat.hand, CARD_SIZE.back) : { ...inHand.state };
+    const from = inHand === undefined ? centredOn(seat.hand, layout.sizes.back) : { ...inHand.state };
     // The card now travels as the cast: it does not also fade from the hand.
     this.#visuals.delete(card.instanceId);
     this.#cards.delete(card.instanceId);
@@ -534,7 +532,7 @@ export class MatchPresenter {
     hold = faceUp ? HOLD.own : hold;
     const { targets, roulette } = this.#aimedAt(card.instanceId, aimOf(card.instanceId, events), { snapshot, layout, outcome });
     const caption = faceUp ? "You cast" : `${caster.name} casts`;
-    this.#moments.push(new CastReveal({ card, caption, targets, roulette, from, at: centredOn(layout.banner, REVEAL_SIZE), to: seat.hud, faceUp, animation: this.#animation, holdMs: this.#animation.longMs * hold }));
+    this.#moments.push(new CastReveal({ card, caption, targets, roulette, from, at: centredOn(layout.banner, layout.sizes.reveal), to: seat.hud, faceUp, animation: this.#animation, holdMs: this.#animation.longMs * hold }));
     return card.instanceId;
   }
 

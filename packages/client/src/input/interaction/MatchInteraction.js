@@ -7,6 +7,9 @@
  *
  *   IDLE ──tap playable hand card──▶ TARGETING (if the card needs targets) ──tap target──▶ PLAY_CARD
  *   IDLE ──tap playable hand card──▶ PLAY_CARD (no targets)
+ *   with `confirmPlays` (a phone: a small card is easily tapped by mistake),
+ *   IDLE ──tap playable hand card──▶ that card picked ──confirm──▶ as above;
+ *         tapping it again puts it back, tapping another picks that one
  *   COMBAT_ATTACKERS awaiting me ──▶ ATTACKERS: toggle legal attackers, confirm ──▶ DECLARE_ATTACKERS
  *   COMBAT_BLOCKERS awaiting me  ──▶ BLOCKERS: pick a legal blocker, then the attacker it blocks; confirm ──▶ DECLARE_BLOCKERS
  */
@@ -48,10 +51,18 @@ export class MatchInteraction {
   #blocks = [];
   /** @type {string | null} */
   #pendingBlockerId = null;
+  /** The hand card picked to be played, waiting for the confirm (`confirmPlays`). @type {string | null} */
+  #pickedId = null;
+  /** Whether a hand card is picked first and played on confirm, rather than played on the tap. */
+  confirmPlays;
 
-  /** @param {string} playerId the human seat this interaction acts for */
-  constructor(playerId) {
+  /**
+   * @param {string} playerId the human seat this interaction acts for
+   * @param {{ confirmPlays?: boolean }} [options]
+   */
+  constructor(playerId, { confirmPlays = false } = {}) {
     this.#playerId = playerId;
+    this.confirmPlays = confirmPlays;
   }
 
   get mode() {
@@ -72,6 +83,11 @@ export class MatchInteraction {
     return this.#pendingBlockerId;
   }
 
+  /** The hand card picked and waiting for the confirm to be played (IDLE with `confirmPlays`), or null. */
+  get pickedCardId() {
+    return this.#pickedId;
+  }
+
   /** Every new snapshot resets multi-step intent; the phase decides the mode. */
   sync(snapshot) {
     this.#snapshot = snapshot;
@@ -79,6 +95,7 @@ export class MatchInteraction {
     this.#attackers = [];
     this.#blocks = [];
     this.#pendingBlockerId = null;
+    this.#pickedId = null;
     this.#mode = modeFor(snapshot, this.#playerId);
   }
 
@@ -103,11 +120,11 @@ export class MatchInteraction {
       }
       return count === 1 ? "Confirm 1 block" : `Confirm ${count} blocks`;
     }
-    return null;
+    return this.#mode === InteractionMode.IDLE && this.#pickedId !== null ? "Play" : null;
   }
 
   get canCancel() {
-    return this.#mode === InteractionMode.TARGETING || this.#attackers.length > 0 || this.#blocks.length > 0 || this.#pendingBlockerId !== null;
+    return this.#mode === InteractionMode.TARGETING || this.#attackers.length > 0 || this.#blocks.length > 0 || this.#pendingBlockerId !== null || this.#pickedId !== null;
   }
 
   get targetingStep() {
@@ -126,7 +143,7 @@ export class MatchInteraction {
     }
     switch (this.#mode) {
       case InteractionMode.IDLE:
-        return this.#tapIdle(snapshot, id);
+        return this.confirmPlays ? this.#pick(snapshot, id) : this.#tapIdle(snapshot, id);
       case InteractionMode.TARGETING:
         return this.#tapTarget(id);
       case InteractionMode.ATTACKERS:
@@ -148,6 +165,11 @@ export class MatchInteraction {
     if (this.#mode === InteractionMode.BLOCKERS) {
       return declareBlockers(this.#playerId, this.#blocks);
     }
+    const picked = this.#pickedId;
+    if (this.#mode === InteractionMode.IDLE && picked !== null && this.#snapshot !== null) {
+      this.#pickedId = null;
+      return this.#tapIdle(this.#snapshot, picked);
+    }
     return null;
   }
 
@@ -160,6 +182,7 @@ export class MatchInteraction {
     this.#attackers = [];
     this.#blocks = [];
     this.#pendingBlockerId = null;
+    this.#pickedId = null;
   }
 
   /**
@@ -179,6 +202,9 @@ export class MatchInteraction {
     }
     if (this.#mode === InteractionMode.BLOCKERS) {
       return this.#blockersHighlight(snapshot, id);
+    }
+    if (this.#mode === InteractionMode.IDLE && id === this.#pickedId) {
+      return Highlight.SELECTED;
     }
     if (this.#mode === InteractionMode.IDLE && snapshot.legalMoves?.playableCardIds.includes(id)) {
       return Highlight.PLAYABLE;
@@ -204,6 +230,19 @@ export class MatchInteraction {
     }
     this.#targeting = { cardId: id, groups, chosen: [] };
     this.#mode = InteractionMode.TARGETING;
+    return null;
+  }
+
+  /**
+   * Picks a playable hand card to be played on confirm; the picked one again puts it back.
+   * @param {Snapshot} snapshot
+   * @param {string} id
+   * @returns {null}
+   */
+  #pick(snapshot, id) {
+    if (snapshot.legalMoves?.playableCardIds.includes(id) === true) {
+      this.#pickedId = this.#pickedId === id ? null : id;
+    }
     return null;
   }
 
@@ -320,7 +359,7 @@ function modeFor(snapshot, playerId) {
 /** @type {Readonly<Record<string, (interaction: MatchInteraction) => string>>} */
 const PROMPTS = Object.freeze({
   [InteractionMode.WAITING]: () => "Waiting for the opponent…",
-  [InteractionMode.IDLE]: () => "Play a card or end the phase.",
+  [InteractionMode.IDLE]: (interaction) => (interaction.pickedCardId === null ? "Play a card or end the phase." : "Play it, or pick another card."),
   [InteractionMode.TARGETING]: (interaction) => {
     const step = interaction.targetingStep;
     return step === null || step.total === 1 ? "Choose a target." : `Choose a target (${step.step}/${step.total}).`;

@@ -7,7 +7,7 @@
  * holds no state of its own.
  */
 import { paintRuneCircle } from "../cards/CardArt.js";
-import { drawCard, drawCardBack } from "../cards/CardRenderer.js";
+import { boardFaceProfile, drawCard, drawCardBack } from "../cards/CardRenderer.js";
 import { withAlpha } from "../theme/color.js";
 import { bodyFont, displayFont, factionTones } from "../theme/Theme.js";
 import { drawOutlinedText, glowRoundedRect, horizontalGradient, radialGradient } from "../ui/drawing.js";
@@ -82,7 +82,7 @@ export class EffectsNode extends UiNode {
     for (const visual of this.#presenter.leavingVisuals) {
       const card = this.#presenter.cardFor(visual.instanceId);
       if (card !== null) {
-        paintLeavingCard(context, theme, card, visual);
+        paintLeavingCard(context, theme, card, { visual, profile: boardFaceProfile(this.#layout.face) });
       }
     }
     for (const breakthrough of this.#presenter.breakthroughs) {
@@ -242,11 +242,11 @@ export class EffectsNode extends UiNode {
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").Theme} theme
  * @param {import("@magic8/engine/domain/game/GameSnapshot.js").CardView} card
- * @param {import("../cards/CardVisual.js").CardVisual} visual
+ * @param {{ visual: import("../cards/CardVisual.js").CardVisual, profile: import("../cards/CardFace.js").CardFaceProfile }} how `visual`: where it is; `profile`: the board's card face
  */
-function paintLeavingCard(context, theme, card, visual) {
+function paintLeavingCard(context, theme, card, { visual, profile }) {
   if (!visual.faceDown) {
-    drawCard(context, theme, card, { ...visual.state, flash: visual.flash });
+    drawCard(context, theme, card, { ...visual.state, flash: visual.flash, profile });
     return;
   }
   context.save();

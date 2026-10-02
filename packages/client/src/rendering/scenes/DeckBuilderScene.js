@@ -12,13 +12,18 @@ import { Label } from "../ui/Label.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { EditorView } from "./deckBuilder/EditorView.js";
 import { LibraryView } from "./deckBuilder/LibraryView.js";
-import { HEADER } from "./deckBuilder/layout.js";
+import { screenLayout } from "./deckBuilder/layout.js";
 import { buildInspectModal } from "./deckBuilder/modals.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 export class DeckBuilderScene extends Scene {
+  /** The frame for the screen in use (the compact one on a phone). */
+  get #screen() {
+    return screenLayout(this.services.viewport);
+  }
+
   #app;
   #library;
   #editor;
@@ -38,6 +43,8 @@ export class DeckBuilderScene extends Scene {
     const host = {
       app,
       theme: services.theme,
+      screen: () => this.#screen,
+      dialog: { viewport: services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() },
       rebuild: () => this.#rebuild(),
       inspect: (cardId) => this.#inspect(cardId),
       confirm: (request) => this.#confirm(request),
@@ -56,6 +63,10 @@ export class DeckBuilderScene extends Scene {
     const { theme, viewport } = this.services;
     drawSceneBackdrop(context, theme, viewport.bounds, { seed: "builder" });
     super.render(context);
+  }
+
+  relayout() {
+    this.#rebuild();
   }
 
   get isEditing() {
@@ -82,9 +93,11 @@ export class DeckBuilderScene extends Scene {
 
   #buildHeader() {
     const { viewport } = this.services;
+    const { header, backText } = this.#screen;
     const title = this.isEditing ? "Deck Builder · editing" : "Deck Builder";
-    this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 800, height: HEADER.height, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    this.root.add(new Button({ id: "builder.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back to menu", onActivate: () => this.#leave() }));
+    const backX = viewport.logicalWidth - header.sideMargin - header.backWidth;
+    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: Math.min(800, backX - header.sideMargin - header.gap), height: header.height, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
+    this.root.add(new Button({ id: "builder.back", x: backX, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: backText, onActivate: () => this.#leave() }));
   }
 
   /** Scroll offsets survive rebuilds so adding a card does not jump the list. */

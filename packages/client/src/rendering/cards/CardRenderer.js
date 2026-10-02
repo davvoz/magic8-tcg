@@ -7,7 +7,7 @@
  * back shown for the opponent's hidden hand.
  */
 import { Highlight } from "../../input/interaction/MatchInteraction.js";
-import { CARD_SIZE } from "../board/BoardLayout.js";
+import { BoardFace, CARD_SIZE } from "../board/BoardLayout.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
 import { TablePiece } from "../images/TableArt.js";
 import { bevelRoundedRect, drawImageCover, fillRoundedRect, glowRoundedRect, insetRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
@@ -32,8 +32,18 @@ const RING_COLORS = Object.freeze({
 /**
  * @typedef {import("./CardFace.js").CardFaceModel} BoardCard
  * @typedef {{ x: number, y: number, width: number, height: number, alpha: number }} CardPlacement
- * @typedef {{ highlight?: string | null, focused?: boolean, rarity?: string | null, flash?: number }} CardStyle `rarity`: shown on the type ribbon when known; `flash`: 0–1, how brightly a blow it just took still shows
+ * @typedef {{ highlight?: string | null, focused?: boolean, rarity?: string | null, flash?: number, profile?: import("./CardFace.js").CardFaceProfile }} CardStyle `rarity`: shown on the type ribbon when known;
+ *   `flash`: 0–1, how brightly a blow it just took still shows; `profile`: the face's type sizes (the compact one by default, the mini one for a phone's board)
  */
+
+/**
+ * The face profile a board draws its cards with (BoardLayout's `face`).
+ * @param {string} face a BoardFace
+ * @returns {import("./CardFace.js").CardFaceProfile}
+ */
+export function boardFaceProfile(face) {
+  return face === BoardFace.MINI ? CardFaceProfile.MINI : CardFaceProfile.COMPACT;
+}
 
 /**
  * @param {CanvasRenderingContext2D} context
@@ -53,7 +63,7 @@ export function drawCard(context, theme, card, at) {
   if (ring !== null) {
     glowRoundedRect(context, BASE_FRAME, { color: ring.color, radius: RING.radius, blur: RING.blur, lineWidth: ring.width });
   }
-  paintCardFace(context, theme, card, { frame: BASE_FRAME, profile: CardFaceProfile.COMPACT, rarity: at.rarity ?? null });
+  paintCardFace(context, theme, card, { frame: BASE_FRAME, profile: at.profile ?? CardFaceProfile.COMPACT, rarity: at.rarity ?? null });
   if (ring !== null) {
     fillRoundedRect(context, BASE_FRAME, { stroke: ring.color, radius: RING.radius, lineWidth: ring.width });
   }
