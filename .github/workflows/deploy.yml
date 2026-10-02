@@ -3,6 +3,8 @@ name: Deploy to production
 # A push to master deploys only when one of its commit messages contains
 # [deploy], e.g. "feat: new card set [deploy]". "Run workflow" in the Actions
 # tab deploys the tip of master without a commit.
+# [no test] in a commit message skips lint, typecheck and tests: the deploy goes
+# straight to the server, e.g. "fix: typo [deploy] [no test]".
 # Every deploy announces a maintenance first (deploy/deploy.sh): players get a
 # countdown, then the swap happens at the announced time, or sooner once no
 # game is in progress. A push gives 5 minutes' notice; "Run workflow" asks.
@@ -22,7 +24,7 @@ concurrency:
 
 jobs:
   check:
-    if: github.event_name == 'workflow_dispatch' || contains(join(github.event.commits.*.message, ' '), '[deploy]')
+    if: github.event_name == 'workflow_dispatch' || (contains(join(github.event.commits.*.message, ' '), '[deploy]') && !contains(join(github.event.commits.*.message, ' '), '[no test]'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +37,8 @@ jobs:
 
   deploy:
     needs: check
+    # Runs after a passed check, or without it when [no test] skipped it; never after a failed one.
+    if: ${{ !cancelled() && (needs.check.result == 'success' || (needs.check.result == 'skipped' && contains(join(github.event.commits.*.message, ' '), '[deploy]'))) }}
     runs-on: ubuntu-latest
     environment: production
     steps:
