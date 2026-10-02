@@ -101,6 +101,37 @@ describe("NotificationsScene", () => {
     scene.exit();
   });
 
+  it("lights what arrived unread until it is opened, and hands the cards received to the collection", async () => {
+    const h = harness();
+    const fulfilled = { id: 4, kind: "shop.fulfilled", data: { orderId: "o", items: [{ name: "Booster", quantity: 1 }], cards: [{ definitionId: "ember_imp", count: 2 }, { definitionId: "pyre_drake", count: 1 }], total: 3 }, createdAt: NOW - 60 * 1000, read: false };
+    const list = h.api.list;
+    h.api.list = async () => {
+      const page = await list();
+      return ok({ ...page.value, notifications: [{ ...fulfilled, read: h.api.marked.length > 0 }, ...page.value.notifications] });
+    };
+    h.notifications.start();
+    await settle();
+    const scene = new NotificationsScene(h.services, h.app, () => NOW);
+    scene.enter({});
+    await settle();
+    assert.equal(h.notifications.state.unread, 0, "the feed was read");
+    const lit = () => [4, 3, 2, 1].filter((id) => byId(scene, `notifications.entry.${id}`).style.glowKey !== null);
+    assert.deepEqual(lit(), [4, 3, 2], "what arrived unread stays lit");
+    assert.equal(byId(scene, "notifications.open.4").variant, "primary");
+    assert.equal(byId(scene, "notifications.open.1").variant, "secondary");
+
+    byId(scene, "notifications.entry.4").activate();
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.COLLECTION, params: { fresh: [{ definitionId: "ember_imp", count: 2, serial: undefined }, { definitionId: "pyre_drake", count: 1, serial: undefined }], from: SceneId.NOTIFICATIONS } });
+    scene.exit();
+
+    scene.enter({});
+    await settle();
+    assert.deepEqual(lit(), [3, 2], "the one opened is no longer lit, the others still are");
+    byId(scene, "notifications.open.3").activate();
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.MARKET, params: {} });
+    scene.exit();
+  });
+
   it("says so when there is nothing yet", async () => {
     const h = harness();
     h.api.list = async () => ok({ notifications: [], unread: 0, more: false });

@@ -9,6 +9,11 @@
  * have missed some. The server's feed is the record: nothing here is
  * trusted beyond the current screen.
  *
+ * Read and opened are different things: opening the feed marks everything
+ * read (the menu's count goes), but each notification that reached the
+ * player unread stays "unopened" in this session until they follow it up
+ * (`markOpened`), so the feed can keep it lit until then.
+ *
  * States: idle (signed out) → loading → ready | failed.
  */
 import { parseNotification } from "./parseNotification.js";
@@ -17,10 +22,10 @@ export const NotificationStatus = Object.freeze({ IDLE: "idle", LOADING: "loadin
 
 /**
  * @typedef {import("../ports/NotificationsApi.contract.js").PlayerNotification} PlayerNotification
- * @typedef {Readonly<{ status: string, items: readonly PlayerNotification[], unread: number, more: boolean, error: string | null }>} NotificationState
+ * @typedef {Readonly<{ status: string, items: readonly PlayerNotification[], unread: number, more: boolean, error: string | null, unopened: ReadonlySet<number> }>} NotificationState
  */
 
-const INITIAL = Object.freeze({ status: NotificationStatus.IDLE, items: Object.freeze([]), unread: 0, more: false, error: null });
+const INITIAL = Object.freeze({ status: NotificationStatus.IDLE, items: Object.freeze([]), unread: 0, more: false, error: null, unopened: new Set() });
 
 export class NotificationService {
   #api;
@@ -120,7 +125,7 @@ export class NotificationService {
     const fresh = this.#loadedOnce ? page.value.notifications.filter((item) => !known.has(item.id) && item.id > newest && !item.read) : [];
     const kept = this.#state.items.filter((item) => !page.value.notifications.some((listed) => listed.id === item.id) && item.id > (page.value.notifications[0]?.id ?? 0));
     this.#loadedOnce = true;
-    this.#set({ status: NotificationStatus.READY, items: Object.freeze([...kept, ...page.value.notifications]), unread: page.value.unread, more: page.value.more, error: null });
+    this.#set({ status: NotificationStatus.READY, items: Object.freeze([...kept, ...page.value.notifications]), unread: page.value.unread, more: page.value.more, error: null, unopened: this.#withUnopened(page.value.notifications) });
     fresh.reverse().forEach((item) => this.#announce(item));
   }
 
@@ -140,7 +145,7 @@ export class NotificationService {
       return;
     }
     const known = new Set(this.#state.items.map((item) => item.id));
-    this.#set({ items: Object.freeze([...this.#state.items, ...page.value.notifications.filter((item) => !known.has(item.id))]), more: page.value.more, unread: page.value.unread, error: null });
+    this.#set({ items: Object.freeze([...this.#state.items, ...page.value.notifications.filter((item) => !known.has(item.id))]), more: page.value.more, unread: page.value.unread, error: null, unopened: this.#withUnopened(page.value.notifications) });
   }
 
   /** Marks every notification read. */
@@ -161,6 +166,29 @@ export class NotificationService {
     }
   }
 
+  /**
+   * The player followed this notification up: it is no longer lit.
+   * @param {number} id
+   */
+  markOpened(id) {
+    if (!this.#state.unopened.has(id)) {
+      return;
+    }
+    const unopened = new Set(this.#state.unopened);
+    unopened.delete(id);
+    this.#set({ unopened });
+  }
+
+  /**
+   * The unopened set plus whatever in `items` is still unread.
+   * @param {readonly PlayerNotification[]} items
+   * @returns {ReadonlySet<number>}
+   */
+  #withUnopened(items) {
+    const unread = items.filter((item) => !item.read && !this.#state.unopened.has(item.id));
+    return unread.length === 0 ? this.#state.unopened : new Set([...this.#state.unopened, ...unread.map((item) => item.id)]);
+  }
+
   /** @param {import("../ports/Realtime.contract.js").ServerMessage} message */
   #onMessage({ t, d }) {
     if (t === "notifications.resync") {
@@ -175,7 +203,7 @@ export class NotificationService {
       return;
     }
     const items = [notification, ...this.#state.items].sort((left, right) => right.id - left.id);
-    this.#set({ items: Object.freeze(items), unread: this.#state.unread + (notification.read ? 0 : 1) });
+    this.#set({ items: Object.freeze(items), unread: this.#state.unread + (notification.read ? 0 : 1), unopened: this.#withUnopened([notification]) });
     this.#announce(notification);
   }
 

@@ -5,6 +5,10 @@ name: Deploy to production
 # tab deploys the tip of master without a commit.
 # [no test] in a commit message skips lint, typecheck and tests: the deploy goes
 # straight to the server, e.g. "fix: typo [deploy] [no test]".
+# Every deploy is a release: the version goes up by the commits since the last
+# one (Conventional Commits: "feat:" minor, "feat!:" or "BREAKING CHANGE:"
+# major, anything else patch; tools/bump-version.js), committed to master as
+# "chore(release): v1.2.3" and tagged v1.2.3. Pull before your next push.
 # Every deploy announces a maintenance first (deploy/deploy.sh): players get a
 # countdown, then the swap happens at the announced time, or sooner once no
 # game is in progress. A push gives 5 minutes' notice; "Run workflow" asks.
@@ -35,10 +39,45 @@ jobs:
       - run: npm ci
       - run: npm run check
 
-  deploy:
+  release:
     needs: check
     # Runs after a passed check, or without it when [no test] skipped it; never after a failed one.
     if: ${{ !cancelled() && (needs.check.result == 'success' || (needs.check.result == 'skipped' && contains(join(github.event.commits.*.message, ' '), '[deploy]'))) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history and its tags: the version counts the commits since the last v* tag.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: release
+        name: Version, commit and tag
+        run: |
+          version=$(node tools/bump-version.js)
+          if [ -n "$version" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+            git commit -am "chore(release): v$version"
+            git tag "v$version"
+            # Pushed with the workflow's token: it starts no other workflow. Rejected if master moved meanwhile.
+            git push --atomic origin HEAD:refs/heads/master "refs/tags/v$version"
+            echo "### Release v$version" >> "$GITHUB_STEP_SUMMARY"
+          else
+            version=$(node -p "require('./package.json').version")
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: release
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -58,7 +97,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
           # The commit goes last: a key limited to the deploy passes only the last word (deploy/README.md).
-          ssh "$SERVER" "sh /opt/magic8/deploy/deploy.sh --notice=$NOTICE_MINUTES ${{ github.sha }}"
+          ssh "$SERVER" "sh /opt/magic8/deploy/deploy.sh --notice=$NOTICE_MINUTES ${{ needs.release.outputs.sha }}"
 
       - name: Check the public site
         env:
@@ -66,7 +105,7 @@ jobs:
         run: |
           for attempt in 1 2 3 4 5 6; do
             if curl -fsS "$SITE/api/ready"; then
-              echo "### Deployed ${{ github.sha }} to $SITE" >> "$GITHUB_STEP_SUMMARY"
+              echo "### Deployed v${{ needs.release.outputs.version }} (${{ needs.release.outputs.sha }}) to $SITE" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 5

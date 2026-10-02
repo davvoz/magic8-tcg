@@ -2,8 +2,10 @@
  * Notifications (docs/tcg/15-notifiche.md): the player's feed, newest
  * first. Each entry says what happened, when, shows the cards involved
  * (with their rarity; a card opens its details) and leads to the screen
- * where it can be followed up. What was unread when the screen opened is
- * marked "New" and then read.
+ * where it can be followed up (a click on the entry or its Open button).
+ * Opening the screen marks everything read; what arrived unread stays lit
+ * and marked "New" until the player opens it. Cards received are handed to
+ * the collection, which lights them.
  */
 import { NotificationTarget, describeNotification } from "../../application/notifications/describeNotification.js";
 import { NotificationStatus } from "../../application/notifications/NotificationService.js";
@@ -63,8 +65,6 @@ export class NotificationsScene extends Scene {
   #now;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
-  /** Ids unread when the screen opened: shown as new. @type {Set<number>} */
-  #fresh = new Set();
   #scrollY = 0;
 
   /**
@@ -80,15 +80,7 @@ export class NotificationsScene extends Scene {
 
   enter() {
     const notifications = this.#notifications();
-    this.#fresh = new Set(notifications.state.items.filter((item) => !item.read).map((item) => item.id));
-    this.#unsubscribe = notifications.subscribe((state) => {
-      for (const item of state.items) {
-        if (!item.read) {
-          this.#fresh.add(item.id);
-        }
-      }
-      this.#rebuild();
-    });
+    this.#unsubscribe = notifications.subscribe(() => this.#rebuild());
     notifications.refresh().then(() => notifications.markAllRead());
     this.#rebuild();
   }
@@ -165,8 +157,9 @@ export class NotificationsScene extends Scene {
    */
   #buildEntry(list, item, y, now) {
     const text = describeNotification(item, this.#app.content.catalog);
-    const fresh = this.#fresh.has(item.id);
-    list.add(new Panel({ id: `notifications.entry.${item.id}`, x: 0, y, width: list.rowWidth, height: ENTRY.height }));
+    const fresh = this.#notifications().state.unopened.has(item.id);
+    const open = this.#followUp(item, text);
+    list.add(new Panel({ id: `notifications.entry.${item.id}`, x: 0, y, width: list.rowWidth, height: ENTRY.height, glowKey: fresh ? "accent" : null, onActivate: open }));
     // A notification about another player leads with their portrait; the texts move over for it.
     const lead = text.account === undefined ? 0 : ENTRY.avatar + 16;
     if (text.account !== undefined) {
@@ -193,10 +186,34 @@ export class NotificationsScene extends Scene {
         }),
       );
     });
-    const scene = text.target === null ? undefined : TARGET_SCENES[/** @type {keyof typeof TARGET_SCENES} */ (text.target)];
-    if (scene !== undefined && this.services.hasScene(scene)) {
-      list.add(new Button({ id: `notifications.open.${item.id}`, x: list.rowWidth - ENTRY.open - 16, y: y + (ENTRY.height - 48) / 2, width: ENTRY.open, height: 48, text: "Open", onActivate: () => this.services.navigate(scene) }));
+    if (open !== null) {
+      list.add(new Button({ id: `notifications.open.${item.id}`, x: list.rowWidth - ENTRY.open - 16, y: y + (ENTRY.height - 48) / 2, width: ENTRY.open, height: 48, text: "Open", variant: fresh ? "primary" : "secondary", onActivate: open }));
     }
+  }
+
+  /**
+   * What following the notification up does, or null when it leads nowhere here.
+   * @param {import("../../application/ports/NotificationsApi.contract.js").PlayerNotification} item
+   * @param {import("../../application/notifications/describeNotification.js").NotificationText} text
+   * @returns {(() => void) | null}
+   */
+  #followUp(item, text) {
+    const scene = text.target === null ? undefined : TARGET_SCENES[/** @type {keyof typeof TARGET_SCENES} */ (text.target)];
+    return scene !== undefined && this.services.hasScene(scene) ? () => this.#open(item, text, scene) : null;
+  }
+
+  /**
+   * Follows a notification up: it stops being lit, and the collection is
+   * told which cards came with it so it can light them.
+   * @param {import("../../application/ports/NotificationsApi.contract.js").PlayerNotification} item
+   * @param {import("../../application/notifications/describeNotification.js").NotificationText} text
+   * @param {string} scene
+   */
+  #open(item, text, scene) {
+    const fresh = text.cards.map((card) => Object.freeze({ definitionId: card.definitionId, count: card.count ?? 1, serial: card.serial }));
+    this.services.navigate(scene, scene === SceneId.COLLECTION ? { fresh, from: SceneId.NOTIFICATIONS } : {});
+    // After leaving: this screen no longer listens, so it is not rebuilt under the click.
+    this.#notifications().markOpened(item.id);
   }
 
   /**

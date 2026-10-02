@@ -14,6 +14,7 @@ import { runInNewContext } from "node:vm";
 import { RELEASE } from "../../src/release.js";
 import { registerServiceWorker } from "../../src/infrastructure/pwa/registerServiceWorker.js";
 import { productVersion, releaseModule } from "../../../../tools/stamp-release.js";
+import { bumpOf, nextVersion } from "../../../../tools/bump-version.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 
 const CLIENT = new URL("../../", import.meta.url);
@@ -37,6 +38,26 @@ describe("release", () => {
     assert.match(releaseModule({ version: "2.0.0-beta.1", build: null }), /version: "2\.0\.0-beta\.1", build: null/);
     assert.throws(() => releaseModule({ version: "v1", build: null }), /semver/);
     assert.throws(() => releaseModule({ version: "1.0.0", build: '"; alert(1); "' }), /M8_BUILD/);
+  });
+});
+
+describe("automatic versioning", () => {
+  it("bumps by the most significant commit since the last release", () => {
+    assert.equal(bumpOf(["fix: typo [deploy]", "chore: deps"]), "patch");
+    assert.equal(bumpOf(["fix: typo", "feat(shop): budget [deploy][no test]"]), "minor");
+    assert.equal(bumpOf(["feat: a", "refactor(api)!: new routes"]), "major");
+    assert.equal(bumpOf(["feat: a", "fix: b\n\nBREAKING CHANGE: the old route is gone"]), "major");
+    assert.equal(bumpOf(["update readme", "featuring: not a feature"]), "patch", "anything else is a patch");
+    assert.equal(bumpOf(["chore(release): v0.3.0", "", "  "]), null, "nothing to release");
+    assert.equal(bumpOf(["chore(release): v0.3.0", "feat: x"]), "minor", "release commits do not count");
+  });
+
+  it("computes the next semver", () => {
+    assert.equal(nextVersion("0.2.0", "patch"), "0.2.1");
+    assert.equal(nextVersion("0.2.7", "minor"), "0.3.0");
+    assert.equal(nextVersion("0.9.3", "major"), "1.0.0");
+    assert.equal(nextVersion("1.4.0-beta.2", "patch"), "1.4.1");
+    assert.throws(() => nextVersion("v1", "patch"), /semver/);
   });
 });
 

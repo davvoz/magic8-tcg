@@ -3,6 +3,9 @@
  * its number of copies (filterable by faction, rarity and type) on the left, the selected
  * card at full size with each copy's serial, edition and status on the
  * right. Read-only: no card is created, moved or destroyed here.
+ * Opened from a notification, the cards that came with it are "fresh":
+ * listed first, lit and tagged, the first of them selected, and the copies
+ * whose serial is known lit in its details.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
@@ -27,10 +30,14 @@ const FILTER_TOP = 60;
 const LIST_TOP = FILTER_TOP + CARD_FILTER_BAR_HEIGHT + 12;
 const DETAIL = Object.freeze({ width: 380, height: 560 });
 const COPY_ROW = 30;
+/** Room for the "New: …" line above the copies of a fresh card. */
+const FRESH_LINE = 30;
 /** Where the status line starts, right of the title. */
 const STATUS_OFFSET = 260;
 
 /**
+ * @typedef {Readonly<{ definitionId: string, count?: number, serial?: number }>} FreshCard a card just received (from a notification)
+ * @typedef {Readonly<{ count: number, serials: ReadonlySet<number> }>} Freshness how many copies of a card are new, and the serials known
  * @typedef {Readonly<{ definitionId: string, card: import("../cards/CardDetail.js").CardLike | undefined, copies: readonly import("../../application/ports/CollectionApi.contract.js").OwnedCopy[] }>} OwnedCard
  */
 
@@ -44,6 +51,10 @@ export class CollectionScene extends Scene {
   #selectedId = null;
   /** Shown once under the title (e.g. after taking the starter deck). @type {string | null} */
   #notice = null;
+  /** Cards just received, by definition id. @type {ReadonlyMap<string, Freshness>} */
+  #fresh = new Map();
+  /** Where Back leads: the scene the player came from. @type {string} */
+  #from = SceneId.MAIN_MENU;
   #scrollY = 0;
 
   /**
@@ -55,9 +66,11 @@ export class CollectionScene extends Scene {
     this.#app = app;
   }
 
-  /** @param {Readonly<Record<string, unknown>>} params `{ notice?: string }` */
+  /** @param {Readonly<Record<string, unknown>>} params `{ notice?: string, fresh?: FreshCard[], from?: string }` */
   enter(params = {}) {
     this.#notice = typeof params.notice === "string" ? params.notice : null;
+    this.#fresh = freshness(params.fresh);
+    this.#from = typeof params.from === "string" && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
     this.#filter = NO_CARD_FILTER;
     this.#selectedId = null;
     this.#scrollY = 0;
@@ -72,7 +85,7 @@ export class CollectionScene extends Scene {
   }
 
   onCancel() {
-    this.services.navigate(SceneId.MAIN_MENU);
+    this.services.navigate(this.#from);
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -82,13 +95,14 @@ export class CollectionScene extends Scene {
     super.render(context);
   }
 
-  /** Owned cards in the current filter, cheapest first. @returns {readonly OwnedCard[]} */
+  /** Owned cards in the current filter: the fresh ones first, then cheapest first. @returns {readonly OwnedCard[]} */
   ownedCards() {
     const catalog = this.#app.content.catalog;
+    const fresh = (/** @type {OwnedCard} */ owned) => (this.#fresh.has(owned.definitionId) ? 0 : 1);
     return this.#requireAccount()
       .collection.state.cards.map((entry) => Object.freeze({ definitionId: entry.definitionId, card: catalog.get(entry.definitionId), copies: entry.copies }))
       .filter((owned) => matchesCardFilter(this.#filter, owned.card, rarityOf(this.#app, owned.definitionId)))
-      .sort((left, right) => (left.card?.cost ?? 0) - (right.card?.cost ?? 0) || (left.card?.name ?? left.definitionId).localeCompare(right.card?.name ?? right.definitionId));
+      .sort((left, right) => fresh(left) - fresh(right) || (left.card?.cost ?? 0) - (right.card?.cost ?? 0) || (left.card?.name ?? left.definitionId).localeCompare(right.card?.name ?? right.definitionId));
   }
 
   #rebuild() {
@@ -122,7 +136,7 @@ export class CollectionScene extends Scene {
     if (this.services.hasScene(SceneId.TRADES)) {
       this.root.add(new Button({ id: "collection.trades", x: viewport.logicalWidth - HEADER.sideMargin - 2 * HEADER.backWidth - 16, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Trades", onActivate: () => this.services.navigate(SceneId.TRADES) }));
     }
-    return this.root.add(new Button({ id: "collection.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: "Back to menu", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
+    return this.root.add(new Button({ id: "collection.back", x: viewport.logicalWidth - HEADER.sideMargin - HEADER.backWidth, y: HEADER.y + 4, width: HEADER.backWidth, height: HEADER.height - 8, text: this.#from === SceneId.MAIN_MENU ? "Back to menu" : "Back", onActivate: () => this.services.navigate(this.#from) }));
   }
 
   /** @returns {{ text: string, colorKey: string }} */
@@ -142,6 +156,10 @@ export class CollectionScene extends Scene {
       return { text: this.#notice, colorKey: "success" };
     }
     const entries = account.collection.state.cards;
+    const fresh = entries.reduce((total, entry) => total + (this.#fresh.get(entry.definitionId)?.count ?? 0), 0);
+    if (fresh > 0) {
+      return { text: `${fresh} new card${fresh === 1 ? "" : "s"}: lit at the top of the list.`, colorKey: "success" };
+    }
     const copies = entries.reduce((total, entry) => total + entry.copies.length, 0);
     return { text: `@${account.state.account} · ${copies} card${copies === 1 ? "" : "s"} · ${entries.length} of ${this.#app.content.catalog.size} different`, colorKey: "textMuted" };
   }
@@ -175,7 +193,8 @@ export class CollectionScene extends Scene {
     cards.forEach((owned, index) => {
       const y = rowY(index);
       const selected = owned.definitionId === this.#selectedId;
-      list.add(new CardStrip({ x: 0, y, width: labelWidth, height: ROW.height, card: owned.card ?? unknownCard(owned.definitionId), count: owned.copies.length, broken: owned.card === undefined, muted: !selected, rarity: rarityOf(this.#app, owned.definitionId) }));
+      const fresh = this.#fresh.has(owned.definitionId);
+      list.add(new CardStrip({ id: `collection.strip.${owned.definitionId}`, x: 0, y, width: labelWidth, height: ROW.height, card: owned.card ?? unknownCard(owned.definitionId), count: owned.copies.length, broken: owned.card === undefined, muted: !selected && !fresh, rarity: rarityOf(this.#app, owned.definitionId), fresh }));
       const view = list.add(new Button({ id: `collection.view.${owned.definitionId}`, x: labelWidth + ACTION.gap, y, width: ACTION.width, height: ROW.height, text: "View", variant: selected ? "primary" : "secondary", onActivate: () => this.#select(owned.definitionId) }));
       first ??= view;
     });
@@ -217,11 +236,21 @@ export class CollectionScene extends Scene {
     panel.add(new Label({ id: "collection.rarity", x, y: top + 42, width, height: 28, text: rarity === null ? "Rarity unknown" : rarityLabel(rarity), weight: "bold", align: "left", colorKey: rarityColorKey(rarity) }));
     const active = owned.copies.filter((copy) => copy.status === "active").length;
     panel.add(new Label({ id: "collection.owned", x, y: top + 72, width, height: 28, text: `You own ${owned.copies.length} (${active} playable)`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
-    const list = panel.add(new ScrollList({ id: COPIES_ID, x, y: top + 108, width, height: DETAIL.height - 108 }));
-    const copies = [...owned.copies].sort((left, right) => left.edition.localeCompare(right.edition) || left.serial - right.serial);
+    const fresh = this.#fresh.get(owned.definitionId);
+    let copiesTop = top + 108;
+    if (fresh !== undefined) {
+      panel.add(new Label({ id: "collection.fresh", x, y: copiesTop - 4, width, height: 28, text: `New: ${fresh.count} cop${fresh.count === 1 ? "y" : "ies"} just received`, size: "small", weight: "bold", align: "left", colorKey: "success", fit: true }));
+      copiesTop += FRESH_LINE;
+    }
+    const list = panel.add(new ScrollList({ id: COPIES_ID, x, y: copiesTop, width, height: DETAIL.height - (copiesTop - top) }));
+    // The copies received with the notification (when their serials are known) come first, lit.
+    const isNew = (/** @type {{ serial: number }} */ copy) => fresh?.serials.has(copy.serial) ?? false;
+    const copies = [...owned.copies].sort((left, right) => Number(isNew(right)) - Number(isNew(left)) || left.edition.localeCompare(right.edition) || left.serial - right.serial);
     copies.forEach((copy, index) => {
       const status = copy.status === "active" ? "" : ` · ${copy.status}`;
-      list.add(new Label({ x: 0, y: index * COPY_ROW, width: list.rowWidth, height: COPY_ROW, text: `#${copy.serial} · ${copy.edition}${status}`, size: "small", align: "left", colorKey: copy.status === "active" ? "text" : "disabledText", fit: true }));
+      const lit = isNew(copy);
+      const colorKey = copy.status === "active" ? "text" : "disabledText";
+      list.add(new Label({ x: 0, y: index * COPY_ROW, width: list.rowWidth, height: COPY_ROW, text: `#${copy.serial} · ${copy.edition}${status}${lit ? " · new" : ""}`, size: "small", weight: lit ? "bold" : "normal", align: "left", colorKey: lit ? "success" : colorKey, fit: true }));
     });
     list.contentHeight = copies.length * COPY_ROW;
   }
@@ -254,4 +283,27 @@ export class CollectionScene extends Scene {
     }
     return this.#app.account;
   }
+}
+
+/**
+ * The cards a notification brought, by definition id (copies of one card
+ * named twice are added up).
+ * @param {unknown} value
+ * @returns {ReadonlyMap<string, Freshness>}
+ */
+function freshness(value) {
+  /** @type {Map<string, { count: number, serials: Set<number> }>} */
+  const fresh = new Map();
+  for (const card of Array.isArray(value) ? value : []) {
+    if (typeof card?.definitionId !== "string") {
+      continue;
+    }
+    const entry = fresh.get(card.definitionId) ?? { count: 0, serials: new Set() };
+    entry.count += Number.isSafeInteger(card.count) && card.count > 0 ? card.count : 1;
+    if (Number.isSafeInteger(card.serial)) {
+      entry.serials.add(card.serial);
+    }
+    fresh.set(card.definitionId, entry);
+  }
+  return fresh;
 }

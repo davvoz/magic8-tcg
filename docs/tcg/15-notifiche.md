@@ -45,7 +45,8 @@ Il feed si legge a pagine di 30, dalla più recente. Le notifiche lette si cance
 - Dopo il login, quando l'account è caricato, il `NotificationService` apre la connessione realtime (la stessa del gioco online, che ora parte al login e non più solo entrando in "Play online") e legge il feed.
 - Una notifica in arrivo diventa un **toast** in alto a destra, sopra qualsiasi schermata. Un clic apre il feed. Se la notifica cambia la collezione (carte ricevute, restituite, vendute) il client la ricarica.
 - Il menu principale mostra "Notifications (n)" con il numero delle non lette.
-- La schermata "Notifications" mostra cosa è successo e quando, le carte coinvolte (con rarità, e ogni carta apre il suo dettaglio) e un pulsante "Open" verso la schermata dove si prosegue (collezione, scambi, bacheca, negozio). Aprendola, le notifiche vengono segnate come lette; quelle nuove restano marcate "New" finché la schermata è aperta.
+- La schermata "Notifications" mostra cosa è successo e quando, le carte coinvolte (con rarità, e ogni carta apre il suo dettaglio) e porta alla schermata dove si prosegue (collezione, scambi, bacheca, negozio) con un clic sulla riga o sul pulsante "Open". Aprendola, le notifiche vengono segnate come lette (il contatore del menu si azzera); quelle arrivate non lette restano **illuminate** e marcate "New", per tutta la sessione, finché il giocatore non le apre.
+- Aprendo una notifica che porta alla collezione (ordine consegnato, scambio accettato, carta comprata), la collezione riceve le carte arrivate: le mette in cima alla lista, illuminate e con l'etichetta "NEW", seleziona la prima e ne indica le copie nuove; se la notifica dà il seriale (carta singola) quella copia è evidenziata. "Back" riporta alle notifiche.
 - Durante un acquisto (negozio o bacheca), dopo il pagamento il giocatore può andare dove vuole: la notifica lo avvisa quando la carta arriva.
 
 ## API

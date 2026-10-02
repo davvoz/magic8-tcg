@@ -1,10 +1,14 @@
 import { TablePiece } from "../images/TableArt.js";
 import { inPixels, UiPiece } from "../images/UiArt.js";
-import { bevelRoundedRect, drawImageCover, fillRoundedRect, insetRect, roundedRectPath, verticalGradient } from "./drawing.js";
+import { bevelRoundedRect, drawImageCover, fillRoundedRect, glowRoundedRect, insetRect, roundedRectPath, verticalGradient } from "./drawing.js";
 import { UiNode } from "./UiNode.js";
 import { shade, withAlpha } from "../theme/color.js";
 
 const RIM_INSET = 4;
+/** A lit panel: its halo, and how much of the light tints its face. */
+const LIT = Object.freeze({ blur: 18, lineWidth: 2.5, tint: 0.14 });
+/** How much a clickable panel brightens under the pointer. */
+const HOVER_WASH = 0.06;
 /** How much of the painted stone shows through a textured panel's colour, and how dark its foot gets. */
 const STONE = Object.freeze({ alpha: 0.45, footShade: 0.55 });
 /**
@@ -31,17 +35,30 @@ export const PANEL_INSET = 34;
  * (`strokeKey: null` drops the border). A `textured` panel is cut from the
  * painted stone (Theme.tableArt) once its image is ready; any other panel
  * large enough is dressed with the painted gold corners (Theme.uiArt).
+ * `glowKey` lights it: a halo and a tint in that theme colour (something
+ * new). With `onActivate` the whole panel is clickable (a list entry); the
+ * widgets on it still take their own clicks.
  */
 export class Panel extends UiNode {
-  /** @type {{ fillKey: string, strokeKey: string | null, textured: boolean }} */
+  /** @type {{ fillKey: string, strokeKey: string | null, textured: boolean, glowKey: string | null }} */
   style;
+  /** @type {(() => void) | null} */
+  onActivate;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, fillKey?: string, strokeKey?: string | null, textured?: boolean }} [options]
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, fillKey?: string, strokeKey?: string | null, textured?: boolean, glowKey?: string | null, onActivate?: (() => void) | null }} [options]
    */
   constructor(options = {}) {
     super(options);
-    this.style = { fillKey: options.fillKey ?? "panel", strokeKey: options.strokeKey === undefined ? "panelBorder" : options.strokeKey, textured: options.textured ?? false };
+    this.style = { fillKey: options.fillKey ?? "panel", strokeKey: options.strokeKey === undefined ? "panelBorder" : options.strokeKey, textured: options.textured ?? false, glowKey: options.glowKey ?? null };
+    this.onActivate = options.onActivate ?? null;
+    this.interactive = this.onActivate !== null;
+  }
+
+  activate() {
+    if (this.onActivate !== null && this.isEffectivelyEnabled && this.isEffectivelyVisible) {
+      this.onActivate();
+    }
   }
 
   /**
@@ -52,17 +69,39 @@ export class Panel extends UiNode {
     const area = this.bounds;
     const radius = theme.spacing.radius;
     const fill = theme.colors[this.style.fillKey] ?? theme.colors.panel;
-    const stroke = this.style.strokeKey === null ? undefined : theme.colors[this.style.strokeKey];
+    const glow = this.style.glowKey === null ? undefined : theme.colors[this.style.glowKey];
+    const border = this.style.strokeKey === null ? undefined : theme.colors[this.style.strokeKey];
+    const stroke = glow ?? border;
+    if (glow !== undefined) {
+      glowRoundedRect(context, area, { color: glow, radius, blur: LIT.blur, lineWidth: LIT.lineWidth });
+    }
     fillRoundedRect(context, area, { fill: verticalGradient(context, area, [[0, shade(fill, 0.06)], [1, shade(fill, -0.3)]]), stroke, radius, lineWidth: 1.5 });
     if (this.style.textured) {
       paintStone(context, theme, area, radius);
       fillRoundedRect(context, area, { stroke, radius, lineWidth: 1.5 });
     }
+    this.#paintWash(context, area, radius, glow);
     bevelRoundedRect(context, area, { light: withAlpha("#ffffff", 0.08), dark: withAlpha("#000000", 0.5), radius });
     fillRoundedRect(context, insetRect(area, RIM_INSET), { stroke: withAlpha(theme.colors.accent, 0.12), radius: Math.max(0, radius - RIM_INSET), lineWidth: 1 });
     if (!this.style.textured) {
       paintCorners(context, theme, area);
     }
+  }
+
+  /**
+   * The light over a lit panel's face, brighter under the pointer; a plain
+   * clickable panel only brightens under the pointer.
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("@magic8/engine/shared/geometry.js").Rect} area
+   * @param {number} radius
+   * @param {string | undefined} glow
+   */
+  #paintWash(context, area, radius, glow) {
+    const hover = this.interactive && this.hovered ? HOVER_WASH : 0;
+    if (glow === undefined && hover === 0) {
+      return;
+    }
+    fillRoundedRect(context, area, { fill: glow === undefined ? withAlpha("#ffffff", hover) : withAlpha(glow, LIT.tint + hover), radius });
   }
 }
 

@@ -2,14 +2,14 @@
  * A card as a one-line strip for lists (deck builder, collection, shop,
  * market): faction stripe, cost gem, name in the display face, rarity (in
  * its colour, when known), type and keywords, the copy count and, for
- * creatures, attack and health gems. Decorative only; the row's
- * buttons sit beside it.
+ * creatures, attack and health gems. A `fresh` card (just received) is lit
+ * and tagged "NEW". Decorative only; the row's buttons sit beside it.
  */
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";
 import { shade, withAlpha } from "../theme/color.js";
 import { rarityColor, rarityLabel } from "../theme/rarity.js";
 import { displayFont, factionTones, fontFor } from "../theme/Theme.js";
-import { drawTextInRect, fillRoundedRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
+import { drawTextInRect, fillRoundedRect, glowRoundedRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
 import { capitalize, ellipsize } from "../text/textUtils.js";
 import { UiNode } from "../ui/UiNode.js";
 import { drawCostGem, drawStatGem } from "./statGem.js";
@@ -21,6 +21,7 @@ const STAT_RADIUS = 13;
 const STAT_GAP = 8;
 const COUNT_WIDTH = 44;
 const NAME_SIZE = 19;
+const FRESH = Object.freeze({ label: "NEW", width: 50, blur: 14 });
 
 /**
  * @typedef {Readonly<{ name: string, type: string, faction: string, cost: number, attack: number, health: number, keywords?: readonly string[] }>} StripCard
@@ -37,9 +38,11 @@ export class CardStrip extends UiNode {
   broken;
   /** The card's rarity, when known. @type {string | null} */
   rarity;
+  /** Just received: lit and tagged "NEW". */
+  fresh;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, card: StripCard, count?: number | null, muted?: boolean, broken?: boolean, rarity?: string | null }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, card: StripCard, count?: number | null, muted?: boolean, broken?: boolean, rarity?: string | null, fresh?: boolean }} options
    */
   constructor(options) {
     super(options);
@@ -48,6 +51,7 @@ export class CardStrip extends UiNode {
     this.muted = options.muted ?? false;
     this.broken = options.broken ?? false;
     this.rarity = options.rarity ?? null;
+    this.fresh = options.fresh ?? false;
     this.passthrough = true;
   }
 
@@ -60,10 +64,13 @@ export class CardStrip extends UiNode {
     const tones = factionTones(theme, this.card.faction);
     const radius = theme.spacing.radius;
     context.save();
+    if (this.fresh) {
+      glowRoundedRect(context, area, { color: theme.colors.success, radius, blur: FRESH.blur, lineWidth: 2 });
+    }
     if (this.muted) {
       context.globalAlpha = 0.55 * context.globalAlpha;
     }
-    fillRoundedRect(context, area, { fill: verticalGradient(context, area, [[0, withAlpha(tones.dark, 0.85)], [1, withAlpha(shade(tones.dark, -0.4), 0.95)]]), stroke: withAlpha(tones.base, 0.5), radius, lineWidth: 1 });
+    fillRoundedRect(context, area, { fill: verticalGradient(context, area, [[0, withAlpha(tones.dark, 0.85)], [1, withAlpha(shade(tones.dark, -0.4), 0.95)]]), stroke: this.fresh ? theme.colors.success : withAlpha(tones.base, 0.5), radius, lineWidth: this.fresh ? 2 : 1 });
     context.save();
     roundedRectPath(context, area, radius);
     context.clip();
@@ -107,6 +114,13 @@ export class CardStrip extends UiNode {
       const badge = { x, y: centerY - 12, width: COUNT_WIDTH, height: 24 };
       fillRoundedRect(context, badge, { fill: withAlpha(theme.colors.accent, 0.18), stroke: withAlpha(theme.colors.accent, 0.7), radius: 12, lineWidth: 1 });
       drawTextInRect(context, `x${this.count}`, badge, { font: fontFor(theme, "small", "bold"), color: theme.colors.accentLight });
+      x -= STAT_GAP;
+    }
+    if (this.fresh) {
+      x -= FRESH.width;
+      const tag = { x, y: centerY - 12, width: FRESH.width, height: 24 };
+      fillRoundedRect(context, tag, { fill: withAlpha(theme.colors.success, 0.25), stroke: theme.colors.success, radius: 12, lineWidth: 1 });
+      drawTextInRect(context, FRESH.label, tag, { font: fontFor(theme, "tiny", "bold"), color: theme.colors.success });
       x -= STAT_GAP;
     }
     return x;

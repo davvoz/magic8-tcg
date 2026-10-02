@@ -205,6 +205,34 @@ describe("CollectionScene", () => {
     assert.ok(rendered(scene).some((text) => /^#\d+ · core-1$/.test(text)));
   });
 
+  it("lights the cards a notification brought, lists them first and goes back to the notifications", async () => {
+    const probe = await collectionScene();
+    const owned = probe.scene.ownedCards();
+    const [cheap, dear] = [owned[0], owned.at(-1)];
+    const serial = dear.copies[0].serial;
+    probe.scene.exit();
+    probe.scene.enter({ fresh: [{ definitionId: dear.definitionId, count: 1, serial }, { definitionId: cheap.definitionId, count: 2 }, { definitionId: "not_owned", count: 1 }], from: SceneId.NOTIFICATIONS });
+    const { scene, navigated } = probe;
+    assert.deepEqual(scene.ownedCards().slice(0, 2).map((card) => card.definitionId), [cheap.definitionId, dear.definitionId], "the fresh cards come first");
+    assert.equal(byId(scene, "collection.status").text, "3 new cards: lit at the top of the list.");
+    const strips = nodes(scene).filter((node) => node.id?.startsWith("collection.strip."));
+    assert.deepEqual(strips.filter((strip) => strip.fresh).map((strip) => strip.card.id), [cheap.definitionId, dear.definitionId]);
+    assert.ok(!strips[2].fresh && strips[2].muted, "the others are as usual");
+    assert.equal(byId(scene, `collection.view.${cheap.definitionId}`).variant, "primary", "the first fresh card is selected");
+    assert.equal(byId(scene, "collection.fresh").text, "New: 2 copies just received");
+
+    click(byId(scene, `collection.view.${dear.definitionId}`));
+    assert.equal(byId(scene, "collection.fresh").text, "New: 1 copy just received");
+    const firstCopy = byId(scene, "collection.copies").children[0].children[0];
+    assert.equal(firstCopy.text, `#${serial} · ${dear.copies[0].edition} · new`, "the copy received comes first, lit");
+    assert.equal(firstCopy.colorKey, "success");
+
+    assert.equal(byId(scene, "collection.back").text, "Back");
+    click(byId(scene, "collection.back"));
+    assert.equal(navigated.at(-1).id, SceneId.NOTIFICATIONS);
+    scene.exit();
+  });
+
   it("filters by faction and type", async () => {
     const { scene } = await collectionScene();
     click(byId(scene, "collection.filter.faction.shadow"));

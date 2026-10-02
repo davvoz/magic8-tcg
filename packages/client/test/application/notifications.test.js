@@ -127,6 +127,24 @@ describe("NotificationService", () => {
     assert.deepEqual(w.service.state.items, [], "a stopped service hears nothing");
   });
 
+  it("keeps what arrived unread lit after marking all read, until each one is opened", async () => {
+    const w = world([notification(1), notification(2, { read: true })]);
+    w.service.start();
+    await flush();
+    w.connection.push("notification", notification(3));
+    const unopened = () => [...w.service.state.unopened].sort();
+    assert.deepEqual(unopened(), [1, 3], "what reached the player unread");
+    await w.service.markAllRead();
+    assert.deepEqual([w.service.state.unread, unopened()], [0, [1, 3]], "read, but not yet opened");
+    await w.service.refresh();
+    assert.deepEqual(unopened(), [1, 3], "a read feed does not unlight them");
+    w.service.markOpened(3);
+    w.service.markOpened(42);
+    assert.deepEqual(unopened(), [1]);
+    w.service.stop();
+    assert.deepEqual(unopened(), []);
+  });
+
   it("reports a feed that cannot be read", async () => {
     const w = world();
     w.api.failing = true;
