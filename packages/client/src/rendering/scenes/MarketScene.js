@@ -10,7 +10,9 @@
  *
  * Paying goes through the wallet (Keychain shows the exact transfer, to the
  * seller's own account); the card arrives once the chain makes it final.
- * Every price and status shown is the server's.
+ * Every price and status shown is the server's. Beside a card on sale, the
+ * buyer sees their budget, what their wallet holds: a card it cannot pay
+ * for cannot be bought.
  */
 import { NO_CARD_FILTER, cardFilterOptions, cardIdsMatching, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_BUY_STAGES, BuyStage, PROBLEM_TEXT } from "../../application/sales/SalesService.js";
@@ -133,10 +135,15 @@ export class MarketScene extends Scene {
     const unsubscribe = sales.subscribe(() => this.#rebuild());
     // What other players list, buy or withdraw shows up while the board is on screen.
     const unwatch = sales.watchBoard();
+    const unwatchBalance = this.#app.balance?.subscribe(() => this.#rebuild());
     this.#unsubscribe = () => {
       unsubscribe();
       unwatch();
+      unwatchBalance?.();
     };
+    if (this.#signedIn()) {
+      void this.#app.balance?.refresh();
+    }
     sales.loadBoard({ cards: cardIdsMatching(this.#boardFilter, this.#app) });
     sales.refreshMine();
     this.#rebuild();
@@ -350,12 +357,14 @@ export class MarketScene extends Scene {
     const account = this.#app.account?.state.account ?? null;
     const own = account === listing.seller;
     const now = this.#now();
+    const buyable = account !== null && !own && listing.status === "ACTIVE";
     const lines = [
       { text: this.#cardName(listing.card.definitionId), bold: true, colorKey: "accentLight" },
       { text: `Copy #${listing.card.serial} · ${listing.card.edition}` },
       { text: `Sold by @${listing.seller}`, avatar: listing.seller },
       { text: `${listing.price.amount} ${listing.price.asset}`, bold: true, colorKey: "accent" },
       { text: listingSubtitle(listing, now), colorKey: "textMuted", avatar: listing.status === "SOLD" ? listing.buyer : null },
+      ...(buyable ? [this.#budgetLine(listing.price)] : []),
     ];
     this.#cardWithLines(panel, listing.card.definitionId, lines);
     const y = COLUMNS.height - INSET - BUTTON_HEIGHT;
@@ -371,8 +380,45 @@ export class MarketScene extends Scene {
       panel.add(new Button({ id: "market.signIn", x: INSET, y, width: fullWidth, height: BUTTON_HEIGHT, text: "Sign in with Keychain to buy", enabled: this.services.hasScene(SceneId.LOGIN), onActivate: () => this.services.navigate(SceneId.LOGIN) }));
       return;
     }
-    const text = listing.reserved ? "Someone is buying it: try again in a few minutes" : `Buy for ${listing.price.amount} ${listing.price.asset}`;
-    panel.add(new Button({ id: "market.buy", x: INSET, y, width: fullWidth, height: BUTTON_HEIGHT, text, variant: "primary", enabled: !listing.reserved && !this.#buyingBusy(), onActivate: () => sales.buy(listing.id) }));
+    this.#buildBuy(panel, listing, { y, width: fullWidth });
+  }
+
+  /**
+   * Buy, unless someone else is paying for the card or the buyer's wallet cannot.
+   * @param {Panel} panel
+   * @param {import("../../application/ports/SalesApi.contract.js").Listing} listing
+   * @param {{ y: number, width: number }} place
+   */
+  #buildBuy(panel, listing, { y, width }) {
+    const { amount, asset } = listing.price;
+    const short = this.#isShort(listing.price);
+    let text = `Buy for ${amount} ${asset}`;
+    if (listing.reserved) {
+      text = "Someone is buying it: try again in a few minutes";
+    } else if (short) {
+      text = `Not enough ${asset} in your wallet`;
+    }
+    panel.add(new Button({ id: "market.buy", x: INSET, y, width, height: BUTTON_HEIGHT, text, variant: "primary", enabled: !listing.reserved && !short && !this.#buyingBusy(), onActivate: () => this.#sales().buy(listing.id) }));
+  }
+
+  /** @param {Readonly<{ amount: string, asset: string }>} price */
+  #isShort({ amount, asset }) {
+    return this.#app.balance?.isShort(amount, asset) ?? false;
+  }
+
+  /**
+   * The buyer's budget beside a card on sale, as far as it is known; in red when it cannot pay `price`.
+   * @param {Readonly<{ amount: string, asset: string }>} price
+   * @returns {{ text: string, colorKey: string, bold: boolean, avatar: null }}
+   */
+  #budgetLine(price) {
+    const balance = this.#app.balance;
+    const amount = balance?.amountOf(price.asset) ?? null;
+    if (amount !== null) {
+      return { text: `Your budget: ${amount} ${price.asset}`, colorKey: this.#isShort(price) ? "danger" : "accentLight", bold: true, avatar: null };
+    }
+    const text = balance === undefined || balance.state.loading ? "Reading your wallet…" : "Your budget is not known";
+    return { text, colorKey: "textMuted", bold: false, avatar: null };
   }
 
   /**

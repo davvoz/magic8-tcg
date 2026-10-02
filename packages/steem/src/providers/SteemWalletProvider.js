@@ -10,6 +10,7 @@
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { isValidAccountName } from "../accountName.js";
+import { STEEM_ASSETS, formatSteemAsset } from "../assets.js";
 import { recoverSigner } from "../crypto/keys.js";
 import { STEEM_NETWORK } from "./SteemBlockchainProvider.js";
 
@@ -111,5 +112,24 @@ export class SteemWalletProvider {
       return fail(WalletError.KEY_NOT_AUTHORIZED, "the signing key is not an authorised posting key of this account");
     }
     return ok(true);
+  }
+
+  /**
+   * What the account can spend right now (liquid balances), formatted as the
+   * chain writes amounts: [{ asset: "STEEM", amount: "12.500" }, …].
+   * @param {string} account
+   * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<readonly Readonly<{ asset: string, amount: string }>[]> | import("@magic8/engine/shared/Result.js").Fail>}
+   */
+  async balancesOf(account) {
+    let balances;
+    try {
+      balances = await this.#chain.getBalances(account);
+    } catch {
+      return fail(WalletError.CHAIN_UNAVAILABLE, "the chain could not be read");
+    }
+    if (balances === null) {
+      return fail(WalletError.ACCOUNT_NOT_FOUND, "no such account");
+    }
+    return ok(Object.freeze(STEEM_ASSETS.map(({ asset }) => Object.freeze({ asset, amount: formatSteemAsset(balances[/** @type {"STEEM" | "SBD"} */ (asset)], asset).split(" ")[0] }))));
   }
 }

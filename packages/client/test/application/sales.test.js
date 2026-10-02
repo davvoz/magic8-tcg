@@ -15,6 +15,7 @@ import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { immediateScheduler } from "../../src/infrastructure/time/ImmediateScheduler.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MarketScene, listingSubtitle } from "../../src/rendering/scenes/MarketScene.js";
+import { BalanceService } from "../../src/application/wallet/BalanceService.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
 import { loadBundledContent } from "./fixtures.js";
 
@@ -114,7 +115,7 @@ function fakeConnection() {
   };
 }
 
-function market({ account = "bob", wallet = fakeWallet() } = {}) {
+function market({ account = "bob", wallet = fakeWallet(), budget } = {}) {
   const api = fakeApi();
   const connection = fakeConnection();
   let reloads = 0;
@@ -125,7 +126,8 @@ function market({ account = "bob", wallet = fakeWallet() } = {}) {
   viewport.resize({ cssWidth: 1600, cssHeight: 900 });
   const navigated = [];
   const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, params) => navigated.push([id, params]), hasScene: () => true };
-  const scene = new MarketScene(services, { content, account: accountService, sales }, () => NOW);
+  const balance = budget === undefined ? undefined : new BalanceService({ api: { balances: async () => ok([{ asset: "STEEM", amount: budget }]) } });
+  const scene = new MarketScene(services, { content, account: accountService, sales, balance }, () => NOW);
   return { api, wallet, sales, scene, navigated, connection, reloads: () => reloads };
 }
 
@@ -169,6 +171,23 @@ describe("SalesService", () => {
 });
 
 describe("MarketScene", () => {
+  it("shows the buyer's budget beside a card, and no Buy for one it cannot pay for", async () => {
+    const rich = market({ budget: "20.000" });
+    rich.scene.enter({});
+    await flush();
+    byId(rich.scene, `market.listing.${LISTING.id}`).activate();
+    assert.ok(rendered(rich.scene).includes("Your budget: 20.000 STEEM"));
+    assert.equal(byId(rich.scene, "market.buy").enabled, true);
+
+    const { scene, wallet } = market({ budget: "1.499" });
+    scene.enter({});
+    await flush();
+    byId(scene, `market.listing.${LISTING.id}`).activate();
+    assert.ok(rendered(scene).includes("Your budget: 1.499 STEEM"));
+    assert.deepEqual([byId(scene, "market.buy").text, byId(scene, "market.buy").enabled], ["Not enough STEEM in your wallet", false]);
+    assert.equal(wallet.requests.length, 0);
+  });
+
   it("shows the board, a listing's details, and buys it through the wallet", async () => {
     const { scene, wallet, navigated } = market();
     scene.enter({ from: "shop" });

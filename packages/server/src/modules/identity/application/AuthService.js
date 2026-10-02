@@ -193,6 +193,23 @@ export class AuthService {
   }
 
   /** @param {unknown} network */
+  /**
+   * What the player can spend from their wallet right now, read from the chain.
+   * @param {import("./ports.js").User} user
+   * @returns {Promise<readonly Readonly<{ asset: string, amount: string }>[]>}
+   */
+  async balancesOf(user) {
+    const wallet = this.#walletFor(user.network);
+    if (typeof wallet.balancesOf !== "function") {
+      throw new AppError("UNSUPPORTED_NETWORK", "this network's wallet balances cannot be read");
+    }
+    const balances = await wallet.balancesOf(user.account);
+    if (!balances.ok) {
+      throw balances.error.code === UNAVAILABLE ? new AppError("CHAIN_UNAVAILABLE", "the blockchain cannot be reached right now, try again") : new AppError("NOT_FOUND", "the account was not found on the chain");
+    }
+    return balances.value;
+  }
+
   #walletFor(network) {
     const wallet = typeof network === "string" ? this.#wallets.get(network) : undefined;
     if (wallet === undefined) {

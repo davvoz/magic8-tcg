@@ -134,7 +134,7 @@ export function addAmounts(left, right) {
  * @param {string} right
  * @returns {number} negative, zero or positive
  */
-function compareAmounts(left, right) {
+export function compareAmounts(left, right) {
   const decimals = Math.max(toUnits(left).decimals, toUnits(right).decimals);
   const difference = toUnits(left, decimals).units - toUnits(right, decimals).units;
   return difference === 0n ? 0 : Math.sign(Number(difference));

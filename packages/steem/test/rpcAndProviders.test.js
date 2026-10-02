@@ -121,6 +121,16 @@ describe("SteemBlockchainProvider", () => {
     await assert.rejects(providerWith(() => "nope").getAccount("alice"), ChainDataError);
   });
 
+  it("reads an account's liquid balances exactly, in thousandths", async () => {
+    const chain = providerWith(() => [rawAccount("alice", [KEY_ONE], { balance: "12.345 STEEM", sbdBalance: "0.500 SBD" })]);
+    assert.deepEqual(await chain.getBalances("alice"), { STEEM: 12345, SBD: 500 });
+    assert.equal(await providerWith(() => []).getBalances("nobody"), null);
+    assert.equal(await providerWith(() => []).getBalances("NOT VALID"), null);
+    await assert.rejects(providerWith(() => [rawAccount("alice", [KEY_ONE], { balance: "12.345 SBD" })]).getBalances("alice"), ChainDataError);
+    await assert.rejects(providerWith(() => [rawAccount("alice", [KEY_ONE], { balance: 12.345 })]).getBalances("alice"), ChainDataError);
+    await assert.rejects(providerWith(() => [rawAccount("mallory", [KEY_ONE])]).getBalances("alice"), ChainDataError);
+  });
+
   it("reads head and irreversible blocks", async () => {
     const chain = providerWith(() => ({ head_block_number: 100, last_irreversible_block_num: 85, time: "2026-09-24T10:00:03" }));
     assert.deepEqual(await chain.getHead(), { headBlock: 100, irreversibleBlock: 85, time: Date.UTC(2026, 8, 24, 10, 0, 3) });
@@ -181,6 +191,14 @@ describe("SteemWalletProvider", () => {
     const message = provider.buildLoginMessage(challenge);
     const result = await provider.verifyLogin({ account: "alice", message, signature: signMessage(message, privateKey) });
     assert.equal(result.error.code, WalletError.CHAIN_UNAVAILABLE);
+  });
+
+  it("tells what an account can spend, as the chain writes amounts", async () => {
+    const provider = wallet([rawAccount("alice", [KEY_ONE], { balance: "1234.500 STEEM", sbdBalance: "0.007 SBD" })]);
+    assert.deepEqual(await provider.balancesOf("alice"), { ok: true, value: [{ asset: "STEEM", amount: "1234.500" }, { asset: "SBD", amount: "0.007" }] });
+    assert.equal((await wallet([]).balancesOf("alice")).error.code, WalletError.ACCOUNT_NOT_FOUND);
+    const unreachable = new SteemWalletProvider({ chain: new SteemBlockchainProvider({ rpc: new SteemRpcClient({ nodes: [A], fetch: fakeFetch({}).fetch }) }), appName: "magic8-tcg" });
+    assert.equal((await unreachable.balancesOf("alice")).error.code, WalletError.CHAIN_UNAVAILABLE);
   });
 
   it("validates its app name", () => {

@@ -9,6 +9,8 @@ import { validated } from "../../../platform/http/validateBody.js";
 const CHALLENGE_KEYS = Object.freeze(["account", "network"]);
 const SESSION_KEYS = Object.freeze(["challengeId", "signature"]);
 const AUTH_RATE = Object.freeze({ name: "auth", capacity: 10, refillPerSecond: 10 / 60, by: /** @type {const} */ ("ip") });
+/** Each read asks a STEEM node: a few per minute is plenty for a player looking at prices. */
+const BALANCE_RATE = Object.freeze({ name: "wallet-balance", capacity: 10, refillPerSecond: 10 / 60, by: /** @type {const} */ ("user") });
 
 /**
  * @param {import("../application/ports.js").User} user
@@ -71,5 +73,13 @@ export function registerIdentityRoutes({ router, auth, cookie, clock }) {
     path: "/api/me",
     auth: Auth.REQUIRED,
     handler: async (context) => ({ status: 200, body: { user: publicUser(context.principal.user) } }),
+  });
+
+  router.add({
+    method: "GET",
+    path: "/api/wallet/balances",
+    auth: Auth.REQUIRED,
+    rateLimit: BALANCE_RATE,
+    handler: async (context) => ({ status: 200, body: { account: context.principal.user.account, balances: await auth.balancesOf(context.principal.user) } }),
   });
 }

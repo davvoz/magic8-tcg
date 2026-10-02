@@ -91,6 +91,17 @@ export class FakeChain {
     }
     return this.accounts.get(name) ?? null;
   }
+
+  /** Liquid balances in thousandths; an account holds nothing until a test says otherwise. @type {Map<string, { STEEM: number, SBD: number }>} */
+  balances = new Map();
+
+  async getBalances(name) {
+    this.calls += 1;
+    if (this.unavailable) {
+      throw new Error("all nodes failed");
+    }
+    return this.accounts.has(name) ? (this.balances.get(name) ?? { STEEM: 0, SBD: 0 }) : null;
+  }
 }
 
 export const TEST_APP_NAME = "magic8-tcg";

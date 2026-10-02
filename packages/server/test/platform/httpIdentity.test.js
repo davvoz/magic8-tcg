@@ -32,6 +32,41 @@ function sessionCookieFrom(headers) {
   return cookie === undefined ? null : cookie.split(";")[0];
 }
 
+describe("wallet balances over HTTP", () => {
+  /** @type {Awaited<ReturnType<typeof buildTestApp>>} */
+  let setup;
+  /** @type {{ base: string, close: () => Promise<unknown> }} */
+  let server;
+
+  before(async () => {
+    setup = await buildTestApp();
+    setup.chain.setAccount("alice", [alice.publicKey]);
+    server = await listen(setup.app);
+  });
+
+  after(() => server.close());
+
+  it("tells a signed-in player what their wallet holds, read from the chain", async () => {
+    setup.chain.balances.set("alice", { STEEM: 12345, SBD: 7 });
+    const challenge = await call(server.base, "/api/auth/challenges", { method: "POST", headers: CLIENT_HEADERS, body: { account: "alice" } });
+    const session = await call(server.base, "/api/auth/sessions", { method: "POST", headers: CLIENT_HEADERS, body: { challengeId: challenge.json.challengeId, signature: keychainSign(challenge.json.message, alice.privateKey) } });
+    const cookie = sessionCookieFrom(session.headers);
+    const balances = await call(server.base, "/api/wallet/balances", { headers: { Cookie: cookie } });
+    assert.equal(balances.status, 200);
+    assert.deepEqual(balances.json, { account: "alice", balances: [{ asset: "STEEM", amount: "12.345" }, { asset: "SBD", amount: "0.007" }] });
+    assert.equal(balances.headers.get("cache-control"), "no-store");
+    setup.chain.unavailable = true;
+    try {
+      const down = await call(server.base, "/api/wallet/balances", { headers: { Cookie: cookie } });
+      assert.equal(down.status, 503);
+      assert.equal(down.json.error.code, "CHAIN_UNAVAILABLE");
+    } finally {
+      setup.chain.unavailable = false;
+    }
+    assert.equal((await call(server.base, "/api/wallet/balances")).status, 401, "only for a signed-in player");
+  });
+});
+
 describe("identity over HTTP", () => {
   /** @type {Awaited<ReturnType<typeof buildTestApp>>} */
   let setup;

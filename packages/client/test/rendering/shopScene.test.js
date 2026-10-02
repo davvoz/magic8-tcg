@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { ok } from "@magic8/engine/shared/Result.js";
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
 import { PurchaseStage, ShopService } from "../../src/application/shop/ShopService.js";
+import { BalanceService } from "../../src/application/wallet/BalanceService.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
@@ -21,7 +22,8 @@ import { FakeContext2D, loadTheme } from "./fakes.js";
 const theme = loadTheme();
 const content = await loadBundledContent();
 
-async function harness({ signedIn = true } = {}) {
+/** @param {{ signedIn?: boolean, budget?: string }} [options] `budget`: the STEEM the player's wallet holds (no balance service without it) */
+async function harness({ signedIn = true, budget } = {}) {
   const world = accountWorld(content);
   if (signedIn) {
     world.identity.become(ALICE);
@@ -45,6 +47,7 @@ async function harness({ signedIn = true } = {}) {
     identity: world.identity,
     account: world.account,
     shop,
+    ...(budget === undefined ? {} : { balance: new BalanceService({ api: { balances: async () => ok([{ asset: "STEEM", amount: budget }]) } }) }),
   };
   const services = { theme, viewport, logger: world.logger, requestRender: () => undefined, navigate: (id, params) => navigated.push({ id, params }), hasScene: () => true };
   const scene = new ShopScene(services, app);
@@ -73,6 +76,25 @@ function rendered(scene) {
 }
 
 describe("ShopScene", () => {
+  it("shows the player's budget in STEEM and offers to pay only what it covers", async () => {
+    const { scene, transfers } = await harness({ budget: "0.700" });
+    assert.equal(byId(scene, "shop.budget").text, "Your budget: 0.700 STEEM");
+    assert.equal(byId(scene, "shop.buy").isEffectivelyEnabled, true, "0.500 STEEM is within the budget");
+    click(byId(scene, "shop.more"));
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 1.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").isEffectivelyEnabled, false, "two packs are not");
+    assert.equal(byId(scene, "shop.status").text, "Not enough STEEM: this costs 1.000 STEEM, your wallet holds 0.700 STEEM.");
+    click(byId(scene, "shop.addToCart"));
+    click(byId(scene, "shop.cart"));
+    const cart = (id) => scene.modal.findById(id);
+    assert.equal(cart("cart.budget").text, "Your budget: 0.700 STEEM");
+    assert.equal(cart("cart.pay").isEffectivelyEnabled, false);
+    assert.match(cart("cart.status").text, /^Not enough STEEM/);
+    click(cart("cart.less.core_mini_booster"));
+    assert.equal(cart("cart.pay").isEffectivelyEnabled, true, "one pack fits the budget again");
+    assert.equal(transfers.length, 0);
+  });
+
   it("opens on the packs, cheapest first, each with its fixed price and odds", async () => {
     const { scene } = await harness();
     assert.equal(byId(scene, "shop.tab.packs").variant, "primary");

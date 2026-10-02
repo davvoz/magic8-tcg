@@ -5,6 +5,7 @@
  * leaves this module; nothing STEEM-shaped reaches the application layer.
  */
 import { isValidAccountName } from "../accountName.js";
+import { parseSteemAsset } from "../assets.js";
 import { decodePublicKey } from "../crypto/keys.js";
 
 export const STEEM_NETWORK = "steem";
@@ -12,6 +13,7 @@ export const STEEM_NETWORK = "steem";
 /**
  * @typedef {Readonly<{ threshold: number, keys: readonly Readonly<{ key: string, weight: number }>[], accounts: readonly Readonly<{ account: string, weight: number }>[] }>} ChainAuthority
  * @typedef {Readonly<{ network: string, name: string, owner: ChainAuthority, posting: ChainAuthority, active: ChainAuthority }>} ChainAccount
+ * @typedef {Readonly<{ STEEM: number, SBD: number }>} ChainBalances liquid amounts, in thousandths
  * @typedef {Readonly<{ headBlock: number, irreversibleBlock: number, time: number }>} ChainHead
  * @typedef {Readonly<{ blockNum: number, blockId: string, time: number }>} BlockReference the head block, for TaPoS
  * @typedef {Readonly<{ type: string, data: Readonly<Record<string, unknown>> }>} ChainOperation
@@ -269,6 +271,37 @@ export class SteemBlockchainProvider {
    * @returns {Promise<ChainAccount | null>}
    */
   async getAccount(name) {
+    const account = await this.#rawAccount(name);
+    if (account === null) {
+      return null;
+    }
+    return Object.freeze({
+      network: STEEM_NETWORK,
+      name,
+      owner: parseAuthority(account.owner, "owner"),
+      posting: parseAuthority(account.posting, "posting"),
+      active: parseAuthority(account.active, "active"),
+    });
+  }
+
+  /**
+   * What the account holds, liquid (not powered up, not in savings).
+   * @param {string} name
+   * @returns {Promise<ChainBalances | null>} null for an unknown or invalid name
+   */
+  async getBalances(name) {
+    const account = await this.#rawAccount(name);
+    if (account === null) {
+      return null;
+    }
+    return Object.freeze({ STEEM: parseBalance(account.balance, "STEEM"), SBD: parseBalance(account.sbd_balance, "SBD") });
+  }
+
+  /**
+   * @param {string} name
+   * @returns {Promise<Record<string, unknown> | null>} the node's account object, checked to be the one asked for
+   */
+  async #rawAccount(name) {
     if (!isValidAccountName(name)) {
       return null;
     }
@@ -283,12 +316,19 @@ export class SteemBlockchainProvider {
     if (account.name !== name) {
       throw new ChainDataError("get_accounts: returned a different account");
     }
-    return Object.freeze({
-      network: STEEM_NETWORK,
-      name,
-      owner: parseAuthority(account.owner, "owner"),
-      posting: parseAuthority(account.posting, "posting"),
-      active: parseAuthority(account.active, "active"),
-    });
+    return account;
   }
+}
+
+/**
+ * @param {unknown} value e.g. "12.500 STEEM"
+ * @param {string} asset the asset the field must hold
+ * @returns {number} thousandths
+ */
+function parseBalance(value, asset) {
+  const parsed = parseSteemAsset(value);
+  if (parsed === null || parsed.asset !== asset) {
+    throw new ChainDataError(`account balance: expected an amount of ${asset}`);
+  }
+  return parsed.amount;
 }

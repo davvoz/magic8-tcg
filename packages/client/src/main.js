@@ -21,8 +21,9 @@ import { LobbyService } from "./application/lobby/LobbyService.js";
 import { describeLobbyEvent } from "./application/lobby/describeLobbyEvent.js";
 import { RankingService } from "./application/ranking/RankingService.js";
 import { TradingService } from "./application/trading/TradingService.js";
-import { SalesService } from "./application/sales/SalesService.js";
-import { ShopService } from "./application/shop/ShopService.js";
+import { BuyStage, SalesService } from "./application/sales/SalesService.js";
+import { PurchaseStage, ShopService } from "./application/shop/ShopService.js";
+import { BalanceService } from "./application/wallet/BalanceService.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { deckMix } from "./application/decks/deckMix.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
@@ -39,6 +40,7 @@ import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js"
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
 import { HttpTradingApi } from "./infrastructure/api/HttpTradingApi.js";
 import { HttpSalesApi } from "./infrastructure/api/HttpSalesApi.js";
+import { HttpBalanceApi } from "./infrastructure/api/HttpBalanceApi.js";
 import { HttpNotificationsApi } from "./infrastructure/api/HttpNotificationsApi.js";
 import { fetchServerStatus } from "./infrastructure/api/fetchServerStatus.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
@@ -98,6 +100,8 @@ const CONTENT_MANIFEST = Object.freeze({
 });
 /** Where the illustration files named in data/art/illustrations.json live. */
 const ART_DIRECTORY = "data/art/";
+/** Notifications after which the player's wallet holds a different amount. */
+const WALLET_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "sale.sold", "sale.bought"]);
 /** How often the maintenance countdown moves. */
 const MAINTENANCE_TICK_MS = 1000;
 /** How often the page asks again, for tabs without a realtime connection (signed out) and pushes that went missing. */
@@ -344,6 +348,10 @@ async function boot() {
   const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), scheduler: browserScheduler, onCollectionChanged: () => account.refresh() });
   // The player market: payments go from the buyer's wallet straight to the seller; the collection reloads when a card moves.
   const sales = new SalesService({ api: new HttpSalesApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID(), onCollectionChanged: () => account.refresh(), connection: realtime });
+  // The player's budget where they buy: read from their wallet on the chain, again once a payment is sent.
+  const balance = new BalanceService({ api: new HttpBalanceApi({ fetch: httpFetch }) });
+  refreshWhenPaid(shop, (state) => state.purchase.stage === PurchaseStage.CONFIRMING, balance);
+  refreshWhenPaid(sales, (state) => state.buying.stage === BuyStage.CONFIRMING, balance);
   // A purchase, a connection and a standing belong to the account that started them.
   // What happened to the player's orders, trades and sales: read at sign-in, pushed while here.
   const notifications = new NotificationService({ api: new HttpNotificationsApi({ fetch: httpFetch }), connection: realtime, logger });
@@ -362,6 +370,7 @@ async function boot() {
       ranking.reset();
       trading.reset();
       sales.reset();
+      balance.reset();
     }
   });
 
@@ -378,6 +387,7 @@ async function boot() {
     identity,
     account,
     shop,
+    balance,
     online,
     lobby,
     ranking,
@@ -408,6 +418,10 @@ async function boot() {
     if (COLLECTION_CHANGING_KINDS.includes(notification.kind)) {
       account.refresh();
     }
+    // A purchase is final, or a buyer paid the player: the wallet changed too.
+    if (WALLET_CHANGING_KINDS.includes(notification.kind)) {
+      void balance.refresh();
+    }
   });
   sceneManager.navigate(SceneId.MAIN_MENU);
   // Fetched in the background so cards rarely appear procedural first; each one redraws as it arrives.
@@ -418,6 +432,24 @@ async function boot() {
   void tableArt.preload();
   // The menus are the first thing on screen: fetched straight away too.
   void uiArt.preload();
+}
+
+/**
+ * Reads the wallet again each time a purchase's payment has just been sent.
+ * @template S
+ * @param {{ state: S, subscribe: (listener: (state: S) => void) => unknown }} service
+ * @param {(state: S) => boolean} paid
+ * @param {BalanceService} balance
+ */
+function refreshWhenPaid(service, paid, balance) {
+  let wasPaid = paid(service.state);
+  service.subscribe((state) => {
+    const isPaid = paid(state);
+    if (isPaid && !wasPaid) {
+      void balance.refresh();
+    }
+    wasPaid = isPaid;
+  });
 }
 
 /**

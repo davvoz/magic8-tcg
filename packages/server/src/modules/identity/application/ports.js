@@ -39,6 +39,8 @@ export const SESSION_REPOSITORY_METHODS = Object.freeze(["save", "findByTokenHas
  * @property {(challenge: { account: string, nonce: string, origin: string, issuedAt: number, expiresAt: number }) => string} buildLoginMessage
  * @property {(proof: { account: string, message: string, signature: string }) => Promise<import("@magic8/engine/shared/Result.js").Ok<Readonly<{ network: string, account: string, publicKey: string }>> | import("@magic8/engine/shared/Result.js").Fail>} verifyLogin
  * @property {(account: string, publicKey: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<true> | import("@magic8/engine/shared/Result.js").Fail>} isPostingKey
+ * @property {(account: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<readonly Readonly<{ asset: string, amount: string }>[]> | import("@magic8/engine/shared/Result.js").Fail>} [balancesOf]
+ *   what the account can spend now, amounts as the chain writes them ("12.500"); optional
  */
 export const WALLET_PROVIDER_METHODS = Object.freeze(["isValidAccountName", "buildLoginMessage", "verifyLogin", "isPostingKey"]);
 

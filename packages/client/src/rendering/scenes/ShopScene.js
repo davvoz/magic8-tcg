@@ -13,7 +13,9 @@
  * any shelf, lets the player change or remove it, and pays for all of it
  * with one transfer. Paying goes through the wallet (Keychain shows the
  * exact transfer); when the order is fulfilled the cards received are
- * revealed, pack by pack. Every price shown is the server's.
+ * revealed, pack by pack. Every price shown is the server's. The header
+ * shows the player's budget, what their wallet holds in STEEM: what it
+ * cannot pay for is not offered for payment.
  */
 import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
@@ -116,7 +118,15 @@ export class ShopScene extends Scene {
 
   enter() {
     const shop = this.#shop();
-    this.#unsubscribe = shop.subscribe(() => this.#rebuild());
+    const unsubscribe = shop.subscribe(() => this.#rebuild());
+    const unwatch = this.#app.balance?.subscribe(() => this.#rebuild());
+    this.#unsubscribe = () => {
+      unsubscribe();
+      unwatch?.();
+    };
+    if (this.#signedIn()) {
+      void this.#app.balance?.refresh();
+    }
     this.#revealClosed = false;
     if (shop.state.status === ShopStatus.IDLE || shop.state.status === ShopStatus.FAILED) {
       shop.load();
@@ -204,10 +214,16 @@ export class ShopScene extends Scene {
     const { viewport } = this.services;
     const account = this.#app.account?.state.account ?? null;
     this.root.add(new Label({ x: HEADER.sideMargin, y: HEADER.y, width: 200, height: HEADER.height, text: "Shop", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    const note = account === null ? "Sign in with Keychain to buy. Prices are paid in STEEM, straight from your wallet." : `Buying as @${account}. Payments go straight from your wallet; nothing is stored in the game.`;
     const market = this.services.hasScene(SceneId.MARKET);
     const buttons = market ? 3 : 2;
-    this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y, width: viewport.logicalWidth - 2 * HEADER.sideMargin - 200 - buttons * (HEADER.backWidth + 16), height: HEADER.height, text: note, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    const noteWidth = viewport.logicalWidth - 2 * HEADER.sideMargin - 200 - buttons * (HEADER.backWidth + 16);
+    if (account === null) {
+      this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y, width: noteWidth, height: HEADER.height, text: "Sign in with Keychain to buy. Prices are paid in STEEM, straight from your wallet.", size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    } else {
+      const budget = this.#budgetLine();
+      this.root.add(new Label({ id: "shop.budget", x: HEADER.sideMargin + 200, y: HEADER.y, width: noteWidth, height: HEADER.height / 2, text: budget.text, weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
+      this.root.add(new Label({ x: HEADER.sideMargin + 200, y: HEADER.y + HEADER.height / 2, width: noteWidth, height: HEADER.height / 2, text: `Buying as @${account}. Payments go straight from your wallet; nothing is stored in the game.`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    }
     const inCart = this.#shop().state.cart.reduce((sum, line) => sum + line.quantity, 0);
     this.root.add(
       new Button({
@@ -521,14 +537,14 @@ export class ShopScene extends Scene {
         height: BUY.height,
         text: `Buy for ${multiplyAmount(price.amount, this.#quantity)} ${price.asset}`,
         variant: "primary",
-        enabled: this.#canBuy(),
+        enabled: this.#canBuy() && !this.#isShort(multiplyAmount(price.amount, this.#quantity), price.asset),
         onActivate: () => {
           this.#notice = null;
           shop.buy({ productId: product.id, quantity: this.#quantity, asset: price.asset });
         },
       }),
     );
-    const status = this.#statusLine(purchase);
+    const status = this.#statusLine(purchase, multiplyAmount(price.amount, this.#quantity), price.asset);
     panel.add(new TextBlock({ id: "shop.status", x: INSET, y: buyY + BUY.height + 8, width: DETAIL_WIDTH, height: 2 * LINE, text: status.text, size: "small", colorKey: status.colorKey }));
     const x = INSET + BUY.width + INSET;
     const side = COLUMNS.right.width - x - INSET;
@@ -545,14 +561,61 @@ export class ShopScene extends Scene {
   #canBuy() {
     const shop = this.#shop();
     const busy = BUSY_STAGES.includes(shop.state.purchase.stage);
-    return shop.state.status === ShopStatus.READY && (this.#app.account?.state.account ?? null) !== null && !busy;
+    return shop.state.status === ShopStatus.READY && this.#signedIn() && !busy;
+  }
+
+  #signedIn() {
+    return (this.#app.account?.state.account ?? null) !== null;
+  }
+
+  /** The asset the shop's prices are in. */
+  #asset() {
+    return this.#shop().state.listing?.priceList.asset || "STEEM";
+  }
+
+  /**
+   * Whether the player's wallet is known to hold less than `amount`.
+   * @param {string} amount
+   * @param {string} asset
+   */
+  #isShort(amount, asset) {
+    return this.#app.balance?.isShort(amount, asset) ?? false;
+  }
+
+  /** @returns {{ text: string, colorKey: string }} the player's budget, as far as it is known */
+  #budgetLine() {
+    const balance = this.#app.balance;
+    const asset = this.#asset();
+    const amount = balance?.amountOf(asset) ?? null;
+    if (amount !== null) {
+      return { text: `Your budget: ${amount} ${asset}`, colorKey: "accentLight" };
+    }
+    if (balance === undefined || balance.state.loading) {
+      return { text: "Reading your wallet…", colorKey: "textMuted" };
+    }
+    return { text: balance.state.error === null ? "Your budget is not known" : `Your wallet could not be read: ${balance.state.error}`, colorKey: "danger" };
+  }
+
+  /**
+   * "Not enough STEEM…", when the wallet is known to hold less than `amount`.
+   * @param {string} amount
+   * @param {string} asset
+   * @returns {{ text: string, colorKey: string } | null}
+   */
+  #shortfall(amount, asset) {
+    if (!this.#isShort(amount, asset)) {
+      return null;
+    }
+    return { text: `Not enough ${asset}: this costs ${amount} ${asset}, your wallet holds ${this.#app.balance?.amountOf(asset)} ${asset}.`, colorKey: "danger" };
   }
 
   /**
    * @param {import("../../application/shop/ShopService.js").Purchase} purchase
+   * @param {string} amount what Buy would pay
+   * @param {string} asset
    * @returns {{ text: string, colorKey: string }}
    */
-  #statusLine(purchase) {
+  #statusLine(purchase, amount, asset) {
     if (purchase.error !== null) {
       return { text: purchase.error.message, colorKey: purchase.stage === PurchaseStage.FAILED ? "danger" : "accent" };
     }
@@ -563,7 +626,10 @@ export class ShopScene extends Scene {
     if (this.#notice !== null) {
       return this.#notice;
     }
-    return (this.#app.account?.state.account ?? null) === null ? { text: "Sign in to buy.", colorKey: "textMuted" } : { text: "Keychain will show the exact transfer before anything is paid.", colorKey: "textMuted" };
+    if (!this.#signedIn()) {
+      return { text: "Sign in to buy.", colorKey: "textMuted" };
+    }
+    return this.#shortfall(amount, asset) ?? { text: "Keychain will show the exact transfer before anything is paid.", colorKey: "textMuted" };
   }
 
   /**
@@ -678,6 +744,10 @@ export class ShopScene extends Scene {
     const totalY = footerY - INSET - 2 * LINE;
     this.#buildCartLines(panel.add(new ScrollList({ id: CART_LIST_ID, x: INSET, y: INSET + 60, width, height: totalY - INSET - 60 - INSET })), summary, scrollY);
     panel.add(new Label({ id: "cart.total", x: INSET, y: totalY, width, height: LINE, text: summary.asset === null ? "" : `Total: ${summary.total} ${summary.asset}`, size: "body", weight: "bold", align: "right", colorKey: "accentLight" }));
+    if (this.#signedIn()) {
+      const budget = this.#budgetLine();
+      panel.add(new Label({ id: "cart.budget", x: INSET, y: totalY, width: width / 2, height: LINE, text: budget.text, size: "small", weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
+    }
     const hint = this.#cartHint(summary);
     panel.add(new Label({ id: "cart.status", x: INSET, y: totalY + LINE, width, height: LINE, text: hint.text, size: "small", align: "right", colorKey: hint.colorKey, fit: true }));
     const buttons = this.#buildCartButtons(panel, summary, footerY);
@@ -786,7 +856,7 @@ export class ShopScene extends Scene {
         height: CART.footer,
         text: summary.payable ? `Pay ${summary.total} ${summary.asset}` : "Pay",
         variant: "primary",
-        enabled: summary.payable && this.#canBuy(),
+        enabled: summary.payable && this.#canBuy() && !this.#isShort(summary.total, /** @type {string} */ (summary.asset)),
         onActivate: () => this.#checkout(/** @type {string} */ (summary.asset)),
       }),
     );
@@ -812,7 +882,7 @@ export class ShopScene extends Scene {
     if (BUSY_STAGES.includes(shop.state.purchase.stage)) {
       return { text: "A purchase is in progress: pay for the cart when it is over.", colorKey: "accent" };
     }
-    return { text: "One payment for everything: Keychain shows the exact transfer before anything is paid.", colorKey: "textMuted" };
+    return this.#shortfall(summary.total, /** @type {string} */ (summary.asset)) ?? { text: "One payment for everything: Keychain shows the exact transfer before anything is paid.", colorKey: "textMuted" };
   }
 
   /** @param {boolean} shown */

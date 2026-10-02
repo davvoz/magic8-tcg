@@ -23,6 +23,7 @@
 | POST | `/api/auth/sessions` | `{ "challengeId", "signature" }` | `{ "user": {…} }` + cookie | Challenge consumato anche in caso di errore. |
 | DELETE | `/api/auth/sessions/current` | — | 204 | Revoca la sessione. |
 | GET | `/api/me` | — | `{ "user": { "id", "account", "network" } }` | |
+| GET | `/api/wallet/balances` | — | `{ "account", "balances": [{ "asset": "STEEM", "amount": "12.500" }, { "asset": "SBD", … }] }` | Saldi liquidi letti dalla chain (`get_accounts`): il budget mostrato in Shop e Market. 503 `CHAIN_UNAVAILABLE` se nessun nodo risponde. 10/min per utente. |
 
 ### Catalog, collection, decks
 
