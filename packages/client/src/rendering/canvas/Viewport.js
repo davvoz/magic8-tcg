@@ -1,8 +1,10 @@
 /**
  * Maps a fixed logical resolution (e.g. 1600×900) onto the actual canvas:
- * uniform scale, centred with letterboxing, DPR-aware. Owns the only
- * logical↔device conversion in the codebase; input and rendering both go
- * through it.
+ * uniform scale, centred, DPR-aware. Owns the only logical↔device
+ * conversion in the codebase; input and rendering both go through it.
+ * The design area always fits whole at the origin; a window of another
+ * shape shows more around it (`bounds`, with negative x or y), which
+ * scenes fill instead of leaving black bars.
  */
 import { rect } from "@magic8/engine/shared/geometry.js";
 
@@ -15,6 +17,8 @@ export class Viewport {
   #dpr = 1;
   #cssWidth = 0;
   #cssHeight = 0;
+  /** @type {import("@magic8/engine/shared/geometry.js").Rect} */
+  #visible;
 
   /**
    * @param {{ logicalWidth: number, logicalHeight: number }} layout
@@ -22,6 +26,7 @@ export class Viewport {
   constructor({ logicalWidth, logicalHeight }) {
     this.#logicalWidth = logicalWidth;
     this.#logicalHeight = logicalHeight;
+    this.#visible = rect(0, 0, logicalWidth, logicalHeight);
   }
 
   get logicalWidth() {
@@ -32,9 +37,13 @@ export class Viewport {
     return this.#logicalHeight;
   }
 
-  /** Whole logical area as a rect at the origin. */
+  /**
+   * Everything the canvas shows, in logical units: the design area plus
+   * the margin the window's shape adds on two opposite sides (equal on
+   * both, so the design area stays centred). The design area until the first resize.
+   */
   get bounds() {
-    return rect(0, 0, this.#logicalWidth, this.#logicalHeight);
+    return this.#visible;
   }
 
   get scale() {
@@ -55,6 +64,8 @@ export class Viewport {
     this.#scale = Math.min(this.#cssWidth / this.#logicalWidth, this.#cssHeight / this.#logicalHeight);
     this.#offsetX = (this.#cssWidth - this.#logicalWidth * this.#scale) / 2;
     this.#offsetY = (this.#cssHeight - this.#logicalHeight * this.#scale) / 2;
+    const corner = this.toLogical(0, 0);
+    this.#visible = rect(corner.x, corner.y, this.#cssWidth / this.#scale, this.#cssHeight / this.#scale);
   }
 
   /** Backing-store size the canvas should be given. */
@@ -81,8 +92,8 @@ export class Viewport {
   }
 
   /**
-   * Sets the context transform so drawing in logical units lands in the
-   * letterboxed area at device resolution.
+   * Sets the context transform so drawing in logical units lands on the
+   * canvas at device resolution, the design area centred.
    * @param {CanvasRenderingContext2D} context
    */
   applyTransform(context) {
@@ -90,7 +101,7 @@ export class Viewport {
     context.setTransform(factor, 0, 0, factor, this.#offsetX * this.#dpr, this.#offsetY * this.#dpr);
   }
 
-  /** Letterbox bars in CSS pixels (relative to the canvas), for painting the surround. */
+  /** Where the design area starts and the canvas size, in CSS pixels; the render loop clears the whole canvas from it. */
   get letterbox() {
     return Object.freeze({ x: this.#offsetX, y: this.#offsetY, cssWidth: this.#cssWidth, cssHeight: this.#cssHeight });
   }

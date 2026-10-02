@@ -137,7 +137,7 @@ describe("main menu notifications button", () => {
 describe("ToastLayer", () => {
   it("stacks the newest toasts over the scene, fades them out, and opens the feed on a click", () => {
     const opened = [];
-    const toasts = new ToastLayer({ viewport: { logicalWidth: 1600 }, onOpen: (message) => opened.push(message.title), requestRender: () => undefined });
+    const toasts = new ToastLayer({ viewport: { bounds: { x: 0, y: 0, width: 1600, height: 900 } }, onOpen: (message) => opened.push(message.title), requestRender: () => undefined });
     for (const title of ["one", "two", "three", "four"]) {
       toasts.show({ title, body: "A long enough body to wrap over a couple of lines in the toast, and then some more words.", tone: "good" });
     }

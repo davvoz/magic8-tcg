@@ -18,6 +18,14 @@ describe("Viewport", () => {
     assert.deepEqual(viewport.toLogical(400, 300), { x: 800, y: 450 });
     assert.deepEqual(viewport.toCss(800, 450), { x: 400, y: 300 });
     assert.deepEqual(viewport.toLogical(0, 0), { x: 0, y: -150 }, "points in the letterbox map outside the logical area");
+    assert.deepEqual(viewport.bounds, { x: 0, y: -150, width: 1600, height: 1200 }, "bounds cover the whole canvas, the design area centred");
+  });
+
+  it("bounds the design area until it knows the canvas, and widens for a wide one", () => {
+    const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
+    assert.deepEqual(viewport.bounds, { x: 0, y: 0, width: 1600, height: 900 });
+    viewport.resize({ cssWidth: 2000, cssHeight: 900 });
+    assert.deepEqual(viewport.bounds, { x: -200, y: 0, width: 2000, height: 900 });
   });
 
   it("applies a device-resolution transform", () => {

@@ -3,6 +3,9 @@
  * sidebar control and card slot goes for a given snapshot seen from the
  * human's seat. No drawing, no state; the presenter tweens visuals toward
  * these rectangles and the scene builds hit-testable nodes from them.
+ * The board fills the area it is given (the whole screen): the HUDs and
+ * the sidebar keep to its edges, the fields take the width in between, and
+ * extra height goes evenly above and below the two fields.
  */
 import { rect } from "@magic8/engine/shared/geometry.js";
 
@@ -18,6 +21,13 @@ const MARGIN = 16;
 /** The ribbon's notched ends leave this fraction of the banner unused on each side (BoardNode draws the ribbon itself); the clock docks there. */
 export const BANNER_INSET_FRACTION = 0.18;
 const CLOCK_SIZE = 48;
+const HUD_HEIGHT = 184;
+const SIDEBAR_HEIGHT = 470;
+/** Gap between a field and the banner between them. */
+const BANNER_GAP = 6;
+const BANNER_HEIGHT = 40;
+/** The human's hand zone: a hand card with a little room above and below. */
+const HAND_HEIGHT = CARD_SIZE.hand.height + 6;
 
 /**
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
@@ -29,33 +39,39 @@ const CLOCK_SIZE = 48;
  *   handSlots: readonly Rect[],
  * }>} SeatLayout
  * @typedef {Readonly<{
- *   width: number, height: number,
+ *   x: number, y: number, width: number, height: number,
  *   me: SeatLayout, opponent: SeatLayout,
  *   banner: Rect, clock: Rect, sidebar: Rect, log: Rect,
  *   cards: Readonly<Record<string, Rect>>,
- * }>} BoardLayout `clock`: where the decision clock docks, in the banner's unused right margin
+ * }>} BoardLayout `x`…`height`: the area the board fills; `clock`: where the decision clock docks, in the banner's unused right margin
  */
 
 /**
  * @param {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} snapshot
  * @param {string} perspectiveId
- * @param {{ logicalWidth: number, logicalHeight: number }} size
+ * @param {import("@magic8/engine/shared/geometry.js").Rect} area what the board fills, in logical units (at least 1600×900)
  * @returns {BoardLayout}
  */
-export function computeBoardLayout(snapshot, perspectiveId, { logicalWidth: width, logicalHeight: height }) {
+export function computeBoardLayout(snapshot, perspectiveId, { x, y, width, height }) {
   const me = snapshot.players.find((player) => player.id === perspectiveId) ?? snapshot.players[0];
   const opponent = snapshot.players.find((player) => player.id !== me.id) ?? me;
-  const centerX = MARGIN + SIDE_WIDTH + MARGIN;
-  const centerWidth = width - 2 * (MARGIN + SIDE_WIDTH + MARGIN);
-  const hudHeight = 184;
+  const left = Math.round(x);
+  const top = Math.round(y);
+  const right = Math.round(x + width);
+  const bottom = Math.round(y + height);
+  const centerX = left + MARGIN + SIDE_WIDTH + MARGIN;
+  const centerWidth = right - left - 2 * (MARGIN + SIDE_WIDTH + MARGIN);
+  const fieldHeight = CARD_SIZE.battlefield.height + 2 * GAP;
 
-  const opponentHand = rect(centerX, MARGIN, centerWidth, CARD_SIZE.back.height + GAP);
-  const opponentField = rect(centerX, opponentHand.y + opponentHand.height + GAP, centerWidth, CARD_SIZE.battlefield.height + 2 * GAP);
-  const banner = rect(centerX, opponentField.y + opponentField.height + 6, centerWidth, 40);
+  const opponentHand = rect(centerX, top + MARGIN, centerWidth, CARD_SIZE.back.height + GAP);
+  const myHand = rect(centerX, bottom - MARGIN - HAND_HEIGHT, centerWidth, HAND_HEIGHT);
+  const between = myHand.y - GAP - (opponentHand.y + opponentHand.height + GAP);
+  const fieldsTop = opponentHand.y + opponentHand.height + GAP + Math.round((between - (2 * fieldHeight + 2 * BANNER_GAP + BANNER_HEIGHT)) / 2);
+  const opponentField = rect(centerX, fieldsTop, centerWidth, fieldHeight);
+  const banner = rect(centerX, opponentField.y + opponentField.height + BANNER_GAP, centerWidth, BANNER_HEIGHT);
   const bannerInset = banner.width * BANNER_INSET_FRACTION;
   const clock = rect(Math.round(banner.x + banner.width - bannerInset / 2 - CLOCK_SIZE / 2), Math.round(banner.y + banner.height / 2 - CLOCK_SIZE / 2), CLOCK_SIZE, CLOCK_SIZE);
-  const myField = rect(centerX, banner.y + banner.height + 6, centerWidth, CARD_SIZE.battlefield.height + 2 * GAP);
-  const myHand = rect(centerX, myField.y + myField.height + GAP, centerWidth, height - (myField.y + myField.height + GAP) - MARGIN);
+  const myField = rect(centerX, banner.y + banner.height + BANNER_GAP, centerWidth, fieldHeight);
 
   /** @type {Record<string, Rect>} */
   const cards = {};
@@ -66,15 +82,18 @@ export function computeBoardLayout(snapshot, perspectiveId, { logicalWidth: widt
   // A spectator sees no hand at all: the bottom seat's cards are backs too.
   const myBacks = me.hand === null ? slotsFor(me.handSize, myHand, CARD_SIZE.back) : [];
 
+  const sideX = right - MARGIN - SIDE_WIDTH;
   return Object.freeze({
-    width,
-    height,
-    opponent: Object.freeze({ id: opponent.id, hud: rect(MARGIN, MARGIN, SIDE_WIDTH, hudHeight), hand: opponentHand, battlefield: opponentField, handSlots: Object.freeze(backs) }),
-    me: Object.freeze({ id: me.id, hud: rect(MARGIN, height - MARGIN - hudHeight, SIDE_WIDTH, hudHeight), hand: myHand, battlefield: myField, handSlots: Object.freeze(myBacks) }),
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    opponent: Object.freeze({ id: opponent.id, hud: rect(left + MARGIN, top + MARGIN, SIDE_WIDTH, HUD_HEIGHT), hand: opponentHand, battlefield: opponentField, handSlots: Object.freeze(backs) }),
+    me: Object.freeze({ id: me.id, hud: rect(left + MARGIN, bottom - MARGIN - HUD_HEIGHT, SIDE_WIDTH, HUD_HEIGHT), hand: myHand, battlefield: myField, handSlots: Object.freeze(myBacks) }),
     banner,
     clock,
-    sidebar: rect(width - MARGIN - SIDE_WIDTH, MARGIN, SIDE_WIDTH, 470),
-    log: rect(width - MARGIN - SIDE_WIDTH, MARGIN + 470 + GAP, SIDE_WIDTH, height - 2 * MARGIN - 470 - GAP),
+    sidebar: rect(sideX, top + MARGIN, SIDE_WIDTH, SIDEBAR_HEIGHT),
+    log: rect(sideX, top + MARGIN + SIDEBAR_HEIGHT + GAP, SIDE_WIDTH, bottom - top - 2 * MARGIN - SIDEBAR_HEIGHT - GAP),
     cards: Object.freeze(cards),
   });
 }

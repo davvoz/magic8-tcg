@@ -44,12 +44,12 @@ export class CoinTossNode extends UiNode {
   #nameOf;
 
   /**
-   * @param {{ flip: import("./CoinFlip.js").CoinFlip, width: number, height: number, viewerId: string | null, nameOf: (playerId: string) => string }} options
+   * @param {{ flip: import("./CoinFlip.js").CoinFlip, x?: number, y?: number, width: number, height: number, viewerId: string | null, nameOf: (playerId: string) => string }} options
    *   `viewerId`: the player looking at the board (shown on the left and addressed as "you"), null for a spectator;
    *   `nameOf`: how to name a player on the plates
    */
-  constructor({ flip, width, height, viewerId, nameOf }) {
-    super({ id: "coinToss", width, height });
+  constructor({ flip, x = 0, y = 0, width, height, viewerId, nameOf }) {
+    super({ id: "coinToss", x, y, width, height });
     this.interactive = true;
     this.#flip = flip;
     this.#viewerId = viewerId;

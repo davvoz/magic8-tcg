@@ -27,7 +27,7 @@ export class BoardNode extends UiNode {
    * @param {{ layout: import("./BoardLayout.js").BoardLayout, banner: string, activePlayerId: string | null }} options
    */
   constructor({ layout, banner, activePlayerId }) {
-    super({ id: "board", width: layout.width, height: layout.height });
+    super({ id: "board", x: layout.x, y: layout.y, width: layout.width, height: layout.height });
     this.passthrough = true;
     this.#layout = layout;
     this.#banner = banner;

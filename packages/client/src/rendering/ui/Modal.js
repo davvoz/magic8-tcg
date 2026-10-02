@@ -35,6 +35,20 @@ export class Modal extends UiNode {
     );
   }
 
+  /**
+   * Stretches the backdrop over `area` (the whole screen) and keeps the
+   * panel where it was, centred on the design area.
+   * @param {import("@magic8/engine/shared/geometry.js").Rect} area
+   */
+  cover(area) {
+    this.panel.x += this.x - area.x;
+    this.panel.y += this.y - area.y;
+    this.x = area.x;
+    this.y = area.y;
+    this.width = area.width;
+    this.height = area.height;
+  }
+
   /** A release on the backdrop (outside the panel) dismisses. */
   activate() {
     this.onDismiss();

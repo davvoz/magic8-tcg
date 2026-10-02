@@ -156,6 +156,11 @@ export class SceneManager {
     this.#current?.onPointer(input);
   }
 
+  /** The canvas changed size: the current scene re-fits to `viewport.bounds`. */
+  resize() {
+    this.#current?.onResize();
+  }
+
   /** @param {import("../../input/InputManager.js").KeyInput} input */
   onKey(input) {
     this.#current?.onKey(input);

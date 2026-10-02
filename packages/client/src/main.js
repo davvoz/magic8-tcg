@@ -158,14 +158,14 @@ const logger = new ConsoleLogger();
 /**
  * Built once; a fatal error after start-up reuses it instead of attaching a
  * second canvas host and input manager to the same element.
- * @type {{ sceneManager: SceneManager, loop: GameLoop, restart: () => void } | null}
+ * @type {{ sceneManager: SceneManager, loop: GameLoop, viewport: Viewport, restart: () => void } | null}
  */
 let presentation = null;
 let fatalShown = false;
 
 /**
  * @param {import("./rendering/theme/Theme.js").Theme} theme
- * @returns {{ sceneManager: SceneManager, loop: GameLoop, restart: () => void }}
+ * @returns {{ sceneManager: SceneManager, loop: GameLoop, viewport: Viewport, restart: () => void }}
  */
 function buildPresentation(theme) {
   const canvas = document.getElementById("game");
@@ -178,8 +178,16 @@ function buildPresentation(theme) {
     cancelFrame: (handle) => window.cancelAnimationFrame(handle),
     now: () => performance.now(),
   });
-  const host = new CanvasHost({ canvas, viewport, window, onResize: () => loop.requestRender() });
   const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender() });
+  const host = new CanvasHost({
+    canvas,
+    viewport,
+    window,
+    onResize: () => {
+      sceneManager.resize();
+      loop.requestRender();
+    },
+  });
   const input = new InputManager({ canvas, window, viewport, target: sceneManager });
   host.attach();
   input.attach();
@@ -197,7 +205,7 @@ function buildPresentation(theme) {
     onError: (error) => showFatal("Unexpected error", describeError(error)),
   };
   loop.start(target);
-  presentation = { sceneManager, loop, restart: () => loop.start(target) };
+  presentation = { sceneManager, loop, viewport, restart: () => loop.start(target) };
   return presentation;
 }
 
@@ -379,10 +387,10 @@ async function boot() {
 
   // Players' STEEM profile pictures; a player is drawn as their initial until theirs is ready.
   const avatars = new Avatars({ loadImage: loadBrowserImage, onLoaded: () => presentation?.loop.requestRender(), logger });
-  const { sceneManager, loop } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars }));
+  const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars }));
   registerScenes(sceneManager, app);
   // A notification that arrives shows as a toast on any screen; a click opens the feed (or the lobby, for a challenge).
-  const toasts = new ToastLayer({ viewport: theme.value.layout, onOpen: (message) => sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
+  const toasts = new ToastLayer({ viewport, onOpen: (message) => sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
   sceneManager.setOverlay(toasts);
   lobby.onEvent((event) => toasts.show({ ...describeLobbyEvent(event), opens: SceneId.ONLINE }));
   // A game found while the player is elsewhere (their challenge was accepted): the lobby shows it and asks Keychain to accept it.

@@ -28,11 +28,11 @@ export class GameOverNode extends UiNode {
   #centreY;
 
   /**
-   * @param {{ sequence: import("./GameOverSequence.js").GameOverSequence, width: number, height: number, centreY: number }} options
+   * @param {{ sequence: import("./GameOverSequence.js").GameOverSequence, x?: number, y?: number, width: number, height: number, centreY: number }} options
    *   `centreY`: the middle line of the table, where the outcome is shown
    */
-  constructor({ sequence, width, height, centreY }) {
-    super({ id: "gameOverSequence", width, height });
+  constructor({ sequence, x = 0, y = 0, width, height, centreY }) {
+    super({ id: "gameOverSequence", x, y, width, height });
     this.passthrough = true;
     this.#sequence = sequence;
     this.#centreY = centreY;

@@ -126,8 +126,16 @@ function buildPresentation(theme) {
     cancelFrame: (handle) => window.cancelAnimationFrame(handle),
     now: () => performance.now(),
   });
-  const host = new CanvasHost({ canvas, viewport, window, onResize: () => loop.requestRender() });
   const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender() });
+  const host = new CanvasHost({
+    canvas,
+    viewport,
+    window,
+    onResize: () => {
+      sceneManager.resize();
+      loop.requestRender();
+    },
+  });
   const input = new InputManager({ canvas, window, viewport, target: sceneManager });
   host.attach();
   input.attach();

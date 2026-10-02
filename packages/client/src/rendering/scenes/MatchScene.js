@@ -307,6 +307,21 @@ export class MatchScene extends Scene {
     super.onKey(input);
   }
 
+  /** The board re-fits to the new screen: cards snap to their new places, an open modal stays open. */
+  onResize() {
+    const snapshot = this.#snapshot;
+    if (snapshot !== null && this.#layout !== null) {
+      const modal = this.modal;
+      this.#layout = computeBoardLayout(snapshot, this.#playerId, this.services.viewport.bounds);
+      this.#presenter.apply(snapshot, [], this.#layout, { animate: false });
+      this.#rebuild();
+      if (modal !== null && this.modal === null) {
+        this.openModal(modal);
+      }
+    }
+    super.onResize();
+  }
+
   /** Escape drops the current multi-step intent when no modal is open. */
   onCancel() {
     if (this.modal !== null) {
@@ -373,7 +388,7 @@ export class MatchScene extends Scene {
       return;
     }
     this.#snapshot = snapshot;
-    this.#layout = computeBoardLayout(snapshot, this.#playerId, this.services.viewport);
+    this.#layout = computeBoardLayout(snapshot, this.#playerId, this.services.viewport.bounds);
     this.#presenter.apply(snapshot, events, this.#layout, { animate, outcome });
     const entries = events.map((event) => describeEvent(event, snapshot)).filter((entry) => entry !== null);
     this.#log = [...this.#log, ...entries].slice(-MAX_LOG_ENTRIES);
@@ -598,7 +613,7 @@ export class MatchScene extends Scene {
     }
     const { viewport } = this.services;
     const viewerId = this.#spectating ? null : this.#playerId;
-    this.root.add(new CoinTossNode({ flip, width: viewport.logicalWidth, height: viewport.logicalHeight, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId) }));
+    this.root.add(new CoinTossNode({ flip, ...viewport.bounds, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId) }));
   }
 
   /**
@@ -607,7 +622,7 @@ export class MatchScene extends Scene {
    */
   #buildEnding(layout) {
     if (this.#ending !== null) {
-      this.root.add(new GameOverNode({ sequence: this.#ending, width: layout.width, height: layout.height, centreY: layout.banner.y + layout.banner.height / 2 }));
+      this.root.add(new GameOverNode({ sequence: this.#ending, x: layout.x, y: layout.y, width: layout.width, height: layout.height, centreY: layout.banner.y + layout.banner.height / 2 }));
     }
   }
 

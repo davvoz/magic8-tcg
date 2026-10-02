@@ -34,7 +34,7 @@ export class ToastLayer {
   #toasts = [];
 
   /**
-   * @param {{ viewport: { logicalWidth: number }, onOpen: (message: ToastMessage) => void, requestRender: () => void }} deps
+   * @param {{ viewport: { bounds: import("@magic8/engine/shared/geometry.js").Rect }, onOpen: (message: ToastMessage) => void, requestRender: () => void }} deps
    */
   constructor({ viewport, onOpen, requestRender }) {
     this.#viewport = viewport;
@@ -101,7 +101,8 @@ export class ToastLayer {
 
   /** @param {number} index */
   #frame(index) {
-    return { x: this.#viewport.logicalWidth - TOAST.margin - TOAST.width, y: TOAST.margin + index * (TOAST.height + TOAST.gap), width: TOAST.width, height: TOAST.height };
+    const screen = this.#viewport.bounds;
+    return { x: screen.x + screen.width - TOAST.margin - TOAST.width, y: screen.y + TOAST.margin + index * (TOAST.height + TOAST.gap), width: TOAST.width, height: TOAST.height };
   }
 
   /**

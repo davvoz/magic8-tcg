@@ -24,6 +24,8 @@ export class UiNode {
   focusable = false;
   /** Purely decorative overlays set this so pointer queries look through them. */
   passthrough = false;
+  /** Pointer queries reach its children wherever they are, not only inside its own rect (a scene's root, whose children may sit in the margin around the design area). */
+  unbounded = false;
   focused = false;
   hovered = false;
   pressed = false;
@@ -115,7 +117,7 @@ export class UiNode {
    * @returns {UiNode | null}
    */
   hitTest(point) {
-    if (!this.isEffectivelyVisible || this.passthrough || !containsPoint(this.bounds, point) || !this.isEffectivelyEnabled) {
+    if (!this.isEffectivelyVisible || this.passthrough || !this.#reaches(point) || !this.isEffectivelyEnabled) {
       return null;
     }
     for (let index = this.#children.length - 1; index >= 0; index -= 1) {
@@ -134,7 +136,7 @@ export class UiNode {
    * @returns {UiNode | null}
    */
   nodeAt(point) {
-    if (!this.visible || this.passthrough || !containsPoint(this.bounds, point)) {
+    if (!this.visible || this.passthrough || !this.#reaches(point)) {
       return null;
     }
     for (let index = this.#children.length - 1; index >= 0; index -= 1) {
@@ -144,6 +146,11 @@ export class UiNode {
       }
     }
     return this;
+  }
+
+  /** @param {import("@magic8/engine/shared/geometry.js").Point} point */
+  #reaches(point) {
+    return this.unbounded || containsPoint(this.bounds, point);
   }
 
   /**

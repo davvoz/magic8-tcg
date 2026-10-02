@@ -65,7 +65,7 @@ export class EffectsNode extends UiNode {
    * @param {{ presenter: import("./MatchPresenter.js").MatchPresenter, layout: import("./BoardLayout.js").BoardLayout, blocks: readonly Block[], turnLabel?: (playerId: string) => TurnLabel }} options
    */
   constructor({ presenter, layout, blocks, turnLabel = () => ({ text: "New turn", mine: false }) }) {
-    super({ id: "effects", width: layout.width, height: layout.height });
+    super({ id: "effects", x: layout.x, y: layout.y, width: layout.width, height: layout.height });
     this.passthrough = true;
     this.#presenter = presenter;
     this.#layout = layout;

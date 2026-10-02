@@ -28,12 +28,13 @@ import { TurnBanner } from "../../src/rendering/board/TurnBanner.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MatchScene } from "../../src/rendering/scenes/MatchScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
+import { Modal } from "../../src/rendering/ui/Modal.js";
 import { P1, P2 } from "@magic8/engine/testing/fixtures.js";
 import { createScenario } from "@magic8/engine/testing/scenario.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
 
 const theme = loadTheme();
-const SIZE = { logicalWidth: 1600, logicalHeight: 900 };
+const SIZE = { x: 0, y: 0, width: 1600, height: 900 };
 
 function services(overrides = {}) {
   const viewport = new Viewport(theme.layout);
@@ -152,9 +153,28 @@ describe("BoardLayout", () => {
     }
     assert.equal(Object.keys(layout.cards).length, me.hand.length + me.battlefield.length + opponent.battlefield.length, "no slots for hidden or graveyard cards");
     assert.equal(layout.opponent.handSlots.length, opponent.handSize, "one back per hidden card");
-    assert.ok(layout.me.hud.y + layout.me.hud.height <= SIZE.logicalHeight);
-    assert.ok(layout.log.y + layout.log.height <= SIZE.logicalHeight);
+    assert.ok(layout.me.hud.y + layout.me.hud.height <= SIZE.height);
+    assert.ok(layout.log.y + layout.log.height <= SIZE.height);
     assert.ok(layout.clock.x >= layout.banner.x && layout.clock.x + layout.clock.width <= layout.banner.x + layout.banner.width, "the clock docks within the banner row");
+  });
+
+  it("fills a wider or taller screen: side panels at its edges, the fields between, extra height around the fields", () => {
+    const { session } = sessionFromScenario({ p1: { hand: ["ember_imp"] }, p2: {} });
+    session.start();
+    const snapshot = session.snapshotFor(P1);
+    const design = computeBoardLayout(snapshot, P1, SIZE);
+    const wide = computeBoardLayout(snapshot, P1, { x: -200, y: 0, width: 2000, height: 900 });
+    assert.deepEqual([wide.x, wide.width], [-200, 2000]);
+    assert.equal(wide.opponent.hud.x, design.opponent.hud.x - 200, "the HUDs keep to the left edge");
+    assert.equal(wide.sidebar.x, design.sidebar.x + 200, "the sidebar keeps to the right edge");
+    assert.equal(wide.me.battlefield.width, design.me.battlefield.width + 400, "the fields take the extra width");
+    assert.equal(wide.banner.y, design.banner.y, "the same height lays out the same rows");
+    const tall = computeBoardLayout(snapshot, P1, { x: 0, y: -100, width: 1600, height: 1100 });
+    assert.equal(tall.opponent.hand.y, design.opponent.hand.y - 100, "the opponent's hand at the top edge");
+    assert.equal(tall.me.hand.y, design.me.hand.y + 100, "mine at the bottom edge");
+    assert.equal(tall.banner.y, design.banner.y, "the fields stay in the middle");
+    assert.equal(tall.opponent.battlefield.y - (tall.opponent.hand.y + tall.opponent.hand.height), tall.me.hand.y - (tall.me.battlefield.y + tall.me.battlefield.height), "with as much room above as below");
+    assert.equal(tall.log.y + tall.log.height, design.log.y + design.log.height + 100, "the log grows to the bottom edge");
   });
 });
 
@@ -405,6 +425,23 @@ describe("MatchPresenter", () => {
 });
 
 describe("MatchScene on the board", () => {
+  it("re-fits the board to the screen when the window changes shape, keeping an open modal", async () => {
+    const { scene } = await sceneFor({ p1: { hand: ["ember_imp"] }, p2: {} });
+    const viewport = scene.services.viewport;
+    assert.equal(byId(scene, "sidebar").x, 1600 - 16 - 200);
+    const modal = new Modal({ id: "probe", width: 1600, height: 900, panelWidth: 400, panelHeight: 200, onDismiss: () => undefined });
+    scene.openModal(modal);
+    viewport.resize({ cssWidth: 2000, cssHeight: 900 });
+    scene.onResize();
+    assert.equal(byId(scene, "sidebar").x, 1800 - 16 - 200, "the sidebar moves to the new right edge");
+    assert.equal(scene.modal, modal, "the modal survives the rebuild");
+    assert.deepEqual({ x: modal.x, width: modal.width }, { x: -200, width: 2000 }, "its backdrop covers the screen");
+    assert.equal(modal.panel.bounds.x, 600, "its panel stays centred");
+    scene.closeModal();
+    const leave = byId(scene, "leave");
+    assert.equal(scene.root.hitTest({ x: 1700, y: centreOf(leave.bounds).y }), leave, "beyond the design area, still within reach of the pointer");
+  });
+
   it("draws both seats, highlights playable cards and plays one by tapping it", async () => {
     const { scene, session, id } = await sceneFor({ p1: { hand: ["lava_brute", "blazing_titan"], resources: 5 }, p2: { battlefield: ["ember_imp"] } });
     const texts = rendered(scene);

@@ -52,6 +52,7 @@ export class Scene {
   constructor(services) {
     this.services = services;
     this.root = new UiNode({ id: "root", width: services.viewport.logicalWidth, height: services.viewport.logicalHeight });
+    this.root.unbounded = true;
   }
 
   /** @param {Readonly<Record<string, unknown>>} _params */
@@ -61,6 +62,16 @@ export class Scene {
 
   exit() {
     // Scenes release resources here.
+  }
+
+  /**
+   * The window changed shape, so `viewport.bounds` did: an open modal is
+   * stretched over the new area. Scenes that lay out to the edges of the
+   * screen extend it.
+   */
+  onResize() {
+    this.#modal?.cover(this.services.viewport.bounds);
+    this.services.requestRender();
   }
 
   /**
@@ -171,6 +182,7 @@ export class Scene {
     }
     this.#focusBeforeModal = this.#focused;
     this.#modal = this.root.add(modal);
+    modal.cover(this.services.viewport.bounds);
     this.#setFocused(modal.focusableNodes()[0] ?? null);
     this.services.requestRender();
   }

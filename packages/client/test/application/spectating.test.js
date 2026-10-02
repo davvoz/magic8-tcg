@@ -192,5 +192,5 @@ describe("MatchScene for a spectator", () => {
 
 /** @param {any} snapshot */
 function computeLayout(snapshot) {
-  return computeBoardLayout(snapshot, "", { logicalWidth: 1600, logicalHeight: 900 });
+  return computeBoardLayout(snapshot, "", { x: 0, y: 0, width: 1600, height: 900 });
 }
