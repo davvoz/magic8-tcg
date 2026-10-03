@@ -205,7 +205,11 @@ describe("ShopScene", () => {
     assert.ok(texts.includes("#5"));
     assert.equal(scene.focusedNode.id, "reveal.collection");
     click(byId(scene, "reveal.collection"));
-    assert.deepEqual(navigated.at(-1), { id: SceneId.COLLECTION, params: undefined });
+    const { id, params } = navigated.at(-1);
+    assert.equal(id, SceneId.COLLECTION);
+    assert.equal(params.from, SceneId.SHOP, "back leads to the shop");
+    assert.equal(params.fresh.length, 5, "the cards received are lit in the collection");
+    assert.ok(params.fresh.some((card) => card.serial === 5), "with their serials");
     assert.equal(shop.state.purchase.stage, PurchaseStage.NONE);
   });
 

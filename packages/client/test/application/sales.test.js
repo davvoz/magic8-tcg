@@ -203,6 +203,7 @@ describe("MarketScene", () => {
     await flush();
     assert.equal(wallet.requests.length, 1);
     assert.ok(rendered(scene).some((text) => text.includes("the card is in your collection")));
+    assert.ok(byId(scene, "market.buying.collection"), "the card bought can be seen in the collection");
     byId(scene, "market.buying.close").activate();
     assert.equal(byId(scene, "market.buying.close"), null);
 

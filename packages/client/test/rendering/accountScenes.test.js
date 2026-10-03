@@ -151,6 +151,7 @@ describe("StarterScene", () => {
     assert.equal(account.needsStarter, false);
     assert.equal(navigated.at(-1).id, SceneId.COLLECTION);
     assert.match(navigated.at(-1).params.notice, /^Shadow Pact is yours: 30 cards/);
+    assert.equal(navigated.at(-1).params.fresh.reduce((total, card) => total + card.count, 0), 30, "the deck's cards are lit in the collection");
     scene.exit();
   });
 

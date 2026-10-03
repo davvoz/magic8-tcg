@@ -564,6 +564,9 @@ export class MarketScene extends Scene {
     const sales = this.#sales();
     const y = this.#screen.columns.height - this.#screen.inset - this.#m.button;
     const payable = stage === BuyStage.FAILED && purchase?.payment !== null && purchase?.payment !== undefined;
+    if (stage === BuyStage.DONE && this.#buildBoughtActions(panel, purchase, width, y)) {
+      return;
+    }
     if (!payable) {
       const closable = !BUSY_BUY_STAGES.includes(stage) || sales.state.buying.error !== null;
       panel.add(new Button({ id: "market.buying.close", x: this.#screen.inset, y, width, height: this.#m.button, text: stage === BuyStage.DONE ? "Done" : "Close", variant: stage === BuyStage.DONE ? "primary" : "secondary", enabled: closable, onActivate: () => sales.dismiss() }));
@@ -572,6 +575,30 @@ export class MarketScene extends Scene {
     const half = (width - 16) / 2;
     panel.add(new Button({ id: "market.buying.pay", x: this.#screen.inset, y, width: half, height: this.#m.button, text: "Pay again", variant: "primary", onActivate: () => sales.payAgain() }));
     panel.add(new Button({ id: "market.buying.release", x: this.#screen.inset + half + 16, y, width: half, height: this.#m.button, text: "Give up this card", onActivate: () => sales.release() }));
+  }
+
+  /**
+   * A card bought: it can be seen lit in the collection, as from a notification.
+   * @param {Panel} panel
+   * @param {import("../../application/ports/SalesApi.contract.js").Purchase | null | undefined} purchase
+   * @param {number} width
+   * @param {number} y
+   * @returns {boolean} whether the actions were built (not without the purchase or the collection)
+   */
+  #buildBoughtActions(panel, purchase, width, y) {
+    if (purchase === null || purchase === undefined || !this.services.hasScene(SceneId.COLLECTION)) {
+      return false;
+    }
+    const sales = this.#sales();
+    const half = (width - 16) / 2;
+    const fresh = [Object.freeze({ definitionId: purchase.card.definitionId, count: 1, serial: purchase.card.serial })];
+    const view = () => {
+      sales.dismiss();
+      this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.MARKET });
+    };
+    panel.add(new Button({ id: "market.buying.collection", x: this.#screen.inset, y, width: half, height: this.#m.button, text: "View collection", variant: "primary", onActivate: view }));
+    panel.add(new Button({ id: "market.buying.close", x: this.#screen.inset + half + 16, y, width: half, height: this.#m.button, text: "Done", onActivate: () => sales.dismiss() }));
+    return true;
   }
 
   /** @param {Panel} panel */

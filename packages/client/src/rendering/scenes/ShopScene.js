@@ -907,7 +907,9 @@ export class ShopScene extends Scene {
         enabled: this.services.hasScene(SceneId.COLLECTION),
         onActivate: () => {
           close();
-          this.services.navigate(SceneId.COLLECTION);
+          // The cards just received are lit in the collection, as from a notification.
+          const fresh = [...fulfilment.cards, ...fulfilment.packs.flatMap((pack) => pack.cards)].map((card) => Object.freeze({ definitionId: card.definitionId, count: 1, serial: card.serial }));
+          this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.SHOP });
         },
       }),
     );

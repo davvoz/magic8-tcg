@@ -332,7 +332,8 @@ export class StarterScene extends Scene {
       return;
     }
     this.#app.logger.info("starter claimed", { starter: choice.id, cards: claimed.value.cardsGranted });
-    this.services.navigate(SceneId.COLLECTION, { notice: `${choice.name} is yours: ${claimed.value.cardsGranted} cards added to your collection and saved as a deck.` });
+    const fresh = claimed.value.deck.cards.map((entry) => Object.freeze({ definitionId: entry.cardId, count: entry.count }));
+    this.services.navigate(SceneId.COLLECTION, { notice: `${choice.name} is yours: ${claimed.value.cardsGranted} cards added to your collection and saved as a deck.`, fresh });
   }
 
   #requireAccount() {
