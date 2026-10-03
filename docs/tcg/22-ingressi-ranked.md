@@ -4,7 +4,7 @@
 
 ## Le regole
 
-- Da **Season 1** ogni partita classificata costa **1 STEEM a giocatore**. La Beta season resta gratuita.
+- Ogni partita classificata costa **1 STEEM a giocatore**, già dalla Beta season in corso e poi in Season 1.
 - Si paga con gli **ingressi ranked** (*Ranked Entry*), comprati nello shop a 1 STEEM l'uno. Se ne comprano quanti se ne vuole **con un solo trasferimento**: Keychain chiede conferma una volta sola, non prima di ogni partita.
 - Il pagamento va al wallet della banca (`@verdu.green`, lo shop account) come ogni acquisto dello shop. Il jackpot della stagione è una quota di quel wallet (doc 21), quindi cresce con ogni ingresso venduto.
 - Una partita classificata toglie **un ingresso a ciascuno dei due giocatori** nel momento in cui viene creata (coda o sfida accettata in lobby).
@@ -19,9 +19,9 @@ Ai giocatori diciamo solo che **gli ingressi finiscono nel jackpot**, senza spie
 
 | Dove | Cosa |
 |---|---|
-| Lobby online (colonna della partita) | sotto il rating: *You have 3 ranked entries · 1 entry a game · every entry goes into the season's jackpot.* In rosso quando non ne ha. |
+| Lobby online, da subito | il pulsante della modalità è *Ranked · 1.000 STEEM*, e in Ranked la ricerca è *Find a match · 1.000 STEEM* (il prezzo viene dal listino dello shop). Sotto il rating, anche prima che il giocatore possa giocare ranked: *A ranked game costs 1.000 STEEM, and every entry goes into the season's jackpot: you have 3 ranked entries.* In rosso quando non ne ha. |
 | Lobby, modalità Ranked senza ingressi | al posto di *Find a match* c'è **Get ranked entries**, che apre lo shop sullo scaffale Ranked (*Back* torna alla lobby) |
-| Sfide ranked | *Ranked game* e *Accept* sono disattivati senza ingressi, e il dialogo spiega perché |
+| Sfide ranked | il pulsante è *Ranked game · 1.000 STEEM*; *Ranked game* e *Accept* sono disattivati senza ingressi, e il dialogo spiega perché |
 | Shop, scaffale **Ranked** | *1 ranked game · 1.000 STEEM · into the jackpot*; nel dettaglio *Every entry goes into the season's jackpot.*, quanti ingressi ha il giocatore, quantità fino a 50 per ordine |
 | Dopo l'acquisto | *Done: 5 ranked entries are yours, and in the season's jackpot.* (niente rivelazione di carte) e la notifica *Your ranked entries are ready*, che porta alla lobby |
 | Pannello del jackpot | *grows with every pack sold and every ranked game* |
@@ -44,6 +44,7 @@ Ai giocatori diciamo solo che **gli ingressi finiscono nel jackpot**, senza spie
 ## Configurazione
 
 ```json
+{ "id": "2026-s1", "name": "Beta season", "startsAt": "2026-09-01T00:00:00Z", "entryFee": 1 },
 { "id": "season-1", "name": "Season 1", "startsAt": "2026-10-05T00:00:00Z", "endsAt": "2026-11-05T00:00:00Z", "prizePool": "bank-jackpot", "entryFee": 1 }
 ```
 
@@ -51,6 +52,7 @@ Il prezzo di un ingresso sta nel prodotto (`ranked_entry.json`, `prices`), come 
 
 ## Rischi e limiti
 
+- La banca è anche un giocatore (@verdu.green): i suoi acquisti di ingressi sono trasferimenti a sé stessa. Il server li accetta come ogni pagamento, ma il saldo della banca, e quindi il jackpot, non cambia.
 - Il jackpot resta una quota del wallet della banca: un ingresso comprato e non ancora giocato fa già crescere il jackpot.
 - Gli ingressi sono legati all'account di gioco: non si scambiano e non si vendono.
 - Fair play (doc 09): le partite oltre il limite giornaliero fra la stessa coppia costano l'ingresso ma non cambiano il rating.

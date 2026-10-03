@@ -5,6 +5,7 @@
  * decides everything: this only tells the player before they try.
  */
 import { RANKED_ENTRY } from "../ports/EntriesApi.contract.js";
+import { multiplyAmount } from "../shop/shopCatalog.js";
 
 /**
  * @typedef {import("../ports/EntriesApi.contract.js").Entries} Entries
@@ -78,16 +79,30 @@ export class EntryService {
 }
 
 /**
- * What the lobby says about ranked entries, or null when ranked play is free (or not known yet).
+ * What a ranked game costs now, as the screens show it: in the shop's money when its price is known ("1.000 STEEM"),
+ * else in entries; null when ranked play is free (or not known yet).
  * @param {Entries | null} ranked
+ * @param {Readonly<{ asset: string, amount: string }> | null} [price] what one ranked entry costs in the shop
  */
-export function entriesText(ranked) {
+export function rankedFeeText(ranked, price = null) {
   if (ranked === null || ranked.perGame === 0) {
     return null;
   }
-  const fee = `${ranked.perGame} ${entryWord(ranked.perGame)} a game`;
-  const held = ranked.balance === 0 ? "You have no ranked entries" : `You have ${rankedEntriesText(ranked.balance)}`;
-  return `${held} · ${fee} · every entry goes into the season's jackpot.`;
+  return price === null ? `${ranked.perGame} ranked ${entryWord(ranked.perGame)}` : `${multiplyAmount(price.amount, ranked.perGame)} ${price.asset}`;
+}
+
+/**
+ * What the lobby says about ranked entries, or null when ranked play is free (or not known yet).
+ * @param {Entries | null} ranked
+ * @param {Readonly<{ asset: string, amount: string }> | null} [price] what one ranked entry costs in the shop
+ */
+export function entriesText(ranked, price = null) {
+  const fee = rankedFeeText(ranked, price);
+  if (ranked === null || fee === null) {
+    return null;
+  }
+  const held = ranked.balance === 0 ? "you have no ranked entries yet" : `you have ${rankedEntriesText(ranked.balance)}`;
+  return `A ranked game costs ${fee}, and every entry goes into the season's jackpot: ${held}.`;
 }
 
 /** "entry" or "entries" @param {number} count */

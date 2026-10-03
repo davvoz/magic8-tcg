@@ -43,10 +43,13 @@ async function world({ entryFee = 1, signedMoves = false } = {}) {
 const last = (inbox, type) => inbox.filter((message) => message.t === type).at(-1)?.d;
 
 describe("ranked entries", () => {
-  it("reads a season's entry fee from the ranked settings: absent is free, and it is a whole number of entries", async () => {
+  it("reads a season's entry fee from the ranked settings, a whole number of entries (absent: free)", async () => {
     const { ranked } = await bundledContent();
     const settings = validateRankedSettings(ranked);
-    assert.deepEqual(settings.value.seasons.map((season) => [season.id, season.entryFee]), [["2026-s1", 0], ["season-1", 1]]);
+    assert.deepEqual(settings.value.seasons.map((season) => [season.id, season.entryFee]), [["2026-s1", 1], ["season-1", 1]]);
+    const free = structuredClone(ranked);
+    delete free.seasons[0].entryFee;
+    assert.equal(validateRankedSettings(free).value.seasons[0].entryFee, 0);
     for (const bad of [-1, 1.5, "1", 101]) {
       const broken = structuredClone(ranked);
       broken.seasons[1].entryFee = bad;

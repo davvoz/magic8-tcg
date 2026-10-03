@@ -22,6 +22,8 @@ async function world(overrides = {}) {
   if (overrides.seasons !== undefined) {
     ranked.seasons = overrides.seasons;
   }
+  // Ranked games cost entries in the bundled seasons; what that does is tested in entries.test.js.
+  ranked.seasons = ranked.seasons.map(({ entryFee: _fee, ...season }) => season);
   const setup = await buildTestApp({ content: { ...bundled, ranked } });
   const player = async (account, starterId = "precon_foundry") => {
     const user = await setup.users.findOrCreate({ network: "steem", account }, setup.clock.now(), uuidV4(deterministicRandom(`user:${account}`)));

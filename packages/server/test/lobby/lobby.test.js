@@ -17,6 +17,8 @@ async function world({ eligibility = { minFinishedCasualGames: 3 } } = {}) {
   const bundled = await bundledContent();
   const ranked = structuredClone(bundled.ranked);
   Object.assign(ranked.eligibility, eligibility);
+  // Ranked games cost entries in the bundled seasons; what that does is tested in entries.test.js.
+  ranked.seasons = ranked.seasons.map(({ entryFee: _fee, ...season }) => season);
   const setup = await buildTestApp({ content: { ...bundled, ranked }, lobbyPolicy: { listCacheMs: 0 } });
   /** A signed-up player with a starter deck, online (connected) unless said otherwise. */
   const player = async (account, { online = true, starterId = "precon_foundry" } = {}) => {

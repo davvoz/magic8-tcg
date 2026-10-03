@@ -1,7 +1,7 @@
 {
   "v": 1,
   "seasons": [
-    { "id": "2026-s1", "name": "Beta season", "startsAt": "2026-09-01T00:00:00Z" },
+    { "id": "2026-s1", "name": "Beta season", "startsAt": "2026-09-01T00:00:00Z", "entryFee": 1 },
     { "id": "season-1", "name": "Season 1", "startsAt": "2026-10-05T00:00:00Z", "endsAt": "2026-11-05T00:00:00Z", "prizePool": "bank-jackpot", "entryFee": 1 }
   ],
   "prizePools": {

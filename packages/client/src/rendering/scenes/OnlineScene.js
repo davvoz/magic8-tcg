@@ -21,10 +21,11 @@
  * player without enough is offered to get them (the shop's Ranked shelf:
  * many entries, one payment) instead of a search that would be refused.
  */
-import { entriesText } from "../../application/entries/EntryService.js";
+import { entriesText, rankedFeeText } from "../../application/entries/EntryService.js";
 import { ChallengeMode, PlayerActivity } from "../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
-import { ShopCategory } from "../../application/shop/shopCatalog.js";
+import { ShopStatus } from "../../application/shop/ShopService.js";
+import { ShopCategory, rankedEntryPrice } from "../../application/shop/shopCatalog.js";
 import { deckSummary, mixBands } from "../cards/deckStripe.js";
 import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -148,6 +149,14 @@ export class OnlineScene extends Scene {
     if (entries !== undefined) {
       this.#unsubscribes.push(entries.subscribe(() => this.#rebuild()));
       void entries.refresh();
+    }
+    // The shop's listing says what an entry costs, so the lobby shows the price of a ranked game in STEEM.
+    const shop = this.#app.shop;
+    if (shop !== undefined) {
+      this.#unsubscribes.push(shop.subscribe(() => this.#rebuild()));
+      if (shop.state.listing === null && shop.state.status !== ShopStatus.LOADING) {
+        void shop.load();
+      }
     }
     this.#lastStatus = online.state.status;
     const lobby = this.#app.lobby;
@@ -379,7 +388,7 @@ export class OnlineScene extends Scene {
     }
     return {
       id: "online.find",
-      text: "Find a match",
+      text: this.#mode === QueueMode.RANKED ? withFee("Find a match", this.#rankedFee()) : "Find a match",
       variant: "primary",
       enabled: canQueue && this.#selectedId !== null,
       onActivate: () => {
@@ -417,12 +426,12 @@ export class OnlineScene extends Scene {
     const choice = (mode, x, text, enabled) =>
       panel.add(new Button({ id: `online.mode.${mode}`, x, y: MODE.y, width: half, height: MODE.height, text, variant: this.#mode === mode ? "primary" : "secondary", enabled: enabled && idle, onActivate: () => this.#choose(mode) }));
     choice(QueueMode.CASUAL, this.#screen.inset, "Casual", true);
-    choice(QueueMode.RANKED, this.#screen.inset + half + MODE.gap, "Ranked", eligible);
+    choice(QueueMode.RANKED, this.#screen.inset + half + MODE.gap, withFee("Ranked", this.#rankedFee()), eligible);
     const compact = this.#screen.compact;
     const line = compact ? 22 : 26;
     const standingY = MODE.y + MODE.height + (compact ? 4 : 10);
     panel.add(new TextBlock({ id: "online.standing", x: this.#screen.inset, y: standingY, width, height: 2 * line, text: standingText(ranking.state), size: "small", colorKey: "textMuted" }));
-    const entries = eligible ? entriesText(this.#app.entries?.ranked ?? null) : null;
+    const entries = entriesText(this.#app.entries?.ranked ?? null, this.#entryPrice());
     if (entries === null) {
       return MODE.y + MODE.height + (compact ? 52 : 70);
     }
@@ -500,7 +509,7 @@ export class OnlineScene extends Scene {
       buttons: [
         { id: "challenge.close", text: "Cancel", variant: "secondary", enabled: true, onActivate: () => this.#closeDialog() },
         { id: "challenge.casual", text: "Casual game", variant: "primary", enabled: deck !== null, onActivate: () => send(ChallengeMode.CASUAL) },
-        { id: "challenge.ranked", text: "Ranked game", variant: "primary", enabled: deck !== null && this.#rankedAllowed() && this.#hasEntries(), onActivate: () => send(ChallengeMode.RANKED) },
+        { id: "challenge.ranked", text: withFee("Ranked game", this.#rankedFee()), variant: "primary", enabled: deck !== null && this.#rankedAllowed() && this.#hasEntries(), onActivate: () => send(ChallengeMode.RANKED) },
       ],
     });
   }
@@ -578,6 +587,16 @@ export class OnlineScene extends Scene {
     return this.#app.ranking?.state.standing?.eligible === true;
   }
 
+  /** What one ranked entry costs in the shop, once its listing is read. */
+  #entryPrice() {
+    return rankedEntryPrice(this.#app.shop?.state.listing ?? null);
+  }
+
+  /** What a ranked game costs now ("1.000 STEEM"), or null when it is free or not known yet. */
+  #rankedFee() {
+    return rankedFeeText(this.#app.entries?.ranked ?? null, this.#entryPrice());
+  }
+
   /** Whether the player holds what a ranked game costs (true when it is free, or not known: the server decides). */
   #hasEntries() {
     return this.#app.entries?.canPlayRanked ?? true;
@@ -626,6 +645,15 @@ export class OnlineScene extends Scene {
     }
     return this.#app.online;
   }
+}
+
+/**
+ * "Ranked · 1.000 STEEM": a button that says what it costs, when it costs something.
+ * @param {string} text
+ * @param {string | null} fee
+ */
+function withFee(text, fee) {
+  return fee === null ? text : `${text} · ${fee}`;
 }
 
 /** @param {string} mode */

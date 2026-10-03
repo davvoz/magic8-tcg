@@ -17,7 +17,7 @@
 ## Coda classificata
 
 - **Requisiti per entrare:** serve una stagione in corso e un numero minimo di partite casual finite (`eligibility.minFinishedCasualGames`, default 3). Frena gli account nuovi creati solo per gonfiare il rating.
-- **Ingresso:** una stagione può far pagare ogni partita (`entryFee`, da Season 1: un ingresso ranked a giocatore, comprato nello shop a 1 STEEM). Senza ingressi la coda rifiuta; la partita li toglie quando viene creata e li restituisce se viene annullata prima di cominciare (doc 22).
+- **Ingresso:** una stagione può far pagare ogni partita (`entryFee`, oggi in tutte le stagioni: un ingresso ranked a giocatore, comprato nello shop a 1 STEEM). Senza ingressi la coda rifiuta; la partita li toglie quando viene creata e li restituisce se viene annullata prima di cominciare (doc 22).
 - **Abbinamento:** nessuna regola, tutti contro tutti. Come in casual, i due biglietti più vecchi in coda si affrontano subito, qualunque sia il loro rating e anche se si sono già incontrati oltre il limite giornaliero (quella partita viene registrata ma non conta, vedi fair play). Nessuna attesa forzata.
 
 - **Sfide dirette:** una partita classificata si può anche proporre a un giocatore online dalla lobby, se entrambi soddisfano i requisiti (17). Conta come una partita della coda, limite giornaliero per coppia compreso.
