@@ -79,6 +79,7 @@ import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { MusicDirector } from "./rendering/audio/MusicDirector.js";
 import { soundOnline, soundSales, soundShop } from "./rendering/audio/serviceSounds.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
+import { LoadingScreen } from "./rendering/page/LoadingScreen.js";
 import { MaintenanceBanner } from "./rendering/page/MaintenanceBanner.js";
 import { TextEntryBar } from "./rendering/page/TextEntryBar.js";
 import { describeBanner } from "./application/maintenance/MaintenanceNotice.js";
@@ -120,6 +121,12 @@ const WALLET_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "sale.sold", "sal
  * and hundreds to hold decoded.
  */
 const PHONE_ILLUSTRATION_WIDTH = 512;
+/**
+ * The longest the loading screen waits for the first screen's painted art
+ * once the game is ready: past it the menu shows, drawn procedurally until
+ * its images arrive.
+ */
+const FIRST_SCREEN_ART_WAIT_MS = 8000;
 /** How often the maintenance countdown moves. */
 const MAINTENANCE_TICK_MS = 1000;
 /** How often the page asks again, for tabs without a realtime connection (signed out) and pushes that went missing. */
@@ -223,6 +230,8 @@ const FALLBACK_THEME_RAW = Object.freeze({
 });
 
 const logger = new ConsoleLogger();
+/** Shown by the page itself before any script ran; lifted when the main menu is ready, or for the error screen. */
+const loading = new LoadingScreen(document, window);
 
 /**
  * Built once; a fatal error after start-up reuses it instead of attaching a
@@ -324,6 +333,7 @@ function showFatal(title, message) {
     return;
   }
   fatalShown = true;
+  loading.finish();
   if (presentation === null) {
     const theme = validateTheme(FALLBACK_THEME_RAW);
     if (!theme.ok) {
@@ -347,7 +357,13 @@ async function boot() {
     timers: { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
   });
   const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet });
-  const [rawTheme, content, rawRarities, rawIllustrations] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("rarities"), source.load("illustrations"), identity.restore()]);
+  // The painted table and menus are downloaded alongside the content: the first screen waits for them.
+  const { coinArt, tableArt, uiArt } = buildPaintedArt();
+  const firstScreenArt = Promise.all([loading.track(uiArt.preload()), loading.track(tableArt.preload())]);
+  loading.say("Shuffling the decks…");
+  const track = loading.track.bind(loading);
+  const [rawTheme, content, rawRarities, rawIllustrations] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(identity.restore())]);
+  loading.say("Gilding the table…");
   if (!content.ok) {
     showFatal("Content failed to load", content.error.message);
     return;
@@ -367,29 +383,6 @@ async function boot() {
 
   // Painted card art: cards without it (or whose image fails) keep their procedural art.
   const illustrations = buildIllustrations(rawIllustrations, content.value.catalog);
-  // The painted coin of the opening toss; a face whose image is not ready is drawn procedurally.
-  const coinArt = new CoinArt({
-    urls: Object.fromEntries(Object.entries(COIN_ART.files).map(([face, file]) => [face, `${ART_DIRECTORY}${file}`])),
-    disc: COIN_ART.disc,
-    loadImage: loadBrowserImage,
-    onLoaded: () => presentation?.loop.requestRender(),
-    logger,
-  });
-  // The mat, the card back and the panel stone; a piece whose image is not ready is drawn procedurally.
-  const tableArt = new TableArt({
-    urls: Object.fromEntries(Object.entries(TABLE_ART_FILES).map(([piece, file]) => [piece, `${ART_DIRECTORY}${file}`])),
-    loadImage: loadBrowserImage,
-    onLoaded: () => presentation?.loop.requestRender(),
-    logger,
-  });
-  // The menu backdrop, panel corners, divider medallion and button plates; drawn procedurally until ready.
-  const uiArt = new UiArt({
-    urls: Object.fromEntries(Object.entries(UI_ART.files).map(([piece, file]) => [piece, `${ART_DIRECTORY}${file}`])),
-    layout: UI_ART.layout,
-    loadImage: loadBrowserImage,
-    onLoaded: () => presentation?.loop.requestRender(),
-    logger,
-  });
 
   const localStore = new LocalStorageStore(globalThis.localStorage);
   const storageAvailable = localStore.isAvailable();
@@ -529,7 +522,27 @@ async function boot() {
     }
   });
   sceneManager.navigate(SceneId.MAIN_MENU);
-  preloadArt({ illustrations, coinArt, tableArt, uiArt });
+  preloadArt({ illustrations, coinArt });
+  // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.
+  await Promise.race([firstScreenArt, new Promise((resolve) => window.setTimeout(resolve, FIRST_SCREEN_ART_WAIT_MS))]);
+  loading.finish();
+}
+
+/**
+ * The painted art that does not depend on the content, made at once so its
+ * download starts with the content's.
+ */
+function buildPaintedArt() {
+  const urlsIn = (files) => Object.fromEntries(Object.entries(files).map(([key, file]) => [key, `${ART_DIRECTORY}${file}`]));
+  const onLoaded = () => presentation?.loop.requestRender();
+  return {
+    // The painted coin of the opening toss; a face whose image is not ready is drawn procedurally.
+    coinArt: new CoinArt({ urls: urlsIn(COIN_ART.files), disc: COIN_ART.disc, loadImage: loadBrowserImage, onLoaded, logger }),
+    // The mat, the card back and the panel stone; a piece whose image is not ready is drawn procedurally.
+    tableArt: new TableArt({ urls: urlsIn(TABLE_ART_FILES), loadImage: loadBrowserImage, onLoaded, logger }),
+    // The menu backdrop, panel corners, divider medallion and button plates; drawn procedurally until ready.
+    uiArt: new UiArt({ urls: urlsIn(UI_ART.files), layout: UI_ART.layout, loadImage: loadBrowserImage, onLoaded, logger }),
+  };
 }
 
 /**
@@ -563,10 +576,10 @@ function buildAudio(localStore, storageAvailable) {
 }
 
 /**
- * Starts fetching the painted art in the background.
- * @param {{ illustrations: CardIllustrations, coinArt: CoinArt, tableArt: TableArt, uiArt: UiArt }} art
+ * Starts fetching the rest of the painted art in the background (the table and the menus are already on their way).
+ * @param {{ illustrations: CardIllustrations, coinArt: CoinArt }} art
  */
-function preloadArt({ illustrations, coinArt, tableArt, uiArt }) {
+function preloadArt({ illustrations, coinArt }) {
   // Fetched in the background so cards rarely appear procedural first; each one redraws as it arrives.
   // A phone fetches each as its card is first shown instead (PHONE_ILLUSTRATION_WIDTH).
   if (!isTouchFirst()) {
@@ -574,10 +587,6 @@ function preloadArt({ illustrations, coinArt, tableArt, uiArt }) {
   }
   // Ready before the first match, so the coin is the painted one from its first frame.
   void coinArt.preload();
-  // Small and seen everywhere (the menu's card fan, every match): fetched straight away.
-  void tableArt.preload();
-  // The menus are the first thing on screen: fetched straight away too.
-  void uiArt.preload();
 }
 
 /**
