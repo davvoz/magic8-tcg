@@ -73,6 +73,8 @@ import { CoinArt } from "./rendering/board/CoinArt.js";
 import { TableArt, TablePiece } from "./rendering/images/TableArt.js";
 import { UiArt, UiPiece } from "./rendering/images/UiArt.js";
 import { Avatars } from "./rendering/images/Avatars.js";
+import { Glimmer } from "./rendering/ui/Glimmer.js";
+import { Storm } from "./rendering/ui/Storm.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
 import { MusicDirector } from "./rendering/audio/MusicDirector.js";
 import { soundOnline, soundSales, soundShop } from "./rendering/audio/serviceSounds.js";
@@ -158,6 +160,43 @@ const UI_ART = Object.freeze({
 });
 
 /**
+ * The storm clouds painted in the menu backdrop (Sfondo_Menu.jpg), one in
+ * each corner, with the lightning crossing them: where each lies (fractions
+ * of the image), the way its painted bolts run (degrees, 90 straight down)
+ * and how far (a fraction of the image's width). Measured on the file, like UI_ART.
+ */
+const STORM_CELLS = Object.freeze([
+  Object.freeze({ x: 0.31, y: 0.17, angle: 132, length: 0.2 }),
+  Object.freeze({ x: 0.68, y: 0.17, angle: 44, length: 0.2 }),
+  Object.freeze({ x: 0.32, y: 0.79, angle: 43, length: 0.2 }),
+  Object.freeze({ x: 0.67, y: 0.82, angle: 139, length: 0.2 }),
+]);
+/** The gold figures on the same backdrop's rim, which gleam when lightning strikes near them: centre and radius, as fractions of the image (its width, for the radius). */
+const STORM_FIGURES = Object.freeze([
+  Object.freeze({ x: 0.094, y: 0.135, radius: 0.12 }),
+  Object.freeze({ x: 0.906, y: 0.135, radius: 0.12 }),
+  Object.freeze({ x: 0.094, y: 0.865, radius: 0.12 }),
+  Object.freeze({ x: 0.906, y: 0.865, radius: 0.12 }),
+  Object.freeze({ x: 0.03, y: 0.49, radius: 0.12 }),
+  Object.freeze({ x: 0.97, y: 0.49, radius: 0.12 }),
+  Object.freeze({ x: 0.5, y: 0.96, radius: 0.09 }),
+]);
+/**
+ * The gold figures on the same backdrop that shine with their own light: the
+ * medallions of the top corners and of the sides, and the stars of the
+ * bottom corners — each the star at its heart (fractions of the image) and
+ * how far its glow reaches (a fraction of the image's width).
+ */
+const GLIMMER_FIGURES = Object.freeze([
+  Object.freeze({ x: 0.11, y: 0.169, radius: 0.1 }),
+  Object.freeze({ x: 0.889, y: 0.17, radius: 0.1 }),
+  Object.freeze({ x: 0.014, y: 0.492, radius: 0.13 }),
+  Object.freeze({ x: 0.984, y: 0.492, radius: 0.13 }),
+  Object.freeze({ x: 0.11, y: 0.826, radius: 0.06 }),
+  Object.freeze({ x: 0.889, y: 0.826, radius: 0.06 }),
+]);
+
+/**
  * The background music, in AUDIO_DIRECTORY: one looped file per MusicTrack
  * (the same file for both keeps one track playing throughout). MP3 or OGG,
  * at most 5 MB (the server's limit for a file), made to loop seamlessly.
@@ -227,7 +266,11 @@ function buildPresentation(theme, sound) {
   host.attach();
   input.attach();
   const target = {
-    update: (dt) => sceneManager.update(dt),
+    update: (dt) => {
+      const scene = sceneManager.update(dt);
+      // The lights in the menu backdrop keep their own time, whatever the scene does.
+      return (theme.ambience ?? []).reduce((wanted, light) => light.update(dt) || wanted, scene);
+    },
     render: () => {
       const context = host.context;
       const { cssWidth, cssHeight } = viewport.letterbox;
@@ -449,7 +492,12 @@ async function boot() {
 
   // Players' STEEM profile pictures; a player is drawn as their initial until theirs is ready.
   const avatars = new Avatars({ loadImage: loadBrowserImage, onLoaded: () => presentation?.loop.requestRender(), logger });
-  const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars }), audio);
+  // The menu backdrop lives: its gold figures shine now and then, and a bolt painted in it wakes every so often, as a storm still on its way.
+  const ambience = Object.freeze([
+    new Glimmer({ figures: GLIMMER_FIGURES, seed: createSeed() }),
+    new Storm({ cells: STORM_CELLS, figures: STORM_FIGURES, seed: createSeed() }),
+  ]);
+  const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars, ambience }), audio);
   registerScenes(sceneManager, app);
   // The menus have their music, a match its own; what the services do is heard on any screen.
   const music = new MusicDirector({ audio, tracks: { [SceneId.MATCH]: MusicTrack.MATCH, [SceneId.ERROR]: null }, fallback: MusicTrack.MENU });

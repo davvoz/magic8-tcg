@@ -1,7 +1,7 @@
 # 19 — Suoni e musica
 
 **Stato:** 2026-10-03.
-- **Client:** effetti sonori sintetizzati nel browser (Web Audio API, nessun file), musica di sottofondo in loop da `data/audio/`, impostazioni (musica, effetti, muto) salvate nel browser, tasto **M** per il muto ovunque.
+- **Client:** effetti sonori sintetizzati nel browser (Web Audio API, nessun file), musica di sottofondo in loop da `data/audio/`, impostazioni (musica, effetti, muto) salvate nel browser e apribili dal menu principale (**Sound**) e in partita (pulsante **Sound** nell'intestazione del log di battaglia; su telefono nel dialogo del log), tasto **M** per il muto ovunque.
 - **Server:** serve anche `.mp3` e `.ogg` (limite di 5 MB per file, come per ogni file statico).
 
 ## Decisioni

@@ -60,11 +60,13 @@ const MAX_FACTIONS = 16;
  *   tableArt?: import("../images/TableArt.js").TableArtSource,
  *   uiArt?: import("../images/UiArt.js").UiArtSource,
  *   avatars?: import("../images/Avatars.js").AvatarSource,
- * }>} Theme `illustrations`, `coinArt`, `tableArt`, `uiArt` and `avatars` are not read from theme.json: the
+ *   ambience?: readonly import("../ui/backdropLight.js").BackdropLight[],
+ * }>} Theme `illustrations`, `coinArt`, `tableArt`, `uiArt`, `avatars` and `ambience` are not read from theme.json: the
  *   composition root attaches the painted card art, the painted coin, the painted table
  *   (mat, card back, panel stone), the painted menus (backdrop, panel corners, divider,
- *   button plates) and the players' profile pictures, and without them all of these are
- *   drawn procedurally (a player as their initial)
+ *   button plates), the players' profile pictures and the lights living in the menu backdrop
+ *   (its storm, its gold's glimmer), and without them all of these are drawn procedurally (a
+ *   player as their initial; no lights)
  */
 
 /**

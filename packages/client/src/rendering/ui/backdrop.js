@@ -2,8 +2,9 @@
  * The shared scene background: a deep radial glow, a vignette and a
  * deterministic scatter of faint motes, so every screen sits in the same
  * space instead of on a flat colour; under them, once its image is ready,
- * the painted menu backdrop (Theme.uiArt). The match is played on the
- * painted mat instead (Theme.tableArt). Pure drawing; no state.
+ * the painted menu backdrop (Theme.uiArt), with the lights that live in it
+ * (Theme.ambience: the storm, the glimmer of its gold) when there are any. The match is played on the painted mat
+ * instead (Theme.tableArt). Pure drawing; the lights keep their own time.
  */
 import { hashString, unitSequence } from "@magic8/engine/shared/hash.js";
 import { TablePiece } from "../images/TableArt.js";
@@ -34,9 +35,7 @@ export function drawSceneBackdrop(context, theme, bounds, { glowKey = "backgroun
   context.save();
   context.fillStyle = colors.background;
   context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
-  if (art !== null) {
-    drawArtBackdrop(context, art, bounds);
-  }
+  const painting = art === null ? null : drawArtBackdrop(context, art, bounds);
   // Over the painted backdrop the glow only tints it, keeping each scene's colour.
   const glowAlpha = art === null ? GLOW_ALPHA.plain : GLOW_ALPHA.painted;
   context.fillStyle = radialGradient(context, center, radius, [
@@ -45,6 +44,8 @@ export function drawSceneBackdrop(context, theme, bounds, { glowKey = "backgroun
     [1, withAlpha(colors.letterbox, 0.65)],
   ]);
   context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
+  // Over the vignette, so the gold on the rim can still catch the light.
+  drawAmbience(context, theme, painting);
   if (motes) {
     drawMotes(context, bounds, { color: colors.accentLight, seed });
   }
@@ -83,6 +84,7 @@ export function drawTableBackdrop(context, theme, bounds) {
  * @param {CanvasRenderingContext2D} context
  * @param {import("../images/ImageCache.js").LoadedImage} art
  * @param {import("@magic8/engine/shared/geometry.js").Rect} bounds
+ * @returns {import("./backdropLight.js").Painting} where the whole image lies, cropped parts included, and the image
  */
 function drawArtBackdrop(context, art, bounds) {
   const imageAspect = art.width / art.height;
@@ -94,6 +96,23 @@ function drawArtBackdrop(context, art, bounds) {
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   context.drawImage(art.source, crop.x, crop.y, crop.width, crop.height, bounds.x, bounds.y, bounds.width, bounds.height);
+  const scale = { x: bounds.width / crop.width, y: bounds.height / crop.height };
+  return { x: bounds.x - crop.x * scale.x, y: bounds.y - crop.y * scale.y, width: art.width * scale.x, height: art.height * scale.y, image: art };
+}
+
+/**
+ * The lights living in the painted backdrop, if it is there, in order.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {import("./backdropLight.js").Painting | null} painting
+ */
+function drawAmbience(context, theme, painting) {
+  if (painting === null) {
+    return;
+  }
+  for (const light of theme.ambience ?? []) {
+    light.draw(context, theme.colors, painting);
+  }
 }
 
 /**
