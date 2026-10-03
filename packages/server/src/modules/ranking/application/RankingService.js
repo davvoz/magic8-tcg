@@ -14,7 +14,7 @@
  *   write). Recording is idempotent, so both paths can see the same game.
  */
 import { AppError } from "../../../kernel/AppError.js";
-import { DEFAULT_RATING, PROVISIONAL_RD, rateGame } from "../domain/Glicko2.js";
+import { DEFAULT_RATING, rateGame } from "../domain/Glicko2.js";
 import { seasonAt } from "../domain/RankedSettings.js";
 
 export const RANKED = "ranked";
@@ -22,6 +22,8 @@ const CASUAL = "casual";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CATCH_UP_WINDOW_MS = 2 * DAY_MS;
 const LEADERBOARD_SIZE = 100;
+/** A rating is provisional (listed, but with no rank yet) until this many rated games. */
+export const SETTLED_GAMES = 3;
 
 /**
  * @typedef {import("../infrastructure/PgRankingRepository.js").StoredRating} StoredRating
@@ -224,12 +226,12 @@ export class RankingService {
     if (season === null) {
       return Object.freeze({ season: null, entries: Object.freeze([]) });
     }
-    const rows = await this.#repository.leaderboard({ season: season.id, maxRd: PROVISIONAL_RD, limit: LEADERBOARD_SIZE });
+    const rows = await this.#repository.leaderboard({ season: season.id, minGames: SETTLED_GAMES, limit: LEADERBOARD_SIZE });
     return Object.freeze({
       season: Object.freeze({ id: season.id, name: season.name }),
       entries: Object.freeze(
         rows.map((row, index) => {
-          const provisional = row.rd > PROVISIONAL_RD;
+          const provisional = row.games < SETTLED_GAMES;
           return Object.freeze({ rank: provisional ? null : index + 1, provisional, account: row.account, rating: Math.round(row.rating), games: row.games, wins: row.wins, losses: row.losses, draws: row.draws });
         }),
       ),
@@ -242,8 +244,8 @@ export class RankingService {
    */
   async standing(userId) {
     const rating = await this.ratingOf(userId);
-    const provisional = rating.rd > PROVISIONAL_RD;
-    const rank = provisional || rating.season === null ? null : (await this.#repository.countAbove({ season: rating.season, maxRd: PROVISIONAL_RD, rating: rating.rating })) + 1;
+    const provisional = rating.games < SETTLED_GAMES;
+    const rank = provisional || rating.season === null ? null : (await this.#repository.countAbove({ season: rating.season, minGames: SETTLED_GAMES, rating: rating.rating })) + 1;
     const casualGames = await this.#games.countFinished(userId, CASUAL);
     const season = this.currentSeason();
     return Object.freeze({
@@ -268,8 +270,8 @@ export class RankingService {
    * @returns {Promise<readonly Readonly<{ rank: number, userId: string, account: string, rating: number }>[]>}
    */
   async podium(seasonId, places) {
-    const rows = await this.#repository.leaderboard({ season: seasonId, maxRd: PROVISIONAL_RD, limit: places });
-    return Object.freeze(rows.filter((row) => row.rd <= PROVISIONAL_RD).map((row, index) => Object.freeze({ rank: index + 1, userId: row.userId, account: row.account, rating: Math.round(row.rating) })));
+    const rows = await this.#repository.leaderboard({ season: seasonId, minGames: SETTLED_GAMES, limit: places });
+    return Object.freeze(rows.filter((row) => row.games >= SETTLED_GAMES).map((row, index) => Object.freeze({ rank: index + 1, userId: row.userId, account: row.account, rating: Math.round(row.rating) })));
   }
 
   /** @param {number} [limit] */

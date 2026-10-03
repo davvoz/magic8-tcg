@@ -109,20 +109,20 @@ export class PgRankingRepository {
   }
 
   /**
-   * The best ratings of a season: settled ones (rd <= maxRd) first, then provisional ones.
-   * @param {{ season: string, maxRd: number, limit: number }} query
+   * The best ratings of a season: settled ones (games >= minGames) first, then provisional ones.
+   * @param {{ season: string, minGames: number, limit: number }} query
    */
-  async leaderboard({ season, maxRd, limit }) {
-    const rows = await this.#db.rows("SELECT * FROM ratings WHERE season = $1 ORDER BY rd > $2, rating DESC, games DESC, user_id LIMIT $3", [season, maxRd, limit]);
+  async leaderboard({ season, minGames, limit }) {
+    const rows = await this.#db.rows("SELECT * FROM ratings WHERE season = $1 ORDER BY games < $2, rating DESC, games DESC, user_id LIMIT $3", [season, minGames, limit]);
     return Object.freeze(rows.map(toRating));
   }
 
   /**
    * How many settled ratings of the season are above `rating`.
-   * @param {{ season: string, maxRd: number, rating: number }} query
+   * @param {{ season: string, minGames: number, rating: number }} query
    */
-  async countAbove({ season, maxRd, rating }) {
-    const row = await this.#db.maybeOne("SELECT count(*)::integer AS n FROM ratings WHERE season = $1 AND rd <= $2 AND rating > $3", [season, maxRd, rating]);
+  async countAbove({ season, minGames, rating }) {
+    const row = await this.#db.maybeOne("SELECT count(*)::integer AS n FROM ratings WHERE season = $1 AND games >= $2 AND rating > $3", [season, minGames, rating]);
     return row?.n ?? 0;
   }
 

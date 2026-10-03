@@ -13,8 +13,6 @@ const MAX_ITERATIONS = 100;
 export const DEFAULT_RATING = Object.freeze({ rating: BASE, rd: 350, volatility: 0.06 });
 /** System constant: how much volatility may change (0.3–1.2; smaller = steadier). */
 export const DEFAULT_TAU = 0.5;
-/** Above this deviation a rating is provisional (not ranked on the leaderboard yet). */
-export const PROVISIONAL_RD = 110;
 
 /**
  * @typedef {Readonly<{ rating: number, rd: number, volatility: number }>} Rating

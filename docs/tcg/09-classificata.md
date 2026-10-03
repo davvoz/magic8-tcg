@@ -10,7 +10,7 @@
   - una volatilità (si parte da 0,06).
 - **Ogni partita è un periodo di rating.** I due giocatori vengono aggiornati insieme, a partire dai valori che avevano prima della partita. L'implementazione è verificata con l'esempio del paper (1464,06 / 151,52 / 0,05999).
 - **Un giocatore nuovo si muove in fretta; uno con molte partite si muove poco.** Battere chi ha un rating molto più alto vale di più.
-- **Rating provvisorio:** con deviazione sopra 110 il rating è provvisorio: compare in classifica dopo i rating assestati, senza posizione. Diventa "assestato" (e riceve una posizione) dopo alcune partite.
+- **Rating provvisorio:** finché un giocatore non ha 3 partite classificate valutate nella stagione, il suo rating è provvisorio: compare in classifica dopo i rating assestati, senza posizione, e non vince premi. Alla terza partita diventa "assestato" e riceve una posizione.
 - **Stagioni:** i rating ripartono da capo a ogni stagione (`seasons` nel file dei dati). Una partita conta nella stagione in cui è finita. Una stagione finisce al suo `endsAt`, o altrimenti quando comincia la successiva; fra una stagione finita e la prossima la classificata è chiusa. Una stagione può avere un jackpot (doc 21).
 - **Ricalcolabile:** ogni partita finita pubblica il suo risultato sulla catena (`m8tcg_result`: account, `m = "ranked"`, vincitore; 03 §9), quindi chiunque può ricalcolare i rating. Il ricalcolo coincide a meno di arrotondamenti, perché le funzioni matematiche possono differire di un bit fra motori JavaScript diversi.
 

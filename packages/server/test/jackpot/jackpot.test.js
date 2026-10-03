@@ -32,10 +32,10 @@ describe("season jackpot", () => {
     setup.chain.setAccount(BANK, ["STM-bank"]);
     setup.chain.balances.set(BANK, { STEEM: 1_000_000, SBD: 0 });
     // Settled ratings win; carol's is still provisional.
-    for (const [account, rating, rd] of [["alice", 1700, 60], ["bob", 1600, 60], ["carol", 1650, 200], ["dave", 1500, 80]]) {
+    for (const [account, rating, games] of [["alice", 1700, 10], ["bob", 1600, 10], ["carol", 1650, 2], ["dave", 1500, 3]]) {
       const user = await setup.users.findOrCreate({ network: "steem", account }, setup.clock.now(), uuidV4(deterministicRandom(`user:${account}`)));
       ids[account] = user.id;
-      await setup.database.query("INSERT INTO ratings (season, user_id, account, rating, rd, volatility, updated_at) VALUES ($1, $2, $3, $4, $5, 0.06, now())", [SEASON, user.id, account, rating, rd]);
+      await setup.database.query("INSERT INTO ratings (season, user_id, account, rating, rd, volatility, games, updated_at) VALUES ($1, $2, $3, $4, 60, 0.06, $5, now())", [SEASON, user.id, account, rating, games]);
     }
   });
 

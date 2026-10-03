@@ -56,8 +56,8 @@ async function rankedGame(setup, a, b, loser) {
   return found.gameId;
 }
 
-const setRating = (setup, user, rating, rd = 60) =>
-  setup.database.query("INSERT INTO ratings (season, user_id, account, rating, rd, volatility, updated_at) VALUES ($1, $2, $3, $4, $5, 0.06, now())", [SEASON, user.user.id, user.user.account, rating, rd]);
+const setRating = (setup, user, rating, games = 10) =>
+  setup.database.query("INSERT INTO ratings (season, user_id, account, rating, rd, volatility, games, updated_at) VALUES ($1, $2, $3, $4, 60, 0.06, $5, now())", [SEASON, user.user.id, user.user.account, rating, games]);
 
 describe("ranked play", () => {
   it("rates a ranked game once, for both players, and shows it in the standings", async () => {
@@ -79,6 +79,14 @@ describe("ranked play", () => {
     assert.equal(await setup.app.ranking.record({ gameId, mode: "ranked", finishedAt: setup.clock.now(), winnerSeat: "s0", endReason: "concede", turn: 1, players: [] }), false);
     assert.equal(await setup.app.ranking.catchUp(), 0, "nothing was missed");
     assert.equal((await setup.database.rows("SELECT * FROM rating_changes")).length, 2, "recorded once");
+
+    setup.clock.advance(1000);
+    await rankedGame(setup, alice, bob, bob);
+    assert.equal((await setup.app.ranking.standing(alice.user.id)).provisional, true, "two games: still provisional");
+    setup.clock.advance(1000);
+    await rankedGame(setup, alice, bob, bob);
+    const settled = await setup.app.ranking.standing(alice.user.id);
+    assert.deepEqual([settled.games, settled.provisional, settled.rank], [3, false, 1], "three games: settled and ranked");
   });
 
   it("lets only eligible players queue ranked, and only during a season", async () => {
@@ -150,9 +158,9 @@ describe("ranked play", () => {
     const alice = await player("alice");
     const bob = await player("bob");
     const carol = await player("carol");
-    await setRating(setup, alice, 1720, 60);
-    await setRating(setup, bob, 1610, 80);
-    await setRating(setup, carol, 1900, 200);
+    await setRating(setup, alice, 1720, 10);
+    await setRating(setup, bob, 1610, 3);
+    await setRating(setup, carol, 1900, 2);
     const server = await listen(setup.app);
     try {
       const board = (await new ApiClient(server.base).get("/api/ranking/leaderboard")).json;
