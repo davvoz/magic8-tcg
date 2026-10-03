@@ -25,6 +25,8 @@ const PAYMENT_POLL_INTERVAL_MS = 5000;
 const REFUND_POLL_INTERVAL_MS = 30_000;
 const ALARM_INTERVAL_MS = 60_000;
 const RANKING_CATCH_UP_MS = 10 * 60 * 1000;
+/** Season jackpots: the opening balance of a season that started, the settlement of one that ended, prize payouts. */
+const JACKPOT_INTERVAL_MS = 60_000;
 const TRADE_EXPIRY_INTERVAL_MS = 60_000;
 const SALE_POLL_INTERVAL_MS = 5000;
 const ORDER_EXPIRY_INTERVAL_MS = 60 * 1000;
@@ -114,6 +116,8 @@ async function main() {
     every(REFUND_POLL_INTERVAL_MS, "refunds", () => app.refunds.runOnce(), logger),
     every(ALARM_INTERVAL_MS, "alarms", () => app.monitor.evaluate(), logger),
     every(RANKING_CATCH_UP_MS, "ranking catch-up", () => app.ranking.catchUp(), logger),
+    every(JACKPOT_INTERVAL_MS, "season jackpots", () => app.jackpot.runOnce(), logger),
+    every(REFUND_POLL_INTERVAL_MS, "prize payouts", () => app.prizePayouts.runOnce(), logger),
     every(TRADE_EXPIRY_INTERVAL_MS, "trade expiry", () => app.trading.expireDue(), logger),
     every(SALE_POLL_INTERVAL_MS, "sale settlement", () => app.saleSettlement.runOnce(), logger),
     every(TRADE_EXPIRY_INTERVAL_MS, "listing expiry", () => app.sales.expireDue(), logger),

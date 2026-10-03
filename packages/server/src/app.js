@@ -18,7 +18,7 @@ import { Router } from "./platform/http/Router.js";
 import { CatalogService, PgContentRepository, registerCatalogRoutes } from "./modules/catalog/index.js";
 import { InventoryService, PgInventoryRepository, registerCollectionRoutes } from "./modules/collection/index.js";
 import { DeckService, PgDeckRepository, registerDeckRoutes } from "./modules/decks/index.js";
-import { EconomyService, formatAmount, validateAssets } from "./modules/economy/index.js";
+import { EconomyService, formatAmount, parseAmount, validateAssets } from "./modules/economy/index.js";
 import { ChainBroadcaster, ChainOutbox, ChainTracker, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository, RefundWatcher } from "./modules/payments/index.js";
@@ -27,6 +27,7 @@ import { GameService, PgGameRepository, registerGameMessages, registerGameRoutes
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { LobbyService, registerLobbyMessages } from "./modules/lobby/index.js";
 import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
+import { JackpotService, PgJackpotRepository, PrizePayoutWatcher, registerJackpotRoutes, validatePrizePools } from "./modules/jackpot/index.js";
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
 import { BoardRelay, PgSalesRepository, SaleSettlement, SalesService, registerSalesRoutes } from "./modules/sales/index.js";
 import { NotificationRelay, NotificationService, PgNotificationRepository, registerNotificationRoutes } from "./modules/notifications/index.js";
@@ -144,6 +145,8 @@ export async function createServerApp(deps) {
   }
   const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: rankedSettings.value, games, clock, unitOfWork, logger });
   games.onGameFinished((summary) => ranking.record(summary).then(() => undefined));
+  // A season's jackpot: a share of the bank (the shop account, where every pack sale lands), split among its first places.
+  const { jackpot, prizePayouts } = buildJackpot({ settings: rankedSettings.value, wallets, paymentProviders, bankFor: receiverFor, cursors: paymentRepository, ranking, notifications, database, audit, clock, unitOfWork, logger });
   const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger, ranking, gate: maintenance });
   // Who is online, and challenges between them (a game without the queue).
   const lobby = new LobbyService({
@@ -196,6 +199,7 @@ export async function createServerApp(deps) {
     clock,
   });
   registerAdminRoutes({ router, admin });
+  registerJackpotRoutes({ router, jackpot, admin });
   registerMaintenanceRoutes({ router, maintenance, admin, version, build: config.build });
   const rateLimiter = new RateLimiter({ now: () => clock.now() });
   const http = new HttpApp({
@@ -228,7 +232,67 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, realtime });
+}
+
+/**
+ * The jackpot of the seasons with a prize pool, and the watcher of its payouts. Fails the start on a bad pool, an unknown bank or asset.
+ * @param {{
+ *   settings: import("./modules/ranking/domain/RankedSettings.js").RankedSettings,
+ *   wallets: ReadonlyMap<string, import("./modules/identity/application/ports.js").WalletProvider>,
+ *   paymentProviders: ReadonlyMap<string, import("./modules/payments/application/ports.js").PaymentProvider>,
+ *   bankFor: (network: string) => string,
+ *   cursors: PgPaymentRepository,
+ *   ranking: RankingService,
+ *   notifications: NotificationService,
+ *   database: import("./platform/db/Database.js").Database,
+ *   audit: AuditTrail,
+ *   clock: import("./kernel/time.js").Clock,
+ *   unitOfWork: import("./kernel/unitOfWork.js").UnitOfWork,
+ *   logger: import("./kernel/logger.js").Logger,
+ * }} deps
+ */
+function buildJackpot({ settings, wallets, paymentProviders, bankFor, cursors, ranking, notifications, database, audit, clock, unitOfWork, logger }) {
+  const pools = validatePrizePools(settings.prizePools, settings.seasons);
+  if (!pools.ok) {
+    throw new Error(`prize pools are invalid: ${pools.error.message}`);
+  }
+  for (const pool of pools.value.values()) {
+    // Fails the start now rather than at the season's end: the bank and the asset must be known.
+    bankFor(pool.network);
+    precisionOf(paymentProviders, pool.asset);
+  }
+  const repository = new PgJackpotRepository(database);
+  const jackpot = new JackpotService({
+    settings,
+    pools: pools.value,
+    bankFor,
+    readBalance: (network, account, asset) => readWalletBalance(wallets.get(network), account, asset, precisionOf(paymentProviders, asset)),
+    formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)),
+    ranking,
+    repository,
+    notifications,
+    audit,
+    clock,
+    unitOfWork,
+    logger,
+  });
+  const networks = [...new Set([...pools.value.values()].map((pool) => pool.network))];
+  const prizePayouts = new PrizePayoutWatcher({ repository, cursors, providers: paymentProviders, bankFor, networks, audit, clock, logger });
+  return { jackpot, prizePayouts };
+}
+
+/**
+ * What `account` holds of `asset` on the chain, in units; null when the wallet cannot tell.
+ * @param {import("./modules/identity/application/ports.js").WalletProvider | undefined} wallet
+ * @param {string} account
+ * @param {string} asset
+ * @param {number} precision
+ */
+async function readWalletBalance(wallet, account, asset, precision) {
+  const balances = await wallet?.balancesOf?.(account);
+  const amount = balances?.ok ? balances.value.find((balance) => balance.asset === asset)?.amount : undefined;
+  return amount === undefined ? null : parseAmount(amount, precision);
 }
 
 /** Anchoring states that prove a payload is on chain. */

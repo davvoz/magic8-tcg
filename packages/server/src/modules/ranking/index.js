@@ -4,6 +4,6 @@
  */
 export { RANKED, RankingService } from "./application/RankingService.js";
 export { DEFAULT_RATING, PROVISIONAL_RD, rateGame, updateRating } from "./domain/Glicko2.js";
-export { seasonAt, validateRankedSettings } from "./domain/RankedSettings.js";
+export { SeasonPhase, seasonAt, seasonEnd, seasonPhase, validateRankedSettings } from "./domain/RankedSettings.js";
 export { registerRankingRoutes } from "./http/rankingRoutes.js";
 export { PgRankingRepository } from "./infrastructure/PgRankingRepository.js";

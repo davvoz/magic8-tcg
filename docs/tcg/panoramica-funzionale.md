@@ -235,10 +235,11 @@ Il gioco **non tocca mai i soldi** e **non prende commissioni**: il venditore ri
 - **Provvisorio:** finché il rating è ancora incerto, il giocatore compare in classifica senza posizione.
 - **Stagioni:** a ogni stagione i rating ripartono da capo (oggi: Season 1, dal 1° settembre 2026).
 - **Classifica pubblica** dei primi 100.
-- **Fair play:** oltre 3 partite classificate al giorno fra gli stessi due giocatori, le successive non contano. Rese rapide e ripetute fra gli stessi giocatori generano segnalazioni per l'operatore. Oggi le segnalazioni informano, non puniscono, perché il rating non ha valore economico.
+- **Fair play:** oltre 3 partite classificate al giorno fra gli stessi due giocatori, le successive non contano. Rese rapide e ripetute fra gli stessi giocatori generano segnalazioni per l'operatore. Le segnalazioni informano, non puniscono: l'operatore le controlla prima di pagare i premi di stagione.
 - Ogni risultato è pubblico sulla blockchain: chiunque può ricalcolare la classifica.
 
 ---
+- **Stagioni con jackpot:** Season 1 dura un mese (5 ottobre – 5 novembre 2026). I primi tre della classifica si dividono i 2/3 del wallet della banca (@verdu.green): 65%, 25% e 10%. Il jackpot cresce con ogni pacchetto venduto; menu principale e classifica mostrano importo, quote, chi è in testa e il conto alla rovescia (doc 21).
 
 ## 10. Il ruolo della blockchain
 
@@ -322,6 +323,7 @@ Anche se il server venisse compromesso, un attaccante non potrebbe spostare fond
 | Sicurezza e rischi | [05 — Threat model](05-threat-model.md) |
 | Stato del progetto e decisioni | [06 — Roadmap](06-roadmap.md) |
 | Classificata | [09 — Classificata](09-classificata.md) |
+| Stagioni e jackpot | [21 — Stagioni e jackpot](21-stagioni-e-jackpot.md) |
 | Spettatori | [10 — Spettatori](10-spettatori.md) |
 | Mosse firmate | [12 — Mosse firmate](12-mosse-firmate.md) |
 | Scambi | [13 — Scambi](13-scambi.md) |

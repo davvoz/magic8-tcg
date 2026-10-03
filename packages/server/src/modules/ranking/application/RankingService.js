@@ -251,6 +251,17 @@ export class RankingService {
     });
   }
 
+  /**
+   * The season's first `places` settled ratings, best first (provisional ones win nothing).
+   * @param {string} seasonId
+   * @param {number} places
+   * @returns {Promise<readonly Readonly<{ rank: number, userId: string, account: string, rating: number }>[]>}
+   */
+  async podium(seasonId, places) {
+    const rows = await this.#repository.leaderboard({ season: seasonId, maxRd: PROVISIONAL_RD, limit: places });
+    return Object.freeze(rows.filter((row) => row.rd <= PROVISIONAL_RD).map((row, index) => Object.freeze({ rank: index + 1, userId: row.userId, account: row.account, rating: Math.round(row.rating) })));
+  }
+
   /** @param {number} [limit] */
   flags(limit = 100) {
     return this.#repository.openFlags(limit);

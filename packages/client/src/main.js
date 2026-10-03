@@ -22,6 +22,7 @@ import { OnlineService, OnlineStatus } from "./application/online/OnlineService.
 import { LobbyService } from "./application/lobby/LobbyService.js";
 import { describeLobbyEvent } from "./application/lobby/describeLobbyEvent.js";
 import { RankingService } from "./application/ranking/RankingService.js";
+import { JackpotService } from "./application/jackpot/JackpotService.js";
 import { TradingService } from "./application/trading/TradingService.js";
 import { BuyStage, SalesService } from "./application/sales/SalesService.js";
 import { PurchaseStage, ShopService } from "./application/shop/ShopService.js";
@@ -46,6 +47,7 @@ import { HttpLiveGamesApi } from "./infrastructure/api/HttpLiveGamesApi.js";
 import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
 import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js";
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
+import { HttpJackpotApi } from "./infrastructure/api/HttpJackpotApi.js";
 import { HttpTradingApi } from "./infrastructure/api/HttpTradingApi.js";
 import { HttpSalesApi } from "./infrastructure/api/HttpSalesApi.js";
 import { HttpBalanceApi } from "./infrastructure/api/HttpBalanceApi.js";
@@ -447,6 +449,8 @@ async function boot() {
   // Who else is online, and challenges: heard on any screen once signed in.
   const lobby = new LobbyService({ connection: realtime, scheduler: browserScheduler, now: () => Date.now(), logger });
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });
+  // The ranked season's jackpot: public, shown signed out too, read again every minute while on screen.
+  const jackpot = new JackpotService({ api: new HttpJackpotApi({ fetch: httpFetch }), scheduler: browserScheduler, now: () => Date.now() });
   // Trades move copies between collections: the account reloads after each one.
   const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), scheduler: browserScheduler, onCollectionChanged: () => account.refresh() });
   // The player market: payments go from the buyer's wallet straight to the seller; the collection reloads when a card moves.
@@ -495,6 +499,7 @@ async function boot() {
     online,
     lobby,
     ranking,
+    jackpot,
     trading,
     sales,
     notifications,

@@ -11,7 +11,7 @@
 - **Ogni partita è un periodo di rating.** I due giocatori vengono aggiornati insieme, a partire dai valori che avevano prima della partita. L'implementazione è verificata con l'esempio del paper (1464,06 / 151,52 / 0,05999).
 - **Un giocatore nuovo si muove in fretta; uno con molte partite si muove poco.** Battere chi ha un rating molto più alto vale di più.
 - **Rating provvisorio:** con deviazione sopra 110 il rating è provvisorio: compare in classifica dopo i rating assestati, senza posizione. Diventa "assestato" (e riceve una posizione) dopo alcune partite.
-- **Stagioni:** i rating ripartono da capo a ogni stagione (`seasons` nel file dei dati). Una partita conta nella stagione in cui è finita.
+- **Stagioni:** i rating ripartono da capo a ogni stagione (`seasons` nel file dei dati). Una partita conta nella stagione in cui è finita. Una stagione finisce al suo `endsAt`, o altrimenti quando comincia la successiva; fra una stagione finita e la prossima la classificata è chiusa. Una stagione può avere un jackpot (doc 21).
 - **Ricalcolabile:** ogni partita finita pubblica il suo risultato sulla catena (`m8tcg_result`: account, `m = "ranked"`, vincitore; 03 §9), quindi chiunque può ricalcolare i rating. Il ricalcolo coincide a meno di arrotondamenti, perché le funzioni matematiche possono differire di un bit fra motori JavaScript diversi.
 
 ## Coda classificata
@@ -25,7 +25,7 @@
 
 - **Limite giornaliero per coppia.** Oltre `maxRatedGamesPerPairPerDay` partite contate fra gli stessi due giocatori in 24 ore, le partite successive restano registrate (`counted = false`, `reason = "repeat_pair"`) ma non cambiano il rating. Vale anche per le partite create fuori dalla coda. La coppia riceve una segnalazione `repeat_pair`.
 - **Rese rapide ripetute.** `earlyConcedesToFlag` rese entro il turno `earlyConcedeTurn`, fra gli stessi giocatori, nell'arco di `earlyConcedeWindowDays` giorni, producono una segnalazione `early_concedes`.
-- **Le segnalazioni informano, non puniscono.** Nella v1 i rating non hanno valore economico. Gli operatori le vedono in `/api/admin/ranking-flags`.
+- **Le segnalazioni informano, non puniscono.** Gli operatori le vedono in `/api/admin/ranking-flags`. Da Season 1 i primi tre vincono una parte del jackpot (doc 21): le segnalazioni si controllano prima di pagare i premi.
 
 ## Registrazione
 

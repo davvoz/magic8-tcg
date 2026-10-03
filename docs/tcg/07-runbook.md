@@ -134,6 +134,15 @@ Un allarme si risolve dal pannello con una nota su cosa si è controllato o fatt
 2. Il server **non** si fida del pannello. Il rimborso diventa `SENT` quando il trasferimento compare nello storico dello shop, e `CONFIRMED` quando due nodi lo vedono sotto il blocco irreversibile.
 3. Importo sbagliato, memo di un rimborso già pagato o sconosciuto: il server lo registra nell'audit (`payments.refund_mismatch`, `refund_paid_twice`, `refund_unknown`) e nel log come errore. Il denaro inviato per sbaglio si recupera a mano chiedendolo al destinatario.
 
+
+### Premi di stagione
+
+Alla fine di una stagione con jackpot (doc 21) il server, dopo 30 minuti, congela il jackpot e scrive i premi dei primi tre. Nel pannello `/admin.html`, sezione *Season prizes to send*:
+
+1. controllare prima le segnalazioni di fair play della stagione (`/api/admin/ranking-flags`);
+2. *Pay with Keychain* su ogni premio: invia dalla banca esattamente l'importo, con il memo `m8tcg prize <stagione> <posizione>`;
+3. come per i rimborsi, il premio diventa `SENT` quando il trasferimento compare nello storico della banca e `CONFIRMED` sotto il blocco irreversibile. Gli errori finiscono nell'audit (`jackpot.prize_mismatch`, `prize_unknown`, `prize_paid_twice`).
+
 ## 8. Audit log
 
 Dal pannello, "Check hash chain" ricalcola la catena di hash dell'audit. `BROKEN at entry N` significa che qualcuno ha modificato o cancellato righe dal database (i trigger lo impediscono all'utente applicativo). È un **incidente di sicurezza**: isolare il database, confrontare con i backup, cambiare le credenziali del database.

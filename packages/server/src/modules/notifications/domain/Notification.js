@@ -24,6 +24,8 @@ export const NotificationKind = Object.freeze({
   SALE_LISTING_EXPIRED: "sale.listing_expired",
   SALE_RESERVATION_EXPIRED: "sale.reservation_expired",
   SALE_PAYMENT_PROBLEM: "sale.payment_problem",
+  /** To a winner: they finished in a paying place of a season with a jackpot. */
+  SEASON_PRIZE: "season.prize",
 });
 
 /** @type {ReadonlySet<string>} */

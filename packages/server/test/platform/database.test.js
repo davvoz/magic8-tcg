@@ -92,9 +92,9 @@ describe("migrations", () => {
   it("applies the repository's migrations once and is idempotent", async () => {
     const database = new Database(await PGliteDriver.open(undefined));
     try {
-      assert.deepEqual(await migrate(database), ["001_initial.sql", "002_marketplace.sql", "003_gameplay.sql", "004_chain.sql", "005_operations.sql", "006_ranked.sql", "007_trading.sql", "008_sales.sql", "009_notifications.sql", "010_games_off_chain.sql", "011_game_results.sql", "012_no_foil.sql", "013_maintenance.sql", "014_decks_without_faction.sql"]);
+      assert.deepEqual(await migrate(database), ["001_initial.sql", "002_marketplace.sql", "003_gameplay.sql", "004_chain.sql", "005_operations.sql", "006_ranked.sql", "007_trading.sql", "008_sales.sql", "009_notifications.sql", "010_games_off_chain.sql", "011_game_results.sql", "012_no_foil.sql", "013_maintenance.sql", "014_decks_without_faction.sql", "015_season_jackpots.sql"]);
       assert.deepEqual(await migrate(database), [], "nothing left to apply");
-      assert.ok((await database.rows("SELECT id FROM schema_migrations")).length === 14);
+      assert.ok((await database.rows("SELECT id FROM schema_migrations")).length === 15);
     } finally {
       await database.close();
     }
@@ -135,7 +135,7 @@ describe("migrations", () => {
       const [{ id: user }] = await database.rows(USER, ["alice"]);
       await database.query("INSERT INTO decks (id, owner_id, name, faction) VALUES ('00000000-0000-4000-8000-0000000000d1', $1, 'Iron Foundry', 'iron')", [user]);
 
-      assert.deepEqual(await migrate(database, all), ["014_decks_without_faction.sql"]);
+      assert.deepEqual(await migrate(database, all), ["014_decks_without_faction.sql", "015_season_jackpots.sql"]);
       const decks = await database.rows("SELECT * FROM decks");
       assert.deepEqual(decks.map((deck) => deck.name), ["Iron Foundry"]);
       assert.equal("faction" in decks[0], false);
@@ -178,7 +178,7 @@ describe("migrations", () => {
       await database.query("INSERT INTO blockchain_events (network, kind, payload, payload_hash, status) VALUES ('steem', 'TRADE', $1, $2, 'BUILT'), ('steem', 'SALE', $3, $4, 'IRREVERSIBLE')", [pending, "1".repeat(64), published, "2".repeat(64)]);
       await database.query("INSERT INTO notifications (user_id, kind, data, created_at) VALUES ($1, 'sale.sold', $2, now())", [user, JSON.stringify({ card: { definitionId: "pyre_drake", serial: 7, finish: "foil" }, price: "1.000" })]);
 
-      assert.deepEqual(await migrate(database, all), ["012_no_foil.sql", "013_maintenance.sql", "014_decks_without_faction.sql"]);
+      assert.deepEqual(await migrate(database, all), ["012_no_foil.sql", "013_maintenance.sql", "014_decks_without_faction.sql", "015_season_jackpots.sql"]);
       const orders = await database.rows("SELECT o.id, o.status, i.product_id, i.unit_amount FROM orders o JOIN order_items i ON i.order_id = o.id ORDER BY o.id");
       assert.deepEqual(
         orders.map((row) => [row.id.slice(-1), row.status, row.product_id, Number(row.unit_amount)]),

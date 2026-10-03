@@ -59,6 +59,10 @@ const DESCRIBERS = Object.freeze({
   "sale.bought": ({ account, single, singleName }) => text({ title: "Card received", body: `${singleName} from ${account} is now in your collection.`, cards: only(single), target: NotificationTarget.COLLECTION, tone: "good" }),
   "sale.listing_expired": ({ single, singleName }) => text({ title: "Listing expired", body: `${singleName} was not sold in time and is back in your collection.`, cards: only(single), target: NotificationTarget.MARKET, tone: "info" }),
   "sale.reservation_expired": ({ account, single, singleName }) => text({ title: "Reservation expired", body: `You did not pay ${account} for ${singleName} in time: it is on sale again.`, cards: only(single), target: NotificationTarget.MARKET, tone: "bad" }),
+  "season.prize": ({ data }) => {
+    const place = ["1st", "2nd", "3rd"][Number(data.place) - 1] ?? `#${data.place ?? "?"}`;
+    return text({ title: `You finished ${place} in ${data.season ?? "the season"}!`, body: `Your share of the jackpot, ${data.amount ?? "?"} ${data.asset ?? ""}, will be sent to your wallet.`, target: null, tone: "good" });
+  },
   "sale.payment_problem": ({ account, single, singleName, problem }) => text({ title: "Payment not accepted", body: `Your transfer to ${account} for ${singleName} pays nothing: ${problem}. Ask ${account} to send it back.`, cards: only(single), target: NotificationTarget.MARKET, tone: "bad" }),
 });
 

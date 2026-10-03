@@ -7,6 +7,10 @@
  *
  * On a compact screen (a phone in landscape) the fan, the title and the
  * summary take the left half and the buttons the right one.
+ *
+ * When the ranked season has a jackpot, it is shown beside the buttons (as a
+ * banner under the title on a compact screen), its countdown ticking; signed
+ * in, a click on it opens the leaderboard.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
@@ -17,6 +21,7 @@ import { Label } from "../ui/Label.js";
 import { Ornament } from "../ui/Ornament.js";
 import { buildAudioSettingsModal } from "./audioSettings.js";
 import { deckStorageText } from "./deckStorage.js";
+import { JACKPOT_HEIGHT, JackpotPanel } from "./jackpot/JackpotPanel.js";
 import { HeroNode } from "./mainMenu/HeroNode.js";
 import { TitleLogo } from "./mainMenu/TitleLogo.js";
 import { Scene } from "./Scene.js";
@@ -34,6 +39,8 @@ const SUMMARY = Object.freeze({ y: 718, lineHeight: 28, width: 900 });
 const BELL = Object.freeze({ width: 260, height: 48, margin: 40 });
 /** The sound settings button, left of the bell (in its place when there is none). */
 const SOUND = Object.freeze({ width: 160, gap: 12, compactWidth: 130 });
+/** The jackpot card, right of the button column: its gap from the column and its widest. */
+const JACKPOT = Object.freeze({ gap: 60, maxWidth: 500 });
 /** The signed-in player's portrait and name, in the top-left corner (the bell's mirror). */
 const PROFILE = Object.freeze({ size: 56, nameWidth: 320 });
 /**
@@ -52,6 +59,8 @@ const COMPACT = Object.freeze({
   ornament: Object.freeze({ y: 236, width: 300, height: 14 }),
   summary: Object.freeze({ bottom: 392, lineHeight: 21 }),
   button: Object.freeze({ maxWidth: 340, height: 46, gap: 8, top: 64, bottom: 394 }),
+  /** The jackpot banner, in place of the subtitle and the ornament. */
+  jackpot: Object.freeze({ y: 210 }),
 });
 
 export class MainMenuScene extends Scene {
@@ -64,6 +73,10 @@ export class MainMenuScene extends Scene {
   #unsubscribeAudio = null;
   /** The sound settings button, relabelled when the game is muted from anywhere (M). @type {Button | null} */
   #soundButton = null;
+  /** @type {Array<() => void>} */
+  #jackpotWatch = [];
+  /** @type {JackpotPanel | null} */
+  #jackpotPanel = null;
   /** The game's name; kept across rebuilds, so its light keeps its pace. */
   #title = new TitleLogo({ text: "DOMIN8" });
 
@@ -86,6 +99,10 @@ export class MainMenuScene extends Scene {
         this.services.requestRender();
       }
     }) ?? null;
+    const jackpot = this.#app.jackpot;
+    if (jackpot !== undefined) {
+      this.#jackpotWatch = [jackpot.subscribe(() => this.#rebuild()), jackpot.watch()];
+    }
     this.#rebuild();
     this.services.logger.info("main menu ready", { theme: this.services.theme.layout });
   }
@@ -97,6 +114,9 @@ export class MainMenuScene extends Scene {
     this.#unsubscribeNotifications = null;
     this.#unsubscribeAudio?.();
     this.#unsubscribeAudio = null;
+    this.#jackpotWatch.forEach((stop) => stop());
+    this.#jackpotWatch = [];
+    this.#jackpotPanel = null;
     super.exit();
   }
 
@@ -107,12 +127,7 @@ export class MainMenuScene extends Scene {
     const { viewport, hasScene, navigate } = this.services;
     const width = viewport.logicalWidth;
     const layout = viewport.compact ? compactLayout(width) : wideLayout(width);
-    const { hero } = layout;
-    this.root.add(new HeroNode({ x: hero.centerX - hero.width / 2, y: hero.y, width: hero.width, height: hero.height }));
-    Object.assign(this.#title, { x: hero.centerX - hero.textWidth / 2, y: layout.title.y, width: hero.textWidth, height: layout.title.height });
-    this.root.add(this.#title);
-    this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.subtitle.y, width: hero.textWidth, height: layout.subtitle.height, text: "A canvas card game engine", size: layout.subtitle.size, colorKey: "textMuted" }));
-    this.root.add(new Ornament({ x: hero.centerX - layout.ornament.width / 2, y: layout.ornament.y, width: layout.ornament.width, height: layout.ornament.height }));
+    this.#buildHeading(layout);
 
     const entries = [
       ...this.#onlineEntries(),
@@ -146,14 +161,7 @@ export class MainMenuScene extends Scene {
     this.#buildBell(layout);
     this.#buildSound(layout);
     this.#buildProfile(layout);
-    const draft = this.#draftSummary();
-    const lines = [
-      { text: this.#accountSummary(), colorKey: "accentLight" },
-      { text: this.#contentSummary(), colorKey: "textMuted" },
-      { text: this.#storageSummary(), colorKey: "textMuted" },
-      ...(draft === null ? [] : [{ text: draft, colorKey: "accent" }]),
-      { text: this.#versionSummary(), colorKey: "disabledText" },
-    ];
+    const lines = this.#summaryLines();
     const { summary } = layout;
     const summaryTop = summary.bottom === null ? summary.y : summary.bottom - lines.length * summary.lineHeight;
     lines.forEach((line, index) => {
@@ -163,10 +171,41 @@ export class MainMenuScene extends Scene {
     this.services.requestRender();
   }
 
+  /**
+   * The fan, the game's name, and under it the subtitle and the ornament, or on a phone the jackpot banner in their place.
+   * @param {MenuLayout} layout
+   */
+  #buildHeading(layout) {
+    const { hero } = layout;
+    this.root.add(new HeroNode({ x: hero.centerX - hero.width / 2, y: hero.y, width: hero.width, height: hero.height }));
+    Object.assign(this.#title, { x: hero.centerX - hero.textWidth / 2, y: layout.title.y, width: hero.textWidth, height: layout.title.height });
+    this.root.add(this.#title);
+    const jackpot = this.#app.jackpot?.state.jackpot ?? null;
+    if (jackpot === null || layout.jackpot.layout !== "banner") {
+      this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.subtitle.y, width: hero.textWidth, height: layout.subtitle.height, text: "A canvas card game engine", size: layout.subtitle.size, colorKey: "textMuted" }));
+      this.root.add(new Ornament({ x: hero.centerX - layout.ornament.width / 2, y: layout.ornament.y, width: layout.ornament.width, height: layout.ornament.height }));
+    }
+    this.#jackpotPanel = jackpot === null ? null : this.#buildJackpot(jackpot, layout);
+  }
+
+  /** The summary under the buttons; the jackpot banner leaves a phone's one line less. */
+  #summaryLines() {
+    const draft = this.#draftSummary();
+    const banner = this.#jackpotPanel !== null && this.services.viewport.compact;
+    return [
+      { text: this.#accountSummary(), colorKey: "accentLight" },
+      ...(banner ? [] : [{ text: this.#contentSummary(), colorKey: "textMuted" }]),
+      { text: this.#storageSummary(), colorKey: "textMuted" },
+      ...(draft === null ? [] : [{ text: draft, colorKey: "accent" }]),
+      { text: this.#versionSummary(), colorKey: "disabledText" },
+    ];
+  }
+
   /** @param {number} dtMs */
   update(dtMs) {
     const base = super.update(dtMs);
-    return this.#title.update(dtMs) || base;
+    const ticked = this.#jackpotPanel?.tick() ?? false;
+    return this.#title.update(dtMs) || ticked || base;
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -178,6 +217,18 @@ export class MainMenuScene extends Scene {
 
   relayout() {
     this.#rebuild();
+  }
+
+  /**
+   * The season's jackpot; signed in, it opens the leaderboard.
+   * @param {import("../../application/ports/JackpotApi.contract.js").Jackpot} jackpot
+   * @param {MenuLayout} layout
+   */
+  #buildJackpot(jackpot, { jackpot: frame }) {
+    const service = /** @type {import("../../application/jackpot/JackpotService.js").JackpotService} */ (this.#app.jackpot);
+    const signedIn = this.#app.account?.state.status === AccountStatus.READY && this.services.hasScene(SceneId.LEADERBOARD);
+    const onActivate = signedIn ? () => this.services.navigate(SceneId.LEADERBOARD, { back: SceneId.MAIN_MENU }) : null;
+    return this.root.add(new JackpotPanel({ ...frame, height: JACKPOT_HEIGHT[frame.layout], jackpot, now: () => service.now(), onActivate }));
   }
 
   /**
@@ -351,6 +402,7 @@ function soundLabel(settings) {
  *   summary: { centerX: number, width: number, y: number, bottom: number | null, lineHeight: number, size: import("../theme/Theme.js").FontSize },
  *   bell: { x: number, y: number, width: number, height: number },
  *   profile: { x: number, y: number, size: number, nameWidth: number },
+ *   jackpot: { x: number, y: number, width: number, layout: import("./jackpot/JackpotPanel.js").JackpotLayout },
  * }>} MenuLayout `buttons.room`: the height the column is centred in (0 starts it at `top`); `summary.bottom`: where its last line ends, when it is laid out from the bottom
  */
 
@@ -370,6 +422,7 @@ function wideLayout(width) {
     summary: { centerX, width: SUMMARY.width, y: SUMMARY.y, bottom: null, lineHeight: SUMMARY.lineHeight, size: "small" },
     bell: { x: width - BELL.margin - BELL.width, y: BELL.margin / 2, width: BELL.width, height: BELL.height },
     profile: { x: BELL.margin, y: BELL.margin / 2 + (BELL.height - PROFILE.size) / 2, size: PROFILE.size, nameWidth: PROFILE.nameWidth },
+    jackpot: { x: centerX + BUTTON_WIDTH / 2 + JACKPOT.gap, y: BUTTONS_Y, width: Math.min(JACKPOT.maxWidth, width - centerX - BUTTON_WIDTH / 2 - JACKPOT.gap - BELL.margin), layout: "card" },
   });
 }
 
@@ -392,5 +445,6 @@ function compactLayout(width) {
     summary: { centerX: left, width: half - 2 * margin, y: 0, bottom: COMPACT.summary.bottom, lineHeight: COMPACT.summary.lineHeight, size: "tiny" },
     bell: { x: width - margin - COMPACT.bell.width, y: header.y, width: COMPACT.bell.width, height: header.height },
     profile: { x: margin, y: header.y, size: COMPACT.profile.size, nameWidth: COMPACT.profile.nameWidth },
+    jackpot: { x: margin, y: COMPACT.jackpot.y, width: half - 2 * margin, layout: "banner" },
   });
 }

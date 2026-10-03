@@ -1,7 +1,7 @@
 /**
  * The operations page (admin.html). It only reads the admin API and asks
- * Keychain to sign refunds on the operator's computer; the server decides
- * nothing from what this page says. Only textContent is written.
+ * Keychain to sign refunds and season prizes on the operator's computer; the
+ * server decides nothing from what this page says. Only textContent is written.
  */
 const REQUEST_HEADER = { "x-m8-request": "1" };
 const REFRESH_MS = 15_000;
@@ -84,40 +84,64 @@ async function showOverview() {
 }
 
 /**
- * @param {any} refund
+ * Asks Keychain for a transfer from the shop account: a refund or a season prize.
+ * @param {{ from: string, to: string, amountText: string, asset: string, memo: string }} transfer
+ * @param {string} what "Refund", "Prize"
  * @param {(enabled: boolean) => void} setEnabled
  */
-function payRefund(refund, setEnabled) {
+function pay(transfer, what, setEnabled) {
   const keychain = /** @type {any} */ (window).steem_keychain;
   if (keychain === undefined || typeof keychain.requestTransfer !== "function") {
-    notice(`Keychain is not available. Send exactly ${refund.amountText} ${refund.asset} from @${refund.from} to @${refund.toAccount} with memo "${refund.memo}".`, "bad");
+    notice(`Keychain is not available. Send exactly ${transfer.amountText} ${transfer.asset} from @${transfer.from} to @${transfer.to} with memo "${transfer.memo}".`, "bad");
     return;
   }
   setEnabled(false);
-  keychain.requestTransfer(refund.from, refund.toAccount, refund.amountText, refund.memo, refund.asset, (/** @type {any} */ response) => {
+  keychain.requestTransfer(transfer.from, transfer.to, transfer.amountText, transfer.memo, transfer.asset, (/** @type {any} */ response) => {
     if (response?.success) {
-      notice(`Refund sent to @${refund.toAccount}; it closes once the chain confirms it.`, "good");
+      notice(`${what} sent to @${transfer.to}; it closes once the chain confirms it.`, "good");
     } else {
       setEnabled(true);
-      notice(`Refund not sent: ${response?.message ?? "refused"}`, "bad");
+      notice(`${what} not sent: ${response?.message ?? "refused"}`, "bad");
     }
   }, true);
+}
+
+/**
+ * The button that pays a pending transfer.
+ * @param {{ from: string, to: string, amountText: string, asset: string, memo: string }} transfer
+ * @param {string} what
+ * @param {boolean} pending
+ */
+function payButton(transfer, what, pending) {
+  const button = document.createElement("button");
+  button.textContent = "Pay with Keychain";
+  button.disabled = !pending;
+  button.addEventListener("click", () =>
+    pay(transfer, what, (enabled) => {
+      button.disabled = !enabled;
+    }),
+  );
+  return button;
 }
 
 async function showRefunds() {
   const { refunds } = await api("/api/admin/refunds");
   element("refunds").replaceChildren(
     ...refunds.map((refund) => {
-      const button = document.createElement("button");
-      button.textContent = "Pay with Keychain";
-      button.disabled = refund.status !== "PENDING";
-      button.addEventListener("click", () =>
-        payRefund(refund, (enabled) => {
-          button.disabled = !enabled;
-        }),
-      );
+      const button = payButton({ ...refund, to: refund.toAccount }, "Refund", refund.status === "PENDING");
       const status = refund.status === "SENT" ? `sent (${refund.transfer.txId.slice(0, 10)}…), waiting for irreversibility` : "pending";
       return row([`@${refund.toAccount}`, `${refund.amountText} ${refund.asset}`, cell("code", refund.memo), status, button]);
+    }),
+  );
+}
+
+async function showPrizes() {
+  const { prizes } = await api("/api/admin/prizes");
+  element("prizes").replaceChildren(
+    ...prizes.map((prize) => {
+      const button = payButton({ ...prize, to: prize.account }, "Prize", prize.status === "PENDING");
+      const status = prize.status === "SENT" ? `sent (${prize.transfer.txId.slice(0, 10)}…), waiting for irreversibility` : "pending";
+      return row([`${prize.season} #${prize.place}`, `@${prize.account}`, `${prize.amountText} ${prize.asset}`, cell("code", prize.memo), status, button]);
     }),
   );
 }
@@ -177,7 +201,7 @@ async function showMaintenance() {
 
 async function refresh() {
   try {
-    await Promise.all([showOverview(), showMaintenance(), showRefunds(), showAlerts()]);
+    await Promise.all([showOverview(), showMaintenance(), showRefunds(), showPrizes(), showAlerts()]);
   } catch (error) {
     notice(error instanceof Error ? error.message : String(error), "bad");
   }
