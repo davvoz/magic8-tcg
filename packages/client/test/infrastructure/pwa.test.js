@@ -65,7 +65,7 @@ describe("app manifest", () => {
   const manifest = JSON.parse(read("app.webmanifest"));
 
   it("makes the game installable: name, start, display and icons that exist at their size", () => {
-    assert.equal(manifest.name, "Magic8");
+    assert.equal(manifest.name, "DOMIN8");
     assert.equal(manifest.start_url, "/");
     assert.equal(manifest.scope, "/");
     assert.ok(["fullscreen", "standalone"].includes(manifest.display));

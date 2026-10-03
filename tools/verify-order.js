@@ -1,5 +1,5 @@
 /**
- * Verifies the packs of a Magic8 order from the STEEM chain.
+ * Verifies the packs of a DOMIN8 order from the STEEM chain.
  *
  *   node tools/verify-order.js <orderId> --server <origin> [options]
  *

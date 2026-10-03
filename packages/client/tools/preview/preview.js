@@ -303,7 +303,7 @@ async function boot() {
   const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations, tableArt }));
   registerScenes(sceneManager, app);
   await show(sceneManager, app, request);
-  document.title = `Magic8 preview: ${request.scene}`;
+  document.title = `DOMIN8 preview: ${request.scene}`;
 }
 
 /**

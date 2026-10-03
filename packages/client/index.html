@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <!-- viewport-fit=cover: the canvas reaches under a notch, the game keeps its controls clear of it (safe-area insets, read below). -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
-  <title>Magic8</title>
+  <title>DOMIN8</title>
   <meta name="description" content="Multiplayer collectible card game">
   <!-- Installable as an app (PWA): the manifest, its icons, and the service worker (sw.js, registered by src/main.js). -->
   <link rel="manifest" href="app.webmanifest">
@@ -16,7 +16,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="Magic8">
+  <meta name="apple-mobile-web-app-title" content="DOMIN8">
   <style>
     @font-face { font-family: 'New Rocker'; font-style: normal; font-weight: 100 900; font-display: block; src: url(fonts/NewRocker-Regular.woff2) format('woff2'); }
     /* HTML is used only to host the canvas. All game UI is rendered on the canvas, except the loading screen (shown before any script runs), the maintenance banner, the phone keyboard's text strip and the rotate hint. */
@@ -78,9 +78,9 @@
   </style>
 </head>
 <body>
-  <canvas id="game" aria-label="Magic8 card game" role="application"></canvas>
+  <canvas id="game" aria-label="DOMIN8 card game" role="application"></canvas>
   <div id="safe-area" aria-hidden="true"></div>
-  <div id="loading" class="loading" role="progressbar" aria-label="Loading Magic8" aria-busy="true" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+  <div id="loading" class="loading" role="progressbar" aria-label="Loading DOMIN8" aria-busy="true" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
     <div class="loading-sigil" aria-hidden="true">
       <svg viewBox="-100 -100 200 200">
         <defs>
@@ -114,12 +114,12 @@
         </g>
       </svg>
     </div>
-    <h1 class="loading-title">MAGIC8</h1>
+    <h1 class="loading-title">DOMIN8</h1>
     <div class="loading-ornament" aria-hidden="true"></div>
     <div class="loading-bar" aria-hidden="true"><div class="loading-bar-fill"></div></div>
     <p class="loading-status">Reading the stars…</p>
   </div>
-  <div class="rotate-hint" role="alert">Turn your device sideways<small>Magic8 is played in landscape</small></div>
+  <div class="rotate-hint" role="alert">Turn your device sideways<small>DOMIN8 is played in landscape</small></div>
   <noscript>This game requires JavaScript.</noscript>
   <script type="importmap">{ "imports": { "@magic8/engine/": "/engine/", "@magic8/protocol": "/protocol/index.js", "@magic8/steem": "/steem/index.js", "@noble/hashes/": "/vendor/noble-hashes/", "@noble/curves/": "/vendor/noble-curves/" } }</script>
   <script type="module" src="src/main.js"></script>

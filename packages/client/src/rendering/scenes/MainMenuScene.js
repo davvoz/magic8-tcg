@@ -65,7 +65,7 @@ export class MainMenuScene extends Scene {
   /** The sound settings button, relabelled when the game is muted from anywhere (M). @type {Button | null} */
   #soundButton = null;
   /** The game's name; kept across rebuilds, so its light keeps its pace. */
-  #title = new TitleLogo({ text: "MAGIC8" });
+  #title = new TitleLogo({ text: "DOMIN8" });
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -332,7 +332,7 @@ export class MainMenuScene extends Scene {
   /** The game's release (so a player can tell which one they run), then the engine's. */
   #versionSummary() {
     const { release, version } = this.#app.environment;
-    return release === undefined ? `engine ${version}` : `Magic8 ${release} · engine ${version}`;
+    return release === undefined ? `engine ${version}` : `DOMIN8 ${release} · engine ${version}`;
   }
 }
 
