@@ -8,7 +8,7 @@ export { STEEM_KEY_PREFIX, decodePublicKey, decodeWif, encodePublicKey, publicKe
 export { verifySessionSignature } from "./crypto/sessionKeys.js";
 export { RpcError, RpcErrorCode, SteemRpcClient } from "./rpc/SteemRpcClient.js";
 export { ChainDataError, STEEM_NETWORK, SteemBlockchainProvider } from "./providers/SteemBlockchainProvider.js";
-export { LOGIN_KEY_ROLE, SteemWalletProvider, WalletError } from "./providers/SteemWalletProvider.js";
+export { KEY_ROLES, LOGIN_KEY_ROLE, SteemWalletProvider, WalletError } from "./providers/SteemWalletProvider.js";
 export { Confirmation, SteemTransferPaymentProvider } from "./providers/SteemTransferPaymentProvider.js";
 export { MAX_EXPIRATION_SECONDS, STEEM_CHAIN_ID, blockReference, fromBroadcastJson, isCanonicalSignature, recoverSignerKeys, serializeTransaction, signDigest, toBroadcastJson, transactionDigest, transactionId } from "./transactions/transaction.js";
 export { SignerError, SteemTransactionProvider } from "./providers/SteemTransactionProvider.js";

@@ -7,7 +7,9 @@
  * On a phone there are no keydown events to route: a tap opens the device's
  * own keyboard in a native input (Scene → `services.textEntry`), which hands
  * whole values back through `enter` under the same allow-list and cap.
- * `keyboard` tells that input which keyboard to show.
+ * `keyboard` tells that input which keyboard to show; a "secret" (a key, a
+ * PIN) is drawn as dots and typed into a password input. Text pasted with
+ * the keyboard (Ctrl+V) is added at the end, under the same rules.
  */
 import { drawTextInRect, fillRoundedRect, glowRoundedRect, insetShadow } from "./drawing.js";
 import { UiNode } from "./UiNode.js";
@@ -19,8 +21,9 @@ const ALLOWED_CHARACTER = /^[\p{L}\p{N} \-_'.!?&()]$/u;
 const HARD_MAX_LENGTH = 200;
 const PADDING = 14;
 const CARET = "|";
+const SECRET_DOT = "•";
 
-/** @typedef {"text" | "account" | "decimal"} KeyboardKind plain text, a lower-case account name (no capitals, no corrections), a number */
+/** @typedef {"text" | "account" | "decimal" | "secret"} KeyboardKind plain text, a lower-case account name (no capitals, no corrections), a number, a key or a PIN (hidden) */
 
 export class TextField extends UiNode {
   /** @type {string} */
@@ -60,9 +63,26 @@ export class TextField extends UiNode {
    */
   enter(text) {
     if (this.isEffectivelyEnabled) {
-      this.#setValue(Array.from(String(text)).filter((character) => ALLOWED_CHARACTER.test(character)).join("").slice(0, this.maxLength));
+      this.#setValue(allowed(text).slice(0, this.maxLength));
     }
     return this.value;
+  }
+
+  /**
+   * Pasted text, added at the end (without the spaces around it).
+   * @param {string} text
+   */
+  paste(text) {
+    if (!this.isEffectivelyEnabled) {
+      return false;
+    }
+    this.#setValue((this.value + allowed(String(text).trim())).slice(0, this.maxLength));
+    return true;
+  }
+
+  /** Whether what is typed is hidden (a key, a PIN). */
+  get secret() {
+    return this.keyboard === "secret";
   }
 
   /** Clicking a field only focuses it (the scene does that on press). */
@@ -119,9 +139,18 @@ export class TextField extends UiNode {
     });
     insetShadow(context, this.bounds, { color: theme.colors.letterbox, radius, depth: 4 });
     const empty = this.value.length === 0;
-    const typed = this.focused ? this.value + CARET : this.value;
+    const shownValue = this.secret ? SECRET_DOT.repeat(this.value.length) : this.value;
+    const typed = this.focused ? shownValue + CARET : shownValue;
     const shown = empty && !this.focused ? this.placeholder : typed;
     const color = empty && !this.focused ? theme.colors.textMuted : theme.colors.text;
     drawTextInRect(context, shown, this.bounds, { font: fontFor(theme, "body"), color: enabled ? color : theme.colors.disabledText, align: "left", padding: PADDING });
   }
+}
+
+/**
+ * @param {string} text
+ * @returns {string} its characters the allow-list accepts
+ */
+function allowed(text) {
+  return Array.from(String(text)).filter((character) => ALLOWED_CHARACTER.test(character)).join("");
 }

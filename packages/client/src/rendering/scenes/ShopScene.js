@@ -48,7 +48,9 @@ import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
+import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
 import { SceneId } from "./sceneIds.js";
+import { approveTransferText, transferPreviewText } from "./walletText.js";
 
 const LIST_ID = "shop.list";
 /** A rare card received: which rarities count (the top ones), how long after the chime its sweep comes, and how loud it is for the very rarest (a step softer for each rarity below). */
@@ -116,7 +118,7 @@ const EMPTY_SHELVES = shelvesOf({ products: [], dropTables: [], rarities: [], pr
 /** What the player sees at each step of a purchase. */
 const STAGE_TEXT = Object.freeze({
   [PurchaseStage.ORDERING]: () => "Creating your order…",
-  [PurchaseStage.SIGNING]: (purchase) => `Approve the transfer in Keychain: ${purchase.order.payment.amount} ${purchase.order.payment.asset} to @${purchase.order.payment.to}.`,
+  [PurchaseStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${purchase.order.payment.amount} ${purchase.order.payment.asset} to @${purchase.order.payment.to}.`,
   [PurchaseStage.CONFIRMING]: () => "Payment sent. The STEEM blockchain makes it final in about a minute: keep playing, you will be notified when your cards arrive.",
   [PurchaseStage.DONE]: () => "Done: your cards are in your collection.",
 });
@@ -171,6 +173,8 @@ export class ShopScene extends Scene {
   }
 
   #app;
+  /** The active key a payment with the player's own keys needs, asked for over the shop. @type {ActiveKeyDialog | null} */
+  #activeKey = null;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
   /** The shelf shown (a ShopCategory). @type {string} */
@@ -216,11 +220,15 @@ export class ShopScene extends Scene {
       shop.load();
     }
     this.#rebuild();
+    this.#activeKey = this.#app.activeKeys === undefined ? null : new ActiveKeyDialog(this, this.#app.activeKeys);
+    this.#activeKey?.start();
   }
 
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#activeKey?.stop();
+    this.#activeKey = null;
     super.exit();
   }
 
@@ -241,6 +249,7 @@ export class ShopScene extends Scene {
 
   relayout() {
     this.#rebuild();
+    this.#activeKey?.relayout();
   }
 
   #rebuild() {
@@ -313,7 +322,7 @@ export class ShopScene extends Scene {
     const noteX = header.sideMargin + title;
     const noteWidth = viewport.logicalWidth - 2 * header.sideMargin - title - buttons * (header.backWidth + 16);
     if (account === null) {
-      this.root.add(new Label({ x: noteX, y: header.y, width: noteWidth, height: header.height, text: "Sign in with Keychain to buy. Prices are paid in STEEM, straight from your wallet.", size: "small", align: "left", colorKey: "textMuted", fit: true }));
+      this.root.add(new Label({ x: noteX, y: header.y, width: noteWidth, height: header.height, text: "Sign in to buy. Prices are paid in STEEM, straight from your wallet.", size: "small", align: "left", colorKey: "textMuted", fit: true }));
     } else {
       const budget = this.#budgetLine();
       this.root.add(new Label({ id: "shop.budget", x: noteX, y: header.y, width: noteWidth, height: header.height / 2, text: budget.text, weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
@@ -815,7 +824,7 @@ export class ShopScene extends Scene {
     }
     const text = STAGE_TEXT[/** @type {keyof typeof STAGE_TEXT} */ (purchase.stage)];
     if (text !== undefined) {
-      return { text: text(purchase), colorKey: purchase.stage === PurchaseStage.DONE ? "success" : "accent" };
+      return { text: text(purchase, this.#app), colorKey: purchase.stage === PurchaseStage.DONE ? "success" : "accent" };
     }
     if (this.#notice !== null) {
       return this.#notice;
@@ -823,7 +832,8 @@ export class ShopScene extends Scene {
     if (!this.#signedIn()) {
       return { text: "Sign in to buy.", colorKey: "textMuted" };
     }
-    return this.#shortfall(amount, asset) ?? { text: "Keychain will show the exact transfer before anything is paid.", colorKey: "textMuted" };
+    const preview = transferPreviewText(this.#app);
+    return this.#shortfall(amount, asset) ?? { text: `${preview[0].toUpperCase()}${preview.slice(1)} before anything is paid.`, colorKey: "textMuted" };
   }
 
   /**
@@ -1107,7 +1117,7 @@ export class ShopScene extends Scene {
     if (BUSY_STAGES.includes(shop.state.purchase.stage)) {
       return { text: "A purchase is in progress: pay for the cart when it is over.", colorKey: "accent" };
     }
-    return this.#shortfall(summary.total, /** @type {string} */ (summary.asset)) ?? { text: "One payment for everything: Keychain shows the exact transfer before anything is paid.", colorKey: "textMuted" };
+    return this.#shortfall(summary.total, /** @type {string} */ (summary.asset)) ?? { text: `One payment for everything: ${transferPreviewText(this.#app)} before anything is paid.`, colorKey: "textMuted" };
   }
 
   /** @param {boolean} shown */

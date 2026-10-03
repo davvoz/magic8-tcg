@@ -2,7 +2,7 @@
 
 **Stato:** 2026-10-03.
 - **Client:** profilo di layout `compact` nel `Viewport`, tutte le schermate e la partita ridisegnate per un telefono in orizzontale, input touch (niente hover, scroll con inerzia, tastiera del telefono per i campi di testo), carte "mini" sulla board, conferma prima di giocare una carta, illustrazioni ridotte e caricate su richiesta.
-- **Non ancora:** login con posting key (oggi serve Keychain, disponibile su Android), versione verticale, varianti leggere dei file delle illustrazioni.
+- **Non ancora:** versione verticale, varianti leggere dei file delle illustrazioni. Il login con posting key, senza Keychain, è nel doc 20.
 
 ## Decisioni
 

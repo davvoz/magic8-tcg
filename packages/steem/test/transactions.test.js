@@ -24,6 +24,7 @@ import {
   publicKeyOf,
   recoverSignerKeys,
   serializeTransaction,
+  toBroadcastJson,
   transactionDigest,
   transactionId,
 } from "../src/index.js";
@@ -94,9 +95,33 @@ describe("STEEM transaction serialization and signing", () => {
     assert.deepEqual(recoverSignerKeys(transactionDigest(bytes), [...parsed.signatures, "00".repeat(65)]), [PUBLIC, null]);
   });
 
+  it("serializes a transfer byte for byte like the reference libraries, and reads it back", () => {
+    const transfer = Object.freeze({
+      refBlockNum: 34294,
+      refBlockPrefix: 3707022213,
+      expiration: seconds("2016-04-06T08:29:27"),
+      operations: [{ type: "transfer", from: "foo", to: "baar", amount: 111_110, asset: "STEEM", memo: "Fooo" }],
+    });
+    const bytes = serializeTransaction(transfer);
+    assert.equal(hex(bytes), "f68585abf4dce7c80457010203666f6f046261617206b201000000000003535445454d000004466f6f6f00");
+    const json = toBroadcastJson(transfer, []);
+    assert.deepEqual(json.operations, [["transfer", { from: "foo", to: "baar", amount: "111.110 STEEM", memo: "Fooo" }]]);
+    assert.equal(hex(serializeTransaction(fromBroadcastJson(json).transaction)), hex(bytes), "the broadcast form reads back to the same bytes");
+    const sbd = serializeTransaction({ ...transfer, operations: [{ type: "transfer", from: "foo", to: "baar", amount: 2 ** 32 + 5, asset: "SBD", memo: "" }] });
+    assert.equal(hex(sbd).slice(-36), "050000000100000003534244000000000000", "int64 amount above 2^32, SBD symbol, empty memo");
+
+    const bad = (operation) => () => serializeTransaction({ ...transfer, operations: [{ ...transfer.operations[0], ...operation }] });
+    assert.throws(bad({ amount: 0 }), /positive amount/);
+    assert.throws(bad({ amount: 1.5 }), /positive amount/);
+    assert.throws(bad({ asset: "HIVE" }), /STEEM or SBD/);
+    assert.throws(bad({ to: "Bad" }), /account names/);
+    assert.throws(bad({ memo: "x".repeat(2049) }), /2048 bytes/);
+    assert.throws(() => fromBroadcastJson({ ...json, operations: [["transfer", { from: "foo", to: "baar", amount: "1.5 STEEM", memo: "" }]] }), /STEEM or SBD amount/);
+  });
+
   it("refuses what it does not publish", () => {
     const bad = (operation) => () => serializeTransaction({ ...GAME_TX, operations: [{ ...GAME_TX.operations[0], ...operation }] });
-    assert.throws(bad({ type: "transfer" }), /only custom_json/);
+    assert.throws(bad({ type: "vote" }), /only custom_json and transfer/);
     assert.throws(bad({ requiredPostingAuths: [] }), /at least one/);
     assert.throws(bad({ requiredPostingAuths: ["Bad"] }), /account names/);
     assert.throws(bad({ requiredPostingAuths: ["m8tcg-b1", "m8tcg-b1"] }), /duplicate/);

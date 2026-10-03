@@ -18,6 +18,7 @@ const KEYBOARDS = Object.freeze({
   text: Object.freeze({ inputMode: "text", autocapitalize: "sentences", autocorrect: "on" }),
   account: Object.freeze({ inputMode: "text", autocapitalize: "none", autocorrect: "off" }),
   decimal: Object.freeze({ inputMode: "decimal", autocapitalize: "none", autocorrect: "off" }),
+  secret: Object.freeze({ inputMode: "text", autocapitalize: "none", autocorrect: "off" }),
 });
 
 export class TextEntryBar {
@@ -68,6 +69,8 @@ export class TextEntryBar {
     this.#input.value = field.value;
     this.#input.placeholder = field.placeholder;
     this.#input.maxLength = field.maxLength;
+    // A key or a PIN is typed hidden (the form already keeps the browser's form memory off).
+    this.#input.type = field.keyboard === "secret" ? "password" : "text";
     this.#input.inputMode = keyboard.inputMode;
     this.#input.setAttribute("autocapitalize", keyboard.autocapitalize);
     this.#input.setAttribute("autocorrect", keyboard.autocorrect);
@@ -82,6 +85,8 @@ export class TextEntryBar {
     }
     this.#field = null;
     this.#element.hidden = true;
+    // What was typed (a key, maybe) does not stay in the page.
+    this.#input.value = "";
     this.#input.blur();
     this.#onChange();
   }

@@ -1,7 +1,8 @@
 /**
- * A browser wallet that holds the user's keys and signs on their behalf
- * (Steem Keychain first). Keys never leave it; the client only ever sees
- * signatures.
+ * A wallet that holds the user's keys and signs on their behalf: the Steem
+ * Keychain extension (keys never leave it; the client only ever sees
+ * signatures), or the player's own keys typed into this browser
+ * (LocalKeyWallet, docs/tcg/20-chiavi.md).
  *
  * @typedef {object} WalletConnector
  * @property {string} name shown to the user ("Steem Keychain")
@@ -19,6 +20,8 @@ export const WalletFailure = Object.freeze({
   TIMEOUT: "WALLET_TIMEOUT",
   BAD_SIGNATURE: "WALLET_BAD_SIGNATURE",
   BAD_RESPONSE: "WALLET_BAD_RESPONSE",
+  /** Nothing was sent: what signing needs could not be read. */
+  UNAVAILABLE: "WALLET_UNAVAILABLE",
 });
 
 export const WALLET_CONNECTOR_METHODS = Object.freeze(["isAvailable", "signMessage", "requestTransfer"]);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { fail, ok } from "@magic8/engine/shared/Result.js";
-import { IdentityService, IdentityStatus } from "../../src/application/identity/IdentityService.js";
+import { IdentityService, IdentityStatus, SignInMethod } from "../../src/application/identity/IdentityService.js";
 import { HttpAuthApi } from "../../src/infrastructure/api/HttpAuthApi.js";
 import { KeychainWalletConnector } from "../../src/infrastructure/wallet/KeychainWalletConnector.js";
 
@@ -37,7 +37,7 @@ describe("IdentityService", () => {
     const service = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet().wallet });
     assert.equal(service.state.status, IdentityStatus.UNKNOWN);
     await service.restore();
-    assert.deepEqual(service.state, { status: IdentityStatus.SIGNED_IN, user: USER, error: null });
+    assert.deepEqual(service.state, { status: IdentityStatus.SIGNED_IN, user: USER, method: SignInMethod.KEYCHAIN, error: null });
   });
 
   it("is offline when no game server answers, signed out otherwise", async () => {
@@ -99,6 +99,128 @@ describe("IdentityService", () => {
     await service.signOut();
     assert.equal(service.state.status, IdentityStatus.SIGNED_OUT);
     assert.equal(calls.at(-1).name, "deleteSession");
+  });
+});
+
+/**
+ * A scripted LocalKeys: `accepts` decides usePostingKey; `saved` is the account restore() finds.
+ * @param {{ saved?: string | null, accepts?: (account: string, wif: string) => any, save?: () => any }} [options]
+ */
+function fakeKeys({ saved = null, accepts = async () => ok(undefined), save = async () => ok(undefined) } = {}) {
+  const log = [];
+  const keys = {
+    account: saved,
+    name: "your keys",
+    isAvailable: () => keys.account !== null,
+    restore: async () => (log.push("restore"), saved),
+    usePostingKey: async (account, wif) => {
+      log.push(`use ${account} ${wif}`);
+      const result = await accepts(account, wif);
+      if (result.ok) {
+        keys.account = account;
+      }
+      return result;
+    },
+    save: async () => (log.push("save"), save()),
+    forget: () => {
+      log.push("forget");
+      keys.account = null;
+    },
+    signMessage: async (request) => (log.push(`sign ${request.account} ${request.keyRole}`), ok(SIGNATURE)),
+  };
+  return { keys, log };
+}
+
+describe("IdentityService with the player's own keys", () => {
+  it("signs in with a posting key: checked on the chain, signs the challenge, saved once the server accepted it", async () => {
+    const { api, calls } = fakeApi();
+    const { keys, log } = fakeKeys();
+    const keychain = fakeWallet();
+    const service = new IdentityService({ api, wallet: keychain.wallet, keys });
+    const result = await service.signInWithKey(" @Alice ", "5Kkey");
+    assert.deepEqual(result, { ok: true, value: USER });
+    assert.deepEqual(log, ["use alice 5Kkey", "sign alice Posting", "save"]);
+    assert.deepEqual(calls.map((call) => call.name), ["createChallenge", "createSession"]);
+    assert.equal(keychain.requests.length, 0, "Keychain is not asked");
+    assert.deepEqual(service.state, { status: IdentityStatus.SIGNED_IN, user: USER, method: SignInMethod.KEYS, error: null });
+  });
+
+  it("refuses a key the chain does not accept before signing anything, and keeps nothing", async () => {
+    const { api, calls } = fakeApi();
+    const { keys, log } = fakeKeys({ accepts: async () => fail("KEY_TOO_POWERFUL", "this key can move your funds") });
+    const service = new IdentityService({ api, wallet: fakeWallet().wallet, keys });
+    assert.equal((await service.signInWithKey("alice", "5Kactive")).error.code, "KEY_TOO_POWERFUL");
+    assert.deepEqual(log, ["use alice 5Kactive", "forget"]);
+    assert.equal(calls.length, 0, "the server is not asked");
+    assert.equal(service.state.status, IdentityStatus.SIGNED_OUT);
+    assert.equal(service.state.error.code, "KEY_TOO_POWERFUL");
+  });
+
+  it("forgets the key when the server refuses the signature", async () => {
+    const { keys, log } = fakeKeys();
+    const service = new IdentityService({ api: fakeApi({ createSession: async () => fail("LOGIN_FAILED", "no") }).api, wallet: fakeWallet().wallet, keys });
+    assert.equal((await service.signInWithKey("alice", "5Kkey")).error.code, "LOGIN_FAILED");
+    assert.equal(log.at(-1), "forget");
+    assert.ok(!log.includes("save"));
+  });
+
+  it("stays signed in when the key could not be saved, and says so", async () => {
+    const { keys } = fakeKeys({ save: async () => fail("KEY_STORAGE", "this browser could not store the key") });
+    const service = new IdentityService({ api: fakeApi().api, wallet: fakeWallet().wallet, keys });
+    assert.equal((await service.signInWithKey("alice", "5Kkey")).ok, true);
+    assert.equal(service.state.status, IdentityStatus.SIGNED_IN);
+    assert.equal(service.state.error.code, "KEY_STORAGE");
+  });
+
+  it("restores a session signed with the saved key, and signs in again with it once the session has expired", async () => {
+    const restored = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet().wallet, keys: fakeKeys({ saved: "alice" }).keys });
+    assert.equal((await restored.restore()).method, SignInMethod.KEYS);
+
+    const { api, calls } = fakeApi();
+    const { keys, log } = fakeKeys({ saved: "alice" });
+    const expired = new IdentityService({ api, wallet: fakeWallet().wallet, keys });
+    const state = await expired.restore();
+    assert.deepEqual(state, { status: IdentityStatus.SIGNED_IN, user: USER, method: SignInMethod.KEYS, error: null });
+    assert.deepEqual(calls.map((call) => call.name), ["currentUser", "createChallenge", "createSession"]);
+    assert.deepEqual(log, ["restore", "sign alice Posting"]);
+  });
+
+  it("forgets a saved key the chain no longer accepts, keeps one it could not check", async () => {
+    const revoked = fakeKeys({ saved: "alice" });
+    const service = new IdentityService({ api: fakeApi({ createSession: async () => fail("LOGIN_FAILED", "no") }).api, wallet: fakeWallet().wallet, keys: revoked.keys });
+    assert.equal((await service.restore()).status, IdentityStatus.SIGNED_OUT);
+    assert.equal(revoked.log.at(-1), "forget");
+
+    const unreachable = fakeKeys({ saved: "alice" });
+    const offline = new IdentityService({ api: fakeApi({ createChallenge: async () => fail("CHAIN_UNAVAILABLE", "down") }).api, wallet: fakeWallet().wallet, keys: unreachable.keys });
+    assert.equal((await offline.restore()).status, IdentityStatus.SIGNED_OUT);
+    assert.ok(!unreachable.log.includes("forget"));
+  });
+
+  it("drops a saved key of another account than the session's, and any key on a Keychain sign-in or a sign-out", async () => {
+    const other = fakeKeys({ saved: "bob" });
+    const restored = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet().wallet, keys: other.keys });
+    assert.equal((await restored.restore()).method, SignInMethod.KEYCHAIN);
+    assert.deepEqual(other.log, ["restore", "forget"]);
+
+    const viaKeychain = fakeKeys({ saved: "alice" });
+    const service = new IdentityService({ api: fakeApi().api, wallet: fakeWallet().wallet, keys: viaKeychain.keys });
+    await service.signIn("carol");
+    assert.equal(service.state.method, SignInMethod.KEYCHAIN);
+    assert.equal(viaKeychain.log.at(-1), "forget");
+
+    const out = fakeKeys();
+    const signedIn = new IdentityService({ api: fakeApi().api, wallet: fakeWallet().wallet, keys: out.keys });
+    await signedIn.signInWithKey("alice", "5Kkey");
+    await signedIn.signOut();
+    assert.equal(out.log.at(-1), "forget");
+    assert.equal(signedIn.state.method, null);
+  });
+
+  it("offers key sign-in only with keys to sign with", async () => {
+    const service = new IdentityService({ api: fakeApi().api, wallet: fakeWallet().wallet });
+    assert.equal(service.keysAvailable, false);
+    assert.equal((await service.signInWithKey("alice", "5Kkey")).error.code, "KEYS_UNSUPPORTED");
   });
 });
 

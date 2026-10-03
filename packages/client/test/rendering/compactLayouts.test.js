@@ -18,6 +18,7 @@ import { CollectionScene } from "../../src/rendering/scenes/CollectionScene.js";
 import { DeckBuilderScene } from "../../src/rendering/scenes/DeckBuilderScene.js";
 import { DeckSelectionScene } from "../../src/rendering/scenes/DeckSelectionScene.js";
 import { ErrorScene } from "../../src/rendering/scenes/ErrorScene.js";
+import { ActiveKeyPrompt } from "../../src/application/wallet/ActiveKeyPrompt.js";
 import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { NotificationsScene } from "../../src/rendering/scenes/NotificationsScene.js";
@@ -106,7 +107,8 @@ const overlap = (a, b) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x,
 function assertFitsPhone(scene, viewport, label) {
   scene.render(new FakeContext2D());
   const screen = { x: 0, y: 0, width: viewport.logicalWidth, height: viewport.logicalHeight };
-  const controls = walk(scene.modal ?? scene.root).filter(({ node }) => node.interactive && node !== scene.modal && node.width > 0);
+  const layer = topLayer(scene);
+  const controls = walk(layer).filter(({ node }) => node.interactive && node !== layer && node.width > 0);
   assert.ok(controls.length > 0, `${label}: has controls`);
   for (const { node, clip } of controls) {
     const bounds = node.bounds;
@@ -133,6 +135,9 @@ function assertFitsPhone(scene, viewport, label) {
   }
 }
 
+/** What the player can touch: the overlay (the active key asked for), the scene's modal, or the scene. */
+const topLayer = (scene) => scene.overlay ?? scene.modal ?? scene.root;
+
 const isAncestor = (node, descendant) => {
   for (let parent = descendant.parent; parent !== null; parent = parent.parent) {
     if (parent === node) {
@@ -141,6 +146,17 @@ const isAncestor = (node, descendant) => {
   }
   return false;
 };
+
+/**
+ * A payment with the player's own keys waiting for the active key.
+ * @param {any} app
+ * @param {boolean} saved whether a key is saved under a PIN
+ */
+function askForActiveKey(app, saved) {
+  const activeKeys = new ActiveKeyPrompt();
+  Object.assign(app, { activeKeys });
+  void activeKeys.ask({ account: "alice", saved });
+}
 
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
@@ -156,6 +172,9 @@ const SCREENS = Object.freeze([
   { name: "notifications", make: (s, app) => new NotificationsScene(s, app) },
   { name: "online lobby", make: (s, app) => new OnlineScene(s, app) },
   { name: "sign in", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: true, signIn: async () => ok(null) } }) },
+  { name: "sign in with a posting key", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }) },
+  { name: "shop asking for the active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, false), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.key")) },
+  { name: "shop unlocking the saved active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, true), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.forget")) },
   { name: "error", make: (s) => new ErrorScene(s), params: { title: "Something went wrong", message: "A long explanation of what went wrong." }, controls: false },
 ]);
 

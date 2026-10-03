@@ -41,6 +41,12 @@ export const SESSION_REPOSITORY_METHODS = Object.freeze(["save", "findByTokenHas
  * @property {(account: string, publicKey: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<true> | import("@magic8/engine/shared/Result.js").Fail>} isPostingKey
  * @property {(account: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<readonly Readonly<{ asset: string, amount: string }>[]> | import("@magic8/engine/shared/Result.js").Fail>} [balancesOf]
  *   what the account can spend now, amounts as the chain writes them ("12.500"); optional
+ * @property {(account: string, publicKey: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<readonly string[]> | import("@magic8/engine/shared/Result.js").Fail>} [keyRolesOf]
+ *   the authorities ("owner", "active", "posting") the key satisfies alone; optional
+ * @property {() => Promise<import("@magic8/engine/shared/Result.js").Ok<Readonly<{ blockNum: number, blockId: string, time: number }>> | import("@magic8/engine/shared/Result.js").Fail>} [reference]
+ *   the head block a transaction signed now references; optional
+ * @property {(account: string, transaction: unknown) => Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>} [broadcastTransfer]
+ *   relays a single transfer from `account` signed in its browser; resolves to the transaction id; optional
  */
 export const WALLET_PROVIDER_METHODS = Object.freeze(["isValidAccountName", "buildLoginMessage", "verifyLogin", "isPostingKey"]);
 

@@ -14,6 +14,7 @@
  * @property {import("./account/AccountService.js").AccountService} [account] the signed-in player's collection and decks; absent with `identity`
  * @property {import("./shop/ShopService.js").ShopService} [shop] the marketplace; absent with `identity`
  * @property {import("./wallet/BalanceService.js").BalanceService} [balance] what the player's wallet holds, their budget where they buy; absent with `identity`
+ * @property {import("./wallet/ActiveKeyPrompt.js").ActiveKeyPrompt} [activeKeys] asks for the active key a payment needs, when the player signs with their own keys; absent with `identity`
  * @property {import("./online/OnlineService.js").OnlineService} [online] online games; absent with `identity`
  * @property {import("./lobby/LobbyService.js").LobbyService} [lobby] who else is online, and challenges between players; absent with `identity`
  * @property {import("./ranking/RankingService.js").RankingService} [ranking] ranked standing and leaderboard; absent with `identity`

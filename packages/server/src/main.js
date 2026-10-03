@@ -58,7 +58,7 @@ async function main() {
   const database = await openDatabase({ url: config.databaseUrl, baseDirectory: REPOSITORY_ROOT, logger });
   const rpc = new SteemRpcClient({ nodes: config.steemNodes });
   const chain = new SteemBlockchainProvider({ rpc });
-  const wallet = new SteemWalletProvider({ chain, appName: config.appName });
+  const wallet = new SteemWalletProvider({ chain, appName: config.appName, rpc });
   // Payments are confirmed by asking each node directly, never through failover (T21).
   const verifiers = config.steemNodes.map((node) => new SteemBlockchainProvider({ rpc: new SteemRpcClient({ nodes: [node] }) }));
   const steemPayments = new SteemTransferPaymentProvider({ history: chain, verifiers });

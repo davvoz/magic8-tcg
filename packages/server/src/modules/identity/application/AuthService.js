@@ -210,6 +210,65 @@ export class AuthService {
     return balances.value;
   }
 
+  /**
+   * Which of the account's authorities a public key controls on its own
+   * ("owner", "active", "posting"): a player signing in with their keys
+   * checks theirs before the browser stores it.
+   * @param {{ account: unknown, publicKey: unknown, network?: unknown }} input
+   * @returns {Promise<readonly string[]>}
+   */
+  async keyRoles({ account, publicKey, network = this.#defaultNetwork }) {
+    const wallet = this.#walletFor(network);
+    if (typeof wallet.keyRolesOf !== "function") {
+      throw new AppError("UNSUPPORTED_NETWORK", "this network's keys cannot be checked");
+    }
+    if (!wallet.isValidAccountName(account)) {
+      throw new AppError("INVALID_ACCOUNT", "invalid account name");
+    }
+    const roles = await wallet.keyRolesOf(/** @type {string} */ (account), String(publicKey));
+    if (!roles.ok) {
+      throw walletFailure(roles.error);
+    }
+    return roles.value;
+  }
+
+  /**
+   * The block a transaction the player signs now must reference.
+   * @param {import("./ports.js").User} user
+   */
+  async chainReference(user) {
+    const wallet = this.#walletFor(user.network);
+    if (typeof wallet.reference !== "function") {
+      throw new AppError("UNSUPPORTED_NETWORK", "this network's transactions cannot be signed here");
+    }
+    const reference = await wallet.reference();
+    if (!reference.ok) {
+      throw walletFailure(reference.error);
+    }
+    return reference.value;
+  }
+
+  /**
+   * Broadcasts a transfer the player signed in their browser with their
+   * active key. Only a single transfer from their own account is relayed.
+   * @param {import("./ports.js").User} user
+   * @param {unknown} transaction the node's JSON form
+   * @param {string} ip
+   * @returns {Promise<string>} the transaction id
+   */
+  async relayTransfer(user, transaction, ip) {
+    const wallet = this.#walletFor(user.network);
+    if (typeof wallet.broadcastTransfer !== "function") {
+      throw new AppError("UNSUPPORTED_NETWORK", "this network's transfers cannot be relayed");
+    }
+    const relayed = await wallet.broadcastTransfer(user.account, transaction);
+    await this.#audit.record({ actorKind: "user", actorUserId: user.id, action: relayed.ok ? "wallet.transfer_relayed" : "wallet.transfer_refused", targetKind: "account", targetId: `${user.network}:${user.account}`, ip, details: relayed.ok ? { txId: relayed.value } : { reason: relayed.error.code } });
+    if (!relayed.ok) {
+      throw walletFailure(relayed.error);
+    }
+    return relayed.value;
+  }
+
   #walletFor(network) {
     const wallet = typeof network === "string" ? this.#wallets.get(network) : undefined;
     if (wallet === undefined) {
@@ -217,6 +276,26 @@ export class AuthService {
     }
     return wallet;
   }
+}
+
+/** Wallet failure codes → what the API tells the client. */
+const WALLET_FAILURES = Object.freeze({
+  [UNAVAILABLE]: Object.freeze({ code: /** @type {const} */ ("CHAIN_UNAVAILABLE"), message: "the blockchain cannot be reached right now, try again" }),
+  ACCOUNT_NOT_FOUND: Object.freeze({ code: /** @type {const} */ ("NOT_FOUND"), message: "the account was not found on the chain" }),
+  INVALID_ACCOUNT: Object.freeze({ code: /** @type {const} */ ("INVALID_ACCOUNT"), message: "invalid account name" }),
+});
+
+/**
+ * @param {{ code: string, message: string }} error a wallet provider's failure
+ * @returns {AppError}
+ */
+function walletFailure(error) {
+  const known = /** @type {Record<string, { code: keyof typeof import("../../../kernel/AppError.js").ErrorStatus, message: string }>} */ (WALLET_FAILURES)[error.code];
+  if (known !== undefined) {
+    return new AppError(known.code, known.message);
+  }
+  // The chain refused the transfer: its reason (not enough funds, a missing authority) is the player's to read.
+  return error.code === "TRANSFER_REJECTED" ? new AppError("TRANSFER_REJECTED", error.message) : new AppError("VALIDATION", error.message);
 }
 
 /** @param {string} token */

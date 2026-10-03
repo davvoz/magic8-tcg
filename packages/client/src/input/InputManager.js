@@ -11,6 +11,8 @@
  *   `pointerType`: a finger has no hover and no keyboard at hand, so scenes treat it differently
  * @typedef {Readonly<{ type: "wheel", x: number, y: number, deltaY: number }>} WheelInput
  * @typedef {Readonly<{ type: "keydown" | "keyup", key: string, repeat: boolean }>} KeyInput
+ * @typedef {{ onPointer: (input: PointerInput | WheelInput) => void, onKey: (input: KeyInput) => void, onPaste?: (text: string) => void }} InputTarget
+ *   `onPaste`: text pasted (Ctrl+V) while no HTML input has the focus
  */
 import { KEYS_WITH_SUPPRESSED_DEFAULT } from "./KeyMap.js";
 
@@ -25,7 +27,7 @@ export class InputManager {
   #detachers = [];
 
   /**
-   * @param {{ canvas: HTMLCanvasElement, window: Pick<Window, "addEventListener" | "removeEventListener">, viewport: import("../rendering/canvas/Viewport.js").Viewport, target: { onPointer: (input: PointerInput | WheelInput) => void, onKey: (input: KeyInput) => void } }} deps
+   * @param {{ canvas: HTMLCanvasElement, window: Pick<Window, "addEventListener" | "removeEventListener">, viewport: import("../rendering/canvas/Viewport.js").Viewport, target: InputTarget }} deps
    */
   constructor({ canvas, window, viewport, target }) {
     this.#canvas = canvas;
@@ -43,6 +45,7 @@ export class InputManager {
     this.#listen(this.#canvas, "contextmenu", (event) => event.preventDefault());
     this.#listen(this.#window, "keydown", (event) => this.#key("keydown", /** @type {KeyboardEvent} */ (event)));
     this.#listen(this.#window, "keyup", (event) => this.#key("keyup", /** @type {KeyboardEvent} */ (event)));
+    this.#listen(this.#window, "paste", (event) => this.#paste(/** @type {ClipboardEvent} */ (event)));
   }
 
   detach() {
@@ -104,6 +107,21 @@ export class InputManager {
       event.preventDefault();
     }
     this.#target.onKey(Object.freeze({ type, key: event.key, repeat: event.repeat === true }));
+  }
+
+  /**
+   * Ctrl+V is a browser shortcut, not a key the game sees: what it pastes arrives here.
+   * @param {ClipboardEvent} event
+   */
+  #paste(event) {
+    if (isTyping(event.target) || this.#target.onPaste === undefined) {
+      return;
+    }
+    const text = event.clipboardData?.getData("text");
+    if (typeof text === "string" && text.length > 0) {
+      event.preventDefault();
+      this.#target.onPaste(text);
+    }
   }
 
   /**

@@ -103,6 +103,72 @@ describe("LoginScene", () => {
   });
 });
 
+describe("LoginScene with a posting key", () => {
+  /** An identity that can sign in with keys; `accepts` decides whether the key is good. */
+  function keyIdentity({ walletAvailable = false, accepts = async () => ok(undefined) } = {}) {
+    const typed = [];
+    const keys = {
+      account: null,
+      restore: async () => null,
+      usePostingKey: async (account, wif) => (typed.push({ account, wif }), accepts()),
+      save: async () => ok(undefined),
+      forget: () => undefined,
+      signMessage: async () => ok(`20${"ab".repeat(64)}`),
+    };
+    const service = new IdentityService({
+      api: { currentUser: async () => ok(null), createChallenge: async () => ok({ challengeId: "c1", message: "m", keyRole: "Posting", expiresAt: 1 }), createSession: async () => ok(USER), deleteSession: async () => ok(null) },
+      wallet: { name: "Steem Keychain", isAvailable: () => walletAvailable, signMessage: async () => fail("X", "x") },
+      keys,
+    });
+    return { service, typed };
+  }
+
+  it("signs in with a pasted posting key, never drawn in clear", async () => {
+    const navigated = [];
+    const { service, typed } = keyIdentity();
+    const scene = new LoginScene(services({ navigate: (id) => navigated.push(id) }), appWith(service));
+    scene.enter({});
+    assert.ok(scene.root.findById("login.key"), "without Keychain, the posting key form comes first");
+    typeInto(scene, "alice");
+    scene.onKey({ type: "keydown", key: "Enter", repeat: false });
+    assert.equal(scene.focusedNode?.id, "login.key", "Enter moves on to the key");
+    scene.onPaste("  5KsecretPostingKey \n");
+    assert.equal(scene.root.findById("login.key").value, "5KsecretPostingKey");
+    assert.ok(!texts(scene).some((text) => text.includes("5KsecretPostingKey")), "the key is drawn as dots");
+    scene.onKey({ type: "keydown", key: "Enter", repeat: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(typed, [{ account: "alice", wif: "5KsecretPostingKey" }]);
+    assert.equal(service.state.status, IdentityStatus.SIGNED_IN);
+    assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
+    scene.exit();
+  });
+
+  it("explains why a key was refused", async () => {
+    const { service } = keyIdentity({ accepts: async () => fail("KEY_TOO_POWERFUL", "this key can move your funds (an active or owner key): sign in with your posting key") });
+    const scene = new LoginScene(services(), appWith(service));
+    scene.enter({});
+    typeInto(scene, "alice");
+    scene.onPaste("5Kactive");
+    scene.root.findById("login.submit").activate();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(texts(scene).some((text) => text.startsWith("This key can move your funds")));
+    scene.exit();
+  });
+
+  it("offers Keychain first when it is installed, and switches to the key form, keeping the account", () => {
+    const scene = new LoginScene(services(), appWith(keyIdentity({ walletAvailable: true }).service));
+    scene.enter({});
+    assert.equal(scene.root.findById("login.key"), null);
+    typeInto(scene, "alice");
+    scene.root.findById("login.mode.keys").activate();
+    assert.equal(scene.root.findById("login.account").value, "alice");
+    assert.equal(scene.focusedNode?.id, "login.key");
+    scene.root.findById("login.mode.keychain").activate();
+    assert.equal(scene.root.findById("login.key"), null);
+    scene.exit();
+  });
+});
+
 describe("MainMenuScene account entries", () => {
   it("offers sign-in when a server is reachable and nobody is signed in", async () => {
     const { service } = identity();

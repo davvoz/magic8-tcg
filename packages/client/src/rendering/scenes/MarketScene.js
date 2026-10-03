@@ -38,7 +38,9 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
+import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
 import { SceneId } from "./sceneIds.js";
+import { approveTransferText } from "./walletText.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
@@ -97,7 +99,7 @@ const Tab = Object.freeze({ BOARD: "board", MINE: "mine" });
 /** What the buyer sees at each step of a purchase. */
 const STAGE_TEXT = Object.freeze({
   [BuyStage.RESERVING]: () => "Reserving the card for you…",
-  [BuyStage.SIGNING]: (purchase) => `Approve the transfer in Keychain: ${purchase.payment.amount} ${purchase.payment.asset} to @${purchase.payment.to}, the seller.`,
+  [BuyStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${purchase.payment.amount} ${purchase.payment.asset} to @${purchase.payment.to}, the seller.`,
   [BuyStage.CONFIRMING]: () => "Payment sent to the seller. The STEEM blockchain makes it final in about a minute: keep playing, you will be notified when the card is yours.",
   [BuyStage.DONE]: () => "Done: the card is in your collection.",
 });
@@ -127,10 +129,11 @@ export function listingSubtitle(listing, now) {
  * @param {string} stage
  * @param {import("../../application/ports/SalesApi.contract.js").Purchase} purchase
  * @param {Readonly<{ message: string }> | null} error
+ * @param {import("../../application/AppContext.js").AppContext} app
  */
-function stageText(stage, purchase, error) {
+function stageText(stage, purchase, error, app) {
   const describe = STAGE_TEXT[/** @type {keyof typeof STAGE_TEXT} */ (stage)];
-  return error?.message ?? (describe === undefined ? "" : describe(purchase));
+  return error?.message ?? (describe === undefined ? "" : describe(purchase, app));
 }
 
 /** @param {string} problem */
@@ -148,6 +151,8 @@ export class MarketScene extends Scene {
   }
 
   #app;
+  /** The active key a payment with the player's own keys needs, asked for over the market. @type {ActiveKeyDialog | null} */
+  #activeKey = null;
   #now;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
@@ -196,16 +201,21 @@ export class MarketScene extends Scene {
     sales.loadBoard({ cards: cardIdsMatching(this.#boardFilter, this.#app) });
     sales.refreshMine();
     this.#rebuild();
+    this.#activeKey = this.#app.activeKeys === undefined ? null : new ActiveKeyDialog(this, this.#app.activeKeys);
+    this.#activeKey?.start();
   }
 
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#activeKey?.stop();
+    this.#activeKey = null;
     super.exit();
   }
 
   relayout() {
     this.#rebuild();
+    this.#activeKey?.relayout();
   }
 
   onCancel() {
@@ -249,7 +259,7 @@ export class MarketScene extends Scene {
     const state = this.#sales().state;
     const title = this.#m.title;
     this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: title, height: this.#screen.header.height, text: "Market", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    const intro = this.#signedIn() ? "Cards sold by players. You pay the seller directly from your wallet; the card is yours once the chain confirms it." : "Cards sold by players, for STEEM. Sign in with Keychain to buy or sell.";
+    const intro = this.#signedIn() ? "Cards sold by players. You pay the seller directly from your wallet; the card is yours once the chain confirms it." : "Cards sold by players, for STEEM. Sign in to buy or sell.";
     const message = state.error ?? state.notice ?? intro;
     const buttons = this.#signedIn() ? 2 : 1;
     const statusX = this.#screen.header.sideMargin + Math.min(200, title);
@@ -454,7 +464,7 @@ export class MarketScene extends Scene {
       return;
     }
     if (account === null) {
-      panel.add(new Button({ id: "market.signIn", x: this.#screen.inset, y, width: fullWidth, height: this.#m.button, text: "Sign in with Keychain to buy", enabled: this.services.hasScene(SceneId.LOGIN), onActivate: () => this.services.navigate(SceneId.LOGIN) }));
+      panel.add(new Button({ id: "market.signIn", x: this.#screen.inset, y, width: fullWidth, height: this.#m.button, text: "Sign in to buy", enabled: this.services.hasScene(SceneId.LOGIN), onActivate: () => this.services.navigate(SceneId.LOGIN) }));
       return;
     }
     this.#buildBuy(panel, listing, { y, width: fullWidth });
@@ -529,7 +539,7 @@ export class MarketScene extends Scene {
       return;
     }
     const { x, width } = this.#cardWithLines(panel, purchase.card.definitionId, this.#buyingLines(purchase));
-    panel.add(new TextBlock({ id: "market.buying", x, y: this.#screen.inset + 6 * this.#m.line, width, height: 4 * this.#m.line, text: stageText(stage, purchase, error), size: "small", colorKey: error === null ? "text" : "danger" }));
+    panel.add(new TextBlock({ id: "market.buying", x, y: this.#screen.inset + 6 * this.#m.line, width, height: 4 * this.#m.line, text: stageText(stage, purchase, error, this.#app), size: "small", colorKey: error === null ? "text" : "danger" }));
     if (purchase.problem !== null && stage !== BuyStage.DONE) {
       panel.add(new TextBlock({ x, y: this.#screen.inset + 10 * this.#m.line, width, height: 3 * this.#m.line, text: `Note: ${problemText(purchase.problem)}.`, size: "small", colorKey: "danger" }));
     }

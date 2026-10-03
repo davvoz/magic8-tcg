@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
+import { serializeTransaction, signDigest, toBroadcastJson, transactionDigest, transactionId } from "@magic8/steem";
+
 import { createServerApp } from "../../src/app.js";
 import { StaticFiles, pageCsp } from "../../src/platform/http/StaticFiles.js";
 import { CLIENT_HEADERS, ORIGIN, buildTestApp, bundledContent, keyPair, keychainSign, listen } from "../helpers.js";
@@ -64,6 +66,60 @@ describe("wallet balances over HTTP", () => {
       setup.chain.unavailable = false;
     }
     assert.equal((await call(server.base, "/api/wallet/balances")).status, 401, "only for a signed-in player");
+  });
+});
+
+describe("keys typed in the browser, over HTTP", () => {
+  const aliceActive = keyPair(2);
+  /** @type {Awaited<ReturnType<typeof buildTestApp>>} */
+  let setup;
+  /** @type {{ base: string, close: () => Promise<unknown> }} */
+  let server;
+
+  before(async () => {
+    setup = await buildTestApp();
+    setup.chain.setAccount("alice", [alice.publicKey], { activeKeys: [aliceActive.publicKey] });
+    server = await listen(setup.app);
+  });
+
+  after(() => server.close());
+
+  async function signIn() {
+    const challenge = await call(server.base, "/api/auth/challenges", { method: "POST", headers: CLIENT_HEADERS, body: { account: "alice" } });
+    const session = await call(server.base, "/api/auth/sessions", { method: "POST", headers: CLIENT_HEADERS, body: { challengeId: challenge.json.challengeId, signature: keychainSign(challenge.json.message, alice.privateKey) } });
+    return sessionCookieFrom(session.headers);
+  }
+
+  it("tells which authorities of an account a key controls, before anyone signs in", async () => {
+    const roles = (publicKey, account = "alice") => call(server.base, "/api/auth/key-roles", { method: "POST", headers: CLIENT_HEADERS, body: { account, publicKey } });
+    assert.deepEqual((await roles(alice.publicKey)).json, { roles: ["posting"] });
+    assert.deepEqual((await roles(aliceActive.publicKey)).json, { roles: ["owner", "active"] });
+    assert.deepEqual((await roles(keyPair(3).publicKey)).json, { roles: [] });
+    assert.equal((await roles(alice.publicKey, "nobody")).status, 404);
+    assert.equal((await roles("STM" + "1".repeat(50))).status, 400);
+    assert.equal((await call(server.base, "/api/auth/key-roles", { method: "POST", headers: CLIENT_HEADERS, body: { account: "alice", publicKey: alice.publicKey, wif: "5K…" } })).status, 400, "no private key is ever accepted");
+  });
+
+  it("hands a signed-in player the block to reference, and relays only their own signed transfer", async () => {
+    const cookie = await signIn();
+    const reference = await call(server.base, "/api/wallet/reference", { headers: { Cookie: cookie } });
+    assert.deepEqual(reference.json, { blockNum: 100, blockId: "00000064dcdcf4b4aaaaaaaaaaaaaaaaaaaaaaaa", time: Date.UTC(2026, 8, 24, 10) });
+
+    const transaction = { refBlockNum: 100, refBlockPrefix: 0xb4f4dcdc, expiration: Date.UTC(2026, 8, 24, 10, 1) / 1000, operations: [{ type: "transfer", from: "alice", to: "shop", amount: 1000, asset: "STEEM", memo: "order" }] };
+    const bytes = serializeTransaction(transaction);
+    const json = toBroadcastJson(transaction, [signDigest(transactionDigest(bytes), aliceActive.privateKey)]);
+    const relayed = await call(server.base, "/api/wallet/transfers", { method: "POST", headers: { ...CLIENT_HEADERS, Cookie: cookie }, body: { transaction: json } });
+    assert.equal(relayed.status, 201, JSON.stringify(relayed.json));
+    assert.deepEqual(relayed.json, { txId: transactionId(bytes) });
+    assert.deepEqual(setup.chain.broadcasts.at(-1), { method: "condenser_api.broadcast_transaction", transaction: json });
+
+    const bobs = toBroadcastJson({ ...transaction, operations: [{ ...transaction.operations[0], from: "bob" }] }, json.signatures);
+    const refused = await call(server.base, "/api/wallet/transfers", { method: "POST", headers: { ...CLIENT_HEADERS, Cookie: cookie }, body: { transaction: bobs } });
+    assert.equal(refused.status, 400);
+    assert.equal(setup.chain.broadcasts.length, 1, "someone else's transfer never reaches the chain");
+    assert.equal((await call(server.base, "/api/wallet/transfers", { method: "POST", headers: { ...CLIENT_HEADERS, Cookie: cookie }, body: { transaction: "x" } })).status, 400);
+    assert.equal((await call(server.base, "/api/wallet/transfers", { method: "POST", headers: CLIENT_HEADERS, body: { transaction: json } })).status, 401, "only for a signed-in player");
+    assert.equal((await call(server.base, "/api/wallet/reference")).status, 401);
   });
 });
 

@@ -66,6 +66,10 @@ export class Scene {
   #modal = null;
   /** @type {UiNode | null} focus to restore when the modal closes */
   #focusBeforeModal = null;
+  /** A modal above the scene's own, outside its tree (see showOverlay). @type {import("../ui/Modal.js").Modal | null} */
+  #overlay = null;
+  /** @type {UiNode | null} focus to restore when the overlay goes */
+  #focusBeforeOverlay = null;
   /** @type {{ list: ScrollList, startY: number, lastY: number, active: boolean, samples: { y: number, atMs: number }[] } | null} */
   #drag = null;
   /** A list still gliding after a flick: its speed in logical px per ms, positive scrolling down. @type {{ list: ScrollList, velocity: number } | null} */
@@ -107,6 +111,7 @@ export class Scene {
       this.relayout();
     }
     this.#modal?.cover(this.services.viewport.bounds);
+    this.#overlay?.cover(this.services.viewport.bounds);
     this.services.requestRender();
   }
 
@@ -179,6 +184,7 @@ export class Scene {
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
     this.root.draw(context, this.services.theme);
+    this.#overlay?.draw(context, this.services.theme);
   }
 
   /** @param {import("../../input/InputManager.js").PointerInput | import("../../input/InputManager.js").WheelInput} input */
@@ -187,7 +193,7 @@ export class Scene {
       this.#onWheel(input);
       return;
     }
-    const hit = this.root.hitTest(input);
+    const hit = this.#topLayer().hitTest(input);
     this.#setHovered(hit);
     if (input.type === "down") {
       this.#onDown(hit, input);
@@ -226,12 +232,26 @@ export class Scene {
   }
 
   /**
+   * Text pasted with the keyboard goes to the focused node (a text field), if it takes it.
+   * @param {string} text
+   */
+  onPaste(text) {
+    if (this.#focused?.paste(text)) {
+      this.services.requestRender();
+    }
+  }
+
+  /**
    * The keys that are commands rather than navigation: cancel, inspect, mute.
    * @param {string} key
    */
   #onCommandKey(key) {
     if (isKey(key, KeyMap.CANCEL)) {
-      this.onCancel();
+      if (this.#overlay === null) {
+        this.onCancel();
+      } else {
+        this.#overlay.onDismiss();
+      }
     } else if (isKey(key, KeyMap.INSPECT) && this.#focused !== null) {
       this.onSecondary(this.#focused);
     } else if (isKey(key, KeyMap.MUTE)) {
@@ -266,9 +286,54 @@ export class Scene {
     return this.#modal;
   }
 
-  /** @param {UiNode | null} node */
+  get overlay() {
+    return this.#overlay;
+  }
+
+  /**
+   * While an overlay is shown, focus stays in it: a node of the scene asked
+   * for meanwhile gets the focus when the overlay goes.
+   * @param {UiNode | null} node
+   */
   focus(node) {
+    if (this.#overlay !== null && (node === null || !isWithin(node, this.#overlay))) {
+      this.#focusBeforeOverlay = node;
+      return;
+    }
     this.#setFocused(node);
+  }
+
+  /**
+   * Shows a modal above everything, the scene's own modal included, and
+   * outside the scene's tree, so that the scene rebuilding itself leaves it
+   * alone: a request from outside the screen (the active key a payment
+   * needs). Keyboard focus is confined to it until `hideOverlay`; showing
+   * another replaces it.
+   * @param {import("../ui/Modal.js").Modal} modal
+   */
+  showOverlay(modal) {
+    if (this.#overlay === null) {
+      this.#focusBeforeOverlay = this.#focused;
+    }
+    this.#overlay = modal;
+    modal.cover(this.services.viewport.bounds);
+    this.#setHovered(null);
+    this.#setPressed(null);
+    this.#setFocused(modal.focusableNodes()[0] ?? null);
+    this.services.requestRender();
+  }
+
+  hideOverlay() {
+    if (this.#overlay === null) {
+      return;
+    }
+    this.#overlay = null;
+    this.#setHovered(null);
+    this.#setPressed(null);
+    const restored = this.#focusBeforeOverlay;
+    this.#focusBeforeOverlay = null;
+    this.#setFocused(restored !== null && isWithin(restored, this.#modal ?? this.root) ? restored : null);
+    this.services.requestRender();
   }
 
   /**
@@ -280,10 +345,10 @@ export class Scene {
     if (this.#modal !== null) {
       this.closeModal();
     }
-    this.#focusBeforeModal = this.#focused;
+    this.#focusBeforeModal = this.#overlay === null ? this.#focused : this.#focusBeforeOverlay;
     this.#modal = this.root.add(modal);
     modal.cover(this.services.viewport.bounds);
-    this.#setFocused(modal.focusableNodes()[0] ?? null);
+    this.focus(modal.focusableNodes()[0] ?? null);
     this.services.requestRender();
   }
 
@@ -295,7 +360,7 @@ export class Scene {
     this.#modal = null;
     this.#setHovered(null);
     this.#setPressed(null);
-    this.#setFocused(this.#focusBeforeModal);
+    this.focus(this.#focusBeforeModal);
     this.#focusBeforeModal = null;
     this.services.requestRender();
   }
@@ -313,7 +378,7 @@ export class Scene {
    * @param {import("../../input/InputManager.js").PointerInput} input
    */
   #onDown(hit, input) {
-    const under = this.root.nodeAt(input);
+    const under = this.#topLayer().nodeAt(input);
     if (input.button === SECONDARY_BUTTON) {
       if (under !== null) {
         this.onSecondary(under);
@@ -388,12 +453,17 @@ export class Scene {
     this.#fling = Math.abs(velocity) < FLING.stopSpeed ? null : { list: drag.list, velocity };
   }
 
+  /** What the pointer reaches: the overlay when there is one, the scene's tree otherwise. */
+  #topLayer() {
+    return this.#overlay ?? this.root;
+  }
+
   /**
    * Nearest ScrollList enclosing the point, if any.
    * @param {import("@magic8/engine/shared/geometry.js").Point} point
    */
   #scrollListAt(point) {
-    for (let node = this.root.nodeAt(point); node !== null; node = node.parent) {
+    for (let node = this.#topLayer().nodeAt(point); node !== null; node = node.parent) {
       if (node instanceof ScrollList) {
         return node;
       }
@@ -403,7 +473,7 @@ export class Scene {
 
   /** @param {number} direction */
   #moveFocus(direction) {
-    const nodes = (this.#modal ?? this.root).focusableNodes();
+    const nodes = (this.#overlay ?? this.#modal ?? this.root).focusableNodes();
     if (nodes.length === 0) {
       return;
     }
@@ -481,4 +551,18 @@ function designKey(viewport) {
  */
 function isFinger(input) {
   return input.pointerType === "touch" || input.pointerType === "pen";
+}
+
+/**
+ * @param {UiNode} node
+ * @param {UiNode} ancestor
+ * @returns {boolean} whether `node` is `ancestor` or inside it
+ */
+function isWithin(node, ancestor) {
+  for (let current = /** @type {UiNode | null} */ (node); current !== null; current = current.parent) {
+    if (current === ancestor) {
+      return true;
+    }
+  }
+  return false;
 }

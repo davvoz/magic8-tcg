@@ -77,12 +77,34 @@ export class FakeChain {
   /**
    * @param {string} name
    * @param {readonly string[]} postingKeys
-   * @param {{ threshold?: number }} [options]
+   * @param {{ threshold?: number, activeKeys?: readonly string[] }} [options] `activeKeys` also hold the owner authority; the posting keys by default
    */
-  setAccount(name, postingKeys, { threshold = 1 } = {}) {
+  setAccount(name, postingKeys, { threshold = 1, activeKeys = postingKeys } = {}) {
     const authority = { threshold, keys: postingKeys.map((key) => ({ key, weight: 1 })), accounts: [] };
-    this.accounts.set(name, { network: "steem", name, posting: authority, active: authority });
+    const active = { threshold: 1, keys: activeKeys.map((key) => ({ key, weight: 1 })), accounts: [] };
+    this.accounts.set(name, { network: "steem", name, owner: active, posting: authority, active });
   }
+
+  async getReference() {
+    if (this.unavailable) {
+      throw new Error("all nodes failed");
+    }
+    return { blockNum: 100, blockId: "00000064dcdcf4b4aaaaaaaaaaaaaaaaaaaaaaaa", time: Date.UTC(2026, 8, 24, 10) };
+  }
+
+  /** Transactions broadcast through `rpc`, as the node received them. @type {unknown[]} */
+  broadcasts = [];
+
+  /** The node the wallet provider relays players' transfers to. */
+  rpc = {
+    call: async (/** @type {string} */ method, /** @type {unknown[]} */ params) => {
+      if (this.unavailable) {
+        throw new Error("all nodes failed");
+      }
+      this.broadcasts.push({ method, transaction: params[0] });
+      return {};
+    },
+  };
 
   async getAccount(name) {
     this.calls += 1;
@@ -124,7 +146,7 @@ export async function buildTestApp(options = {}) {
   const { clock, chain, random, ledger } = testDoubles(options);
   const paymentProviders = new Map([["steem", ledger.paymentProvider()]]);
   const db = database ?? (await freshDatabase());
-  const wallet = new SteemWalletProvider({ chain, appName: TEST_APP_NAME });
+  const wallet = new SteemWalletProvider({ chain, appName: TEST_APP_NAME, rpc: chain.rpc });
   const logger = new MemoryLogger();
   const config = loadConfig({ M8_PUBLIC_ORIGIN: ORIGIN, M8_SIGNED_MOVES: signedMovesSetting(options), ...env });
   const app = await createServerApp({

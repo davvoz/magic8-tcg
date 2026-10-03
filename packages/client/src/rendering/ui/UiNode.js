@@ -237,6 +237,14 @@ export class UiNode {
   }
 
   /**
+   * Text pasted while this node has the focus. Returns true when taken (text entry).
+   * @param {string} _text
+   */
+  paste(_text) {
+    return false;
+  }
+
+  /**
    * Asks this node to bring a descendant into view; scroll containers
    * override it. Called on every ancestor of a newly focused node.
    * @param {UiNode} _node

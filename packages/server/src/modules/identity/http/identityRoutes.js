@@ -11,6 +11,10 @@ const SESSION_KEYS = Object.freeze(["challengeId", "signature"]);
 const AUTH_RATE = Object.freeze({ name: "auth", capacity: 10, refillPerSecond: 10 / 60, by: /** @type {const} */ ("ip") });
 /** Each read asks a STEEM node: a few per minute is plenty for a player looking at prices. */
 const BALANCE_RATE = Object.freeze({ name: "wallet-balance", capacity: 10, refillPerSecond: 10 / 60, by: /** @type {const} */ ("user") });
+const KEY_ROLE_KEYS = Object.freeze(["account", "publicKey"]);
+const TRANSFER_KEYS = Object.freeze(["transaction"]);
+/** A payment is a reference read and a broadcast; a few a minute is far more than anyone pays for. */
+const TRANSFER_RATE = Object.freeze({ name: "wallet-transfer", capacity: 10, refillPerSecond: 10 / 60, by: /** @type {const} */ ("user") });
 
 /**
  * @param {import("../application/ports.js").User} user
@@ -81,5 +85,43 @@ export function registerIdentityRoutes({ router, auth, cookie, clock }) {
     auth: Auth.REQUIRED,
     rateLimit: BALANCE_RATE,
     handler: async (context) => ({ status: 200, body: { account: context.principal.user.account, balances: await auth.balancesOf(context.principal.user) } }),
+  });
+
+  // Signing in with keys typed in the browser: which authorities of the account a key controls.
+  router.add({
+    method: "POST",
+    path: "/api/auth/key-roles",
+    rateLimit: AUTH_RATE,
+    handler: async (context) => {
+      const body = validated(await context.readJson(), KEY_ROLE_KEYS, (issues, object) => {
+        checkString(issues, object.account, "body.account", { minLength: 1, maxLength: 64 });
+        checkString(issues, object.publicKey, "body.publicKey", { minLength: 50, maxLength: 60 });
+      });
+      return { status: 200, body: { roles: await auth.keyRoles({ account: body.account, publicKey: body.publicKey }) } };
+    },
+  });
+
+  // Transfers signed in the browser with the active key: the block they reference, then the relay.
+  router.add({
+    method: "GET",
+    path: "/api/wallet/reference",
+    auth: Auth.REQUIRED,
+    rateLimit: TRANSFER_RATE,
+    handler: async (context) => ({ status: 200, body: await auth.chainReference(context.principal.user) }),
+  });
+
+  router.add({
+    method: "POST",
+    path: "/api/wallet/transfers",
+    auth: Auth.REQUIRED,
+    rateLimit: TRANSFER_RATE,
+    handler: async (context) => {
+      const body = validated(await context.readJson(), TRANSFER_KEYS, (issues, object) => {
+        if (object.transaction === null || typeof object.transaction !== "object" || Array.isArray(object.transaction)) {
+          issues.add("body.transaction", "expected a signed transaction");
+        }
+      });
+      return { status: 201, body: { txId: await auth.relayTransfer(context.principal.user, body.transaction, context.ip) } };
+    },
   });
 }

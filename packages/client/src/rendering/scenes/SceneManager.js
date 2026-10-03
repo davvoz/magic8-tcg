@@ -208,4 +208,9 @@ export class SceneManager {
     this.#touch = false;
     this.#current?.onKey(input);
   }
+
+  /** @param {string} text pasted with the keyboard */
+  onPaste(text) {
+    this.#current?.onPaste(text);
+  }
 }

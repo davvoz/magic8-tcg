@@ -25,7 +25,9 @@ import { RankingService } from "./application/ranking/RankingService.js";
 import { TradingService } from "./application/trading/TradingService.js";
 import { BuyStage, SalesService } from "./application/sales/SalesService.js";
 import { PurchaseStage, ShopService } from "./application/shop/ShopService.js";
+import { ActiveKeyPrompt } from "./application/wallet/ActiveKeyPrompt.js";
 import { BalanceService } from "./application/wallet/BalanceService.js";
+import { WalletSwitch } from "./application/wallet/WalletSwitch.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { deckMix } from "./application/decks/deckMix.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
@@ -48,6 +50,7 @@ import { HttpTradingApi } from "./infrastructure/api/HttpTradingApi.js";
 import { HttpSalesApi } from "./infrastructure/api/HttpSalesApi.js";
 import { HttpBalanceApi } from "./infrastructure/api/HttpBalanceApi.js";
 import { HttpNotificationsApi } from "./infrastructure/api/HttpNotificationsApi.js";
+import { HttpWalletApi } from "./infrastructure/api/HttpWalletApi.js";
 import { fetchServerStatus } from "./infrastructure/api/fetchServerStatus.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
@@ -60,6 +63,8 @@ import { StoredDeckRepository } from "./infrastructure/persistence/StoredDeckRep
 import { createSeed } from "./infrastructure/random/seedProvider.js";
 import { browserScheduler } from "./infrastructure/time/BrowserScheduler.js";
 import { KeychainWalletConnector } from "./infrastructure/wallet/KeychainWalletConnector.js";
+import { KeyVault } from "./infrastructure/wallet/KeyVault.js";
+import { LocalKeyWallet } from "./infrastructure/wallet/LocalKeyWallet.js";
 import { InputManager } from "./input/InputManager.js";
 import { CanvasHost } from "./rendering/canvas/CanvasHost.js";
 import { GameLoop } from "./rendering/canvas/GameLoop.js";
@@ -362,11 +367,16 @@ function showFatal(title, message) {
 async function boot() {
   const httpFetch = (url, init) => fetch(url, init);
   const source = new FetchContentSource(CONTENT_MANIFEST, httpFetch);
-  const wallet = new KeychainWalletConnector({
+  const localStore = new LocalStorageStore(globalThis.localStorage);
+  const storageAvailable = localStore.isAvailable();
+  const keychain = new KeychainWalletConnector({
     locate: () => globalThis.steem_keychain,
     timers: { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
   });
-  const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet });
+  const { activeKeys, keys } = buildLocalKeys(localStore, storageAvailable, httpFetch);
+  const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet: keychain, keys });
+  // Games, the shop and the market sign with whichever the player signed in with.
+  const wallet = new WalletSwitch({ identity, keychain, keys });
   // The painted table and menus are downloaded alongside the content: the first screen waits for them.
   const { coinArt, tableArt, uiArt } = buildPaintedArt();
   const firstScreenArt = Promise.all([loading.track(uiArt.preload()), loading.track(tableArt.preload())]);
@@ -394,8 +404,6 @@ async function boot() {
   // Painted card art: cards without it (or whose image fails) keep their procedural art.
   const illustrations = buildIllustrations(rawIllustrations, content.value.catalog);
 
-  const localStore = new LocalStorageStore(globalThis.localStorage);
-  const storageAvailable = localStore.isAvailable();
   if (!storageAvailable) {
     logger.warn("local storage unavailable; decks will not persist");
   }
@@ -483,6 +491,7 @@ async function boot() {
     account,
     shop,
     balance,
+    activeKeys,
     online,
     lobby,
     ranking,
@@ -554,6 +563,25 @@ function buildPaintedArt() {
     // The menu backdrop, panel corners, divider medallion and button plates; drawn procedurally until ready.
     uiArt: new UiArt({ urls: urlsIn(UI_ART.files), layout: UI_ART.layout, loadImage: loadBrowserImage, onLoaded, logger }),
   };
+}
+
+/**
+ * The player's own keys, the other way to sign besides Keychain
+ * (docs/tcg/20-chiavi.md): the posting key kept encrypted in local storage,
+ * the active key asked for (`activeKeys`, shown by the screens that take
+ * payments) when a payment needs it.
+ * @param {LocalStorageStore} localStore
+ * @param {boolean} storageAvailable without it, a key lasts only as long as the page
+ * @param {typeof fetch} httpFetch
+ */
+function buildLocalKeys(localStore, storageAvailable, httpFetch) {
+  const activeKeys = new ActiveKeyPrompt();
+  const keys = new LocalKeyWallet({
+    vault: new KeyVault({ store: storageAvailable ? localStore : new InMemoryStore(), subtle: crypto.subtle, randomBytes: (length) => crypto.getRandomValues(new Uint8Array(length)) }),
+    api: new HttpWalletApi({ fetch: httpFetch }),
+    prompt: activeKeys,
+  });
+  return { activeKeys, keys };
 }
 
 /**

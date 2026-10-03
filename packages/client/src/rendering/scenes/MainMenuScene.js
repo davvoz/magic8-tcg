@@ -276,7 +276,7 @@ export class MainMenuScene extends Scene {
       return [{ id: "signOut", text: `Sign out @${user.account}`, scene: null, variant: "secondary", onActivate: signOut }];
     }
     if (status === IdentityStatus.SIGNED_OUT) {
-      return [{ id: "signIn", text: "Sign in with Keychain", scene: SceneId.LOGIN, variant: "secondary" }];
+      return [{ id: "signIn", text: "Sign in", scene: SceneId.LOGIN, variant: "secondary" }];
     }
     return [];
   }

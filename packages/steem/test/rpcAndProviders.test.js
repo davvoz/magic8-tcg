@@ -10,7 +10,12 @@ import {
   SteemWalletProvider,
   WalletError,
   publicKeyOf,
+  serializeTransaction,
+  signDigest,
   signMessage,
+  toBroadcastJson,
+  transactionDigest,
+  transactionId,
 } from "../src/index.js";
 import { fakeFetch, rawAccount } from "./fakes.js";
 
@@ -203,5 +208,70 @@ describe("SteemWalletProvider", () => {
 
   it("validates its app name", () => {
     assert.throws(() => new SteemWalletProvider({ chain: providerWith(() => []), appName: "evil\nnonce: x" }), TypeError);
+  });
+
+  it("tells which authorities a key controls on its own, strongest first", async () => {
+    const roles = async (account, key = KEY_ONE) => {
+      const result = await wallet([account]).keyRolesOf("alice", key);
+      return result.ok ? result.value : result.error.code;
+    };
+    assert.deepEqual(await roles(rawAccount("alice", [KEY_ONE], { activeKeys: [KEY_TWO] })), ["posting"]);
+    assert.deepEqual(await roles(rawAccount("alice", [KEY_TWO], { activeKeys: [KEY_ONE], ownerKeys: [KEY_TWO] })), ["active"]);
+    assert.deepEqual(await roles(rawAccount("alice", [KEY_ONE])), ["owner", "active", "posting"], "one key for everything");
+    assert.deepEqual(await roles(rawAccount("alice", [KEY_ONE], { threshold: 2, activeKeys: [KEY_TWO] })), [], "not enough weight alone");
+    assert.equal(await roles(rawAccount("alice", [KEY_ONE]), "STMgarbage"), WalletError.MALFORMED_KEY);
+    assert.equal((await wallet([]).keyRolesOf("alice", KEY_ONE)).error.code, WalletError.ACCOUNT_NOT_FOUND);
+    assert.equal((await wallet([]).keyRolesOf("A", KEY_ONE)).error.code, WalletError.INVALID_ACCOUNT);
+  });
+
+  describe("relaying a transfer signed in the browser", () => {
+    const transfer = { refBlockNum: 1, refBlockPrefix: 2, expiration: Date.UTC(2026, 8, 24, 0, 1) / 1000, operations: [{ type: "transfer", from: "alice", to: "shop", amount: 1500, asset: "STEEM", memo: "order 1" }] };
+    const signed = (transaction = transfer) => {
+      const bytes = serializeTransaction(transaction);
+      return { json: toBroadcastJson(transaction, [signDigest(transactionDigest(bytes), privateKey)]), txId: transactionId(bytes) };
+    };
+    /** @param {(request: any) => any} reply */
+    function relay(reply) {
+      const { rpc, calls } = client({ [A]: reply, [B]: reply });
+      return { provider: new SteemWalletProvider({ chain: new SteemBlockchainProvider({ rpc }), appName: "magic8-tcg", rpc }), calls };
+    }
+
+    it("broadcasts exactly the checked transfer and answers its transaction id", async () => {
+      const { provider, calls } = relay(() => ({ reply: {} }));
+      const { json, txId } = signed();
+      assert.deepEqual(await provider.broadcastTransfer("alice", json), { ok: true, value: txId });
+      assert.equal(calls.at(-1).request.method, "condenser_api.broadcast_transaction");
+      assert.deepEqual(calls.at(-1).request.params, [json]);
+    });
+
+    it("relays nothing but a single signed transfer from the signed-in account", async () => {
+      const { provider, calls } = relay(() => ({ reply: {} }));
+      const code = async (account, json) => (await provider.broadcastTransfer(account, json)).error?.code;
+      assert.equal(await code("bob", signed().json), WalletError.NOT_A_TRANSFER, "someone else's transfer");
+      const custom = signed({ ...transfer, operations: [{ type: "custom_json", requiredAuths: [], requiredPostingAuths: ["alice"], id: "x", json: "{}" }] });
+      assert.equal(await code("alice", custom.json), WalletError.NOT_A_TRANSFER);
+      assert.equal(await code("alice", signed({ ...transfer, operations: [transfer.operations[0], transfer.operations[0]] }).json), WalletError.NOT_A_TRANSFER);
+      assert.equal(await code("alice", { ...signed().json, signatures: [] }), WalletError.MALFORMED_TRANSACTION);
+      assert.equal(await code("alice", { ...signed().json, signatures: ["zz"] }), WalletError.MALFORMED_TRANSACTION);
+      assert.equal(await code("alice", { nope: true }), WalletError.MALFORMED_TRANSACTION);
+      assert.equal(calls.length, 0, "nothing reached a node");
+    });
+
+    it("tells a refusal by the chain from an unreachable one", async () => {
+      const refused = relay(() => ({ error: { code: -32602, message: "missing required active authority" } }));
+      const result = await refused.provider.broadcastTransfer("alice", signed().json);
+      assert.equal(result.error.code, WalletError.TRANSFER_REJECTED);
+      assert.match(result.error.message, /missing required active authority/);
+      const down = relay(() => ({ throws: true }));
+      assert.equal((await down.provider.broadcastTransfer("alice", signed().json)).error.code, WalletError.CHAIN_UNAVAILABLE);
+      assert.equal((await wallet([]).broadcastTransfer("alice", signed().json)).error.code, WalletError.UNSUPPORTED, "no rpc, no relay");
+    });
+
+    it("hands out the head block to reference", async () => {
+      const head = { head_block_number: 100, head_block_id: "00000064dcdcf4b4aaaaaaaaaaaaaaaaaaaaaaaa", time: "2026-09-24T10:00:00" };
+      const { provider } = relay(() => ({ reply: head }));
+      assert.deepEqual(await provider.reference(), { ok: true, value: { blockNum: 100, blockId: head.head_block_id, time: Date.UTC(2026, 8, 24, 10) } });
+      assert.equal((await relay(() => ({ throws: true })).provider.reference()).error.code, WalletError.CHAIN_UNAVAILABLE);
+    });
   });
 });
