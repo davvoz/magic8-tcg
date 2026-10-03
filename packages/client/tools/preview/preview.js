@@ -298,6 +298,8 @@ async function boot() {
   const app = request.scene === "starter" ? Object.freeze({ ...buildApp(content.value), account: /** @type {any} */ (await starterAccount(content.value)) }) : buildApp(content.value);
   const illustrations = await loadIllustrations(request.procedural || !rawIllustrations.ok ? null : rawIllustrations.value, content.value.catalog);
   const tableArt = request.procedural ? undefined : await loadTableArt();
+  // The title face too, so the menu's name is never caught in the fallback one.
+  await document.fonts.load(`900 72px ${theme.value.fonts.titleFamily}`);
   const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations, tableArt }));
   registerScenes(sceneManager, app);
   await show(sceneManager, app, request);

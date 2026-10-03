@@ -138,13 +138,14 @@ export class Glimmer {
 }
 
 /**
- * Eight thin rays fading out from a bright core, like the painted stars.
+ * Eight thin rays fading out from a bright core, like the painted stars
+ * (also the sparks winking on the menu's title).
  * @param {CanvasRenderingContext2D} context
  * @param {Readonly<Record<string, string>>} colors
  * @param {Point} center
  * @param {{ length: number, width: number, strength: number }} flare `strength`: 0..1
  */
-function drawFlare(context, colors, center, { length, width, strength }) {
+export function drawFlare(context, colors, center, { length, width, strength }) {
   context.lineCap = "round";
   context.lineWidth = width;
   for (let ray = 0; ray < RAYS; ray += 1) {

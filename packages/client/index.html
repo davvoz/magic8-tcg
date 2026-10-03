@@ -11,11 +11,14 @@
   <meta name="theme-color" content="#0a0c14">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <!-- The game's name is set in New Rocker (fonts/, SIL Open Font License: fonts/OFL.txt), here and on the menu's canvas. -->
+  <link rel="preload" href="fonts/NewRocker-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Magic8">
   <style>
+    @font-face { font-family: 'New Rocker'; font-style: normal; font-weight: 100 900; font-display: block; src: url(fonts/NewRocker-Regular.woff2) format('woff2'); }
     /* HTML is used only to host the canvas. All game UI is rendered on the canvas, except the loading screen (shown before any script runs), the maintenance banner, the phone keyboard's text strip and the rotate hint. */
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0a0c14; overflow: hidden; overscroll-behavior: none; }
     body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
@@ -54,7 +57,7 @@
     .loading-sigil .ring-inner { transform-origin: 0 0; animation: loading-turn 40s linear infinite reverse; }
     .loading-sigil .orbit { transform-origin: 0 0; animation: loading-turn 9s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
     .loading-sigil .star { transform-origin: 0 0; animation: loading-pulse 2.8s ease-in-out infinite; }
-    .loading-title { margin: 0; font-size: clamp(36px, 9vmin, 84px); font-weight: 700; letter-spacing: 0.16em; padding-left: 0.16em; line-height: 1; color: #f7dfa0; text-shadow: 0 0 18px rgba(226, 178, 92, 0.55), 0 0 2px #8a5f1e; }
+    .loading-title { margin: 0; font-family: 'New Rocker', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif; font-size: clamp(36px, 9vmin, 84px); font-weight: 900; letter-spacing: 0.06em; padding-left: 0.06em; line-height: 1; color: #f7dfa0; background: linear-gradient(105deg, transparent 38%, rgba(255, 248, 225, 0.95) 50%, transparent 62%) 160% 0 / 250% 100% no-repeat, linear-gradient(180deg, #fffbe9 0%, #f7dfa0 22%, #e2b25c 47%, #8a5f1e 53%, #e2b25c 60%, #f7dfa0 85%, #c08b3f 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 16px rgba(226, 178, 92, 0.45)); animation: loading-sheen 4.5s ease-in-out 0.6s infinite; }
     .loading-ornament { position: relative; width: min(320px, 60vw); height: 1px; background: linear-gradient(90deg, transparent, #e2b25c 35%, #e2b25c 65%, transparent); }
     .loading-ornament::after { content: ""; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; background: #f7dfa0; transform: translate(-50%, -50%) rotate(45deg); box-shadow: 0 0 8px #e2b25c; }
     .loading-bar { position: relative; width: min(360px, 70vw); height: 3px; margin-top: clamp(4px, 1.5vmin, 12px); border-radius: 2px; background: rgba(226, 178, 92, 0.16); }
@@ -63,12 +66,14 @@
     .loading:not([data-live]) .loading-bar-fill { animation: loading-creep 7s cubic-bezier(0.1, 0.6, 0.3, 1) forwards; }
     .loading-bar-fill::after { content: ""; position: absolute; right: -4px; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #fff6dc; transform: translateY(-50%); box-shadow: 0 0 6px #f7dfa0, 0 0 14px #e2b25c; }
     .loading-status { margin: 0; min-height: 1.4em; color: #8f98ad; font-size: clamp(13px, 2.4vmin, 17px); font-style: italic; letter-spacing: 0.06em; }
+    /* A sheen of light crossing the gold of the name, then a rest, as on the menu. */
+    @keyframes loading-sheen { 0% { background-position: 160% 0, 0 0; } 45%, 100% { background-position: -60% 0, 0 0; } }
     @keyframes loading-turn { to { transform: rotate(360deg); } }
     @keyframes loading-pulse { 0%, 100% { transform: scale(1); opacity: 0.88; } 50% { transform: scale(1.07); opacity: 1; } }
     @keyframes loading-twinkle { from { opacity: 0.25; } to { opacity: 0.7; } }
     @keyframes loading-creep { from { width: 2%; } to { width: 30%; } }
     @media (prefers-reduced-motion: reduce) {
-      .loading::before, .loading-sigil .ring-outer, .loading-sigil .ring-inner, .loading-sigil .orbit, .loading-sigil .star { animation: none; }
+      .loading::before, .loading-title, .loading-sigil .ring-outer, .loading-sigil .ring-inner, .loading-sigil .orbit, .loading-sigil .star { animation: none; }
     }
   </style>
 </head>

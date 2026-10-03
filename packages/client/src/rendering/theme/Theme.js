@@ -52,7 +52,7 @@ const MAX_FACTIONS = 16;
  * @typedef {Readonly<{
  *   layout: Readonly<{ logicalWidth: number, logicalHeight: number }>,
  *   colors: Readonly<Record<string, string>> & Readonly<{ factions: Readonly<Record<string, FactionTones>> }>,
- *   fonts: Readonly<{ family: string, displayFamily: string, sizes: Readonly<Record<FontSize, number>> }>,
+ *   fonts: Readonly<{ family: string, displayFamily: string, titleFamily: string, sizes: Readonly<Record<FontSize, number>> }>,
  *   spacing: Readonly<{ unit: number, radius: number }>,
  *   animation: Readonly<Record<string, number>>,
  *   illustrations?: import("../cards/CardIllustrations.js").IllustrationSource,
@@ -148,13 +148,16 @@ function checkFactionTones(issues, raw, path) {
  * @param {unknown} raw
  */
 function checkFonts(issues, raw) {
-  const object = checkObject(issues, raw, "theme.fonts", ["family", "displayFamily", "sizes"]);
+  const object = checkObject(issues, raw, "theme.fonts", ["family", "displayFamily", "titleFamily", "sizes"]);
   if (object === undefined) {
     return undefined;
   }
+  const displayFamily = checkString(issues, object.displayFamily, "theme.fonts.displayFamily", { pattern: FONT_FAMILY_PATTERN });
   return Object.freeze({
     family: checkString(issues, object.family, "theme.fonts.family", { pattern: FONT_FAMILY_PATTERN }),
-    displayFamily: checkString(issues, object.displayFamily, "theme.fonts.displayFamily", { pattern: FONT_FAMILY_PATTERN }),
+    displayFamily,
+    // The game's name has a face of its own (the menu's title); without one it is set in the display face.
+    titleFamily: object.titleFamily === undefined ? displayFamily : checkString(issues, object.titleFamily, "theme.fonts.titleFamily", { pattern: FONT_FAMILY_PATTERN }),
     sizes: checkNumbers(issues, object.sizes, { path: "theme.fonts.sizes", keys: FONT_SIZE_KEYS, bounds: FONT_BOUNDS }),
   });
 }

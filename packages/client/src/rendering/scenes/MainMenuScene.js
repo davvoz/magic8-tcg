@@ -1,5 +1,5 @@
 /**
- * Entry screen: a fan of cards under a glowing title, the navigation
+ * Entry screen: a fan of cards under the game's name in living gold, the navigation
  * buttons and a content summary. Buttons whose destination scene is not
  * registered are disabled rather than pretending to work. Signed in, the
  * top-right button opens the notifications and counts the unread ones;
@@ -18,6 +18,7 @@ import { Ornament } from "../ui/Ornament.js";
 import { buildAudioSettingsModal } from "./audioSettings.js";
 import { deckStorageText } from "./deckStorage.js";
 import { HeroNode } from "./mainMenu/HeroNode.js";
+import { TitleLogo } from "./mainMenu/TitleLogo.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
@@ -63,6 +64,8 @@ export class MainMenuScene extends Scene {
   #unsubscribeAudio = null;
   /** The sound settings button, relabelled when the game is muted from anywhere (M). @type {Button | null} */
   #soundButton = null;
+  /** The game's name; kept across rebuilds, so its light keeps its pace. */
+  #title = new TitleLogo({ text: "MAGIC8" });
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -106,7 +109,8 @@ export class MainMenuScene extends Scene {
     const layout = viewport.compact ? compactLayout(width) : wideLayout(width);
     const { hero } = layout;
     this.root.add(new HeroNode({ x: hero.centerX - hero.width / 2, y: hero.y, width: hero.width, height: hero.height }));
-    this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.title.y, width: hero.textWidth, height: layout.title.height, text: "MAGIC8", size: "title", weight: "bold", colorKey: "accentLight", glow: true }));
+    Object.assign(this.#title, { x: hero.centerX - hero.textWidth / 2, y: layout.title.y, width: hero.textWidth, height: layout.title.height });
+    this.root.add(this.#title);
     this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.subtitle.y, width: hero.textWidth, height: layout.subtitle.height, text: "A canvas card game engine", size: layout.subtitle.size, colorKey: "textMuted" }));
     this.root.add(new Ornament({ x: hero.centerX - layout.ornament.width / 2, y: layout.ornament.y, width: layout.ornament.width, height: layout.ornament.height }));
 
@@ -157,6 +161,12 @@ export class MainMenuScene extends Scene {
     });
     this.focus(this.root.findById(focusedId) ?? first);
     this.services.requestRender();
+  }
+
+  /** @param {number} dtMs */
+  update(dtMs) {
+    const base = super.update(dtMs);
+    return this.#title.update(dtMs) || base;
   }
 
   /** @param {CanvasRenderingContext2D} context */

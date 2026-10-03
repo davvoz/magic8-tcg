@@ -315,6 +315,16 @@ function isTouchFirst() {
   return window.matchMedia?.("(pointer: coarse)").matches === true;
 }
 
+/**
+ * The canvas draws the game's name in a fallback face until its own (fonts/)
+ * is loaded: then it is drawn again, in it.
+ * @param {string} family
+ * @param {() => void} redraw
+ */
+function redrawWithTitleFont(family, redraw) {
+  document.fonts?.load(`900 72px ${family}`).then(redraw, (error) => logger.warn("title font unavailable", describeError(error)));
+}
+
 /** @param {unknown} error */
 function describeError(error) {
   return error instanceof Error ? error.message : String(error);
@@ -492,6 +502,7 @@ async function boot() {
   ]);
   const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars, ambience }), audio);
   registerScenes(sceneManager, app);
+  redrawWithTitleFont(theme.value.fonts.titleFamily, () => loop.requestRender());
   // The menus have their music, a match its own; what the services do is heard on any screen.
   const music = new MusicDirector({ audio, tracks: { [SceneId.MATCH]: MusicTrack.MATCH, [SceneId.ERROR]: null }, fallback: MusicTrack.MENU });
   music.follow(sceneManager);
