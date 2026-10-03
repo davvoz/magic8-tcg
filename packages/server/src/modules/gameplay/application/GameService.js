@@ -51,6 +51,8 @@ export class GameService {
   #gameProtocol;
   /** @type {((summary: import("./ports.js").FinishedGame) => Promise<void>)[]} */
   #finishedListeners = [];
+  /** @type {((summary: import("./ports.js").AbortedGame) => Promise<void>)[]} */
+  #abortedListeners = [];
   /** @type {Map<string, GameActor>} */
   #actors = new Map();
   /** @type {Map<string, string>} spectator user id → game id */
@@ -105,6 +107,15 @@ export class GameService {
    */
   onGameFinished(listener) {
     this.#finishedListeners.push(listener);
+  }
+
+  /**
+   * Called while a game that never started is called off, inside that unit of work: what the listener writes
+   * commits with the abort, and a listener that fails fails the abort like any failed write.
+   * @param {(summary: import("./ports.js").AbortedGame) => Promise<void>} listener
+   */
+  onGameAborted(listener) {
+    this.#abortedListeners.push(listener);
   }
 
   /**
@@ -471,6 +482,11 @@ export class GameService {
       signAck: (fields) => this.#signAck(fields),
       signatures: this.#signatures,
       results: this.#results,
+      onAborted: async (summary) => {
+        for (const listener of this.#abortedListeners) {
+          await listener(summary);
+        }
+      },
       onFinished: (summary) => {
         for (const listener of this.#finishedListeners) {
           listener(summary).catch((error) => this.#logger.error("a finished-game listener failed", { game: summary.gameId, error: error instanceof Error ? error.message : String(error) }));

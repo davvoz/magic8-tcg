@@ -1,18 +1,20 @@
 /**
  * The listing as the shop presents it: packs of unknown cards, complete
- * decks, single cards (one entry per card) and anything else on sale
- * (special offers). Pure: the server's
+ * decks, single cards (one entry per card), ranked entries and anything else
+ * on sale (special offers). Pure: the server's
  * listing in, the shelves out; prices are the server's, never computed here
  * except for display (a deck's card-by-card breakdown).
  */
 
-export const ShopCategory = Object.freeze({ PACKS: "packs", DECKS: "decks", SINGLES: "singles", OFFERS: "offers" });
+import { RANKED_ENTRY } from "../ports/EntriesApi.contract.js";
+
+export const ShopCategory = Object.freeze({ PACKS: "packs", DECKS: "decks", SINGLES: "singles", RANKED: "ranked", OFFERS: "offers" });
 
 /**
  * @typedef {import("../ports/MarketApi.contract.js").Product} Product
  * @typedef {import("../ports/MarketApi.contract.js").Listing} Listing
  * @typedef {Readonly<{ cardId: string, rarity: string | null, product: Product }>} SingleOffer
- * @typedef {Readonly<{ packs: readonly Product[], decks: readonly Product[], singles: readonly SingleOffer[], offers: readonly Product[] }>} Shelves
+ * @typedef {Readonly<{ packs: readonly Product[], decks: readonly Product[], singles: readonly SingleOffer[], ranked: readonly Product[], offers: readonly Product[] }>} Shelves `ranked`: products that give ranked entries only
  */
 
 /**
@@ -24,6 +26,8 @@ export function shelvesOf(listing) {
   const packs = [];
   /** @type {Product[]} */
   const decks = [];
+  /** @type {Product[]} */
+  const ranked = [];
   /** @type {Product[]} */
   const offers = [];
   /** @type {Map<string, SingleOffer>} */
@@ -37,6 +41,8 @@ export function shelvesOf(listing) {
       packs.push(product);
     } else if (product.contents.length === 1 && only.type === "deck" && only.count === 1) {
       decks.push(product);
+    } else if (product.contents.every((content) => content.type === "entry" && content.ref === RANKED_ENTRY)) {
+      ranked.push(product);
     } else {
       offers.push(product);
     }
@@ -48,6 +54,7 @@ export function shelvesOf(listing) {
     decks: Object.freeze(decks.sort(byPrice)),
     // Rarest first, then by name.
     singles: Object.freeze([...singles.values()].sort((left, right) => rank(right.rarity) - rank(left.rarity) || left.product.name.localeCompare(right.product.name))),
+    ranked: Object.freeze(ranked.sort(byPrice)),
     offers: Object.freeze(offers.sort(byPrice)),
   });
 }

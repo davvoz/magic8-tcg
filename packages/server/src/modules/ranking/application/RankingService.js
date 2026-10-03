@@ -77,6 +77,16 @@ export class RankingService {
   }
 
   /**
+   * What a game of `mode` costs now, in entries: a ranked game, the running season's fee; null when it is free.
+   * @param {string} mode
+   * @returns {Readonly<{ count: number, season: string }> | null}
+   */
+  entryFeeOf(mode) {
+    const season = mode === RANKED ? this.currentSeason() : null;
+    return season === null || season.entryFee === 0 ? null : Object.freeze({ count: season.entryFee, season: season.id });
+  }
+
+  /**
    * A player's rating this season (the starting one before any ranked game).
    * @param {string} userId
    */

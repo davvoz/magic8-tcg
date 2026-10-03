@@ -6,7 +6,8 @@
  *   Singles  every card, priced by its rarity; filterable by faction,
  *            rarity and type
  *
- * (plus Offers, only when the server sells something else). On the right,
+ * (plus Ranked, the entries ranked games take, and Offers, only when the
+ * server sells them). On the right,
  * the selected item: a pack's odds, a deck's card-by-card price, a card at
  * full size with the price list by rarity; then the
  * quantity, Buy and Add to cart. The cart (header) lists what was added from
@@ -28,6 +29,8 @@ import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering
 import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
 import { deckMix } from "../../application/decks/deckMix.js";
 import { ShopCategory, cartSummary, deckBreakdown, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
+import { RANKED_ENTRY } from "../../application/ports/EntriesApi.contract.js";
+import { rankedEntriesText } from "../../application/entries/EntryService.js";
 import { mixBands, mixText } from "../cards/deckStripe.js";
 import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
@@ -111,7 +114,10 @@ const COMPACT = Object.freeze({
 const COMPACT_DIALOG_MARGIN = 8;
 const CART_LIST_ID = "cart.lines";
 
-const TAB_TITLES = Object.freeze({ [ShopCategory.PACKS]: "Packs", [ShopCategory.DECKS]: "Decks", [ShopCategory.SINGLES]: "Singles", [ShopCategory.OFFERS]: "Offers" });
+const TAB_TITLES = Object.freeze({ [ShopCategory.PACKS]: "Packs", [ShopCategory.DECKS]: "Decks", [ShopCategory.SINGLES]: "Singles", [ShopCategory.RANKED]: "Ranked", [ShopCategory.OFFERS]: "Offers" });
+/** Shelves shown only while something is on them. */
+/** @type {readonly string[]} */
+const OPTIONAL_SHELVES = Object.freeze([ShopCategory.RANKED, ShopCategory.OFFERS]);
 /** Rarities drawn in theme colours, commonest to rarest. */
 const EMPTY_SHELVES = shelvesOf({ products: [], dropTables: [], rarities: [], priceList: { asset: "", singles: [] } });
 
@@ -120,7 +126,7 @@ const STAGE_TEXT = Object.freeze({
   [PurchaseStage.ORDERING]: () => "Creating your order…",
   [PurchaseStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${purchase.order.payment.amount} ${purchase.order.payment.asset} to @${purchase.order.payment.to}.`,
   [PurchaseStage.CONFIRMING]: () => "Payment sent. The STEEM blockchain makes it final in about a minute: keep playing, you will be notified when your cards arrive.",
-  [PurchaseStage.DONE]: () => "Done: your cards are in your collection.",
+  [PurchaseStage.DONE]: (purchase) => doneText(purchase.order?.fulfilment ?? null),
 });
 
 /**
@@ -182,7 +188,9 @@ export class ShopScene extends Scene {
   /** Singles shown. @type {import("../../application/content/CardFilter.js").CardFilter} */
   #filter = NO_CARD_FILTER;
   /** The selected entry of each shelf: a product id, or a card id among singles. @type {Record<string, string | null>} */
-  #selected = { [ShopCategory.PACKS]: null, [ShopCategory.DECKS]: null, [ShopCategory.SINGLES]: null, [ShopCategory.OFFERS]: null };
+  #selected = { [ShopCategory.PACKS]: null, [ShopCategory.DECKS]: null, [ShopCategory.SINGLES]: null, [ShopCategory.RANKED]: null, [ShopCategory.OFFERS]: null };
+  /** Where Back goes: the screen that opened the shop. @type {string} */
+  #from = SceneId.MAIN_MENU;
   #quantity = 1;
   /** The list starts from the top on the next rebuild (another shelf or filter). */
   #scrollToTop = false;
@@ -204,7 +212,13 @@ export class ShopScene extends Scene {
     this.#app = app;
   }
 
-  enter() {
+  /** @param {{ category?: string, from?: string }} [params] `category`: the shelf to open (e.g. Ranked, from the lobby); `from`: where Back returns */
+  enter(params = {}) {
+    if (params.category !== undefined && /** @type {readonly string[]} */ (Object.values(ShopCategory)).includes(params.category)) {
+      this.#category = params.category;
+      this.#resetChoice();
+    }
+    this.#from = params.from ?? SceneId.MAIN_MENU;
     const shop = this.#shop();
     const unsubscribe = shop.subscribe(() => this.#rebuild());
     const unwatch = this.#app.balance?.subscribe(() => this.#rebuild());
@@ -237,7 +251,7 @@ export class ShopScene extends Scene {
       super.onCancel();
       return;
     }
-    this.services.navigate(SceneId.MAIN_MENU);
+    this.services.navigate(this.#from);
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -278,11 +292,11 @@ export class ShopScene extends Scene {
     return scrollY;
   }
 
-  /** The listing's shelves; the Offers shelf is left when it empties. */
+  /** The listing's shelves; an optional shelf (Ranked, Offers) is left when it is empty, once the shop is loaded. */
   #shelves() {
     const listing = this.#shop().state.listing;
     const shelves = listing === null ? EMPTY_SHELVES : shelvesOf(listing);
-    if (this.#category === ShopCategory.OFFERS && shelves.offers.length === 0) {
+    if (listing !== null && OPTIONAL_SHELVES.includes(this.#category) && productsOn(shelves, this.#category).length === 0) {
       this.#category = ShopCategory.PACKS;
     }
     return shelves;
@@ -344,7 +358,7 @@ export class ShopScene extends Scene {
     if (market) {
       this.root.add(new Button({ id: "shop.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
     }
-    return this.root.add(new Button({ id: "shop.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
+    return this.root.add(new Button({ id: "shop.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(this.#from) }));
   }
 
   /**
@@ -353,14 +367,14 @@ export class ShopScene extends Scene {
    * @returns {Button | null} the first tab
    */
   #buildTabs(panel, shelves) {
-    const categories = [ShopCategory.PACKS, ShopCategory.DECKS, ShopCategory.SINGLES, ...(shelves.offers.length > 0 ? [ShopCategory.OFFERS] : [])];
+    const categories = [ShopCategory.PACKS, ShopCategory.DECKS, ShopCategory.SINGLES, ...OPTIONAL_SHELVES.filter((category) => productsOn(shelves, category).length > 0)];
     const inner = this.#screen.columns.left.width - 2 * this.#screen.inset;
     const TABS = this.#m.tabs;
     const width = (inner - (categories.length - 1) * TABS.gap) / categories.length;
     /** @type {Button | null} */
     let first = null;
     categories.forEach((category, index) => {
-      const count = category === ShopCategory.SINGLES ? shelves.singles.length : shelves[/** @type {"packs" | "decks" | "offers"} */ (category)].length;
+      const count = category === ShopCategory.SINGLES ? shelves.singles.length : productsOn(shelves, category).length;
       const tab = panel.add(
         new Button({
           id: `shop.tab.${category}`,
@@ -401,7 +415,7 @@ export class ShopScene extends Scene {
       list.contentHeight = this.#screen.row.height;
       return null;
     }
-    const rows = this.#category === ShopCategory.SINGLES ? this.#singleRows(list, this.#visibleSingles(shelves)) : this.#productRows(list, /** @type {readonly Product[]} */ (shelves[/** @type {"packs" | "decks" | "offers"} */ (this.#category)]));
+    const rows = this.#category === ShopCategory.SINGLES ? this.#singleRows(list, this.#visibleSingles(shelves)) : this.#productRows(list, productsOn(shelves, this.#category));
     list.contentHeight = this.#screen.rowsHeight(keys.length);
     list.scrollTo(scrollY);
     return rows[0] ?? null;
@@ -421,6 +435,7 @@ export class ShopScene extends Scene {
       const subtitle = {
         [ShopCategory.PACKS]: () => `${product.cards} unknown cards · ${priceText(product)}`,
         [ShopCategory.DECKS]: () => [cardsText(product.cards), priceText(product), deck === undefined ? "" : mixText(this.#mixOf(deck))].filter((part) => part.length > 0).join(" · "),
+        [ShopCategory.RANKED]: () => `${gamesText(rankedEntriesOf(product))} · ${priceText(product)} · into the jackpot`,
       }[this.#category] ?? (() => `${cardsText(product.cards)} · ${priceText(product)}`);
       return list.add(new OptionRow({ id: `shop.product.${product.id}`, x: 0, y: this.#screen.rowY(index), width: list.rowWidth, height: this.#screen.row.height, text: product.name, subtitle: subtitle(), stripe: this.#stripeOf(deck), selected: product.id === this.#selected[this.#category], onActivate: () => this.#select(product.id) }));
     });
@@ -435,7 +450,7 @@ export class ShopScene extends Scene {
     if (deck !== undefined) {
       return mixBands(theme, this.#mixOf(deck));
     }
-    return this.#category === ShopCategory.PACKS ? [{ color: theme.colors.accent, weight: 1 }] : [];
+    return this.#category === ShopCategory.PACKS || this.#category === ShopCategory.RANKED ? [{ color: theme.colors.accent, weight: 1 }] : [];
   }
 
   /** @param {import("@magic8/engine/domain/decks/DeckList.js").DeckList} deck */
@@ -470,8 +485,7 @@ export class ShopScene extends Scene {
       const offer = shelves.singles.find((candidate) => candidate.cardId === selected);
       return offer === undefined ? null : this.#buildSingleDetail(panel, offer);
     }
-    const products = /** @type {readonly Product[]} */ (shelves[/** @type {"packs" | "decks" | "offers"} */ (this.#category)]);
-    const product = products.find((candidate) => candidate.id === selected);
+    const product = productsOn(shelves, this.#category).find((candidate) => candidate.id === selected);
     if (product === undefined) {
       return null;
     }
@@ -852,8 +866,18 @@ export class ShopScene extends Scene {
         return `complete deck: ${deck?.name ?? item.ref} (${deck?.totalCards ?? "?"} cards), saved to your account`;
       },
       product: (item) => listing?.products.find((candidate) => candidate.id === item.ref)?.name ?? item.ref,
+      entry: (item) => `${item.ref} entry: ${playsText(item.count)} of ${item.ref} play`,
     };
-    return product.contents.map((item) => ({ text: `${item.count} × ${(describe[item.type] ?? (() => item.ref))(item)}`, colorKey: "text" }));
+    const lines = product.contents.map((item) => ({ text: `${item.count} × ${(describe[item.type] ?? (() => item.ref))(item)}`, colorKey: "text" }));
+    return rankedEntriesOf(product) > 0 ? [...lines, ...this.#rankedLines()] : lines;
+  }
+
+  /** What ranked entries are for, and how many the player holds. */
+  #rankedLines() {
+    const ranked = this.#app.entries?.ranked ?? null;
+    const held = ranked === null ? [] : [{ text: `You have ${rankedEntriesText(ranked.balance)}.`, colorKey: "accentLight" }];
+    const cost = ranked === null || ranked.perGame === 0 ? "Ranked games take entries during a season with an entry fee." : `Every ranked game takes ${feeText(ranked.perGame)} from each player.`;
+    return [{ text: "Every entry goes into the season's jackpot.", colorKey: "accent" }, { text: cost, colorKey: "textMuted" }, ...held];
   }
 
   /**
@@ -888,7 +912,8 @@ export class ShopScene extends Scene {
       this.#revealClosed = false;
       return null;
     }
-    if (fulfilment === null || fulfilment === undefined || this.#revealClosed) {
+    if (fulfilment === null || fulfilment === undefined || this.#revealClosed || cardsReceived(fulfilment) === 0) {
+      // Entries alone are not revealed: the status line says they arrived.
       return null;
     }
     const { viewport } = this.services;
@@ -1181,7 +1206,7 @@ export class ShopScene extends Scene {
     if (this.#category === ShopCategory.SINGLES) {
       return this.#visibleSingles(shelves).map((offer) => offer.cardId);
     }
-    return shelves[/** @type {"packs" | "decks" | "offers"} */ (this.#category)].map((product) => product.id);
+    return productsOn(shelves, this.#category).map((product) => product.id);
   }
 
   /** @param {Shelves} shelves */
@@ -1252,6 +1277,54 @@ export class ShopScene extends Scene {
     }
     return this.#app.shop;
   }
+}
+
+/**
+ * The products on a shelf other than Singles.
+ * @param {Shelves} shelves
+ * @param {string} category
+ * @returns {readonly Product[]}
+ */
+function productsOn(shelves, category) {
+  return shelves[/** @type {"packs" | "decks" | "ranked" | "offers"} */ (category)] ?? [];
+}
+
+/**
+ * The ranked entries one unit of a product gives.
+ * @param {Product} product
+ */
+function rankedEntriesOf(product) {
+  return product.contents.reduce((sum, item) => sum + (item.type === "entry" && item.ref === RANKED_ENTRY ? item.count : 0), 0);
+}
+
+/** "one game", "3 games" @param {number} count */
+const playsText = (count) => (count === 1 ? "one game" : `${count} games`);
+
+/** "one entry", "2 entries" @param {number} count */
+const feeText = (count) => (count === 1 ? "one entry" : `${count} entries`);
+
+/** "1 ranked game", "10 ranked games" @param {number} count */
+const gamesText = (count) => `${count} ranked game${count === 1 ? "" : "s"}`;
+
+/**
+ * Cards an order gave, its own and its packs'.
+ * @param {import("../../application/ports/MarketApi.contract.js").Fulfilment} fulfilment
+ */
+function cardsReceived(fulfilment) {
+  return fulfilment.cards.length + fulfilment.packs.reduce((sum, pack) => sum + pack.cards.length, 0);
+}
+
+/**
+ * What a fulfilled order gave, in a line.
+ * @param {import("../../application/ports/MarketApi.contract.js").Fulfilment | null} fulfilment
+ */
+export function doneText(fulfilment) {
+  const entries = fulfilment?.entries.reduce((sum, entry) => sum + entry.count, 0) ?? 0;
+  if (fulfilment === null || entries === 0) {
+    return "Done: your cards are in your collection.";
+  }
+  const added = `Done: ${entries} ranked ${entries === 1 ? "entry is" : "entries are"} yours, and in the season's jackpot.`;
+  return cardsReceived(fulfilment) > 0 ? `${added} Your cards are in your collection.` : added;
 }
 
 /**

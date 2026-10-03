@@ -6,8 +6,10 @@
  * presentation label only; what a product gives is its `contents`, expanded
  * recursively (a bundle is a product made of products). A new kind of
  * product is usually just a new file (docs/tcg/01-architettura.md §7.2).
+ * Besides cards, a product may give entries to paid game modes (`entry`,
+ * whose `ref` is the kind: ranked), credited by the entries module.
  *
- * @typedef {"card" | "pack" | "deck" | "product"} ContentType
+ * @typedef {"card" | "pack" | "deck" | "product" | "entry"} ContentType
  * @typedef {Readonly<{ type: ContentType, ref: string, count: number }>} ProductContent
  * @typedef {Readonly<{ perOrder: number, availableFrom: number | null, availableUntil: number | null }>} ProductLimits
  * @typedef {Readonly<{
@@ -19,11 +21,12 @@
  *   cards: readonly Readonly<{ definitionId: string, count: number }>[],
  *   packs: readonly string[],
  *   decks: readonly string[],
- * }>} Expansion what one order line gives: cards to mint, packs to open (drop table ids, one per pack), decks to mint and save (deck ids, one per deck)
+ *   entries: readonly Readonly<{ kind: string, count: number }>[],
+ * }>} Expansion what one order line gives: cards to mint, packs to open (drop table ids, one per pack), decks to mint and save (deck ids, one per deck), entries to credit (by kind)
  */
 import { Issues, checkArrayOf, checkBoolean, checkEnum, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 
-export const ContentType = Object.freeze({ CARD: "card", PACK: "pack", DECK: "deck", PRODUCT: "product" });
+export const ContentType = Object.freeze({ CARD: "card", PACK: "pack", DECK: "deck", PRODUCT: "product", ENTRY: "entry" });
 /** Most cards one order may mint: keeps a single fulfilment transaction bounded. */
 export const MAX_CARDS_PER_ORDER = 1000;
 export const MAX_QUANTITY = 100;
@@ -44,7 +47,8 @@ const MAX_DEPTH = 4;
  *   decks: ReadonlyMap<string, { totalCards: number }>,
  *   dropTables: ReadonlyMap<string, { size: number }>,
  *   assets: { find: (asset: string) => { precision: number } | undefined, parse: (asset: string, text: unknown) => number | null },
- * }} ProductContext
+ *   entryKinds?: readonly string[],
+ * }} ProductContext `entryKinds`: the kinds of entry a product may give (none by default)
  */
 
 /**
@@ -176,6 +180,7 @@ function parseContent(issues, raw, path, context) {
     [ContentType.PACK]: () => context.dropTables.has(ref),
     [ContentType.DECK]: () => context.decks.has(ref),
     [ContentType.PRODUCT]: () => true, // checked once every product is parsed
+    [ContentType.ENTRY]: () => (context.entryKinds ?? []).includes(ref),
   }[type]();
   if (!known) {
     return issues.add(`${path}.ref`, `unknown ${type} "${ref}"`);
@@ -269,6 +274,8 @@ function cardsOfContent(content, trail, { products, context, issues }) {
       return /** @type {{ size: number }} */ (context.dropTables.get(content.ref)).size;
     case ContentType.DECK:
       return /** @type {{ totalCards: number }} */ (context.decks.get(content.ref)).totalCards;
+    case ContentType.ENTRY:
+      return 0;
     default: {
       const nested = products.get(content.ref);
       return nested === undefined ? issues.add(`products.${trail[0]}`, `unknown product "${content.ref}"`) : cardsOf(nested, trail, { products, context, issues });
@@ -291,6 +298,8 @@ export function expandProduct(product, quantity, products) {
   const packs = [];
   /** @type {string[]} */
   const decks = [];
+  /** @type {Map<string, number>} */
+  const entries = new Map();
   const visit = (current, times) => {
     for (const content of current.contents) {
       const count = content.count * times;
@@ -302,11 +311,18 @@ export function expandProduct(product, quantity, products) {
         packs.push(...Array.from({ length: count }, () => content.ref));
       } else if (content.type === ContentType.DECK) {
         decks.push(...Array.from({ length: count }, () => content.ref));
+      } else if (content.type === ContentType.ENTRY) {
+        entries.set(content.ref, (entries.get(content.ref) ?? 0) + count);
       } else {
         visit(/** @type {Product} */ (products.get(content.ref)), count);
       }
     }
   };
   visit(product, quantity);
-  return Object.freeze({ cards: Object.freeze([...cards.values()].map((entry) => Object.freeze(entry))), packs: Object.freeze(packs), decks: Object.freeze(decks) });
+  return Object.freeze({
+    cards: Object.freeze([...cards.values()].map((entry) => Object.freeze(entry))),
+    packs: Object.freeze(packs),
+    decks: Object.freeze(decks),
+    entries: Object.freeze([...entries].map(([kind, count]) => Object.freeze({ kind, count }))),
+  });
 }

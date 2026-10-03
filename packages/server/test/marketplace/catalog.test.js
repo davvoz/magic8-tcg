@@ -7,12 +7,15 @@ import { describe, it } from "node:test";
 
 import { buildMarketCatalog, expandProduct } from "../../src/modules/marketplace/index.js";
 import { formatAmount, parseAmount, validateAssets } from "../../src/modules/economy/index.js";
+import { ENTRY_KINDS } from "../../src/modules/entries/index.js";
 import { CatalogService, PgContentRepository } from "../../src/modules/catalog/index.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { ENGINE_VERSION } from "@magic8/engine/version.js";
 import { bundledContent } from "../helpers.js";
 import { freshDatabase } from "../support/database.js";
 
+/** The kinds of entry the server lets products give. */
+const ENTRIES = Object.freeze({ entryKinds: ENTRY_KINDS });
 const STEEM_ONLY = (network) => (network === "steem" ? [{ asset: "STEEM", precision: 3 }, { asset: "SBD", precision: 3 }] : []);
 const bundle = await bundledContent();
 const catalogService = new CatalogService({ repository: new PgContentRepository(await freshDatabase()) });
@@ -59,7 +62,7 @@ describe("accepted assets", () => {
 
 describe("market catalog", () => {
   it("builds from the bundled data", () => {
-    const built = buildMarketCatalog(market(), content, assets.value);
+    const built = buildMarketCatalog(market(), content, assets.value, ENTRIES);
     assert.equal(built.ok, true, JSON.stringify(built));
     const { products, dropTables, rarities } = built.value;
     assert.equal(rarities.of.size, content.catalog.size, "every card has a rarity");
@@ -76,7 +79,7 @@ describe("market catalog", () => {
   });
 
   it("generates singles by rarity, fixed-price packs and decks at the sum of their cards", () => {
-    const { products, rarities, decks, priceList } = buildMarketCatalog(market(), content, assets.value).value;
+    const { products, rarities, decks, priceList } = buildMarketCatalog(market(), content, assets.value, ENTRIES).value;
     const onSale = [...products.values()].filter((product) => product.active);
     assert.equal(priceList.asset, "STEEM");
     for (const [cardId, rarity] of rarities.of) {
@@ -91,14 +94,14 @@ describe("market catalog", () => {
       const sum = deck.entries.reduce((total, entry) => total + entry.count * priceList.singles.get(rarities.of.get(entry.cardId)), 0);
       assert.equal(products.get(`deck_${deck.id}`).prices.get("STEEM"), sum, deck.id);
     }
-    assert.equal(onSale.length, 2 + decks.size + rarities.of.size);
+    assert.equal(onSale.length, 2 + decks.size + rarities.of.size + 1, "packs, decks, singles and the ranked entry");
     assert.equal(products.get("deck_arcane_conclave").active, false, "retired products stay, so paid orders can be fulfilled");
   });
 
   it("follows the price list when prices change", () => {
     const data = market();
     pricingOf(data).singles.prices.common = "0.100";
-    const { products, rarities, decks } = buildMarketCatalog(data, content, assets.value).value;
+    const { products, rarities, decks } = buildMarketCatalog(data, content, assets.value, ENTRIES).value;
     assert.equal(products.get("single_ember_imp").prices.get("STEEM"), 100);
     const commons = decks
       .get("precon_arcane")
@@ -125,12 +128,12 @@ describe("market catalog", () => {
     for (const [name, change] of Object.entries(broken)) {
       const data = market();
       change(data);
-      assert.equal(buildMarketCatalog(data, content, assets.value).ok, false, name);
+      assert.equal(buildMarketCatalog(data, content, assets.value, ENTRIES).ok, false, name);
     }
   });
 
   it("expands bundles, decks and cards into what fulfilment mints", () => {
-    const { products } = buildMarketCatalog(market(), content, assets.value).value;
+    const { products } = buildMarketCatalog(market(), content, assets.value, ENTRIES).value;
     const box = expandProduct(products.get("core_booster_box"), 2, products);
     assert.equal(box.packs.length, 24);
     assert.deepEqual(box.cards, []);
@@ -138,18 +141,29 @@ describe("market catalog", () => {
     assert.deepEqual(single.cards, [{ definitionId: "pyre_drake", count: 3 }]);
     const deck = expandProduct(products.get("deck_precon_arcane"), 2, products);
     assert.deepEqual(deck.decks, ["precon_arcane", "precon_arcane"]);
+    assert.deepEqual(deck.entries, []);
+    const entries = expandProduct(products.get("ranked_entry"), 7, products);
+    assert.deepEqual(entries, { cards: [], packs: [], decks: [], entries: [{ kind: "ranked", count: 7 }] });
+    assert.equal(products.get("ranked_entry").cardsPerUnit, 0, "an entry is not a card");
+  });
+
+  it("sells entries only of the kinds the server knows", () => {
+    assert.match(buildMarketCatalog(market(), content, assets.value).error.message, /unknown entry "ranked"/, "no kinds known: no entries for sale");
+    const unknown = market();
+    productNamed(unknown, "ranked_entry").contents[0].ref = "arena";
+    assert.match(buildMarketCatalog(unknown, content, assets.value, ENTRIES).error.message, /unknown entry "arena"/);
   });
 
   it("refuses a card without rarity and a rarity for an unknown card", () => {
     const missing = market();
     delete missing.rarities.cards.ember_imp;
-    assert.match(buildMarketCatalog(missing, content, assets.value).error.message, /ember_imp: missing/);
+    assert.match(buildMarketCatalog(missing, content, assets.value, ENTRIES).error.message, /ember_imp: missing/);
     const unknown = market();
     unknown.rarities.cards.ghost = "rare";
-    assert.match(buildMarketCatalog(unknown, content, assets.value).error.message, /ghost: not a card/);
+    assert.match(buildMarketCatalog(unknown, content, assets.value, ENTRIES).error.message, /ghost: not a card/);
     const badRarity = market();
     badRarity.rarities.cards.ember_imp = "mythic";
-    assert.equal(buildMarketCatalog(badRarity, content, assets.value).ok, false);
+    assert.equal(buildMarketCatalog(badRarity, content, assets.value, ENTRIES).ok, false);
   });
 
   it("refuses broken products", () => {
@@ -172,7 +186,7 @@ describe("market catalog", () => {
     for (const [name, change] of Object.entries(broken)) {
       const data = market();
       change(data);
-      const built = buildMarketCatalog(data, content, assets.value);
+      const built = buildMarketCatalog(data, content, assets.value, ENTRIES);
       assert.equal(built.ok, false, name);
     }
   });
@@ -180,6 +194,6 @@ describe("market catalog", () => {
   it("refuses a drop table whose rarity has no card", () => {
     const data = market();
     data.dropTables[0].slots[0].weights = { mythic: 1 };
-    assert.match(buildMarketCatalog(data, content, assets.value).error.message, /drop tables/);
+    assert.match(buildMarketCatalog(data, content, assets.value, ENTRIES).error.message, /drop tables/);
   });
 });

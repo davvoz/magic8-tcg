@@ -5,7 +5,8 @@
 ## Le regole
 
 - **Season 1** dura un mese: dal 5 ottobre 2026 alle 00:00 UTC al 5 novembre 2026 alle 00:00 UTC. I rating ripartono da zero (doc 09). La stagione precedente, ora chiamata *Beta season*, finisce quando comincia Season 1.
-- **Jackpot = 2/3 del wallet della banca** (`@verdu.green`, l'account dello shop, dove arrivano i pagamenti dei pacchetti), in STEEM liquidi. Più pacchetti si vendono durante la stagione, più il jackpot cresce.
+- **Jackpot = 2/3 del wallet della banca** (`@verdu.green`, l'account dello shop, dove arrivano i pagamenti dei pacchetti e degli ingressi ranked), in STEEM liquidi. Più pacchetti e ingressi si vendono durante la stagione, più il jackpot cresce.
+- **Ingresso:** in Season 1 ogni partita classificata costa un ingresso ranked (1 STEEM) a giocatore (doc 22). Ai giocatori diciamo solo che gli ingressi finiscono nel jackpot.
 - **Ripartizione:** 65% al 1°, 25% al 2°, al 3° il resto (10%, più quello che resta dagli arrotondamenti per difetto). La somma delle tre quote è sempre esattamente il jackpot.
 - **Chi vince:** le prime tre posizioni della classifica della stagione, contando **solo i rating assestati** (con posizione, doc 09). Un rating provvisorio non vince niente.
 - **Posizioni senza vincitore** (meno di tre rating assestati): la loro quota resta nella banca, per la stagione successiva.
@@ -16,7 +17,7 @@ Il pannello del jackpot, dorato e illuminato, mostra:
 
 - l'importo totale, grande;
 - il conto alla rovescia alla fine della stagione, al secondo (*Ends in 12d 04h 31m 08s*); prima dell'inizio, il conto alla rovescia all'inizio;
-- da dove viene: *2/3 of @verdu.green's wallet · grows with every pack sold*, e quanto è cresciuto dall'inizio della stagione (*+200.000 STEEM since the season began*);
+- da dove viene: *2/3 of @verdu.green's wallet · grows with every pack sold and every ranked game*, e quanto è cresciuto dall'inizio della stagione (*+200.000 STEEM since the season began*);
 - le tre posizioni: quota, importo e chi le occupa **adesso** (con il ritratto), oppure *nobody yet · it could be you*.
 
 Dove si vede:

@@ -96,6 +96,7 @@ export class GameActor {
   #logger;
   #onBroken;
   #onFinished;
+  #onAborted;
   #signAck;
   #signatures;
   #results;
@@ -131,12 +132,14 @@ export class GameActor {
    *   timePolicy: import("../domain/TurnClock.js").TimePolicy,
    *   onBroken: (gameId: string) => void,
    *   onFinished: (summary: import("./ports.js").FinishedGame) => void,
+   *   onAborted?: (summary: import("./ports.js").AbortedGame) => Promise<void>,
    *   signAck?: AckSignature,
    *   signatures?: import("./ports.js").MoveSignatures | null,
    *   results?: import("./ports.js").ResultOutbox | null,
-   * }} deps `signatures` is required for v2 games; `results` receives finished games' results (none: not published)
+   * }} deps `signatures` is required for v2 games; `results` receives finished games' results (none: not published);
+   *   `onAborted` writes in the unit of work that calls a game off (e.g. gives back what it cost)
    */
-  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, signAck = () => ({}), signatures = null, results = null }) {
+  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, onAborted = async () => undefined, signAck = () => ({}), signatures = null, results = null }) {
     if (recorder.version >= GameProtocol.V2 && signatures === null) {
       throw new Error(`game ${game.id}: a v2 game needs move signature checks`);
     }
@@ -151,6 +154,7 @@ export class GameActor {
     this.#logger = logger;
     this.#onBroken = onBroken;
     this.#onFinished = onFinished;
+    this.#onAborted = onAborted;
     this.#signAck = signAck;
     this.#signatures = signatures;
     this.#results = results;
@@ -732,7 +736,11 @@ export class GameActor {
     const now = this.#clock.now();
     const chained = this.#recorder.aborted({ reason, started: false, clock: { turn: 0, ms: this.#elapsed() } });
     const results = Object.fromEntries(SEATS.map((seat) => [seat, "aborted"]));
-    await this.#persist([chained], { status: GameStatus.ABORTED, endReason: reason, finishedAt: now }, () => this.#repository.setResults(this.id, results));
+    const summary = Object.freeze({ gameId: this.id, mode: this.#game.mode, reason, players: this.#game.players.map(({ seat, userId, account }) => Object.freeze({ seat, userId, account })) });
+    await this.#persist([chained], { status: GameStatus.ABORTED, endReason: reason, finishedAt: now }, async () => {
+      await this.#repository.setResults(this.id, results);
+      await this.#onAborted(summary);
+    });
     this.#status = GameStatus.ABORTED;
     this.#logger.info("game called off before it started", { game: this.id, reason, seats });
     for (const player of this.#game.players) {

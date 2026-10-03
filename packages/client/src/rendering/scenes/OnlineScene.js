@@ -15,9 +15,16 @@
  * Once matched (protocol v2), the game waits until both players accept it
  * with Keychain: the lobby says who has. If either does not, the game is
  * cancelled, the lobby says who did not accept, and a new search can start.
+ *
+ * When the season charges an entry fee, the lobby says how many ranked
+ * entries the player holds and that every entry goes into the jackpot; a
+ * player without enough is offered to get them (the shop's Ranked shelf:
+ * many entries, one payment) instead of a search that would be refused.
  */
+import { entriesText } from "../../application/entries/EntryService.js";
 import { ChallengeMode, PlayerActivity } from "../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
+import { ShopCategory } from "../../application/shop/shopCatalog.js";
 import { deckSummary, mixBands } from "../cards/deckStripe.js";
 import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -117,6 +124,8 @@ export class OnlineScene extends Scene {
   #dialog = null;
   /** Scroll offsets by list id, kept across rebuilds (the list of players refreshes every few seconds). @type {Record<string, number>} */
   #scroll = {};
+  /** The online status last seen: a game created or called off changes the player's entries. @type {string | null} */
+  #lastStatus = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -135,6 +144,12 @@ export class OnlineScene extends Scene {
       this.#unsubscribes.push(this.#app.ranking.subscribe(() => this.#rebuild()));
       this.#app.ranking.refresh();
     }
+    const entries = this.#app.entries;
+    if (entries !== undefined) {
+      this.#unsubscribes.push(entries.subscribe(() => this.#rebuild()));
+      void entries.refresh();
+    }
+    this.#lastStatus = online.state.status;
     const lobby = this.#app.lobby;
     if (lobby !== undefined) {
       this.#unsubscribes.push(lobby.subscribe(() => this.#rebuild()));
@@ -167,6 +182,11 @@ export class OnlineScene extends Scene {
 
   /** @param {import("../../application/online/OnlineService.js").OnlineState} state */
   #onChange(state) {
+    // A game found takes the entries it costs; a game called off gives them back.
+    if (state.status !== this.#lastStatus && (state.status === OnlineStatus.MATCHED || state.status === OnlineStatus.CANCELLED)) {
+      void this.#app.entries?.refresh();
+    }
+    this.#lastStatus = state.status;
     // The match screen takes over as soon as the server has sent the first state of the game.
     if (state.status === OnlineStatus.PLAYING && state.session?.hasSnapshot && !state.session.isStopped) {
       this.services.navigate(SceneId.MATCH, { session: state.session, againScene: SceneId.ONLINE });
@@ -354,6 +374,9 @@ export class OnlineScene extends Scene {
       return { id: "online.withdraw", text: "Withdraw challenge", onActivate: () => this.#app.lobby?.cancel() };
     }
     const canQueue = state.status === OnlineStatus.IDLE || state.status === OnlineStatus.OVER || state.status === OnlineStatus.CANCELLED;
+    if (this.#mode === QueueMode.RANKED && !this.#hasEntries() && this.services.hasScene(SceneId.SHOP)) {
+      return { id: "online.getEntries", text: "Get ranked entries", variant: "primary", onActivate: () => this.#getEntries() };
+    }
     return {
       id: "online.find",
       text: "Find a match",
@@ -396,8 +419,15 @@ export class OnlineScene extends Scene {
     choice(QueueMode.CASUAL, this.#screen.inset, "Casual", true);
     choice(QueueMode.RANKED, this.#screen.inset + half + MODE.gap, "Ranked", eligible);
     const compact = this.#screen.compact;
-    panel.add(new TextBlock({ id: "online.standing", x: this.#screen.inset, y: MODE.y + MODE.height + (compact ? 4 : 10), width, height: 2 * (compact ? 22 : 26), text: standingText(ranking.state), size: "small", colorKey: "textMuted" }));
-    return MODE.y + MODE.height + (compact ? 52 : 70);
+    const line = compact ? 22 : 26;
+    const standingY = MODE.y + MODE.height + (compact ? 4 : 10);
+    panel.add(new TextBlock({ id: "online.standing", x: this.#screen.inset, y: standingY, width, height: 2 * line, text: standingText(ranking.state), size: "small", colorKey: "textMuted" }));
+    const entries = eligible ? entriesText(this.#app.entries?.ranked ?? null) : null;
+    if (entries === null) {
+      return MODE.y + MODE.height + (compact ? 52 : 70);
+    }
+    panel.add(new TextBlock({ id: "online.entries", x: this.#screen.inset, y: standingY + 2 * line, width, height: 2 * line, text: entries, size: "small", colorKey: this.#hasEntries() ? "accent" : "danger" }));
+    return MODE.y + MODE.height + (compact ? 52 + 2 * line : 70 + 2 * line);
   }
 
   /**
@@ -457,7 +487,7 @@ export class OnlineScene extends Scene {
   #challengeModal(account) {
     const deck = this.#selectedDeck();
     const message = deck === null ? "Choose one of your playable decks first: it is the deck you will play with." : `You play with “${deck.name}”. @${account} has a minute to accept, with a deck of their own.`;
-    const ranked = this.#rankedAllowed() ? "" : " Ranked opens once you have played enough casual games.";
+    const ranked = this.#rankedAllowed() ? this.#entriesNote() : " Ranked opens once you have played enough casual games.";
     const send = (/** @type {string} */ mode) => {
       this.#dialog = null;
       void this.#app.lobby?.challenge(account, mode, /** @type {{ id: string }} */ (deck).id);
@@ -470,7 +500,7 @@ export class OnlineScene extends Scene {
       buttons: [
         { id: "challenge.close", text: "Cancel", variant: "secondary", enabled: true, onActivate: () => this.#closeDialog() },
         { id: "challenge.casual", text: "Casual game", variant: "primary", enabled: deck !== null, onActivate: () => send(ChallengeMode.CASUAL) },
-        { id: "challenge.ranked", text: "Ranked game", variant: "primary", enabled: deck !== null && this.#rankedAllowed(), onActivate: () => send(ChallengeMode.RANKED) },
+        { id: "challenge.ranked", text: "Ranked game", variant: "primary", enabled: deck !== null && this.#rankedAllowed() && this.#hasEntries(), onActivate: () => send(ChallengeMode.RANKED) },
       ],
     });
   }
@@ -482,7 +512,9 @@ export class OnlineScene extends Scene {
   #answerModal(challenge) {
     const deck = this.#selectedDeck();
     const game = `A ${modeName(challenge.mode).toLowerCase()} game.`;
-    const message = deck === null ? `${game} Choose one of your playable decks to accept it.` : `${game} You play with “${deck.name}”; the game starts as soon as you accept.`;
+    const payable = challenge.mode !== ChallengeMode.RANKED || this.#hasEntries();
+    const accepting = deck === null ? `${game} Choose one of your playable decks to accept it.` : `${game} You play with “${deck.name}”; the game starts as soon as you accept.`;
+    const message = payable ? accepting : `${game} It takes a ranked entry you do not have: get ranked entries in the shop to accept it.`;
     const lobby = /** @type {import("../../application/lobby/LobbyService.js").LobbyService} */ (this.#app.lobby);
     return this.#dialogFrame({
       account: challenge.from,
@@ -504,7 +536,7 @@ export class OnlineScene extends Scene {
           id: "challenge.accept",
           text: "Accept",
           variant: "primary",
-          enabled: deck !== null && this.#free(),
+          enabled: deck !== null && this.#free() && payable,
           onActivate: () => {
             this.#dialog = null;
             this.#online().dismissGame();
@@ -544,6 +576,21 @@ export class OnlineScene extends Scene {
 
   #rankedAllowed() {
     return this.#app.ranking?.state.standing?.eligible === true;
+  }
+
+  /** Whether the player holds what a ranked game costs (true when it is free, or not known: the server decides). */
+  #hasEntries() {
+    return this.#app.entries?.canPlayRanked ?? true;
+  }
+
+  /** What the challenge dialog adds about entries, when ranked play costs some and the player has none. */
+  #entriesNote() {
+    return this.#hasEntries() ? "" : " A ranked game takes a ranked entry: you have none.";
+  }
+
+  /** The shop's Ranked shelf: many entries, one payment; Back comes here. */
+  #getEntries() {
+    this.services.navigate(SceneId.SHOP, { category: ShopCategory.RANKED, from: SceneId.ONLINE });
   }
 
   #selectedDeck() {

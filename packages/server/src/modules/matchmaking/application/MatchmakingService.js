@@ -16,6 +16,11 @@
  *   (games over the daily limit are recorded but not rated, T24).
  * - Direct games (a challenge accepted in the lobby) skip the queue but
  *   are created here too, under the same rule: one game per player.
+ * - Paid modes (ranked, when the season charges an entry fee: docs/tcg/22):
+ *   joining needs the entries a game costs, and the game takes them from
+ *   both players in the unit of work that creates it. A paired player whose
+ *   entries ran out meanwhile leaves the queue (and is told) instead of
+ *   blocking it.
  */
 import { AppError } from "../../../kernel/AppError.js";
 import { uuidV4 } from "../../../kernel/random.js";
@@ -25,6 +30,8 @@ const MODES = Object.freeze(Object.values(QueueMode));
 export const TicketStatus = Object.freeze({ WAITING: "WAITING", MATCHED: "MATCHED", CANCELLED: "CANCELLED", EXPIRED: "EXPIRED" });
 const DEFAULT_RATING = 1000;
 const MAX_PAIRS_PER_RUN = 50;
+/** Entries when every mode is free. */
+const FREE_ENTRIES = Object.freeze({ assertCanEnter: async () => undefined, shortOf: async () => Object.freeze([]), charge: async () => 0 });
 
 export class MatchmakingService {
   #repository;
@@ -37,6 +44,7 @@ export class MatchmakingService {
   #logger;
   #ticketTtlMs;
   #ranking;
+  #entries;
   #gate;
 
   /**
@@ -50,11 +58,12 @@ export class MatchmakingService {
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   logger: import("../../../kernel/logger.js").Logger,
    *   ranking: import("../../ranking/index.js").RankingService,
+   *   entries?: Pick<import("../../entries/index.js").EntryService, "assertCanEnter" | "shortOf" | "charge">,
    *   ticketTtlMs?: number,
    *   gate?: { assertOpen: (what: string) => void, isClosed: () => boolean },
-   * }} deps `gate`: closed during an announced maintenance (no new games)
+   * }} deps `entries`: what paid modes cost (by default every mode is free); `gate`: closed during an announced maintenance (no new games)
    */
-  constructor({ repository, decks, games, notifier, clock, random, unitOfWork, logger, ranking, ticketTtlMs = 10 * 60 * 1000, gate = { assertOpen: () => undefined, isClosed: () => false } }) {
+  constructor({ repository, decks, games, notifier, clock, random, unitOfWork, logger, ranking, entries = FREE_ENTRIES, ticketTtlMs = 10 * 60 * 1000, gate = { assertOpen: () => undefined, isClosed: () => false } }) {
     this.#repository = repository;
     this.#decks = decks;
     this.#games = games;
@@ -65,6 +74,7 @@ export class MatchmakingService {
     this.#logger = logger;
     this.#ticketTtlMs = ticketTtlMs;
     this.#ranking = ranking;
+    this.#entries = entries;
     this.#gate = gate;
   }
 
@@ -83,6 +93,7 @@ export class MatchmakingService {
     if (mode === QueueMode.RANKED) {
       await this.#ranking.assertEligible(user.id);
     }
+    await this.#entries.assertCanEnter(user.id, mode);
     const rating = mode === QueueMode.RANKED ? Math.round((await this.#ranking.ratingOf(user.id)).rating) : DEFAULT_RATING;
     const deck = await this.#decks.playableDeckList(user.id, deckId);
     const now = this.#clock.now();
@@ -133,8 +144,9 @@ export class MatchmakingService {
    * the lobby module). Their waiting tickets are cancelled in the same unit
    * of work as the game is created: a ticket the pairing holds makes the
    * cancel wait for it, and a game it gave either player meanwhile makes
-   * this one fail, so nobody ends up in two games. Decks were validated by
-   * the caller (and frozen when each player chose theirs).
+   * this one fail, so nobody ends up in two games. A paid mode takes its fee
+   * in the same unit of work: a player without the entries fails it. Decks
+   * were validated by the caller (and frozen when each player chose theirs).
    * @param {{ mode: unknown, entrants: readonly Readonly<{ userId: string, account: string, deckId: string, deck: readonly Readonly<{ cardId: string, count: number }>[] }>[] }} request
    * @returns {Promise<string>} the game's id
    */
@@ -157,7 +169,9 @@ export class MatchmakingService {
           throw new AppError("CONFLICT", `@${entrant.account} is already in a game`);
         }
       }
-      return { staged: await this.#games.stageGame({ mode, entrants }), unqueued: cancelled };
+      const game = await this.#games.stageGame({ mode, entrants });
+      await this.#entries.charge({ gameId: game.game.id, mode, userIds: entrants.map((entrant) => entrant.userId) });
+      return { staged: game, unqueued: cancelled };
     });
     for (const userId of unqueued) {
       this.#notifier.send(userId, "queue.status", { state: "idle" });
@@ -186,23 +200,47 @@ export class MatchmakingService {
   async #pairMode(mode) {
     let created = 0;
     for (let run = 0; run < MAX_PAIRS_PER_RUN; run += 1) {
-      const staged = await this.#unitOfWork(async () => {
-        const tickets = await this.#repository.lockOldestPair(mode);
-        if (tickets.length < 2) {
-          return null;
-        }
-        const game = await this.#games.stageGame({ mode, entrants: tickets.map((ticket) => ({ userId: ticket.userId, account: ticket.account, deckId: ticket.deckId, deck: ticket.deck.map(([cardId, count]) => ({ cardId, count })) })) });
-        await this.#repository.markMatched(tickets.map((ticket) => ticket.id), game.game.id, this.#clock.now());
-        return game;
-      });
-      if (staged === null) {
+      const outcome = await this.#unitOfWork(() => this.#pairOldest(mode));
+      if (outcome === null) {
         return created;
       }
-      this.#games.launchGame(staged);
-      this.#logger.info("match made", { game: staged.game.id, mode });
+      if (outcome.staged === null) {
+        for (const userId of outcome.dropped) {
+          this.#notifier.send(userId, "queue.status", { state: "idle", reason: "entries" });
+        }
+        this.#logger.info("players without entries left the queue", { mode, players: outcome.dropped.length });
+        continue;
+      }
+      this.#games.launchGame(outcome.staged);
+      this.#logger.info("match made", { game: outcome.staged.game.id, mode });
       created += 1;
     }
     return created;
+  }
+
+  /**
+   * Inside a unit of work: the two oldest tickets of a mode become a game (its fee taken from both), or the
+   * players among them who can no longer pay leave the queue; null when fewer than two wait.
+   * @param {string} mode
+   * @returns {Promise<{ staged: Awaited<ReturnType<import("../../gameplay/index.js").GameService["stageGame"]>>, dropped: readonly string[] } | { staged: null, dropped: readonly string[] } | null>}
+   */
+  async #pairOldest(mode) {
+    const tickets = await this.#repository.lockOldestPair(mode);
+    if (tickets.length < 2) {
+      return null;
+    }
+    const userIds = tickets.map((ticket) => ticket.userId);
+    const short = await this.#entries.shortOf(userIds, mode);
+    if (short.length > 0) {
+      for (const userId of short) {
+        await this.#repository.cancelWaiting(userId, this.#clock.now());
+      }
+      return { staged: null, dropped: short };
+    }
+    const staged = await this.#games.stageGame({ mode, entrants: tickets.map((ticket) => ({ userId: ticket.userId, account: ticket.account, deckId: ticket.deckId, deck: ticket.deck.map(([cardId, count]) => ({ cardId, count })) })) });
+    await this.#entries.charge({ gameId: staged.game.id, mode, userIds });
+    await this.#repository.markMatched(tickets.map((ticket) => ticket.id), staged.game.id, this.#clock.now());
+    return { staged, dropped: Object.freeze([]) };
   }
 
   /**

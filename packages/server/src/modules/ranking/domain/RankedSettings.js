@@ -7,13 +7,17 @@
  * season starts (the last one without `endsAt` never ends). Between a season
  * that ended and the next one, no season runs: ranked play is closed. A
  * season may name a prize pool (`prizePool`), an entry of `prizePools`: the
- * jackpot module validates those and pays them.
+ * jackpot module validates those and pays them. A season may charge an entry
+ * fee (`entryFee`): the entries each player spends on a ranked game, bought in
+ * the shop (the entries module); without it ranked play is free.
  */
 import { Issues, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
 const TOP_KEYS = Object.freeze(["v", "seasons", "prizePools", "eligibility", "fairPlay"]);
-const SEASON_KEYS = Object.freeze(["id", "name", "startsAt", "endsAt", "prizePool"]);
+const SEASON_KEYS = Object.freeze(["id", "name", "startsAt", "endsAt", "prizePool", "entryFee"]);
+/** Most entries one ranked game may cost. */
+const MAX_ENTRY_FEE = 100;
 const POOL_ID = /^[a-z0-9-]{1,32}$/;
 
 /** Where a season is at a given time. */
@@ -21,7 +25,8 @@ export const SeasonPhase = Object.freeze({ UPCOMING: "upcoming", RUNNING: "runni
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 /**
- * @typedef {Readonly<{ id: string, name: string, startsAt: number, endsAt: number | null, prizePool: string | null }>} Season `endsAt` as written in the data (see seasonEnd); `prizePool` an id of `prizePools`
+ * @typedef {Readonly<{ id: string, name: string, startsAt: number, endsAt: number | null, prizePool: string | null, entryFee: number }>} Season `endsAt` as written in the data (see seasonEnd); `prizePool` an id of `prizePools`;
+ *   `entryFee` the entries a ranked game costs each player (0: free)
  * @typedef {Readonly<{
  *   seasons: readonly Season[],
  *   prizePools: unknown,
@@ -70,10 +75,11 @@ export function validateRankedSettings(raw) {
       const startsAt = checkString(issues, season.startsAt, `${path}.startsAt`, { pattern: ISO_UTC });
       const endsAt = season.endsAt === undefined ? null : checkString(issues, season.endsAt, `${path}.endsAt`, { pattern: ISO_UTC });
       const prizePool = season.prizePool === undefined ? null : checkString(issues, season.prizePool, `${path}.prizePool`, { pattern: POOL_ID });
-      if (id === undefined || name === undefined || endsAt === undefined || prizePool === undefined) {
+      const entryFee = season.entryFee === undefined ? 0 : checkInteger(issues, season.entryFee, `${path}.entryFee`, { min: 0, max: MAX_ENTRY_FEE });
+      if (id === undefined || name === undefined || endsAt === undefined || prizePool === undefined || entryFee === undefined) {
         return undefined;
       }
-      return Object.freeze({ id, name, startsAt: startsAt === undefined ? Number.NaN : Date.parse(startsAt), endsAt: endsAt === null ? null : Date.parse(endsAt), prizePool });
+      return Object.freeze({ id, name, startsAt: startsAt === undefined ? Number.NaN : Date.parse(startsAt), endsAt: endsAt === null ? null : Date.parse(endsAt), prizePool, entryFee });
     },
   });
   checkSeasonTimes(issues, seasons ?? []);

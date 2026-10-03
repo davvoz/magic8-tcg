@@ -282,12 +282,24 @@ export class OnlineService {
     }
   }
 
+  /**
+   * Where the player's search stands, as the server says it.
+   * @param {{ state: string, reason?: string }} status
+   */
+  #onQueueStatus(status) {
+    if (this.#state.session === null) {
+      this.#set({ status: status.state === "searching" ? OnlineStatus.SEARCHING : OnlineStatus.IDLE });
+    }
+    // Taken out of the ranked queue: the entries a game takes ran out while waiting.
+    if (status.reason === "entries") {
+      this.#set({ error: { code: "ENTRY_REQUIRED", message: "You left the ranked queue: you have no ranked entries left." } });
+    }
+  }
+
   /** @param {import("../ports/Realtime.contract.js").ServerMessage} message */
   #onMessage({ t, d }) {
     if (t === "queue.status") {
-      if (this.#state.session === null) {
-        this.#set({ status: d.state === "searching" ? OnlineStatus.SEARCHING : OnlineStatus.IDLE });
-      }
+      this.#onQueueStatus(d);
     } else if (t === "match.found") {
       this.#matched(d);
     } else if (t === "game.events" || t === "game.state") {

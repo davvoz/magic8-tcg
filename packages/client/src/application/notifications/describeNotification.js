@@ -7,7 +7,7 @@
  */
 
 /** Where a notification leads. */
-export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop" });
+export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", ONLINE: "online" });
 
 /** Kinds after which the player's collection has changed (it should be read again). */
 export const COLLECTION_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "trade.accepted", "trade.declined", "trade.cancelled", "trade.expired", "sale.sold", "sale.bought", "sale.listing_expired"]);
@@ -36,7 +36,12 @@ const DESCRIBERS = Object.freeze({
     const cards = cardsOf(data.cards);
     const items = Array.isArray(data.items) ? data.items.map((item) => times(item.quantity) + item.name).join(", ") : "Your order";
     const total = Number.isSafeInteger(data.total) ? data.total : cards.reduce((sum, card) => sum + (card.count ?? 1), 0);
-    return text({ title: "Your cards have arrived", body: `${items}: ${plural(total, "card")} added to your collection.`, cards, target: NotificationTarget.COLLECTION, tone: "good" });
+    const entries = Array.isArray(data.entries) ? data.entries.reduce((sum, entry) => sum + (Number.isSafeInteger(entry?.count) ? entry.count : 0), 0) : 0;
+    if (entries > 0 && total === 0) {
+      return text({ title: "Your ranked entries are ready", body: `${items}: ${plural(entries, "ranked entry", "ranked entries")} to play with, and in the season's jackpot.`, target: NotificationTarget.ONLINE, tone: "good" });
+    }
+    const andEntries = entries > 0 ? `, and ${plural(entries, "ranked entry", "ranked entries")} to play with` : "";
+    return text({ title: "Your cards have arrived", body: `${items}: ${plural(total, "card")} added to your collection${andEntries}.`, cards, target: NotificationTarget.COLLECTION, tone: "good" });
   },
   "shop.refund": ({ data, problem }) => text({ title: "Payment to be refunded", body: `Your payment of ${data.amount ?? "?"} ${data.asset ?? ""} for an order was not accepted: ${problem}. It will be sent back to you.`, target: NotificationTarget.SHOP, tone: "bad" }),
   "trade.offered": ({ data, account, list, name }) => {
@@ -111,8 +116,13 @@ const serialOf = (card) => (card.serial === undefined ? "" : ` #${card.serial}`)
 /** "3× " for several copies, "" for one. @param {unknown} count */
 const times = (count) => (typeof count === "number" && count > 1 ? `${count}× ` : "");
 
-/** @param {number} count @param {string} noun */
-const plural = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+/**
+ * "1 card", "3 cards"; `many` for an irregular plural ("ranked entries").
+ * @param {number} count
+ * @param {string} noun
+ * @param {string} [many]
+ */
+const plural = (count, noun, many = `${noun}s`) => `${count} ${count === 1 ? noun : many}`;
 
 /** @param {readonly NotificationCard[]} cards */
 const isOne = (cards) => cards.length === 1 && (cards[0].count ?? 1) === 1;

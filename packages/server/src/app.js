@@ -28,6 +28,7 @@ import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } fr
 import { LobbyService, registerLobbyMessages } from "./modules/lobby/index.js";
 import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
 import { JackpotService, PgJackpotRepository, PrizePayoutWatcher, registerJackpotRoutes, validatePrizePools } from "./modules/jackpot/index.js";
+import { ENTRY_KINDS, EntryService, PgEntryRepository, registerEntryRoutes } from "./modules/entries/index.js";
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
 import { BoardRelay, PgSalesRepository, SaleSettlement, SalesService, registerSalesRoutes } from "./modules/sales/index.js";
 import { NotificationRelay, NotificationService, PgNotificationRepository, registerNotificationRoutes } from "./modules/notifications/index.js";
@@ -96,7 +97,7 @@ export async function createServerApp(deps) {
   if (!assets.ok) {
     throw new Error(`accepted assets are invalid: ${assets.error.message}`);
   }
-  const market = buildMarketCatalog(content.market, published.content, assets.value);
+  const market = buildMarketCatalog(content.market, published.content, assets.value, { entryKinds: ENTRY_KINDS });
   if (!market.ok) {
     throw new Error(`marketplace data is invalid: ${market.error.message}`);
   }
@@ -124,7 +125,6 @@ export async function createServerApp(deps) {
   // What a player should hear about is written with the change; each process pushes it to the players connected to it.
   const notifications = new NotificationService({ repository: new PgNotificationRepository(database), clock, unitOfWork });
   const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, firstEpochId: config.firstEpochId, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
-  const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, notifications, audit, clock, unitOfWork, logger });
   const rootAccount = /** @type {Record<string, string>} */ (config.rootAccounts)[defaultNetwork];
   const chain = publishing === null ? null : buildPublishing({ publishing, rootAccount, database, clock, random, unitOfWork, logger, policies: chainPolicies, ackKey: ackSigner?.publicKey ?? null });
   const chainRepository = new PgChainRepository(database);
@@ -145,9 +145,15 @@ export async function createServerApp(deps) {
   }
   const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: rankedSettings.value, games, clock, unitOfWork, logger });
   games.onGameFinished((summary) => ranking.record(summary).then(() => undefined));
+  // Ranked entries: bought in the shop (paid to the bank, so they feed the jackpot), taken by each ranked game of a season with an entry fee.
+  const entries = new EntryService({ repository: new PgEntryRepository(database), fees: { feeOf: (mode) => ranking.entryFeeOf(mode) }, clock, unitOfWork, logger, kinds: ENTRY_KINDS });
+  games.onGameAborted(async (summary) => {
+    await entries.refundGame(summary.gameId);
+  });
+  const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, entries, notifications, audit, clock, unitOfWork, logger });
   // A season's jackpot: a share of the bank (the shop account, where every pack sale lands), split among its first places.
   const { jackpot, prizePayouts } = buildJackpot({ settings: rankedSettings.value, wallets, paymentProviders, bankFor: receiverFor, cursors: paymentRepository, ranking, notifications, database, audit, clock, unitOfWork, logger });
-  const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger, ranking, gate: maintenance });
+  const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger, ranking, entries, gate: maintenance });
   // Who is online, and challenges between them (a game without the queue).
   const lobby = new LobbyService({
     hub,
@@ -157,6 +163,7 @@ export async function createServerApp(deps) {
     decks,
     games,
     ranking,
+    entries,
     clock,
     random,
     logger,
@@ -180,6 +187,7 @@ export async function createServerApp(deps) {
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
   registerRankingRoutes({ router, ranking });
+  registerEntryRoutes({ router, entries });
   registerGameRoutes({ router, games });
   const readModel = new PgOperationsReadModel(database);
   const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
@@ -232,7 +240,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, realtime });
 }
 
 /**

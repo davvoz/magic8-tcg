@@ -14,6 +14,8 @@ export const ErrorStatus = Object.freeze({
   UNAUTHENTICATED: 401,
   LOGIN_FAILED: 401,
   CHALLENGE_INVALID: 401,
+  /** A paid game mode, and the player has no entries left for it. */
+  ENTRY_REQUIRED: 402,
   FORBIDDEN: 403,
   CSRF_REJECTED: 403,
   NOT_FOUND: 404,

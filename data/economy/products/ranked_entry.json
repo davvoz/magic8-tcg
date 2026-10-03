@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "ranked_entry",
+  "kind": "entry",
+  "name": "Ranked Entry",
+  "description": "One ranked game. Buy as many as you like with a single payment: every entry goes into the season's jackpot.",
+  "edition": "core-1",
+  "prices": [
+    {
+      "asset": "STEEM",
+      "amount": "1.000"
+    }
+  ],
+  "contents": [
+    {
+      "type": "entry",
+      "ref": "ranked",
+      "count": 1
+    }
+  ],
+  "limits": {
+    "perOrder": 50
+  },
+  "active": true
+}

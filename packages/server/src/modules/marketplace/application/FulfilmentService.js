@@ -2,7 +2,8 @@
  * FulfilmentService: PAYMENT_VERIFIED → FULFILLED (docs/tcg/01-architettura.md §7.2).
  *
  * One unit of work claims the order (compare-and-set), mints what its items
- * give, opens its packs, saves bought decks, queues the on-chain receipt and
+ * give, opens its packs, saves bought decks, credits bought entries (the
+ * entries module, docs/tcg/22-ingressi-ranked.md), queues the on-chain receipt and
  * writes the audit entry and the buyer's notification (docs/tcg/15). Either all of it happens or none: a crash or a
  * concurrent worker can never mint an order twice (T9), and a failure leaves
  * the order verified, to be retried.
@@ -37,6 +38,7 @@ export class FulfilmentService {
   #epochs;
   #payments;
   #outbox;
+  #entries;
   #notifications;
   #audit;
   #clock;
@@ -52,14 +54,15 @@ export class FulfilmentService {
    *   epochs: import("./PackEpochService.js").PackEpochService,
    *   payments: import("../../payments/index.js").PaymentService,
    *   outbox: import("../../chain/index.js").ChainOutbox,
+   *   entries?: { credit: (purchase: { userId: string, kind: string, count: number, orderId: string }) => Promise<unknown> } | null,
    *   notifications: { notify: (userId: string, kind: string, data: Record<string, unknown>) => Promise<unknown> },
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
    *   clock: import("../../../kernel/time.js").Clock,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   logger: import("../../../kernel/logger.js").Logger,
-   * }} deps
+   * }} deps `entries`: where bought entries go (none: a product that gives entries cannot be fulfilled)
    */
-  constructor({ orders, catalog, inventory, decks, epochs, payments, outbox, notifications, audit, clock, unitOfWork, logger }) {
+  constructor({ orders, catalog, inventory, decks, epochs, payments, outbox, entries = null, notifications, audit, clock, unitOfWork, logger }) {
     this.#orders = orders;
     this.#catalog = catalog;
     this.#inventory = inventory;
@@ -67,6 +70,7 @@ export class FulfilmentService {
     this.#epochs = epochs;
     this.#payments = payments;
     this.#outbox = outbox;
+    this.#entries = entries;
     this.#notifications = notifications;
     this.#audit = audit;
     this.#clock = clock;
@@ -125,21 +129,23 @@ export class FulfilmentService {
         items: order.items.map((item) => ({ productId: item.productId, name: this.#catalog.products.get(item.productId)?.name ?? item.productId, quantity: item.quantity })),
         cards: countCards(allCards),
         total: allCards.length,
+        entries: minted.entries,
       });
       await this.#audit.record({
         actorKind: "system",
         action: "marketplace.order_fulfilled",
         targetKind: "order",
         targetId: order.id,
-        details: { cards: minted.cards.length + minted.packs.reduce((sum, pack) => sum + pack.cards.length, 0), packs: minted.packs.length, decksSaved: minted.decksSaved, receiptParts: parts.length },
+        details: { cards: minted.cards.length + minted.packs.reduce((sum, pack) => sum + pack.cards.length, 0), packs: minted.packs.length, decksSaved: minted.decksSaved, entries: minted.entries, receiptParts: parts.length },
       });
       return true;
     });
   }
 
   /**
-   * What a fulfilled order gave, for its buyer: the cards, pack by pack, and
-   * what is needed to re-check each pack once its epoch is revealed.
+   * What a fulfilled order gave, for its buyer: the cards, pack by pack,
+   * what is needed to re-check each pack once its epoch is revealed, and the
+   * entries it credited.
    * @param {import("../domain/Order.js").Order} order
    */
   async describe(order) {
@@ -159,6 +165,7 @@ export class FulfilmentService {
           Object.freeze({ index, epoch: order.rngEpochId, table: table.hash, cards: Object.freeze(cards.filter((card) => card.originKind === ORIGIN_PACK && card.originRef === packRef(order.id, index)).map(view)) }),
         ),
       ),
+      entries: this.#entriesOf(order),
     });
   }
 
@@ -172,6 +179,7 @@ export class FulfilmentService {
     /** @type {OpenedPack[]} */
     const packs = [];
     let decksSaved = 0;
+    const entries = this.#entriesOf(order);
     for (const item of order.items) {
       const product = this.#product(item.productId);
       const expansion = expandProduct(product, item.quantity, this.#catalog.products);
@@ -188,7 +196,38 @@ export class FulfilmentService {
         packs.push(await this.#openPack(order, { tableId, index: packs.length, txId, secret }));
       }
     }
-    return { cards, packs, decksSaved };
+    for (const { kind, count } of entries) {
+      await this.#creditEntries(order, kind, count);
+    }
+    return { cards, packs, decksSaved, entries };
+  }
+
+  /**
+   * @param {import("../domain/Order.js").Order} order
+   * @param {string} kind
+   * @param {number} count
+   */
+  async #creditEntries(order, kind, count) {
+    if (this.#entries === null) {
+      throw new Error(`order ${order.id} gives ${kind} entries but nothing credits entries`);
+    }
+    await this.#entries.credit({ userId: order.userId, kind, count, orderId: order.id });
+  }
+
+  /**
+   * The entries an order gives, by kind, its lines added up.
+   * @param {import("../domain/Order.js").Order} order
+   * @returns {readonly Readonly<{ kind: string, count: number }>[]}
+   */
+  #entriesOf(order) {
+    /** @type {Map<string, number>} */
+    const totals = new Map();
+    for (const item of order.items) {
+      for (const { kind, count } of expandProduct(this.#product(item.productId), item.quantity, this.#catalog.products).entries) {
+        totals.set(kind, (totals.get(kind) ?? 0) + count);
+      }
+    }
+    return Object.freeze([...totals].map(([kind, count]) => Object.freeze({ kind, count })));
   }
 
   /**

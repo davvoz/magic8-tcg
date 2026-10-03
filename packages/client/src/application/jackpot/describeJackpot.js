@@ -1,7 +1,7 @@
 /**
  * What the screens say about the season's jackpot: the amount, how it is
  * split, who holds each place, how long the season has left, and that the
- * jackpot grows with the bank. Pure, so the menu and the leaderboard word it
+ * jackpot grows with the bank: every pack sold and every ranked entry. Pure, so the menu and the leaderboard word it
  * the same way, and the countdown is worked out again each second from the
  * time alone.
  */
@@ -36,8 +36,8 @@ export function describeJackpot(jackpot, now) {
     amount,
     asset,
     countdown: countdownText(jackpot, now),
-    source: settled ? `${shareText(jackpot.share)} of @${jackpot.bank}'s wallet when the season ended` : `${shareText(jackpot.share)} of @${jackpot.bank}'s wallet · grows with every pack sold`,
-    pitch: settled ? "final" : "grows with every pack sold",
+    source: settled ? `${shareText(jackpot.share)} of @${jackpot.bank}'s wallet when the season ended` : `${shareText(jackpot.share)} of @${jackpot.bank}'s wallet · grows with every pack sold and every ranked game`,
+    pitch: settled ? "final" : "grows with packs and ranked games",
     growth,
     places: Object.freeze(jackpot.places.map((place) => placeText(place, asset, season.status))),
     ticking: season.status === "upcoming" || season.status === "running",

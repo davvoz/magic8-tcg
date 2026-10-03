@@ -13,6 +13,8 @@ const TX_ID_PATTERN = /^[0-9a-f]{40}$/;
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const isString = (value) => typeof value === "string";
 const isCount = (value) => Number.isSafeInteger(value) && value > 0;
+/** A product that gives no card (ranked entries) has 0 cards. */
+const isCardCount = (value) => Number.isSafeInteger(value) && value >= 0;
 const isTime = (value) => Number.isSafeInteger(value) && value >= 0;
 
 /**
@@ -47,7 +49,7 @@ function product(value) {
   );
   const rarity = value.rarity ?? null;
   const named = ["id", "kind", "name", "description"].every((key) => isString(value[key]));
-  if (!named || prices === null || contents === null || !(rarity === null || isString(rarity)) || !isCount(value.cards) || !isCount(value.limits?.perOrder)) {
+  if (!named || prices === null || contents === null || !(rarity === null || isString(rarity)) || !isCardCount(value.cards) || !isCount(value.limits?.perOrder)) {
     return null;
   }
   return Object.freeze({ id: value.id, kind: value.kind, name: value.name, description: value.description, prices, contents, rarity, cards: value.cards, perOrder: value.limits.perOrder });
@@ -94,8 +96,10 @@ function fulfilment(value) {
     const packCards = all(pack.cards, receivedCard);
     return Number.isSafeInteger(pack.index) && packCards !== null ? Object.freeze({ index: pack.index, cards: packCards }) : null;
   });
+  // An older server does not list entries: its orders gave none.
+  const entries = raw.entries === undefined ? Object.freeze([]) : all(raw.entries, (entry) => (isString(entry.kind) && isCount(entry.count) ? Object.freeze({ kind: entry.kind, count: entry.count }) : null));
   const txId = raw.txId === null || (isString(raw.txId) && TX_ID_PATTERN.test(raw.txId)) ? raw.txId : undefined;
-  return cards === null || packs === null || txId === undefined ? undefined : Object.freeze({ txId, cards, packs });
+  return cards === null || packs === null || entries === null || txId === undefined ? undefined : Object.freeze({ txId, cards, packs, entries });
 }
 
 /** @param {unknown} value */

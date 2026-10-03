@@ -23,9 +23,10 @@ import { validateRarities } from "./Rarities.js";
  * @param {RawMarketData} raw
  * @param {import("@magic8/engine/domain/content/GameContent.js").GameContent} content
  * @param {import("../../economy/index.js").AssetRegistry} assets
+ * @param {{ entryKinds?: readonly string[] }} [options] `entryKinds`: the kinds of entry products may give
  * @returns {import("@magic8/engine/shared/Result.js").Ok<MarketCatalog> | import("@magic8/engine/shared/Result.js").Fail}
  */
-export function buildMarketCatalog(raw, content, assets) {
+export function buildMarketCatalog(raw, content, assets, { entryKinds = [] } = {}) {
   const rarities = validateRarities(raw.rarities, content.catalog);
   if (!rarities.ok) {
     return fail(rarities.error.code, `rarities: ${rarities.error.message}`, rarities.error.details);
@@ -39,7 +40,7 @@ export function buildMarketCatalog(raw, content, assets) {
   if (!priceList.ok) {
     return fail(priceList.error.code, `pricing: ${priceList.error.message}`, priceList.error.details);
   }
-  const products = validateProducts([...priceList.value.products, ...raw.products], { catalog: content.catalog, decks, dropTables: dropTables.value, assets });
+  const products = validateProducts([...priceList.value.products, ...raw.products], { catalog: content.catalog, decks, dropTables: dropTables.value, assets, entryKinds });
   if (!products.ok) {
     return fail(products.error.code, `products: ${products.error.message}`, products.error.details);
   }

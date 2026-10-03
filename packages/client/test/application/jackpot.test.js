@@ -48,7 +48,7 @@ describe("season jackpot", () => {
     const text = describeJackpot(JACKPOT, ENDS_AT - (12 * 86_400_000 + 4 * 3_600_000 + 31 * 60_000 + 8_000));
     assert.equal(text.amount, "866.666 STEEM");
     assert.equal(text.countdown, "Ends in 12d 04h 31m 08s");
-    assert.equal(text.source, "2/3 of @verdu.green's wallet · grows with every pack sold");
+    assert.equal(text.source, "2/3 of @verdu.green's wallet · grows with every pack sold and every ranked game");
     assert.equal(text.growth, "+200.000 STEEM since the season began");
     assert.deepEqual(
       text.places.map((place) => [place.label, place.share, place.amount, place.holder]),

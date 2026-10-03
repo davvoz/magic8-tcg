@@ -117,7 +117,7 @@ Nelle partite di allenamento contro l'IA non c'è timer.
 |---|---|---|---|
 | **Allenamento contro l'IA** | No, funziona anche offline | Precostruiti e mazzi salvati nel browser | Niente, è pratica |
 | **Casual online** | Sì | Solo mazzi con carte possedute | Il risultato viene registrato |
-| **Classificata** | Sì, dopo 3 partite casual finite | Come casual | Cambia il rating della stagione |
+| **Classificata** | Sì, dopo 3 partite casual finite; da Season 1 un ingresso ranked (1 STEEM) a partita | Come casual | Cambia il rating della stagione |
 | **Spettatore** | Sì | — | Si guarda una partita in corso |
 
 **Abbinamento:** la coda mette di fronte i due giocatori in attesa da più tempo, senza guardare il rating. Nessuna attesa forzata.
@@ -239,7 +239,8 @@ Il gioco **non tocca mai i soldi** e **non prende commissioni**: il venditore ri
 - Ogni risultato è pubblico sulla blockchain: chiunque può ricalcolare la classifica.
 
 ---
-- **Stagioni con jackpot:** Season 1 dura un mese (5 ottobre – 5 novembre 2026). I primi tre della classifica si dividono i 2/3 del wallet della banca (@verdu.green): 65%, 25% e 10%. Il jackpot cresce con ogni pacchetto venduto; menu principale e classifica mostrano importo, quote, chi è in testa e il conto alla rovescia (doc 21).
+- **Stagioni con jackpot:** Season 1 dura un mese (5 ottobre – 5 novembre 2026). I primi tre della classifica si dividono i 2/3 del wallet della banca (@verdu.green): 65%, 25% e 10%. Il jackpot cresce con ogni pacchetto e ogni ingresso ranked venduto; menu principale e classifica mostrano importo, quote, chi è in testa e il conto alla rovescia (doc 21).
+- **Ingressi ranked:** da Season 1 ogni partita classificata costa 1 STEEM a giocatore. Si comprano nello shop (scaffale *Ranked*) quanti ingressi si vuole con un solo trasferimento Keychain; ogni partita ne toglie uno, una partita annullata prima di cominciare lo restituisce. Gli ingressi finiscono nel jackpot (doc 22).
 
 ## 10. Il ruolo della blockchain
 
@@ -324,6 +325,7 @@ Anche se il server venisse compromesso, un attaccante non potrebbe spostare fond
 | Stato del progetto e decisioni | [06 — Roadmap](06-roadmap.md) |
 | Classificata | [09 — Classificata](09-classificata.md) |
 | Stagioni e jackpot | [21 — Stagioni e jackpot](21-stagioni-e-jackpot.md) |
+| Ingressi ranked | [22 — Ingressi ranked](22-ingressi-ranked.md) |
 | Spettatori | [10 — Spettatori](10-spettatori.md) |
 | Mosse firmate | [12 — Mosse firmate](12-mosse-firmate.md) |
 | Scambi | [13 — Scambi](13-scambi.md) |

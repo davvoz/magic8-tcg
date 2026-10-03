@@ -3,14 +3,20 @@
  * for each player the real client stack (OnlineService and LobbyService over
  * a real WebSocketConnection, WebCrypto session keys) with a Keychain stand-in the
  * test drives by hand — every prompt waits until the test approves,
- * refuses or ignores it, like a person in front of the extension.
+ * refuses or ignores it, like a person in front of the extension. Each tab
+ * also has the shop (a payment Keychain approves lands on the fake chain)
+ * and the player's ranked entries, over the real HTTP API.
  */
 import assert from "node:assert/strict";
 
 import { signMessage } from "@magic8/steem";
 import { WebSocket } from "ws";
+import { EntryService } from "../../../client/src/application/entries/EntryService.js";
 import { LobbyService } from "../../../client/src/application/lobby/LobbyService.js";
 import { OnlineService } from "../../../client/src/application/online/OnlineService.js";
+import { ShopService } from "../../../client/src/application/shop/ShopService.js";
+import { HttpEntriesApi } from "../../../client/src/infrastructure/api/HttpEntriesApi.js";
+import { HttpMarketApi } from "../../../client/src/infrastructure/api/HttpMarketApi.js";
 import { WebCryptoSessionKeys } from "../../../client/src/infrastructure/crypto/webSessionKeys.js";
 import { MemoryLogger } from "../../../client/src/infrastructure/logging/MemoryLogger.js";
 import { WebSocketConnection } from "../../../client/src/infrastructure/realtime/WebSocketConnection.js";
@@ -46,10 +52,34 @@ class ManualKeychain {
   /** Every prompt ever shown. */
   shown = 0;
   #postingKey;
+  #pay;
 
-  /** @param {Uint8Array} postingKey */
-  constructor(postingKey) {
+  /**
+   * @param {Uint8Array} postingKey
+   * @param {(transfer: { from: string, to: string, amount: string, asset: string, memo: string }) => string} pay puts an approved transfer on the chain, returns its transaction id
+   */
+  constructor(postingKey, pay) {
     this.#postingKey = postingKey;
+    this.#pay = pay;
+  }
+
+  get name() {
+    return "Steem Keychain";
+  }
+
+  /** @param {{ from: string, to: string, amount: string, asset: string, memo: string }} transfer */
+  requestTransfer(transfer) {
+    this.shown += 1;
+    return new Promise((resolve) => {
+      const prompt = {
+        message: `transfer ${transfer.amount} ${transfer.asset} to ${transfer.to}`,
+        answer: (approve) => {
+          this.open = this.open.filter((candidate) => candidate !== prompt);
+          resolve(approve ? { ok: true, value: this.#pay(transfer) } : { ok: false, error: { code: "REJECTED", message: "the user said no" } });
+        },
+      };
+      this.open.push(prompt);
+    });
   }
 
   /** @param {{ message: string }} request */
@@ -78,10 +108,19 @@ class ManualKeychain {
   }
 }
 
-/** The server, and a way to bring players in (each signed in, with a deck, their client online). */
-export async function onlineWorld() {
-  const setup = await buildTestApp({ signedMoves: true });
+/**
+ * The server, and a way to bring players in (each signed in, with a deck, their client online).
+ * @param {{ content?: object }} [options] `content`: the server's data, when a test changes it (e.g. a ranked season with an entry fee)
+ */
+export async function onlineWorld({ content } = {}) {
+  const setup = await buildTestApp({ signedMoves: true, ...(content === undefined ? {} : { content }) });
   const server = await listen(setup.app);
+  // What the server's jobs do while a client waits for an order: the chain makes payments final, they are settled and fulfilled.
+  const runJobs = async () => {
+    setup.ledger.finalize();
+    await setup.app.settlement.runOnce();
+    await setup.app.fulfilment.fulfilVerified();
+  };
   const players = [];
   let seed = 40;
 
@@ -90,7 +129,11 @@ export async function onlineWorld() {
    * @param {{ account: string, api: ApiClient, keys: { privateKey: Uint8Array }, deckId: string }} who
    */
   const browser = async ({ account, api, keys, deckId }) => {
-    const keychain = new ManualKeychain(keys.privateKey);
+    const keychain = new ManualKeychain(keys.privateKey, (transfer) => setup.ledger.transfer({ from: transfer.from, to: transfer.to, amount: `${transfer.amount} ${transfer.asset}`, memo: transfer.memo, time: setup.clock.now() }).txId);
+    /** The page's HTTP calls, signed in as the player. @type {typeof fetch} */
+    const httpFetch = (url, init = {}) => fetch(`${server.base}${url}`, { ...init, headers: { ...init.headers, Cookie: /** @type {string} */ (api.cookie), Origin: ORIGIN } });
+    const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet: keychain, account: { state: { account }, refresh: async () => undefined }, scheduler: { delay: runJobs }, newKey: () => globalThis.crypto.randomUUID() });
+    const entries = new EntryService({ api: new HttpEntriesApi({ fetch: httpFetch }) });
     const logger = new MemoryLogger();
     /** @type {string[]} */
     const sent = [];
@@ -125,6 +168,8 @@ export async function onlineWorld() {
       connection,
       api,
       keychain,
+      shop,
+      entries,
       logger,
       sent,
       deckId,

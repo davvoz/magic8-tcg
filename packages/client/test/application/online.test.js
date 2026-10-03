@@ -153,6 +153,16 @@ describe("OnlineService", () => {
     assert.deepEqual(updates[0].events, [{ type: "CARD_DRAWN" }]);
   });
 
+  it("says why the server took the player out of the ranked queue when their entries ran out", async () => {
+    const { online, server } = service();
+    online.start();
+    await flush();
+    await online.queue("deck-1", "ranked");
+    server.push("queue.status", { state: "idle", reason: "entries" });
+    assert.equal(online.state.status, OnlineStatus.IDLE);
+    assert.deepEqual(online.state.error, { code: "ENTRY_REQUIRED", message: "You left the ranked queue: you have no ranked entries left." });
+  });
+
   it("carries the decision clock from each view, keeping the last one a stale or clock-less update cannot overwrite", async () => {
     const { online, server } = service();
     online.start();

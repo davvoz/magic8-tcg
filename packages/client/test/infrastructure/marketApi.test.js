@@ -50,6 +50,21 @@ describe("HttpMarketApi", () => {
     assert.deepEqual(listing.value.priceList, { asset: "STEEM", singles: [{ rarity: "common", price: "0.050" }] });
   });
 
+  it("reads a product that gives no card (ranked entries), and the entries an order gave", async () => {
+    const entry = { id: "ranked_entry", kind: "entry", name: "Ranked Entry", description: "d", prices: [{ asset: "STEEM", amount: "1.000" }], contents: [{ type: "entry", ref: "ranked", count: 1 }], rarity: null, cards: 0, limits: { perOrder: 50, availableFrom: null, availableUntil: null } };
+    const listing = await apiWith(() => json(200, { ...LISTING, products: [...LISTING.products, entry] })).api.listing();
+    assert.deepEqual(listing.value.products.at(-1).contents, [{ type: "entry", ref: "ranked", count: 1 }]);
+    assert.equal(listing.value.products.at(-1).cards, 0);
+    assert.equal((await apiWith(() => json(200, { ...LISTING, products: [{ ...entry, cards: -1 }] })).api.listing()).ok, false);
+
+    const fulfilled = { ...ORDER, status: "FULFILLED", payment: null, fulfilment: { txId: TX, cards: [], packs: [], entries: [{ kind: "ranked", count: 5 }] } };
+    assert.deepEqual((await apiWith(() => json(200, { order: fulfilled })).api.getOrder(ORDER_ID)).value.fulfilment.entries, [{ kind: "ranked", count: 5 }]);
+    const older = { ...fulfilled, fulfilment: { txId: TX, cards: [], packs: [] } };
+    assert.deepEqual((await apiWith(() => json(200, { order: older })).api.getOrder(ORDER_ID)).value.fulfilment.entries, [], "an older server gives no entries");
+    const broken = { ...fulfilled, fulfilment: { ...fulfilled.fulfilment, entries: [{ kind: "ranked", count: 0 }] } };
+    assert.equal((await apiWith(() => json(200, { order: broken })).api.getOrder(ORDER_ID)).error.code, "BAD_RESPONSE");
+  });
+
   it("refuses a listing without a valid price list", async () => {
     for (const priceList of [undefined, { asset: "STEEM", singles: [{ rarity: "common", price: "cheap" }] }, { singles: [] }]) {
       const listing = await apiWith(() => json(200, { ...LISTING, priceList })).api.listing();

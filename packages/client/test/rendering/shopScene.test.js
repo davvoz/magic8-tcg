@@ -10,26 +10,30 @@ import { ok } from "@magic8/engine/shared/Result.js";
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
 import { PurchaseStage, ShopService } from "../../src/application/shop/ShopService.js";
 import { BalanceService } from "../../src/application/wallet/BalanceService.js";
+import { EntryService } from "../../src/application/entries/EntryService.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
-import { fakeMarketApi } from "../application/fakeMarketApi.js";
+import { LISTING, LISTING_WITH_ENTRIES, fakeMarketApi } from "../application/fakeMarketApi.js";
 import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
 
 const theme = loadTheme();
 const content = await loadBundledContent();
 
-/** @param {{ signedIn?: boolean, budget?: string }} [options] `budget`: the STEEM the player's wallet holds (no balance service without it) */
-async function harness({ signedIn = true, budget } = {}) {
+/**
+ * @param {{ signedIn?: boolean, budget?: string, listing?: object, entries?: object, params?: object }} [options] `budget`: the STEEM the player's wallet holds (no balance service without it);
+ *   `entries`: the entry service; `params`: what the scene is entered with
+ */
+async function harness({ signedIn = true, budget, listing = LISTING, entries, params = {} } = {}) {
   const world = accountWorld(content);
   if (signedIn) {
     world.identity.become(ALICE);
     await settle();
   }
-  const market = fakeMarketApi();
+  const market = fakeMarketApi({ listing });
   const transfers = [];
   const wallet = { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async (request) => (transfers.push(request), ok("ef".repeat(20))) };
   const shop = new ShopService({ api: market.api, wallet, account: world.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" });
@@ -48,10 +52,11 @@ async function harness({ signedIn = true, budget } = {}) {
     account: world.account,
     shop,
     ...(budget === undefined ? {} : { balance: new BalanceService({ api: { balances: async () => ok([{ asset: "STEEM", amount: budget }]) } }) }),
+    ...(entries === undefined ? {} : { entries }),
   };
-  const services = { theme, viewport, logger: world.logger, requestRender: () => undefined, navigate: (id, params) => navigated.push({ id, params }), hasScene: () => true };
+  const services = { theme, viewport, logger: world.logger, requestRender: () => undefined, navigate: (id, sceneParams) => navigated.push({ id, params: sceneParams }), hasScene: () => true };
   const scene = new ShopScene(services, app);
-  scene.enter({});
+  scene.enter(params);
   await settle();
   return { ...world, market, shop, scene, app, services, navigated, transfers };
 }
@@ -211,6 +216,37 @@ describe("ShopScene", () => {
     assert.equal(params.fresh.length, 5, "the cards received are lit in the collection");
     assert.ok(params.fresh.some((card) => card.serial === 5), "with their serials");
     assert.equal(shop.state.purchase.stage, PurchaseStage.NONE);
+  });
+
+  it("sells ranked entries on their own shelf, many with one transfer, and says they go into the jackpot", async () => {
+    const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 2, perGame: 1, season: "season-1" }]) } });
+    await entries.refresh();
+    const { scene, transfers, navigated, shop } = await harness({ listing: LISTING_WITH_ENTRIES, entries, params: { category: "ranked", from: SceneId.ONLINE } });
+    assert.equal(byId(scene, "shop.tab.ranked").text, "Ranked (1)");
+    assert.equal(byId(scene, "shop.product.ranked_entry").subtitle, "1 ranked game · 1.000 STEEM · into the jackpot");
+    const texts = rendered(scene);
+    assert.ok(texts.includes("1 × ranked entry: one game of ranked play"));
+    assert.ok(texts.includes("Every entry goes into the season's jackpot."));
+    assert.ok(texts.includes("Every ranked game takes one entry from each player."));
+    assert.ok(texts.includes("You have 2 ranked entries."));
+    for (let more = 0; more < 4; more += 1) {
+      click(byId(scene, "shop.more"));
+    }
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 5.000 STEEM");
+    click(byId(scene, "shop.buy"));
+    await settle();
+    assert.deepEqual(transfers.map((transfer) => transfer.amount), ["5.000"], "one wallet prompt for five games");
+    assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
+    assert.equal(scene.modal, null, "no cards to reveal");
+    assert.equal(byId(scene, "shop.status").text, "Done: 5 ranked entries are yours, and in the season's jackpot.");
+    click(byId(scene, "shop.back"));
+    assert.equal(navigated.at(-1).id, SceneId.ONLINE, "back to the lobby that sent the player here");
+  });
+
+  it("leaves the Ranked shelf out when nothing is on it", async () => {
+    const { scene } = await harness({ params: { category: "ranked" } });
+    assert.equal(byId(scene, "shop.tab.ranked"), null);
+    assert.equal(byId(scene, "shop.tab.packs").variant, "primary");
   });
 
   it("reveals the cards of a second purchase made without leaving the shop", async () => {

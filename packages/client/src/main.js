@@ -23,6 +23,7 @@ import { LobbyService } from "./application/lobby/LobbyService.js";
 import { describeLobbyEvent } from "./application/lobby/describeLobbyEvent.js";
 import { RankingService } from "./application/ranking/RankingService.js";
 import { JackpotService } from "./application/jackpot/JackpotService.js";
+import { EntryService } from "./application/entries/EntryService.js";
 import { TradingService } from "./application/trading/TradingService.js";
 import { BuyStage, SalesService } from "./application/sales/SalesService.js";
 import { PurchaseStage, ShopService } from "./application/shop/ShopService.js";
@@ -48,6 +49,7 @@ import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
 import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js";
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
 import { HttpJackpotApi } from "./infrastructure/api/HttpJackpotApi.js";
+import { HttpEntriesApi } from "./infrastructure/api/HttpEntriesApi.js";
 import { HttpTradingApi } from "./infrastructure/api/HttpTradingApi.js";
 import { HttpSalesApi } from "./infrastructure/api/HttpSalesApi.js";
 import { HttpBalanceApi } from "./infrastructure/api/HttpBalanceApi.js";
@@ -451,6 +453,9 @@ async function boot() {
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });
   // The ranked season's jackpot: public, shown signed out too, read again every minute while on screen.
   const jackpot = new JackpotService({ api: new HttpJackpotApi({ fetch: httpFetch }), scheduler: browserScheduler, now: () => Date.now() });
+  // Ranked entries, bought in the shop: read again once a purchase of them is done, and by the lobby.
+  const entries = new EntryService({ api: new HttpEntriesApi({ fetch: httpFetch }) });
+  refreshWhenPaid(shop, (state) => state.purchase.stage === PurchaseStage.DONE, entries);
   // Trades move copies between collections: the account reloads after each one.
   const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), scheduler: browserScheduler, onCollectionChanged: () => account.refresh() });
   // The player market: payments go from the buyer's wallet straight to the seller; the collection reloads when a card moves.
@@ -475,6 +480,7 @@ async function boot() {
       shop.dismiss();
       online.stop();
       ranking.reset();
+      entries.reset();
       trading.reset();
       sales.reset();
       balance.reset();
@@ -500,6 +506,7 @@ async function boot() {
     lobby,
     ranking,
     jackpot,
+    entries,
     trading,
     sales,
     notifications,
@@ -544,6 +551,9 @@ async function boot() {
     // A purchase is final, or a buyer paid the player: the wallet changed too.
     if (WALLET_CHANGING_KINDS.includes(notification.kind)) {
       void balance.refresh();
+    }
+    if (notification.kind === "shop.fulfilled" && Array.isArray(notification.data.entries) && notification.data.entries.length > 0) {
+      void entries.refresh();
     }
   });
   sceneManager.navigate(SceneId.MAIN_MENU);
@@ -634,11 +644,11 @@ function preloadArt({ illustrations, coinArt }) {
 }
 
 /**
- * Reads the wallet again each time a purchase's payment has just been sent.
+ * Reads something again (the wallet, the entries) each time a purchase reaches a stage: its payment sent, its order done.
  * @template S
  * @param {{ state: S, subscribe: (listener: (state: S) => void) => unknown }} service
  * @param {(state: S) => boolean} paid
- * @param {BalanceService} balance
+ * @param {{ refresh: () => Promise<unknown> }} balance
  */
 function refreshWhenPaid(service, paid, balance) {
   let wasPaid = paid(service.state);

@@ -19,6 +19,7 @@
  * @property {import("./lobby/LobbyService.js").LobbyService} [lobby] who else is online, and challenges between players; absent with `identity`
  * @property {import("./ranking/RankingService.js").RankingService} [ranking] ranked standing and leaderboard; absent with `identity`
  * @property {import("./jackpot/JackpotService.js").JackpotService} [jackpot] the ranked season's jackpot (public); absent with `identity`
+ * @property {import("./entries/EntryService.js").EntryService} [entries] the player's ranked entries, and what a ranked game costs; absent with `identity`
  * @property {import("./trading/TradingService.js").TradingService} [trading] card-for-card trades; absent with `identity`
  * @property {import("./sales/SalesService.js").SalesService} [sales] the player market (copies sold for STEEM); absent with `identity`
  * @property {import("./notifications/NotificationService.js").NotificationService} [notifications] the player's notification feed; absent with `identity`

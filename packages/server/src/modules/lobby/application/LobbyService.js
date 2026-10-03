@@ -15,7 +15,9 @@
  *   which takes both players out of any queue; every other challenge of
  *   either player is then called off. Ranked challenges need both players
  *   eligible, and count like queue games: past the daily limit for the same
- *   pair a game is recorded but not rated (T24).
+ *   pair a game is recorded but not rated (T24). When the season charges an
+ *   entry fee, both need the entries, checked when the challenge is sent and
+ *   accepted, and taken when the game is created (docs/tcg/22).
  * - Challenges live in memory, like the games they lead to (one process,
  *   docs/tcg/06): a player who disconnects takes theirs with them, and a
  *   maintenance calls them all off.
@@ -72,6 +74,7 @@ export class LobbyService {
   #decks;
   #games;
   #ranking;
+  #entries;
   #clock;
   #random;
   #logger;
@@ -95,14 +98,15 @@ export class LobbyService {
    *   decks: import("../../decks/index.js").DeckService,
    *   games: { activeGameOf: (userId: string) => Promise<string | null>, playingUsers: () => Set<string> },
    *   ranking: { assertEligible: (userId: string) => Promise<void> },
+   *   entries?: { assertCanEnter: (userId: string, mode: string) => Promise<void> },
    *   clock: import("../../../kernel/time.js").Clock,
    *   random: import("../../../kernel/random.js").SecureRandom,
    *   logger: import("../../../kernel/logger.js").Logger,
    *   gate?: { assertOpen: (what: string) => void },
    *   policy?: Partial<typeof DEFAULT_LOBBY_POLICY>,
-   * }} deps `gate`: closed during an announced maintenance (no new games)
+   * }} deps `entries`: what paid modes cost (by default every mode is free); `gate`: closed during an announced maintenance (no new games)
    */
-  constructor({ hub, accountsOf, findUser, matchmaking, decks, games, ranking, clock, random, logger, gate = { assertOpen: () => undefined }, policy = {} }) {
+  constructor({ hub, accountsOf, findUser, matchmaking, decks, games, ranking, entries = { assertCanEnter: async () => undefined }, clock, random, logger, gate = { assertOpen: () => undefined }, policy = {} }) {
     this.#hub = hub;
     this.#accountsOf = accountsOf;
     this.#findUser = findUser;
@@ -110,6 +114,7 @@ export class LobbyService {
     this.#decks = decks;
     this.#games = games;
     this.#ranking = ranking;
+    this.#entries = entries;
     this.#clock = clock;
     this.#random = random;
     this.#logger = logger;
@@ -172,6 +177,7 @@ export class LobbyService {
         throw new AppError("CONFLICT", `@${target.account} cannot play ranked yet`);
       });
     }
+    await this.#assertEntries(mode, user.userId, { userId: target.id, account: target.account });
     const deck = await this.#decks.playableDeckList(user.userId, deckId);
     const previous = [...this.#challenges.values()].find((challenge) => challenge.from.userId === user.userId);
     if (previous !== undefined) {
@@ -209,8 +215,9 @@ export class LobbyService {
       this.#close(challenge, ChallengeEnd.OFFLINE);
       throw new AppError("CONFLICT", `@${challenge.from.account} is no longer online`);
     }
-    // A deck that cannot be played leaves the challenge open: the player may pick another.
+    // A deck that cannot be played, or entries missing, leave the challenge open: the player may pick another deck, or buy entries.
     const deck = await this.#decks.playableDeckList(user.userId, deckId);
+    await this.#assertEntries(challenge.mode, user.userId, challenge.from);
     if (this.#challenges.get(challenge.id) !== challenge) {
       throw new AppError("NOT_FOUND", "this challenge is no longer open");
     }
@@ -356,6 +363,19 @@ export class LobbyService {
     if (until !== undefined && until > this.#clock.now()) {
       throw new AppError("RATE_LIMITED", `@${target.account} just declined: wait a moment before asking again`);
     }
+  }
+
+  /**
+   * Both players hold the entries a game of `mode` costs (nothing to check when it is free).
+   * @param {string} mode
+   * @param {string} userId the player asking
+   * @param {{ userId: string, account: string }} other
+   */
+  async #assertEntries(mode, userId, other) {
+    await this.#entries.assertCanEnter(userId, mode);
+    await this.#entries.assertCanEnter(other.userId, mode).catch((error) => {
+      throw error instanceof AppError && error.code === "ENTRY_REQUIRED" ? new AppError("CONFLICT", `@${other.account} has no ${mode} entries left`) : error;
+    });
   }
 
   /**

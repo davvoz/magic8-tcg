@@ -28,6 +28,7 @@ Multiplayer collectible card game built on the magic8 rules engine (forked with 
 | [14 — Vendite](docs/tcg/14-vendite.md) | Player market: the buyer pays the seller directly, the card waits in escrow |
 | [15 — Notifiche](docs/tcg/15-notifiche.md) | Player notifications: feed and real-time push |
 | [16 — Illustrazioni](docs/tcg/16-illustrazioni.md) | Card illustrations, table and menu art |
+| [22 — Ingressi ranked](docs/tcg/22-ingressi-ranked.md) | Ranked entries: 1 STEEM a game, bought many at once with one Keychain transfer, paid to the bank (the jackpot) |
 
 The engine's own architecture document, [docs/engine/ARCHITECTURE.md](docs/engine/ARCHITECTURE.md), predates the fork: its principles hold, its file layout and random generator are historical.
 

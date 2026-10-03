@@ -32,6 +32,8 @@
  *
  * @typedef {Readonly<{ gameId: string, mode: string, finishedAt: number, winnerSeat: string | null, endReason: string, turn: number,
  *   players: readonly Readonly<{ seat: string, userId: string, account: string }>[] }>} FinishedGame what listeners learn when a game ends
+ * @typedef {Readonly<{ gameId: string, mode: string, reason: string, players: readonly Readonly<{ seat: string, userId: string, account: string }>[] }>} AbortedGame
+ *   what listeners learn when a game is called off before it started
  *
  * @typedef {object} GameNotifier delivers messages to a user's live connection, if any
  * @property {(userId: string, type: string, data: unknown) => void} send

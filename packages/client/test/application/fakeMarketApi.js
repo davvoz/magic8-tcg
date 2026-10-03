@@ -1,7 +1,8 @@
 /**
  * A scripted marketplace server for shop tests. Orders move to the next
  * status in `progression` each time they are read, ending FULFILLED with the
- * given cards; `fail` makes the next call to a method fail.
+ * given cards (or, for an order of ranked entries alone, those entries);
+ * `fail` makes the next call to a method fail.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -63,10 +64,15 @@ export const LISTING = Object.freeze({
   ],
 });
 
+/** Ranked entries, as the server sells them (data/economy/products/ranked_entry.json): no card, one ranked game each. */
+export const RANKED_ENTRY_PRODUCT = product({ id: "ranked_entry", kind: "entry", name: "Ranked Entry", amount: "1.000", contents: [{ type: "entry", ref: "ranked", count: 1 }], cards: 0, perOrder: 50, description: "One ranked game." });
+/** The listing with ranked entries on sale too. */
+export const LISTING_WITH_ENTRIES = Object.freeze({ ...LISTING, products: [...LISTING.products, RANKED_ENTRY_PRODUCT] });
+
 const card = (index, definitionId) => Object.freeze({ id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, definitionId, edition: "core-1", serial: index + 1 });
 export const PACK_CARDS = Object.freeze(["ember_imp", "grave_rat", "moss_beetle", "iron_watcher", "pyre_drake"].map((id, index) => card(index, id)));
 
-export function fakeMarketApi({ progression = ["PAYMENT_DETECTED", "PAYMENT_VERIFIED", "FULFILLED"] } = {}) {
+export function fakeMarketApi({ progression = ["PAYMENT_DETECTED", "PAYMENT_VERIFIED", "FULFILLED"], listing = LISTING } = {}) {
   const calls = [];
   const failures = new Map();
   let orders = 0;
@@ -82,7 +88,7 @@ export function fakeMarketApi({ progression = ["PAYMENT_DETECTED", "PAYMENT_VERI
       payment: status === "PAYMENT_PENDING" ? { network: "steem", from: "alice", to: "verdu.green", asset: "STEEM", amount: `${quantity}.000`, memo: `m8tcg-${"a".repeat(26)}`, expiresAt: 1 } : null,
       failureReason: null,
       createdAt: 0,
-      fulfilment: status === "FULFILLED" ? { txId: "cd".repeat(20), cards: [], packs: [{ index: 0, cards: PACK_CARDS }] } : null,
+      fulfilment: status === "FULFILLED" ? fulfilmentOf(entry.items) : null,
     });
   };
   const method = (name, handler) => async (...args) => {
@@ -95,7 +101,7 @@ export function fakeMarketApi({ progression = ["PAYMENT_DETECTED", "PAYMENT_VERI
     return handler(...args);
   };
   const api = {
-    listing: method("listing", () => ok(LISTING)),
+    listing: method("listing", () => ok(listing)),
     createOrder: method("createOrder", ({ items }) => {
       orders += 1;
       const entry = { id: `00000000-0000-4000-8000-${String(orders).padStart(12, "0")}`, items: items.map((item) => ({ ...item })), statuses: ["PAYMENT_PENDING"], step: 0 };
@@ -121,4 +127,16 @@ export function fakeMarketApi({ progression = ["PAYMENT_DETECTED", "PAYMENT_VERI
     }),
   };
   return { api, calls, orders: state, fail: (name, code) => failures.set(name, code) };
+}
+
+/**
+ * What an order gave: ranked entries for an order of them alone, else a pack of cards.
+ * @param {readonly { productId: string, quantity: number }[]} items
+ */
+function fulfilmentOf(items) {
+  const entries = items.filter((item) => item.productId === RANKED_ENTRY_PRODUCT.id).reduce((sum, item) => sum + item.quantity, 0);
+  if (entries > 0 && entries === items.reduce((sum, item) => sum + item.quantity, 0)) {
+    return { txId: "cd".repeat(20), cards: [], packs: [], entries: [{ kind: "ranked", count: entries }] };
+  }
+  return { txId: "cd".repeat(20), cards: [], packs: [{ index: 0, cards: PACK_CARDS }], entries: entries > 0 ? [{ kind: "ranked", count: entries }] : [] };
 }
