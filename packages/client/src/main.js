@@ -44,6 +44,7 @@ import { StoredAudioPreferences } from "./infrastructure/persistence/StoredAudio
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
+import { HttpGameHistoryApi } from "./infrastructure/api/HttpGameHistoryApi.js";
 import { HttpLiveGamesApi } from "./infrastructure/api/HttpLiveGamesApi.js";
 import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
 import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js";
@@ -505,6 +506,7 @@ async function boot() {
     online,
     lobby,
     ranking,
+    gameHistory: new HttpGameHistoryApi({ fetch: httpFetch }),
     jackpot,
     entries,
     trading,

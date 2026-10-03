@@ -189,6 +189,34 @@ export class PgGameRepository {
     return Object.freeze(result);
   }
 
+  async listHistory({ account, before, limit }) {
+    const rows = await this.#db.rows(
+      `SELECT g.id, g.mode, g.end_reason, g.started_at, g.finished_at, other.account AS opponent,
+              coalesce(me.result, CASE WHEN g.winner_seat IS NULL THEN 'draw' WHEN g.winner_seat = me.seat THEN 'win' ELSE 'loss' END) AS result,
+              (SELECT turn FROM game_events e WHERE e.game_id = g.id ORDER BY seq DESC LIMIT 1) AS turn
+         FROM game_players me
+         JOIN games g ON g.id = me.game_id
+         JOIN game_players other ON other.game_id = me.game_id AND other.seat <> me.seat
+        WHERE me.account = $1 AND g.status = 'FINISHED' AND ($2::text IS NULL OR me.game_id < $2)
+        ORDER BY me.game_id DESC LIMIT $3`,
+      [account, before, limit],
+    );
+    return Object.freeze(
+      rows.map((row) =>
+        Object.freeze({
+          gameId: row.id,
+          mode: row.mode,
+          opponent: row.opponent,
+          result: row.result,
+          endReason: row.end_reason,
+          turn: row.turn,
+          startedAt: fromNullableTimestamp(row.started_at),
+          finishedAt: fromTimestamp(row.finished_at),
+        }),
+      ),
+    );
+  }
+
   async countFinished(userId, mode) {
     const row = await this.#db.maybeOne("SELECT count(*)::integer AS n FROM games g JOIN game_players p ON p.game_id = g.id WHERE p.user_id = $1 AND g.mode = $2 AND g.status = 'FINISHED'", [userId, mode]);
     return row?.n ?? 0;

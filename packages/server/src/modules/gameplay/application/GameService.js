@@ -134,6 +134,16 @@ export class GameService {
     return this.#repository.countFinished(userId, mode);
   }
 
+  /**
+   * The finished games an account played, newest first, a page at a time: `next` continues the list, null at its end.
+   * @param {{ account: string, before?: string | null, limit?: number }} query
+   */
+  async history({ account, before = null, limit = 30 }) {
+    const games = await this.#repository.listHistory({ account, before, limit: limit + 1 });
+    const page = games.slice(0, limit);
+    return Object.freeze({ account, games: Object.freeze(page), next: games.length > limit ? page[page.length - 1].gameId : null });
+  }
+
   get timePolicy() {
     return this.#timePolicy;
   }

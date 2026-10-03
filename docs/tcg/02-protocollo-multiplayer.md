@@ -59,8 +59,9 @@
 | Metodo | Percorso | Note |
 |---|---|---|
 | GET | `/api/games/live` | Partite in corso da guardare, prima le più seguite (pubblica; al massimo 50; cache 5 s) |
+| GET | `/api/games/history?account=…&before=…` | Partite finite di un giocatore, dalla più recente, 30 per pagina (pubblica; cache 10 s) |
 
-Non ci sono (ancora) endpoint per i metadati o lo storico delle partite di un giocatore.
+**Storico di un giocatore:** `{ account, games: [{ gameId, mode, opponent, result, endReason, turn, startedAt, finishedAt }], next }`; `result` è `win` / `loss` / `draw` per quel giocatore, `next` è l'id da passare come `before` per la pagina successiva (`null` alla fine). Le partite annullate prima di iniziare non compaiono. Nel client è la schermata "Games": dalla classifica, "My games" apre la propria, una riga apre quella del giocatore.
 
 ### Admin (pannello `/admin.html`)
 

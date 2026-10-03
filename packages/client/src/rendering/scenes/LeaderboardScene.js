@@ -4,7 +4,8 @@
  * player's profile picture, the player's own line highlighted and their
  * standing above. When the season has a jackpot, it heads the screen: the
  * amount, the countdown to the season's end, and what each paying place
- * wins and who holds it now.
+ * wins and who holds it now. A line opens that player's games; "My games"
+ * the player's own.
  */
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -87,9 +88,7 @@ export class LeaderboardScene extends Scene {
     const { viewport } = this.services;
     const state = this.#ranking().state;
     const season = state.leaderboard?.season?.name ?? state.standing?.season?.name ?? null;
-    const titleWidth = Math.min(900, viewport.logicalWidth - 2 * this.#screen.header.sideMargin - this.#screen.header.backWidth - 16);
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: titleWidth, height: this.#screen.header.height, text: season === null ? "Leaderboard" : `Leaderboard — ${season}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    const back = this.root.add(new Button({ id: "leaderboard.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.onCancel() }));
+    const back = this.#buildHeader(season);
     const width = viewport.logicalWidth - 2 * this.#screen.columns.left.x;
     const compact = this.#screen.compact;
     const jackpotHeight = this.#buildJackpot(width);
@@ -102,6 +101,24 @@ export class LeaderboardScene extends Scene {
     this.#fill(list, state);
     this.focus(back);
     this.services.requestRender();
+  }
+
+  /**
+   * The title, Back and, when the history screen exists, "My games".
+   * @param {string | null} season
+   * @returns {Button} Back
+   */
+  #buildHeader(season) {
+    const { viewport } = this.services;
+    const history = this.services.hasScene(SceneId.GAME_HISTORY);
+    const buttons = history ? 2 : 1;
+    const titleWidth = Math.min(900, viewport.logicalWidth - 2 * this.#screen.header.sideMargin - buttons * (this.#screen.header.backWidth + 16));
+    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: titleWidth, height: this.#screen.header.height, text: season === null ? "Leaderboard" : `Leaderboard — ${season}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
+    const back = this.root.add(new Button({ id: "leaderboard.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.onCancel() }));
+    if (history) {
+      this.root.add(new Button({ id: "leaderboard.history", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "My games", onActivate: () => this.#openHistory() }));
+    }
+    return back;
   }
 
   /**
@@ -148,11 +165,21 @@ export class LeaderboardScene extends Scene {
           subtitle: `rating ${entry.rating}${entry.rank === null ? " (provisional)" : ""} · ${entry.wins}–${entry.losses}${draws} in ${entry.games} game(s)`,
           selected: entry.account === me,
           avatar: entry.account,
-          onActivate: () => undefined,
+          onActivate: () => this.#openHistory(entry.account),
         }),
       );
     });
     list.contentHeight = this.#screen.rowsHeight(entries.length);
+  }
+
+  /**
+   * A player's games (the signed-in player's when none is given); Back returns here, as this screen was opened.
+   * @param {string} [account]
+   */
+  #openHistory(account) {
+    if (this.services.hasScene(SceneId.GAME_HISTORY)) {
+      this.services.navigate(SceneId.GAME_HISTORY, { ...(account === undefined ? {} : { account }), back: SceneId.LEADERBOARD, backParams: { back: this.#back } });
+    }
   }
 
   #ranking() {

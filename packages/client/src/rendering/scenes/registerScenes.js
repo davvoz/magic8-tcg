@@ -8,6 +8,7 @@ import { CollectionScene } from "./CollectionScene.js";
 import { DeckBuilderScene } from "./DeckBuilderScene.js";
 import { DeckSelectionScene } from "./DeckSelectionScene.js";
 import { ErrorScene } from "./ErrorScene.js";
+import { GameHistoryScene } from "./GameHistoryScene.js";
 import { LeaderboardScene } from "./LeaderboardScene.js";
 import { LiveGamesScene } from "./LiveGamesScene.js";
 import { LoginScene } from "./LoginScene.js";
@@ -46,6 +47,9 @@ export function registerScenes(sceneManager, app) {
   }
   if (app.ranking !== undefined) {
     sceneManager.register(SceneId.LEADERBOARD, (services) => new LeaderboardScene(services, app));
+  }
+  if (app.gameHistory !== undefined) {
+    sceneManager.register(SceneId.GAME_HISTORY, (services) => new GameHistoryScene(services, app));
   }
   if (app.trading !== undefined && app.account !== undefined) {
     sceneManager.register(SceneId.TRADES, (services) => new TradesScene(services, app));

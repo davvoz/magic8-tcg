@@ -26,12 +26,16 @@
  * @property {(userId: string) => Promise<string | null>} activeGameOf
  * @property {(query: { mode: string, since: number, limit: number }) => Promise<readonly FinishedGame[]>} listFinished finished games of a mode since a time, oldest first
  * @property {(userId: string, mode: string) => Promise<number>} countFinished games of a mode the user finished (any result)
+ * @property {(query: { account: string, before: string | null, limit: number }) => Promise<readonly PlayedGame[]>} listHistory
+ *   finished games the account played, newest first, those before the game `before` when given
  *
  * @typedef {object} ResultOutbox where finished games' results wait to be published (the chain module)
  * @property {(entry: { network: string, gameId: string, payload: string }) => Promise<void>} enqueueResult inside the caller's unit of work
  *
  * @typedef {Readonly<{ gameId: string, mode: string, finishedAt: number, winnerSeat: string | null, endReason: string, turn: number,
  *   players: readonly Readonly<{ seat: string, userId: string, account: string }>[] }>} FinishedGame what listeners learn when a game ends
+ * @typedef {Readonly<{ gameId: string, mode: string, opponent: string, result: string, endReason: string | null, turn: number, startedAt: number | null, finishedAt: number }>} PlayedGame
+ *   a finished game as one of its players played it: who they faced and how it went for them (win | loss | draw)
  * @typedef {Readonly<{ gameId: string, mode: string, reason: string, players: readonly Readonly<{ seat: string, userId: string, account: string }>[] }>} AbortedGame
  *   what listeners learn when a game is called off before it started
  *
@@ -51,5 +55,5 @@
  * @property {(message: string) => string} sign the message's compact signature, as Keychain's signBuffer makes it
  */
 
-export const GAME_REPOSITORY_METHODS = Object.freeze(["insertGame", "findGame", "listEvents", "appendEvents", "setEntropy", "setResults", "findAck", "insertCommand", "insertSnapshot", "listActive", "activeGameOf", "listFinished", "countFinished"]);
+export const GAME_REPOSITORY_METHODS = Object.freeze(["insertGame", "findGame", "listEvents", "appendEvents", "setEntropy", "setResults", "findAck", "insertCommand", "insertSnapshot", "listActive", "activeGameOf", "listFinished", "countFinished", "listHistory"]);
 
