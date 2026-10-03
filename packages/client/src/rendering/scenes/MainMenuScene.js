@@ -2,7 +2,8 @@
  * Entry screen: a fan of cards under a glowing title, the navigation
  * buttons and a content summary. Buttons whose destination scene is not
  * registered are disabled rather than pretending to work. Signed in, the
- * top-right button opens the notifications and counts the unread ones.
+ * top-right button opens the notifications and counts the unread ones;
+ * beside it, Sound opens the sound settings (music, effects, mute).
  *
  * On a compact screen (a phone in landscape) the fan, the title and the
  * summary take the left half and the buttons the right one.
@@ -14,6 +15,7 @@ import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
 import { Ornament } from "../ui/Ornament.js";
+import { buildAudioSettingsModal } from "./audioSettings.js";
 import { deckStorageText } from "./deckStorage.js";
 import { HeroNode } from "./mainMenu/HeroNode.js";
 import { Scene } from "./Scene.js";
@@ -29,6 +31,8 @@ const ORNAMENT_Y = 314;
 const BUTTONS_Y = 360;
 const SUMMARY = Object.freeze({ y: 718, lineHeight: 28, width: 900 });
 const BELL = Object.freeze({ width: 260, height: 48, margin: 40 });
+/** The sound settings button, left of the bell (in its place when there is none). */
+const SOUND = Object.freeze({ width: 160, gap: 12, compactWidth: 130 });
 /** The signed-in player's portrait and name, in the top-left corner (the bell's mirror). */
 const PROFILE = Object.freeze({ size: 56, nameWidth: 320 });
 /**
@@ -55,6 +59,10 @@ export class MainMenuScene extends Scene {
   #unsubscribe = null;
   /** @type {(() => void) | null} */
   #unsubscribeNotifications = null;
+  /** @type {(() => void) | null} */
+  #unsubscribeAudio = null;
+  /** The sound settings button, relabelled when the game is muted from anywhere (M). @type {Button | null} */
+  #soundButton = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -69,6 +77,12 @@ export class MainMenuScene extends Scene {
     // The account loads after sign-in; redraw when it does (and when it fails).
     this.#unsubscribe = this.#app.account?.subscribe(() => this.#rebuild()) ?? null;
     this.#unsubscribeNotifications = this.#app.notifications?.subscribe(() => this.#rebuild()) ?? null;
+    this.#unsubscribeAudio = this.#app.audio?.subscribe((settings) => {
+      if (this.#soundButton !== null) {
+        this.#soundButton.text = soundLabel(settings);
+        this.services.requestRender();
+      }
+    }) ?? null;
     this.#rebuild();
     this.services.logger.info("main menu ready", { theme: this.services.theme.layout });
   }
@@ -78,12 +92,15 @@ export class MainMenuScene extends Scene {
     this.#unsubscribe = null;
     this.#unsubscribeNotifications?.();
     this.#unsubscribeNotifications = null;
+    this.#unsubscribeAudio?.();
+    this.#unsubscribeAudio = null;
     super.exit();
   }
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
+    this.#soundButton = null;
     const { viewport, hasScene, navigate } = this.services;
     const width = viewport.logicalWidth;
     const layout = viewport.compact ? compactLayout(width) : wideLayout(width);
@@ -123,6 +140,7 @@ export class MainMenuScene extends Scene {
     });
 
     this.#buildBell(layout);
+    this.#buildSound(layout);
     this.#buildProfile(layout);
     const draft = this.#draftSummary();
     const lines = [
@@ -158,7 +176,7 @@ export class MainMenuScene extends Scene {
    */
   #buildBell({ bell }) {
     const notifications = this.#app.notifications;
-    if (notifications === undefined || this.#app.account?.state.status !== AccountStatus.READY) {
+    if (notifications === undefined || !this.#bellShown()) {
       return;
     }
     const { unread } = notifications.state;
@@ -173,6 +191,35 @@ export class MainMenuScene extends Scene {
         onActivate: () => this.services.navigate(SceneId.NOTIFICATIONS),
       }),
     );
+  }
+
+  /** Whether the notifications button is shown. */
+  #bellShown() {
+    return this.#app.notifications !== undefined && this.#app.account?.state.status === AccountStatus.READY;
+  }
+
+  /**
+   * The sound settings button, when the game has sound.
+   * @param {MenuLayout} layout
+   */
+  #buildSound({ bell }) {
+    const { compact } = this.services.viewport;
+    const audio = this.#app.audio;
+    if (audio === undefined) {
+      return;
+    }
+    const width = compact ? SOUND.compactWidth : SOUND.width;
+    const x = this.#bellShown() ? bell.x - SOUND.gap - width : bell.x + bell.width - width;
+    this.#soundButton = this.root.add(new Button({ id: "sound", x, y: bell.y, width, height: bell.height, text: soundLabel(audio.settings), textSize: compact ? "small" : "body", onActivate: () => this.#showAudioSettings() }));
+  }
+
+  #showAudioSettings() {
+    const audio = this.#app.audio;
+    if (audio === undefined) {
+      return;
+    }
+    const close = () => this.closeModal();
+    this.openModal(buildAudioSettingsModal({ viewport: this.services.viewport, audio, onClose: close, requestRender: this.services.requestRender }));
   }
 
   /**
@@ -277,6 +324,11 @@ export class MainMenuScene extends Scene {
     const { release, version } = this.#app.environment;
     return release === undefined ? `engine ${version}` : `Magic8 ${release} · engine ${version}`;
   }
+}
+
+/** @param {import("../../application/audio/AudioSettings.js").AudioSettings} settings */
+function soundLabel(settings) {
+  return settings.muted ? "Sound off" : "Sound";
 }
 
 /**

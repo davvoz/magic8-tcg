@@ -1,3 +1,4 @@
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { drawAvatar } from "./avatar.js";
 import { Button } from "./Button.js";
 import { bevelRoundedRect, drawTextInRect, fillRoundedRect, glowRoundedRect, roundedRectPath, verticalGradient } from "./drawing.js";
@@ -49,6 +50,7 @@ export class OptionRow extends Button {
     this.stripe = options.stripe ?? [];
     this.selected = options.selected ?? false;
     this.avatar = options.avatar ?? null;
+    this.activationCue = SoundCue.UI_SELECT;
   }
 
   /**

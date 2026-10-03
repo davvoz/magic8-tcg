@@ -7,8 +7,10 @@
  * elsewhere reach the scene. The SceneManager draws it after the scene.
  * On a compact screen (a phone in landscape) toasts keep clear of a notch,
  * take at most half the width, and only the newest two are shown.
+ * Each arrives with a chime for its tone (or the sound it names).
  */
 import { containsPoint } from "@magic8/engine/shared/geometry.js";
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { ellipsize, wrapText } from "../text/textUtils.js";
 import { withAlpha } from "../theme/color.js";
 import { fontFor } from "../theme/Theme.js";
@@ -22,11 +24,13 @@ const COMPACT_TOASTS = Object.freeze({ shown: 2, margin: 8, widthShare: 0.5 });
 const LIFE_MS = 6000;
 const FADE_MS = 250;
 const TONE_KEYS = Object.freeze({ good: "success", bad: "danger", info: "accent" });
+const TONE_CUES = Object.freeze({ good: SoundCue.NOTIFY_GOOD, bad: SoundCue.NOTIFY_BAD, info: SoundCue.NOTIFY_INFO });
 const AVATAR_RADIUS = 24;
 
 /**
- * @typedef {Readonly<{ title: string, body: string, tone: "good" | "bad" | "info", account?: string, opens?: string }>} ToastMessage
- *   `account`: the player the toast is about (their portrait is shown); `opens`: where a click leads, for `onOpen`
+ * @typedef {Readonly<{ title: string, body: string, tone: "good" | "bad" | "info", account?: string, opens?: string, cue?: string }>} ToastMessage
+ *   `account`: the player the toast is about (their portrait is shown); `opens`: where a click leads, for `onOpen`;
+ *   `cue`: the sound it arrives with (a SoundCue), when not its tone's
  * @typedef {{ message: ToastMessage, ageMs: number }} Toast
  */
 
@@ -34,16 +38,19 @@ export class ToastLayer {
   #viewport;
   #onOpen;
   #requestRender;
+  #sound;
   /** @type {Toast[]} */
   #toasts = [];
 
   /**
-   * @param {{ viewport: { bounds: import("@magic8/engine/shared/geometry.js").Rect, safeBounds?: import("@magic8/engine/shared/geometry.js").Rect, compact?: boolean }, onOpen: (message: ToastMessage) => void, requestRender: () => void }} deps
+   * @param {{ viewport: { bounds: import("@magic8/engine/shared/geometry.js").Rect, safeBounds?: import("@magic8/engine/shared/geometry.js").Rect, compact?: boolean }, onOpen: (message: ToastMessage) => void, requestRender: () => void, sound?: import("../scenes/Scene.js").SoundPlayer }} deps
+   *   `sound`: the game's sound (none under test)
    */
-  constructor({ viewport, onOpen, requestRender }) {
+  constructor({ viewport, onOpen, requestRender, sound }) {
     this.#viewport = viewport;
     this.#onOpen = onOpen;
     this.#requestRender = requestRender;
+    this.#sound = sound;
   }
 
   /** Toasts on screen, newest first (for tests and the scene's layout). */
@@ -55,6 +62,7 @@ export class ToastLayer {
   show(message) {
     this.#toasts.unshift({ message, ageMs: 0 });
     this.#toasts.length = Math.min(this.#toasts.length, MAX_TOASTS);
+    this.#sound?.play(message.cue ?? TONE_CUES[message.tone] ?? SoundCue.NOTIFY_INFO);
     this.#requestRender();
   }
 

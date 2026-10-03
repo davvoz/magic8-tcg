@@ -7,6 +7,8 @@
  * validation the ErrorScene explains why instead of a broken screen.
  */
 import { ContentResource } from "./application/ports/ContentSource.contract.js";
+import { AudioService } from "./application/audio/AudioService.js";
+import { MusicTrack, SoundCue } from "./application/audio/SoundCue.js";
 import { AccountService, AccountStatus } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
@@ -31,6 +33,10 @@ import { IdentityService } from "./application/identity/IdentityService.js";
 import { CoinFace } from "./application/match/CoinToss.js";
 import { MatchSetupService } from "./application/match/MatchSetupService.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
+import { WebAudioOutput } from "./infrastructure/audio/WebAudioOutput.js";
+import { createBrowserAudioContext, followVisibility, unlockOnGesture } from "./infrastructure/audio/browserAudio.js";
+import { createCoreSoundBank } from "./infrastructure/audio/registerCorePatches.js";
+import { StoredAudioPreferences } from "./infrastructure/persistence/StoredAudioPreferences.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
@@ -68,6 +74,8 @@ import { TableArt, TablePiece } from "./rendering/images/TableArt.js";
 import { UiArt, UiPiece } from "./rendering/images/UiArt.js";
 import { Avatars } from "./rendering/images/Avatars.js";
 import { ToastLayer } from "./rendering/ui/ToastLayer.js";
+import { MusicDirector } from "./rendering/audio/MusicDirector.js";
+import { soundOnline, soundSales, soundShop } from "./rendering/audio/serviceSounds.js";
 import { validateTheme } from "./rendering/theme/Theme.js";
 import { MaintenanceBanner } from "./rendering/page/MaintenanceBanner.js";
 import { TextEntryBar } from "./rendering/page/TextEntryBar.js";
@@ -149,6 +157,14 @@ const UI_ART = Object.freeze({
   }),
 });
 
+/**
+ * The background music, in AUDIO_DIRECTORY: one looped file per MusicTrack
+ * (the same file for both keeps one track playing throughout). MP3 or OGG,
+ * at most 5 MB (the server's limit for a file), made to loop seamlessly.
+ */
+const AUDIO_DIRECTORY = "data/audio/";
+const MUSIC_FILES = Object.freeze({ [MusicTrack.MENU]: "background_music.mp3", [MusicTrack.MATCH]: "background_music.mp3" });
+
 /** Theme used only to render the error screen when the real theme cannot be loaded. */
 const FALLBACK_THEME_RAW = Object.freeze({
   schemaVersion: 2,
@@ -179,9 +195,10 @@ let fatalShown = false;
 
 /**
  * @param {import("./rendering/theme/Theme.js").Theme} theme
+ * @param {import("./rendering/scenes/Scene.js").SoundPlayer} [sound] the game's sound (none on the error screen shown before it exists)
  * @returns {{ sceneManager: SceneManager, loop: GameLoop, viewport: Viewport, restart: () => void }}
  */
-function buildPresentation(theme) {
+function buildPresentation(theme, sound) {
   const canvas = document.getElementById("game");
   if (!(canvas instanceof HTMLCanvasElement)) {
     throw new Error("canvas#game not found");
@@ -195,7 +212,7 @@ function buildPresentation(theme) {
   // A field tapped with a finger is typed into with the phone's own keyboard.
   const textEntry = new TextEntryBar(document, { onChange: () => loop.requestRender() });
   const touchFirst = isTouchFirst();
-  const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender(), textEntry, touchFirst });
+  const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender(), textEntry, touchFirst, sound });
   const host = new CanvasHost({
     canvas,
     viewport,
@@ -336,6 +353,7 @@ async function boot() {
   if (!storageAvailable) {
     logger.warn("local storage unavailable; decks will not persist");
   }
+  const audio = buildAudio(localStore, storageAvailable);
   const browserDecks = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
   // Signed in, decks live in the account (only owned cards); otherwise in this browser.
   const collectionApi = new HttpCollectionApi({ fetch: httpFetch });
@@ -425,17 +443,25 @@ async function boot() {
     trading,
     sales,
     notifications,
+    audio,
     ...rarities,
   });
 
   // Players' STEEM profile pictures; a player is drawn as their initial until theirs is ready.
   const avatars = new Avatars({ loadImage: loadBrowserImage, onLoaded: () => presentation?.loop.requestRender(), logger });
-  const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars }));
+  const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars }), audio);
   registerScenes(sceneManager, app);
+  // The menus have their music, a match its own; what the services do is heard on any screen.
+  const music = new MusicDirector({ audio, tracks: { [SceneId.MATCH]: MusicTrack.MATCH, [SceneId.ERROR]: null }, fallback: MusicTrack.MENU });
+  music.follow(sceneManager);
+  soundShop(shop, audio);
+  soundSales(sales, audio);
+  soundOnline(online, audio);
   // A notification that arrives shows as a toast on any screen; a click opens the feed (or the lobby, for a challenge).
-  const toasts = new ToastLayer({ viewport, onOpen: (message) => sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender() });
+  const toasts = new ToastLayer({ viewport, onOpen: (message) => sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender(), sound: audio });
   sceneManager.setOverlay(toasts);
-  lobby.onEvent((event) => toasts.show({ ...describeLobbyEvent(event), opens: SceneId.ONLINE }));
+  // A challenge that arrives has a call of its own: it must be answered within a minute.
+  lobby.onEvent((event) => toasts.show({ ...describeLobbyEvent(event), opens: SceneId.ONLINE, ...(event.kind === "received" ? { cue: SoundCue.CHALLENGE } : {}) }));
   // A game found while the player is elsewhere (their challenge was accepted): the lobby shows it and asks Keychain to accept it.
   let onlineStatus = online.state.status;
   online.subscribe((state) => {
@@ -456,6 +482,36 @@ async function boot() {
   });
   sceneManager.navigate(SceneId.MAIN_MENU);
   preloadArt({ illustrations, coinArt, tableArt, uiArt });
+}
+
+/**
+ * The game's sound: effects synthesised in the browser, the music from
+ * AUDIO_DIRECTORY, the player's levels kept in `store`. Sound starts on the
+ * player's first gesture (browsers allow nothing sooner) and pauses while
+ * the page is hidden.
+ * @param {LocalStorageStore} localStore
+ * @param {boolean} storageAvailable without it, the levels last only as long as the page
+ */
+function buildAudio(localStore, storageAvailable) {
+  const store = storageAvailable ? localStore : new InMemoryStore();
+  const output = new WebAudioOutput({
+    createContext: () => createBrowserAudioContext(window),
+    bank: createCoreSoundBank(),
+    music: {
+      urls: Object.fromEntries(Object.entries(MUSIC_FILES).map(([track, file]) => [track, `${AUDIO_DIRECTORY}${file}`])),
+      load: async (url) => {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.arrayBuffer();
+      },
+    },
+    logger,
+  });
+  unlockOnGesture(window, output);
+  followVisibility(document, output);
+  return new AudioService({ output, preferences: new StoredAudioPreferences({ store, logger }), now: () => performance.now(), logger });
 }
 
 /**

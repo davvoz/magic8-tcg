@@ -10,6 +10,7 @@
  * Its insides are drawn for a 200×184 plate; a smaller one (a phone's board)
  * shrinks them all alike, type included (never below MIN_FONT).
  */
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { Highlight } from "../../input/interaction/MatchInteraction.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
 import { bodyFont, fontFor } from "../theme/Theme.js";
@@ -76,6 +77,7 @@ export class PlayerNode extends UiNode {
     this.onTap = onTap;
     this.interactive = true;
     this.focusable = this.enabled;
+    this.activationCue = SoundCue.UI_SELECT;
   }
 
   activate() {

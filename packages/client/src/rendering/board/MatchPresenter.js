@@ -107,6 +107,8 @@ export class MatchPresenter {
   #kicks = new Map();
   /** @type {Breakthrough[]} */
   #breakthroughs = [];
+  /** When the blows struck in the last update land, by what they struck. @type {Map<string, number>} */
+  #impacts = new Map();
   /**
    * The moments played one after another over the table — the opponent's
    * casts, abilities going off and the turn banners — oldest first; only the first runs.
@@ -170,6 +172,15 @@ export class MatchPresenter {
     return kick === undefined || kick.ageMs < 0 ? null : { progress: Math.min(1, kick.ageMs / kick.durationMs), delta: kick.delta };
   }
 
+  /**
+   * How long after the last update was shown a blow struck in it lands on
+   * `id` (a card or a player): 0 for what was not struck in combat.
+   * @param {string} id
+   */
+  landsAfter(id) {
+    return this.#impacts.get(id) ?? 0;
+  }
+
   /** @param {string} instanceId */
   visualFor(instanceId) {
     return this.#visuals.get(instanceId) ?? null;
@@ -191,6 +202,7 @@ export class MatchPresenter {
   apply(snapshot, events, layout, { animate = true, outcome = [] } = {}) {
     const duration = animate ? this.#animation.mediumMs : 0;
     const impacts = animate ? this.#impactsOf(events) : new Map();
+    this.#impacts = impacts;
     for (const player of snapshot.players) {
       for (const card of [...player.battlefield, ...(player.hand ?? [])]) {
         this.#cards.set(card.instanceId, card);

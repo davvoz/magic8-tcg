@@ -81,6 +81,11 @@ export class GameOverSequence {
     return this.#elapsedMs >= this.#ms(PHASE.fadeFrom + PHASE.fade);
   }
 
+  /** How long the cracks take to run through a crystal, up to the burst. */
+  get crackMs() {
+    return this.#ms(PHASE.crack);
+  }
+
   /**
    * @param {number} dtMs
    * @returns {boolean} whether a render is needed — every frame while it plays, the last one included

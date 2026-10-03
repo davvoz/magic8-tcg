@@ -6,6 +6,7 @@
  * the node tells its visual when to be raised, and the visual — which
  * outlives the node across rebuilds — eases the card up and down.
  */
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { CardFaceProfile } from "../cards/CardFace.js";
 import { drawCard } from "../cards/CardRenderer.js";
 import { UiNode } from "../ui/UiNode.js";
@@ -38,6 +39,7 @@ export class CardNode extends UiNode {
     this.onTap = onTap;
     this.interactive = true;
     this.focusable = enabled;
+    this.activationCue = SoundCue.CARD_PICK;
   }
 
   activate() {

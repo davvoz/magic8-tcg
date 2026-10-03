@@ -9,6 +9,9 @@
  * except onto a text field, which a tap opens in the device's own keyboard
  * through `services.textEntry`.
  *
+ * Activating a widget makes its sound (`activationCue`), and M mutes the
+ * game on any screen.
+ *
  * Scenes own presentation state only. They read snapshots and read-models
  * and submit commands through application services; they never touch
  * domain entities.
@@ -27,6 +30,12 @@ import { UiNode } from "../ui/UiNode.js";
  * @property {import("../../application/ports/Logger.contract.js").Logger} logger
  * @property {() => boolean} [usingTouch] whether the player is playing by touch (their last input was a finger or a pen)
  * @property {TextEntry} [textEntry] the device's own text input, for a field tapped with a finger
+ * @property {SoundPlayer} [sound] the game's sound (none under test): the cues scenes play, and muting
+ */
+
+/**
+ * What scenes ask of the game's sound (AudioService).
+ * @typedef {{ play: (cue: string, options?: import("../../application/ports/AudioOutput.contract.js").PlayOptions) => unknown, toggleMute?: () => void }} SoundPlayer
  */
 
 /**
@@ -209,13 +218,37 @@ export class Scene {
     } else if (isKey(input.key, KeyMap.PREVIOUS)) {
       this.#moveFocus(-1);
     } else if (isKey(input.key, KeyMap.CONFIRM) && this.#focused !== null) {
-      this.#focused.activate();
+      this.#activate(this.#focused);
       this.services.requestRender();
-    } else if (isKey(input.key, KeyMap.CANCEL)) {
-      this.onCancel();
-    } else if (isKey(input.key, KeyMap.INSPECT) && this.#focused !== null) {
-      this.onSecondary(this.#focused);
+    } else {
+      this.#onCommandKey(input.key);
     }
+  }
+
+  /**
+   * The keys that are commands rather than navigation: cancel, inspect, mute.
+   * @param {string} key
+   */
+  #onCommandKey(key) {
+    if (isKey(key, KeyMap.CANCEL)) {
+      this.onCancel();
+    } else if (isKey(key, KeyMap.INSPECT) && this.#focused !== null) {
+      this.onSecondary(this.#focused);
+    } else if (isKey(key, KeyMap.MUTE)) {
+      this.services.sound?.toggleMute?.();
+    }
+  }
+
+  /**
+   * Activates a node with its sound — when it can be activated at all.
+   * @param {UiNode} node
+   */
+  #activate(node) {
+    const cue = node.isEffectivelyEnabled && node.isEffectivelyVisible ? node.activationCue : null;
+    if (cue !== null) {
+      this.services.sound?.play(cue);
+    }
+    node.activate();
   }
 
   /** Escape: closes the modal if one is open. Scenes may extend it. */
@@ -332,7 +365,7 @@ export class Scene {
       return;
     }
     if (pressed !== null && pressed === hit) {
-      pressed.activate();
+      this.#activate(pressed);
       if (pressed.editsText && isFinger(input)) {
         this.services.textEntry?.open(/** @type {import("../ui/TextField.js").TextField} */ (pressed));
       }

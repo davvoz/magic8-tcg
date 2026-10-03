@@ -33,6 +33,8 @@ export class CoinFlip {
   #halfTurns;
   /** @type {Timeline<CoinFrame>} */
   #timeline;
+  /** How long the coin is in the air. */
+  #flightMs;
 
   /**
    * @param {{ toss: import("../../application/match/CoinToss.js").CoinToss, animation: Readonly<Record<string, number>> }} options
@@ -41,6 +43,7 @@ export class CoinFlip {
   constructor({ toss, animation }) {
     this.#toss = toss;
     this.#halfTurns = 2 * FULL_TURNS + (toss.landed === RESTING_FACE ? 0 : 1);
+    this.#flightMs = animation.longMs * PACE.flight;
     const shown = { veil: 1, calls: 1, flight: 0, shine: 0, verdict: 0 };
     const landed = { ...shown, flight: 1 };
     const flashed = { ...landed, shine: 1 };
@@ -50,7 +53,7 @@ export class CoinFlip {
       stages: [
         { to: shown, durationMs: animation.longMs, easing: Easing.easeOutCubic },
         { to: shown, durationMs: animation.longMs * PACE.readCalls, easing: Easing.linear },
-        { to: landed, durationMs: animation.longMs * PACE.flight, easing: Easing.linear },
+        { to: landed, durationMs: this.#flightMs, easing: Easing.linear },
         { to: flashed, durationMs: animation.longMs, easing: Easing.easeOutCubic },
         { to: told, durationMs: animation.mediumMs, easing: Easing.easeOutCubic },
         { to: told, durationMs: animation.longMs * PACE.holdVerdict, easing: Easing.linear },
@@ -62,6 +65,11 @@ export class CoinFlip {
   /** @returns {import("../../application/match/CoinToss.js").CoinToss} */
   get toss() {
     return this.#toss;
+  }
+
+  /** How long the coin is in the air, from the throw to the table. */
+  get flightMs() {
+    return this.#flightMs;
   }
 
   /** @returns {CoinFrame} */

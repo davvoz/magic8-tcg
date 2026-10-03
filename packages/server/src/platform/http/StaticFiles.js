@@ -20,6 +20,8 @@ const MIME_TYPES = Object.freeze({
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2",
   ".ico": "image/x-icon",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
   ".webmanifest": "application/manifest+json",
 });
 const MAX_FILE_BYTES = 5 * 1024 * 1024;

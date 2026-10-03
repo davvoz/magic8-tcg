@@ -13,7 +13,8 @@
  * any shelf, lets the player change or remove it, and pays for all of it
  * with one transfer. Paying goes through the wallet (Keychain shows the
  * exact transfer); when the order is fulfilled the cards received are
- * revealed, pack by pack. Every price shown is the server's. The header
+ * revealed, pack by pack, to a rising chime (and a sweep of light when a
+ * card of one of the top rarities is among them). Every price shown is the server's. The header
  * shows the player's budget, what their wallet holds in STEEM: what it
  * cannot pay for is not offered for payment.
  *
@@ -22,6 +23,7 @@
  * to read it), the purchase controls are two rows under the status line,
  * and the cart and the reveal fill the screen.
  */
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
 import { deckMix } from "../../application/decks/deckMix.js";
@@ -49,6 +51,8 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const LIST_ID = "shop.list";
+/** A rare card received: which rarities count (the top ones), how long after the chime its sweep comes, and how loud it is for the very rarest (a step softer for each rarity below). */
+const RARE_REVEAL = Object.freeze({ topRarities: 3, delayMs: 650, gain: 1.15, step: 0.2 });
 /**
  * Every size of the shop, wide and compact.
  * @typedef {Readonly<{
@@ -180,6 +184,8 @@ export class ShopScene extends Scene {
   #scrollToTop = false;
   /** The reveal of the last fulfilled order was closed. */
   #revealClosed = false;
+  /** The fulfilment whose reveal was last heard: a reveal reopened by a rebuild is not heard again. @type {unknown} */
+  #heardFulfilment = null;
   /** The cart is open (it stays open across rebuilds, behind a reveal). */
   #cartShown = false;
   /** What the last Add to cart did, until the next choice. @type {{ text: string, colorKey: string } | null} */
@@ -907,7 +913,28 @@ export class ShopScene extends Scene {
     );
     panel.add(new Button({ id: "reveal.close", x: this.#screen.inset + buttonWidth + this.#screen.action.gap, y: buttonsY, width: buttonWidth, height: REVEAL.button, text: "Keep shopping", onActivate: close }));
     this.openModal(modal);
+    this.#soundReveal(fulfilment);
     return view;
+  }
+
+  /**
+   * The cards arriving, heard once per order: a chime, then a sweep of light
+   * when one of them is of the top rarities — brighter the rarer the best of them.
+   * @param {import("../../application/ports/MarketApi.contract.js").Fulfilment} fulfilment
+   */
+  #soundReveal(fulfilment) {
+    if (fulfilment === this.#heardFulfilment) {
+      return;
+    }
+    this.#heardFulfilment = fulfilment;
+    this.services.sound?.play(SoundCue.PURCHASE_COMPLETE);
+    const order = this.#app.rarities?.order ?? [];
+    const cards = [...fulfilment.cards, ...fulfilment.packs.flatMap((pack) => pack.cards)];
+    const best = Math.max(-1, ...cards.map((card) => order.indexOf(rarityOf(this.#app, card.definitionId) ?? "")));
+    const fromTop = order.length - 1 - best;
+    if (best >= 0 && fromTop < RARE_REVEAL.topRarities) {
+      this.services.sound?.play(SoundCue.RARE_REVEAL, { delayMs: RARE_REVEAL.delayMs, gain: RARE_REVEAL.gain - fromTop * RARE_REVEAL.step });
+    }
   }
 
   /**

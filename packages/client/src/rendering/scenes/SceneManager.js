@@ -7,6 +7,8 @@
  * letterbox colour, so screens follow one another instead of cutting; the
  * new scene takes input at once, the fade is only drawn over it.
  *
+ * Whoever follows where the player is (the music) hears of each move (`onNavigate`).
+ *
  * It also remembers how the player is playing — by touch or with mouse and
  * keyboard, from their last input — for every scene to ask (`usingTouch`).
  *
@@ -35,13 +37,16 @@ export class SceneManager {
   #touch = false;
   /** @type {import("./Scene.js").TextEntry | undefined} */
   #textEntry;
+  /** @type {Set<(sceneId: string) => void>} */
+  #navigationListeners = new Set();
 
   /**
-   * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void, textEntry?: import("./Scene.js").TextEntry, touchFirst?: boolean }} deps
+   * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void, textEntry?: import("./Scene.js").TextEntry, touchFirst?: boolean, sound?: import("./Scene.js").SoundPlayer }} deps
    *   `textEntry`: the device's own text input, for fields tapped with a finger (none under test);
-   *   `touchFirst`: the device is mainly played by touch (a phone), assumed until the first input says otherwise
+   *   `touchFirst`: the device is mainly played by touch (a phone), assumed until the first input says otherwise;
+   *   `sound`: the game's sound, for the scenes (none under test)
    */
-  constructor({ theme, viewport, logger, requestRender, textEntry, touchFirst = false }) {
+  constructor({ theme, viewport, logger, requestRender, textEntry, touchFirst = false, sound }) {
     this.#requestRender = requestRender;
     this.#touch = touchFirst;
     this.#textEntry = textEntry;
@@ -54,6 +59,7 @@ export class SceneManager {
       hasScene: (sceneId) => this.#factories.has(sceneId),
       usingTouch: () => this.#touch,
       ...(textEntry === undefined ? {} : { textEntry }),
+      ...(sound === undefined ? {} : { sound }),
     });
   }
 
@@ -77,6 +83,16 @@ export class SceneManager {
   /** @param {string} sceneId */
   has(sceneId) {
     return this.#factories.has(sceneId);
+  }
+
+  /**
+   * Hears every scene the player is taken to, as it is entered.
+   * @param {(sceneId: string) => void} listener
+   * @returns {() => void}
+   */
+  onNavigate(listener) {
+    this.#navigationListeners.add(listener);
+    return () => this.#navigationListeners.delete(listener);
   }
 
   /** @param {SceneOverlay | null} overlay */
@@ -109,6 +125,10 @@ export class SceneManager {
     this.#current = scene;
     this.#currentId = sceneId;
     scene.enter(params);
+    // A scene may move on as it enters (a match without a session): where the player ended up is what is told.
+    if (this.#current === scene) {
+      this.#navigationListeners.forEach((listener) => listener(sceneId));
+    }
     const durationMs = this.#services.theme.animation.mediumMs * FADE_MEDIUM;
     this.#fade = durationMs > 0 ? { elapsedMs: 0, durationMs } : null;
     this.#requestRender();

@@ -39,12 +39,19 @@
  * fallen crystal breaks, the table darkens, the outcome comes down. Only
  * then is the result offered.
  *
+ * What the board shows is heard too (MatchSoundscape): each beat's sounds
+ * land with its animations, the moments over the table, the toss and the
+ * end are heard stage by stage, and the last seconds of the player's clock tick.
+ * The sound settings open from the battle log: its panel's header, or on a
+ * compact board the log's dialog.
+ *
  * On a compact screen (a phone in landscape) the board is the compact one:
  * a slim action column instead of the sidebar, its last row opening the
  * battle log and conceding; and on a phone, or played by touch, a hand card
  * is picked first — held up large to be read — and played with "Play".
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { ControllerKind } from "../../application/match/PlayerController.contract.js";
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
 import { KeyMap, isKey } from "../../input/KeyMap.js";
@@ -60,6 +67,7 @@ import { GameOverNode } from "../board/GameOverNode.js";
 import { GameOverMood, GameOverSequence } from "../board/GameOverSequence.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
+import { MatchSoundscape } from "../board/MatchSoundscape.js";
 import { PickedCardNode } from "../board/PickedCardNode.js";
 import { PlayerNode, lifeCrystalCentre } from "../board/PlayerNode.js";
 import { boardFaceProfile } from "../cards/CardRenderer.js";
@@ -69,6 +77,7 @@ import { CardDetail } from "../cards/CardDetail.js";
 import { drawTableBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
+import { buildAudioSettingsModal } from "./audioSettings.js";
 import { Label } from "../ui/Label.js";
 import { Modal } from "../ui/Modal.js";
 import { Panel, PANEL_INSET } from "../ui/Panel.js";
@@ -87,6 +96,8 @@ const SIDEBAR = Object.freeze({ inset: 12, buttonHeight: 48, gap: 8, titleHeight
 const COMPACT_LOG_SHARE = 0.36;
 const COMPACT_SIDEBAR = Object.freeze({ inset: 8, buttonHeight: 46, gap: 6, titleHeight: 30, phaseHeight: 20, promptTop: 54, promptHeight: 58, buttonsTop: 116, footerHeight: 46 });
 const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
+/** The Sound button in the log panel's header, and in the log dialog beside Close. */
+const SOUND_BUTTON = Object.freeze({ width: 84, height: 26, dialogWidth: 110 });
 /** The battle log opened from a compact board's action column, as large as the screen allows. */
 const LOG_MODAL = Object.freeze({ width: 600, height: 380, margin: 10 });
 const GAME_OVER = Object.freeze({ width: 720, height: 320 });
@@ -143,16 +154,24 @@ export class MatchScene extends Scene {
   #taken = null;
   /** The end of the match being played out, before the result is offered; null until the match ends. @type {GameOverSequence | null} */
   #ending = null;
+  /** What the board sounds like; null until the scene is entered. @type {MatchSoundscape | null} */
+  #soundscape = null;
+  /** The game's sound settings, when the game has sound. @type {import("./audioSettings.js").AudioControls & { subscribe: (listener: (settings: import("../../application/audio/AudioSettings.js").AudioSettings) => void) => () => void } | undefined} */
+  #audio;
+  /** @type {(() => void) | null} */
+  #unsubscribeAudio = null;
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
    * @param {import("./Scene.js").SceneServices} services
-   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock
+   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"] }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
+   *   `audio`: the sound settings (AudioService), opened from the battle log
    */
-  constructor(services, { rarityOf = () => null, now = () => Date.now() } = {}) {
+  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio } = {}) {
     super(services);
     this.#rarityOf = rarityOf;
     this.#now = now;
+    this.#audio = audio;
     this.#presenter = new MatchPresenter(services.theme.animation);
   }
 
@@ -174,9 +193,20 @@ export class MatchScene extends Scene {
     this.#log = [];
     this.#logScroll = createLogScroll();
     this.#interaction = new MatchInteraction(this.#playerId, { confirmPlays: this.#confirmsPlays() });
+    this.#soundscape = new MatchSoundscape({ sound: this.services.sound, animation: this.services.theme.animation, viewerId: this.#spectating ? "" : this.#playerId });
     const toss = session.openingToss;
     this.#coinFlip = toss === null ? null : new CoinFlip({ toss, animation: this.services.theme.animation });
     this.#unsubscribe = session.subscribe((update) => this.#onUpdate(update));
+    // Muted from anywhere (M): the Sound buttons say so without a rebuild.
+    this.#unsubscribeAudio = this.#audio?.subscribe((settings) => {
+      for (const id of ["sound", "logModal.sound"]) {
+        const button = (this.modal ?? this.root).findById(id) ?? this.root.findById(id);
+        if (button instanceof Button) {
+          button.text = soundLabel(settings);
+        }
+      }
+      this.services.requestRender();
+    }) ?? null;
     this.#taken = session.snapshotFor(this.#playerId);
     this.#show({ snapshot: this.#taken, events: [], chained: false }, false);
     if (this.#coinFlip === null) {
@@ -187,7 +217,14 @@ export class MatchScene extends Scene {
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#unsubscribeAudio?.();
+    this.#unsubscribeAudio = null;
     this.#coinFlip = null;
+  }
+
+  /** The sound settings this board opens, if the game has sound. */
+  get audio() {
+    return this.#audio;
   }
 
   /** @param {number} dtMs */
@@ -195,6 +232,8 @@ export class MatchScene extends Scene {
     const inputChanged = super.update(dtMs);
     const tossChanged = this.#advanceCoinFlip(dtMs);
     const presented = this.#presenter.update(dtMs);
+    // Heard before the next beat is shown: a spell strikes, then what it did lands.
+    this.#soundscape?.follow({ presenter: this.#presenter, toss: this.#coinFlip, ending: this.#ending });
     const caughtUp = this.#showNextStep();
     const ending = this.#ending?.update(dtMs) ?? false;
     const changed = presented || caughtUp || ending || inputChanged || tossChanged || this.#tickClock();
@@ -285,6 +324,9 @@ export class MatchScene extends Scene {
     const second = deadline === null ? null : Math.ceil(Math.max(0, deadline - this.#now()) / 1000);
     const changed = second !== this.#clockSecondShown;
     this.#clockSecondShown = second;
+    if (changed) {
+      this.#soundscape?.tick(second, !this.#spectating && this.#clockView()?.activeSeat === this.#playerId);
+    }
     return changed;
   }
 
@@ -317,6 +359,7 @@ export class MatchScene extends Scene {
       return;
     }
     if (input.type === "keydown" && isKey(input.key, KeyMap.END_TURN) && this.modal === null && !this.isBusy && this.#snapshot?.legalMoves?.canEndTurn === true) {
+      this.#soundscape?.endedTurn();
       this.#submit(endTurn(this.#playerId));
       return;
     }
@@ -423,6 +466,9 @@ export class MatchScene extends Scene {
     this.#snapshot = snapshot;
     this.#layout = this.#layoutFor(snapshot);
     this.#presenter.apply(snapshot, events, this.#layout, { animate, outcome });
+    if (animate) {
+      this.#soundscape?.beat(events, { presenter: this.#presenter, layout: this.#layout });
+    }
     const entries = events.map((event) => describeEvent(event, snapshot)).filter((entry) => entry !== null);
     this.#log = [...this.#log, ...entries].slice(-MAX_LOG_ENTRIES);
     this.#interaction.sync(snapshot);
@@ -489,6 +535,7 @@ export class MatchScene extends Scene {
   /** @param {import("@magic8/engine/shared/Result.js").Result<unknown>} result */
   #onSubmitted(result) {
     if (!result.ok) {
+      this.#soundscape?.rejected();
       this.#log = [...this.#log, { text: `Rejected: ${result.error.message}`, kind: LogKind.REJECTED }].slice(-MAX_LOG_ENTRIES);
       this.#interaction?.cancel();
       this.#rebuild();
@@ -517,7 +564,7 @@ export class MatchScene extends Scene {
     }
     this.#builtBusy = this.isBusy;
     const focusedId = this.focusedNode?.id ?? "";
-    const reopenGameOver = this.modal?.id === "gameOver";
+    const reopen = this.modal?.id ?? null;
     this.closeModal();
     this.root.clear();
     this.root.add(this.#boardFor(snapshot, layout));
@@ -530,13 +577,25 @@ export class MatchScene extends Scene {
     this.#buildLog(layout);
     this.#buildCoinToss(snapshot);
     this.#buildEnding(layout);
-    if (reopenGameOver) {
-      this.#showGameOver(snapshot);
-    }
+    this.#reopen(reopen, snapshot);
     const scope = this.modal ?? this.root;
     const fallback = this.modal === null ? null : this.modal.focusableNodes()[0] ?? null;
     this.focus(scope.findById(focusedId) ?? fallback);
     this.services.requestRender();
+  }
+
+  /**
+   * Opens again, over the rebuilt board, the dialogs that outlive a rebuild:
+   * the result, and the sound settings (they stay open while the opponent plays on).
+   * @param {string | null} modalId the dialog open before the rebuild
+   * @param {Snapshot} snapshot
+   */
+  #reopen(modalId, snapshot) {
+    if (modalId === "gameOver") {
+      this.#showGameOver(snapshot);
+    } else if (modalId === "audio") {
+      this.#showAudioSettings();
+    }
   }
 
   /**
@@ -634,7 +693,7 @@ export class MatchScene extends Scene {
     let y = metrics.buttonsTop;
     for (const spec of specs.filter((candidate) => !footer.includes(candidate))) {
       const held = spec.plays ? this.isBusy : this.isTossing;
-      panel.add(new Button({ id: spec.id, x: metrics.inset, y, width, height: metrics.buttonHeight, text: spec.text, enabled: spec.enabled && !held, variant: spec.variant, onActivate: spec.onActivate }));
+      panel.add(new Button({ id: spec.id, x: metrics.inset, y, width, height: metrics.buttonHeight, text: spec.text, enabled: spec.enabled && !held, variant: spec.variant, onActivate: spec.onActivate, ...(spec.cue === undefined ? {} : { cue: spec.cue }) }));
       y += metrics.buttonHeight + metrics.gap;
     }
     if (layout.compact) {
@@ -728,8 +787,8 @@ export class MatchScene extends Scene {
   /**
    * @param {Snapshot} snapshot
    * @param {MatchInteraction} interaction
-   * @returns {{ id: string, text: string, shortText?: string, visible: boolean, enabled: boolean, plays: boolean, variant: import("../ui/Button.js").ButtonVariant, onActivate: () => void }[]}
-   *   `plays`: the button makes a move, so it waits while moves are held back; `shortText`: its label in a compact column's footer
+   * @returns {{ id: string, text: string, shortText?: string, visible: boolean, enabled: boolean, plays: boolean, variant: import("../ui/Button.js").ButtonVariant, onActivate: () => void, cue?: string }[]}
+   *   `plays`: the button makes a move, so it waits while moves are held back; `shortText`: its label in a compact column's footer; `cue`: its sound, when not its variant's
    */
   #sidebarButtons(snapshot, interaction) {
     const moves = snapshot.legalMoves;
@@ -743,7 +802,7 @@ export class MatchScene extends Scene {
       { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: true, plays: true, variant: "primary", onActivate: () => this.#confirm() },
       { id: "cancel", text: "Cancel", visible: interaction.canCancel, enabled: true, plays: false, variant: "secondary", onActivate: () => this.onCancel() },
       { id: "endPhase", text: "End phase", visible: playing, enabled: moves?.canEndPhase === true && !busy, plays: true, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
-      { id: "endTurn", text: this.#keyHints() ? "End turn (E)" : "End turn", visible: playing, enabled: moves?.canEndTurn === true && !busy, plays: true, variant: "primary", onActivate: () => this.#submit(endTurn(this.#playerId)) },
+      { id: "endTurn", text: this.#keyHints() ? "End turn (E)" : "End turn", visible: playing, enabled: moves?.canEndTurn === true && !busy, plays: true, variant: "primary", cue: SoundCue.TURN_END, onActivate: () => this.#submit(endTurn(this.#playerId)) },
       { id: "leave", text: snapshot.isOver ? "Back to menu" : "Concede", shortText: snapshot.isOver ? "Menu" : "Concede", visible: true, enabled: true, plays: false, variant: snapshot.isOver ? "secondary" : "danger", onActivate: () => (snapshot.isOver ? this.#leave(SceneId.MAIN_MENU) : this.#confirmConcede()) },
     ];
   }
@@ -761,7 +820,13 @@ export class MatchScene extends Scene {
     }
     const panel = this.root.add(new Panel({ id: "log", ...log, textured: true }));
     const width = log.width - 2 * LOG.inset;
-    panel.add(new Label({ x: LOG.inset, y: LOG.inset, width, height: LOG.headerHeight, text: "Battle log", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
+    const audio = this.#audio;
+    const soundWidth = audio === undefined ? 0 : SOUND_BUTTON.width;
+    panel.add(new Label({ x: LOG.inset, y: LOG.inset, width: width - soundWidth, height: LOG.headerHeight, text: "Battle log", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
+    if (audio !== undefined) {
+      const y = LOG.inset + (LOG.headerHeight - SOUND_BUTTON.height) / 2;
+      panel.add(new Button({ id: "sound", x: LOG.inset + width - soundWidth, y, width: soundWidth, height: SOUND_BUTTON.height, text: soundLabel(audio.settings), textSize: "small", onActivate: () => this.#showAudioSettings() }));
+    }
     const top = LOG.inset + LOG.headerHeight;
     panel.add(new BattleLogNode({ id: "log.entries", x: LOG.inset, y: top, width, height: Math.max(0, log.height - top - LOG.inset), entries: this.#log, view: this.#logScroll }));
   }
@@ -788,11 +853,31 @@ export class MatchScene extends Scene {
     const { panel } = modal;
     const inset = LOG.inset + 8;
     const closeWidth = 110;
-    panel.add(new Label({ x: inset, y: inset, width: panelWidth - 2 * inset - closeWidth, height: 36, text: "Battle log", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    const audio = this.#audio;
+    const soundWidth = audio === undefined ? 0 : SOUND_BUTTON.dialogWidth + LOG.inset;
+    panel.add(new Label({ x: inset, y: inset, width: panelWidth - 2 * inset - closeWidth - soundWidth, height: 36, text: "Battle log", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    if (audio !== undefined) {
+      panel.add(new Button({ id: "logModal.sound", x: panelWidth - inset - closeWidth - soundWidth, y: inset, width: SOUND_BUTTON.dialogWidth, height: 40, text: soundLabel(audio.settings), textSize: "small", onActivate: () => this.#showAudioSettings() }));
+    }
     panel.add(new Button({ id: "logModal.close", x: panelWidth - inset - closeWidth, y: inset, width: closeWidth, height: 40, text: "Close", textSize: "small", onActivate: () => this.closeModal() }));
     const top = inset + 48;
     panel.add(new BattleLogNode({ id: "logModal.entries", x: inset, y: top, width: panelWidth - 2 * inset, height: panelHeight - top - inset, entries: this.#log, view: this.#logScroll }));
     this.openModal(modal);
+  }
+
+  /** The sound settings over the board; the match plays on underneath. */
+  #showAudioSettings() {
+    const audio = this.#audio;
+    if (audio === undefined) {
+      return;
+    }
+    this.openModal(buildAudioSettingsModal({ viewport: this.services.viewport, audio, onClose: () => this.#closeAudioSettings(), requestRender: this.services.requestRender }));
+  }
+
+  /** Back to the board, its Sound buttons saying how the game now sounds. */
+  #closeAudioSettings() {
+    this.closeModal();
+    this.#rebuild();
   }
 
   #confirmConcede() {
@@ -948,6 +1033,11 @@ function reasonFor(snapshot) {
     [GameEndReason.DRAW]: "Both players fell at once.",
   };
   return reasons[snapshot.endReason ?? ""] ?? "The match ended.";
+}
+
+/** @param {import("../../application/audio/AudioSettings.js").AudioSettings} settings */
+function soundLabel(settings) {
+  return settings.muted ? "Muted" : "Sound";
 }
 
 /** @param {string} phase */

@@ -88,6 +88,15 @@ export class TargetRoulette {
     return this.#durationMs;
   }
 
+  /**
+   * How far the draw has got: the hops the crosshair has begun and the cards it has locked on.
+   * @param {number} elapsedMs time since the crosshair appeared
+   */
+  progressAt(elapsedMs) {
+    const time = Math.max(0, elapsedMs);
+    return { hops: this.#hops.filter((hop) => hop.startMs <= time).length, locks: this.#locksAt.filter((at) => at <= time).length };
+  }
+
   /** @returns {readonly Point[]} where the cards the crosshair ends on stand, in the order they lock */
   get picked() {
     return this.#picks.map((index) => this.#candidates[index]);

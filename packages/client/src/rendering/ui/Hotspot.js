@@ -3,6 +3,7 @@
  * phone, where there is no room for a button beside it): a tap, click or
  * Enter calls `onActivate`. It draws nothing but the focus ring.
  */
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { fillRoundedRect } from "./drawing.js";
 import { UiNode } from "./UiNode.js";
 
@@ -18,6 +19,7 @@ export class Hotspot extends UiNode {
     this.onActivate = options.onActivate;
     this.interactive = true;
     this.focusable = true;
+    this.activationCue = SoundCue.UI_SELECT;
   }
 
   activate() {

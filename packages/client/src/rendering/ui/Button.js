@@ -1,3 +1,4 @@
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { bevelRoundedRect, drawTextInRect, fillRoundedRect, glowRoundedRect, radialGradient, roundedRectPath, verticalGradient } from "./drawing.js";
 import { UiNode } from "./UiNode.js";
 import { inPixels, UiPiece } from "../images/UiArt.js";
@@ -21,6 +22,9 @@ const PLATE = Object.freeze({
   wash: Object.freeze({ hover: 0.1, pressed: 0.3, danger: 0.32, disabled: 0.5, primaryGlow: 0.22 }),
 });
 
+/** The sound of each variant: a plain tick, a confirming pluck, a low knock before what cannot be undone. */
+const VARIANT_CUES = Object.freeze({ primary: SoundCue.UI_CONFIRM, secondary: SoundCue.UI_CLICK, danger: SoundCue.UI_DANGER });
+
 /** @typedef {"primary" | "secondary" | "danger"} ButtonVariant */
 /** @typedef {"body" | "small"} ButtonTextSize */
 /**
@@ -43,7 +47,8 @@ const PLATE = Object.freeze({
  * its plain middle stretched to the width. A label the ends would crowd
  * into an ellipsis keeps the drawn slab and is shown whole (narrow buttons
  * on a phone); one still too long for it is set in the small size before
- * it is ever shortened.
+ * it is ever shortened. Activating it makes its variant's sound (`cue` to
+ * choose another, or none).
  */
 export class Button extends UiNode {
   text;
@@ -57,7 +62,8 @@ export class Button extends UiNode {
   textSize;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, onActivate: () => void, variant?: ButtonVariant, align?: CanvasTextAlign, textSize?: ButtonTextSize }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, text: string, onActivate: () => void, variant?: ButtonVariant, align?: CanvasTextAlign, textSize?: ButtonTextSize, cue?: string | null }} options
+   *   `cue`: the sound it makes (a SoundCue; null for none), when not its variant's
    */
   constructor(options) {
     super(options);
@@ -68,6 +74,7 @@ export class Button extends UiNode {
     this.textSize = options.textSize ?? "body";
     this.interactive = true;
     this.focusable = true;
+    this.activationCue = options.cue === undefined ? VARIANT_CUES[this.variant] : options.cue;
   }
 
   activate() {

@@ -7,6 +7,8 @@ export const KeyMap = Object.freeze({
   END_TURN: Object.freeze(["e", "E"]),
   /** Secondary action on the focused node (card inspect); same as right-click / long-press. */
   INSPECT: Object.freeze(["i", "I"]),
+  /** Sound off and on again, on any screen. */
+  MUTE: Object.freeze(["m", "M"]),
 });
 
 /** Keys whose browser default (scrolling, focus change) must be suppressed while the game has focus. */

@@ -24,6 +24,8 @@ export class UiNode {
   focusable = false;
   /** A text field: it keeps focus when tapped with a finger, and the tap opens the device's keyboard for it. */
   editsText = false;
+  /** The sound activating it makes (a SoundCue), or null for none: the scene plays it on a click, a tap or Enter. @type {string | null} */
+  activationCue = null;
   /** Purely decorative overlays set this so pointer queries look through them. */
   passthrough = false;
   /** Pointer queries reach its children wherever they are, not only inside its own rect (a scene's root, whose children may sit in the margin around the design area). */
