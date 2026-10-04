@@ -3,4 +3,4 @@
  * the version from the root package.json, the build (the deployed commit) when
  * the Docker image is built; null in development.
  */
-export const RELEASE = Object.freeze({ version: "0.14.0", build: null });
+export const RELEASE = Object.freeze({ version: "0.14.1", build: null });
