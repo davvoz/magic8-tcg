@@ -10,15 +10,24 @@
  * jackpot module validates those and pays them. A season may charge an entry
  * fee (`entryFee`): the entries each player spends on a ranked game, bought in
  * the shop (the entries module); without it ranked play is free.
+ *
+ * The seasons of the file are only the first calendar: the server copies them
+ * into the database once, then operators change the calendar from the admin
+ * page (SeasonCalendar). What may change depends on the season's phase
+ * (checkSeasonChange): an upcoming season anything, a running one its name
+ * and its end, an ended one nothing, so no rating or jackpot is rewritten.
  */
-import { Issues, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
+import { Issues, allDefined, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
 const TOP_KEYS = Object.freeze(["v", "seasons", "prizePools", "eligibility", "fairPlay"]);
 const SEASON_KEYS = Object.freeze(["id", "name", "startsAt", "endsAt", "prizePool", "entryFee"]);
 /** Most entries one ranked game may cost. */
-const MAX_ENTRY_FEE = 100;
+export const MAX_ENTRY_FEE = 100;
+export const MAX_SEASON_NAME_LENGTH = 64;
+export const SEASON_ID = /^[a-z0-9-]{1,32}$/;
 const POOL_ID = /^[a-z0-9-]{1,32}$/;
+const MAX_SEASONS = 1000;
 
 /** Where a season is at a given time. */
 export const SeasonPhase = Object.freeze({ UPCOMING: "upcoming", RUNNING: "running", ENDED: "ended" });
@@ -62,27 +71,8 @@ export function validateRankedSettings(raw) {
     return fail("VALIDATION", issues.list()[0], { problems: issues.list() });
   }
   checkInteger(issues, top.v, "ranked.v", { min: 1, max: 1 });
-  const seasons = checkArrayOf(issues, top.seasons, "ranked.seasons", {
-    minLength: 1,
-    maxLength: 1000,
-    item: (item, path) => {
-      const season = checkObject(issues, item, path, SEASON_KEYS);
-      if (season === undefined) {
-        return undefined;
-      }
-      const id = checkString(issues, season.id, `${path}.id`, { pattern: /^[a-z0-9-]{1,32}$/ });
-      const name = checkString(issues, season.name, `${path}.name`, { minLength: 1, maxLength: 64 });
-      const startsAt = checkString(issues, season.startsAt, `${path}.startsAt`, { pattern: ISO_UTC });
-      const endsAt = season.endsAt === undefined ? null : checkString(issues, season.endsAt, `${path}.endsAt`, { pattern: ISO_UTC });
-      const prizePool = season.prizePool === undefined ? null : checkString(issues, season.prizePool, `${path}.prizePool`, { pattern: POOL_ID });
-      const entryFee = season.entryFee === undefined ? 0 : checkInteger(issues, season.entryFee, `${path}.entryFee`, { min: 0, max: MAX_ENTRY_FEE });
-      if (id === undefined || name === undefined || endsAt === undefined || prizePool === undefined || entryFee === undefined) {
-        return undefined;
-      }
-      return Object.freeze({ id, name, startsAt: startsAt === undefined ? Number.NaN : Date.parse(startsAt), endsAt: endsAt === null ? null : Date.parse(endsAt), prizePool, entryFee });
-    },
-  });
-  checkSeasonTimes(issues, seasons ?? []);
+  const seasons = checkArrayOf(issues, top.seasons, "ranked.seasons", { minLength: 1, maxLength: MAX_SEASONS, item: (item, path) => checkSeason(issues, item, path) });
+  checkCalendar(issues, seasons ?? [], "ranked.seasons");
   const eligibility = integers(issues, top.eligibility, "ranked.eligibility", ["minFinishedCasualGames"]);
   const fairPlay = integers(issues, top.fairPlay, "ranked.fairPlay", ["maxRatedGamesPerPairPerDay", "earlyConcedeTurn", "earlyConcedesToFlag", "earlyConcedeWindowDays"]);
   if (!issues.isEmpty || seasons === undefined || eligibility === undefined || fairPlay === undefined) {
@@ -92,20 +82,114 @@ export function validateRankedSettings(raw) {
 }
 
 /**
- * Seasons start in increasing order, and one ends after it starts and before the next one starts.
+ * One season, as the data file and the admin page write it: times in UTC to the second (`2026-10-08T00:00:00Z`),
+ * no `endsAt` (or null) for a season that ends when the next one starts, no `prizePool` (or null) for none.
+ * @param {Issues} issues
+ * @param {unknown} value
+ * @param {string} path
+ * @returns {Season | undefined}
+ */
+export function checkSeason(issues, value, path) {
+  const problems = issues.count;
+  const season = checkObject(issues, value, path, SEASON_KEYS);
+  if (season === undefined) {
+    return undefined;
+  }
+  const fields = allDefined({
+    id: checkString(issues, season.id, `${path}.id`, { pattern: SEASON_ID }),
+    name: checkString(issues, season.name, `${path}.name`, { minLength: 1, maxLength: MAX_SEASON_NAME_LENGTH }),
+    startsAt: checkTime(issues, season.startsAt, `${path}.startsAt`),
+    endsAt: optional(season.endsAt, (given) => checkTime(issues, given, `${path}.endsAt`)),
+    prizePool: optional(season.prizePool, (given) => checkString(issues, given, `${path}.prizePool`, { pattern: POOL_ID })),
+    entryFee: season.entryFee === undefined ? 0 : checkInteger(issues, season.entryFee, `${path}.entryFee`, { min: 0, max: MAX_ENTRY_FEE }),
+  });
+  // Unknown fields are reported without stopping the checks: any problem refuses the season.
+  return issues.count > problems || fields === undefined ? undefined : Object.freeze(fields);
+}
+
+/**
+ * A field that may be left out or null.
+ * @template T
+ * @param {unknown} value
+ * @param {(value: unknown) => T} check
+ * @returns {T | null}
+ */
+const optional = (value, check) => (value === undefined || value === null ? null : check(value));
+
+/**
+ * @param {Issues} issues
+ * @param {unknown} value
+ * @param {string} path
+ * @returns {number | undefined}
+ */
+function checkTime(issues, value, path) {
+  const text = checkString(issues, value, path, { pattern: ISO_UTC });
+  if (text === undefined) {
+    return undefined;
+  }
+  const time = Date.parse(text);
+  return Number.isNaN(time) ? issues.add(path, "not a real date") : time;
+}
+
+/**
+ * A calendar: distinct ids, seasons starting in increasing order, each ending after it starts and no later than the next one starts.
  * @param {Issues} issues
  * @param {readonly Season[]} seasons
+ * @param {string} path
  */
-function checkSeasonTimes(issues, seasons) {
+export function checkCalendar(issues, seasons, path) {
+  if (new Set(seasons.map((season) => season.id)).size !== seasons.length) {
+    issues.add(path, "season ids must be distinct");
+  }
   seasons.forEach((season, index) => {
     const next = seasons[index + 1];
     if (next !== undefined && next.startsAt <= season.startsAt) {
-      issues.add("ranked.seasons", "must start in increasing order");
+      issues.add(path, "must start in increasing order");
     }
     if (season.endsAt !== null && !(season.endsAt > season.startsAt && (next === undefined || season.endsAt <= next.startsAt))) {
-      issues.add(`ranked.seasons[${index}].endsAt`, "must be after its start and no later than the next season's start");
+      issues.add(`${path}[${index}].endsAt`, "must be after its start and no later than the next season's start");
     }
   });
+}
+
+/**
+ * Whether an operator may make a change to the calendar at `now`: create a season (`before` null), change one, or
+ * delete one (`after` null). A season is created or deleted only before it starts; once it runs, only its name and
+ * its end change (the end stays in the future); once it has ended, nothing. The calendar it makes is checked apart.
+ * @param {RankedSettings} settings the calendar before the change
+ * @param {Season | null} before
+ * @param {Season | null} after
+ * @param {number} now
+ * @returns {string | null} why not, or null
+ */
+export function checkSeasonChange(settings, before, after, now) {
+  if (before === null) {
+    return after !== null && after.startsAt <= now ? "a new season must start in the future" : null;
+  }
+  const phase = seasonPhase(settings, before, now);
+  if (phase === SeasonPhase.ENDED) {
+    return "a season that has ended cannot change";
+  }
+  if (phase === SeasonPhase.UPCOMING) {
+    return after !== null && after.startsAt <= now ? "the season must start in the future" : null;
+  }
+  return checkRunningChange(before, after, now);
+}
+
+/**
+ * @param {Season} before a running season
+ * @param {Season | null} after
+ * @param {number} now
+ * @returns {string | null}
+ */
+function checkRunningChange(before, after, now) {
+  if (after === null) {
+    return "a season that has started cannot be deleted";
+  }
+  if (after.startsAt !== before.startsAt || after.entryFee !== before.entryFee || after.prizePool !== before.prizePool) {
+    return "a running season can change only its name and its end";
+  }
+  return after.endsAt !== null && after.endsAt <= now ? "a running season must end in the future" : null;
 }
 
 /**
@@ -118,7 +202,9 @@ export function seasonEnd(settings, season) {
   if (season.endsAt !== null) {
     return season.endsAt;
   }
-  const next = settings.seasons[settings.seasons.indexOf(season) + 1];
+  // By id: the calendar may have changed since `season` was read from it.
+  const index = settings.seasons.findIndex((candidate) => candidate.id === season.id);
+  const next = index === -1 ? undefined : settings.seasons[index + 1];
   return next === undefined ? null : next.startsAt;
 }
 

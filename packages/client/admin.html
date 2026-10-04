@@ -17,7 +17,13 @@
     .stat.bad b { color: var(--bad); } .stat.wait b { color: var(--wait); }
     button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 0; background: #3e63dd; color: white; cursor: pointer; }
     button:disabled { opacity: .5; cursor: default; }
-    input { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); min-width: 0; }
+    input, select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); min-width: 0; }
+    input:disabled, select:disabled { opacity: .5; }
+    .fields { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin-top: 12px; }
+    .fields label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12px; }
+    .fields label input, .fields label select { font-size: 14px; }
+    .phase-running { color: var(--good); } .phase-ended { color: var(--muted); }
+    td button + button { margin-left: 6px; }
     code, .mono { font-family: ui-monospace, monospace; font-size: 12px; }
     #notice { margin: 8px 0; min-height: 1.5em; } #notice.bad { color: var(--bad); } #notice.good { color: var(--good); }
     .muted { color: var(--muted); }
@@ -37,6 +43,20 @@
       <p id="maintenanceState" class="muted"></p>
       <form id="maintenanceForm" class="row">Starts in <input id="maintenanceMinutes" class="minutes" type="number" min="0" max="1440" value="15" required> minutes <input id="maintenanceMessage" class="wide" maxlength="200" placeholder="message for the players (optional)"> <button type="submit">Announce</button> <button type="button" id="maintenanceEnd">End maintenance</button></form>
       <p class="muted">From the announcement the server takes no new shop orders, purchases between players or queue entries, and empties the queue; games in progress go on. Players see a countdown. A successful deploy ends it.</p>
+    </section>
+    <h2>Seasons</h2>
+    <section>
+      <p class="muted">Times are UTC. A season without an end lasts until the next one starts. Before a season starts everything can change; while it runs only its name and its end; once it has ended, nothing. A season with a jackpot needs an end; jackpots are defined in data/ranked/ranked.json.</p>
+      <table><thead><tr><th>Season</th><th>Starts (UTC)</th><th>Ends (UTC)</th><th>Entry fee</th><th>Jackpot</th><th>Phase</th><th></th></tr></thead><tbody id="seasons"></tbody></table>
+      <form id="seasonForm" class="fields">
+        <label>Id <input id="seasonId" required maxlength="32" pattern="[a-z0-9\-]{1,32}" placeholder="season-2" title="lowercase letters, digits and '-'"></label>
+        <label>Name <input id="seasonName" required maxlength="64" placeholder="Season 2"></label>
+        <label>Starts (UTC) <input id="seasonStarts" type="datetime-local" required></label>
+        <label>Ends (UTC, optional) <input id="seasonEnds" type="datetime-local"></label>
+        <label>Entry fee <input id="seasonFee" class="minutes" type="number" min="0" max="100" value="1" required></label>
+        <label>Jackpot <select id="seasonPool"><option value="">none</option></select></label>
+        <span><button type="submit" id="seasonSave">Add season</button> <button type="button" id="seasonCancel" hidden>Cancel</button></span>
+      </form>
     </section>
     <h2>Refunds to send</h2>
     <section><table><thead><tr><th>To</th><th>Amount</th><th>Memo</th><th>Status</th><th></th></tr></thead><tbody id="refunds"></tbody></table></section>

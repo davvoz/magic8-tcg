@@ -11,7 +11,7 @@
 - **Ogni partita è un periodo di rating.** I due giocatori vengono aggiornati insieme, a partire dai valori che avevano prima della partita. L'implementazione è verificata con l'esempio del paper (1464,06 / 151,52 / 0,05999).
 - **Un giocatore nuovo si muove in fretta; uno con molte partite si muove poco.** Battere chi ha un rating molto più alto vale di più.
 - **Rating provvisorio:** finché un giocatore non ha 3 partite classificate valutate nella stagione, il suo rating è provvisorio: compare in classifica dopo i rating assestati, senza posizione, e non vince premi. Alla terza partita diventa "assestato" e riceve una posizione.
-- **Stagioni:** i rating ripartono da capo a ogni stagione (`seasons` nel file dei dati). Una partita conta nella stagione in cui è finita. Una stagione finisce al suo `endsAt`, o altrimenti quando comincia la successiva; fra una stagione finita e la prossima la classificata è chiusa. Una stagione può avere un jackpot (doc 21).
+- **Stagioni:** i rating ripartono da capo a ogni stagione. Il calendario sta nel database (tabella `seasons`, migrazione 018). Al primo avvio su una tabella vuota il server ci copia le `seasons` del file dei dati; da lì in poi il file non viene più letto per le stagioni e le si gestisce dal pannello `/admin.html` (sezione *Seasons*, doc 07). Una stagione futura si crea, si modifica e si cancella liberamente; di una in corso si cambiano solo il nome e la fine (sempre nel futuro); una finita non cambia più, così nessun rating e nessun jackpot viene riscritto. Ogni modifica è nell'audit (`admin.season_created`, `admin.season_changed`, `admin.season_deleted`) e arriva subito a tutti i processi (NOTIFY `m8_seasons`). Una partita conta nella stagione in cui è finita. Una stagione finisce al suo `endsAt`, o altrimenti quando comincia la successiva; fra una stagione finita e la prossima la classificata è chiusa. Una stagione può avere un jackpot (doc 21).
 - **Ricalcolabile:** ogni partita finita pubblica il suo risultato sulla catena (`m8tcg_result`: account, `m = "ranked"`, vincitore; 03 §9), quindi chiunque può ricalcolare i rating. Il ricalcolo coincide a meno di arrotondamenti, perché le funzioni matematiche possono differire di un bit fra motori JavaScript diversi.
 
 ## Coda classificata
@@ -41,6 +41,8 @@
 |---|---|
 | `GET /api/ranking/leaderboard[?season=id]` | i primi 100 rating della stagione: prima gli assestati con posizione (`rank`), poi i provvisori con `rank: null` e `provisional: true` (pubblica, in cache 30 s) |
 | `GET /api/ranking/me` | rating, deviazione, provvisorio, posizione, partite vinte e perse, se si può giocare in classificata |
+| `GET /api/admin/seasons` | (operatori) il calendario: ogni stagione con fase e fine effettiva, e i prize pool che si possono assegnare |
+| `POST /api/admin/seasons` · `PUT /api/admin/seasons/:id` · `DELETE /api/admin/seasons/:id` | (operatori) crea, modifica, cancella una stagione; orari UTC al secondo (`2026-10-08T00:00:00Z`), `endsAt` null = finisce quando comincia la successiva |
 | `queue.join` con `mode: "ranked"` | coda classificata (WebSocket) |
 
 Client: nella lobby online si sceglie fra casual e classificata. Si vedono il proprio rating e, dalla lobby, la classifica.

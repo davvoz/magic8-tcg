@@ -26,7 +26,7 @@ import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, regi
 import { GameService, PgGameRepository, registerGameMessages, registerGameRoutes } from "./modules/gameplay/index.js";
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { LobbyService, registerLobbyMessages } from "./modules/lobby/index.js";
-import { PgRankingRepository, RankingService, registerRankingRoutes, validateRankedSettings } from "./modules/ranking/index.js";
+import { PgRankingRepository, PgSeasonRepository, RankingService, SeasonCalendar, registerRankingRoutes, registerSeasonRoutes, validateRankedSettings } from "./modules/ranking/index.js";
 import { JackpotService, PgJackpotRepository, PrizePayoutWatcher, registerJackpotRoutes, validatePrizePools } from "./modules/jackpot/index.js";
 import { ENTRY_KINDS, EntryService, PgEntryRepository, registerEntryRoutes } from "./modules/entries/index.js";
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
@@ -143,7 +143,9 @@ export async function createServerApp(deps) {
   if (!rankedSettings.ok) {
     throw new Error(`ranked settings are invalid: ${rankedSettings.error.message}`);
   }
-  const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: rankedSettings.value, games, clock, unitOfWork, logger });
+  // The seasons live in the database (the data file's are the first calendar); operators change them from the admin page.
+  const { seasons, pools } = await buildSeasons({ initial: rankedSettings.value, database, publish, listen, audit, clock, unitOfWork, logger });
+  const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: seasons.settings, games, clock, unitOfWork, logger });
   games.onGameFinished((summary) => ranking.record(summary).then(() => undefined));
   // Ranked entries: bought in the shop (paid to the bank, so they feed the jackpot), taken by each ranked game of a season with an entry fee.
   const entries = new EntryService({ repository: new PgEntryRepository(database), fees: { feeOf: (mode) => ranking.entryFeeOf(mode) }, clock, unitOfWork, logger, kinds: ENTRY_KINDS });
@@ -152,7 +154,7 @@ export async function createServerApp(deps) {
   });
   const fulfilment = new FulfilmentService({ orders: marketRepository, catalog: market.value, inventory, decks, epochs, payments, outbox, entries, notifications, audit, clock, unitOfWork, logger });
   // A season's jackpot: a share of the bank (the shop account, where every pack sale lands), split among its first places.
-  const { jackpot, prizePayouts } = buildJackpot({ settings: rankedSettings.value, wallets, paymentProviders, bankFor: receiverFor, cursors: paymentRepository, ranking, notifications, database, audit, clock, unitOfWork, logger });
+  const { jackpot, prizePayouts } = buildJackpot({ settings: seasons.settings, pools, wallets, paymentProviders, bankFor: receiverFor, cursors: paymentRepository, ranking, notifications, database, audit, clock, unitOfWork, logger });
   const matchmaking = new MatchmakingService({ repository: new PgMatchmakingRepository(database), decks, games, notifier: hub, clock, random, unitOfWork, logger, ranking, entries, gate: maintenance });
   // Who is online, and challenges between them (a game without the queue).
   const lobby = new LobbyService({
@@ -208,6 +210,7 @@ export async function createServerApp(deps) {
   });
   registerAdminRoutes({ router, admin });
   registerJackpotRoutes({ router, jackpot, admin });
+  registerSeasonRoutes({ router, seasons, admin });
   registerMaintenanceRoutes({ router, maintenance, admin, version, build: config.build });
   const rateLimiter = new RateLimiter({ now: () => clock.now() });
   const http = new HttpApp({
@@ -240,13 +243,42 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, realtime });
 }
 
 /**
- * The jackpot of the seasons with a prize pool, and the watcher of its payouts. Fails the start on a bad pool, an unknown bank or asset.
+ * The season calendar, read from the database (copied from the data file the first time), and the prize pools its
+ * seasons may name. Fails the start on a bad pool or calendar.
+ * @param {{
+ *   initial: import("./modules/ranking/domain/RankedSettings.js").RankedSettings,
+ *   database: import("./platform/db/Database.js").Database,
+ *   publish: (channel: string, payload: string) => Promise<unknown>,
+ *   listen: (channel: string, onPayload: (payload: string) => void, options: { onReconnect: () => void }) => Promise<() => Promise<void>>,
+ *   audit: AuditTrail,
+ *   clock: import("./kernel/time.js").Clock,
+ *   unitOfWork: import("./kernel/unitOfWork.js").UnitOfWork,
+ *   logger: import("./kernel/logger.js").Logger,
+ * }} deps
+ */
+async function buildSeasons({ initial, database, publish, listen, audit, clock, unitOfWork, logger }) {
+  const pools = validatePrizePools(initial.prizePools, initial.seasons);
+  if (!pools.ok) {
+    throw new Error(`prize pools are invalid: ${pools.error.message}`);
+  }
+  const checkPools = (/** @type {readonly import("./modules/ranking/domain/RankedSettings.js").Season[]} */ candidate) => {
+    const checked = validatePrizePools(initial.prizePools, candidate);
+    return checked.ok ? null : checked.error.message;
+  };
+  const seasons = new SeasonCalendar({ repository: new PgSeasonRepository(database), initial, poolIds: [...pools.value.keys()], checkPools, publish, listen, audit, clock, unitOfWork, logger });
+  await seasons.load();
+  return { seasons, pools: pools.value };
+}
+
+/**
+ * The jackpot of the seasons with a prize pool, and the watcher of its payouts. Fails the start on an unknown bank or asset.
  * @param {{
  *   settings: import("./modules/ranking/domain/RankedSettings.js").RankedSettings,
+ *   pools: ReadonlyMap<string, import("./modules/jackpot/index.js").PrizePool>,
  *   wallets: ReadonlyMap<string, import("./modules/identity/application/ports.js").WalletProvider>,
  *   paymentProviders: ReadonlyMap<string, import("./modules/payments/application/ports.js").PaymentProvider>,
  *   bankFor: (network: string) => string,
@@ -260,12 +292,8 @@ export async function createServerApp(deps) {
  *   logger: import("./kernel/logger.js").Logger,
  * }} deps
  */
-function buildJackpot({ settings, wallets, paymentProviders, bankFor, cursors, ranking, notifications, database, audit, clock, unitOfWork, logger }) {
-  const pools = validatePrizePools(settings.prizePools, settings.seasons);
-  if (!pools.ok) {
-    throw new Error(`prize pools are invalid: ${pools.error.message}`);
-  }
-  for (const pool of pools.value.values()) {
+function buildJackpot({ settings, pools, wallets, paymentProviders, bankFor, cursors, ranking, notifications, database, audit, clock, unitOfWork, logger }) {
+  for (const pool of pools.values()) {
     // Fails the start now rather than at the season's end: the bank and the asset must be known.
     bankFor(pool.network);
     precisionOf(paymentProviders, pool.asset);
@@ -273,7 +301,7 @@ function buildJackpot({ settings, wallets, paymentProviders, bankFor, cursors, r
   const repository = new PgJackpotRepository(database);
   const jackpot = new JackpotService({
     settings,
-    pools: pools.value,
+    pools,
     bankFor,
     readBalance: (network, account, asset) => readWalletBalance(wallets.get(network), account, asset, precisionOf(paymentProviders, asset)),
     formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)),
@@ -285,7 +313,7 @@ function buildJackpot({ settings, wallets, paymentProviders, bankFor, cursors, r
     unitOfWork,
     logger,
   });
-  const networks = [...new Set([...pools.value.values()].map((pool) => pool.network))];
+  const networks = [...new Set([...pools.values()].map((pool) => pool.network))];
   const prizePayouts = new PrizePayoutWatcher({ repository, cursors, providers: paymentProviders, bankFor, networks, audit, clock, logger });
   return { jackpot, prizePayouts };
 }

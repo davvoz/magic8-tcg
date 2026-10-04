@@ -21,7 +21,7 @@ const when = (ms) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
 /**
  * @param {string} path
  * @param {unknown} [body]
- * @param {"GET" | "POST" | "DELETE"} [method]
+ * @param {"GET" | "POST" | "PUT" | "DELETE"} [method]
  */
 async function api(path, body, method = body === undefined ? "GET" : "POST") {
   const json = body === undefined ? {} : { "content-type": "application/json" };
@@ -199,9 +199,132 @@ async function showMaintenance() {
   element("maintenanceEnd").disabled = maintenance === null;
 }
 
+/** The season being edited in the form, or null when the form adds one. @type {any} */
+let editing = null;
+
+/**
+ * A datetime-local value (taken as UTC) as the API writes times, and back.
+ * @param {string} value
+ */
+const toUtc = (value) => (value === "" ? null : `${value.slice(0, 16)}:00Z`);
+/** @param {string} iso */
+const fromUtc = (iso) => iso.slice(0, 16);
+
+/**
+ * @param {string} label
+ * @param {() => void} onClick
+ * @param {boolean} enabled
+ */
+function actionButton(label, onClick, enabled) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.disabled = !enabled;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+/** @param {any} season */
+function seasonEndText(season) {
+  if (season.endsAt !== null) {
+    return when(Date.parse(season.endsAt));
+  }
+  return season.end === null ? "never" : `${when(Date.parse(season.end))} (next season starts)`;
+}
+
+async function showSeasons() {
+  const view = await api("/api/admin/seasons");
+  const pools = element("seasonPool");
+  if (pools.options.length !== view.pools.length + 1) {
+    const option = (/** @type {string} */ label, /** @type {string} */ value) => Object.assign(document.createElement("option"), { textContent: label, value });
+    pools.replaceChildren(option("none", ""), ...view.pools.map((/** @type {string} */ pool) => option(pool, pool)));
+  }
+  element("seasons").replaceChildren(
+    ...view.seasons.map((/** @type {any} */ season) => {
+      const name = document.createElement("span");
+      name.append(season.name, " ", cell("code", season.id));
+      const phase = cell("span", season.phase);
+      phase.className = `phase-${season.phase}`;
+      const actions = document.createElement("span");
+      actions.append(actionButton("Edit", () => editSeason(season), season.phase !== "ended"), actionButton("Delete", () => deleteSeason(season), season.phase === "upcoming"));
+      return row([name, when(Date.parse(season.startsAt)), seasonEndText(season), String(season.entryFee), season.prizePool ?? "—", phase, actions]);
+    }),
+  );
+}
+
+/** What the form shows when it adds a season. */
+const NEW_SEASON = Object.freeze({ id: "", name: "", startsAt: null, endsAt: null, entryFee: 1, prizePool: null, phase: "new" });
+
+/** @param {any} season null: back to adding a season */
+function editSeason(season) {
+  editing = season;
+  const shown = season ?? NEW_SEASON;
+  element("seasonId").value = shown.id;
+  element("seasonName").value = shown.name;
+  element("seasonStarts").value = shown.startsAt === null ? "" : fromUtc(shown.startsAt);
+  element("seasonEnds").value = shown.endsAt === null ? "" : fromUtc(shown.endsAt);
+  element("seasonFee").value = String(shown.entryFee);
+  element("seasonPool").value = shown.prizePool ?? "";
+  // A running season changes only its name and end; the id never changes.
+  element("seasonId").disabled = season !== null;
+  for (const id of ["seasonStarts", "seasonFee", "seasonPool"]) {
+    element(id).disabled = shown.phase === "running";
+  }
+  element("seasonSave").textContent = season === null ? "Add season" : `Save ${shown.id}`;
+  element("seasonCancel").hidden = season === null;
+  element(season === null ? "seasonId" : "seasonName").focus();
+}
+
+/** @param {any} season */
+async function deleteSeason(season) {
+  if (!window.confirm(`Delete the season "${season.name}" (${season.id})? It has not started yet.`)) {
+    return;
+  }
+  try {
+    await api(`/api/admin/seasons/${encodeURIComponent(season.id)}`, undefined, "DELETE");
+    notice(`Season ${season.id} deleted.`, "good");
+    if (editing?.id === season.id) {
+      editSeason(null);
+    }
+    await showSeasons();
+  } catch (error) {
+    notice(`Not deleted: ${error instanceof Error ? error.message : String(error)}`, "bad");
+  }
+}
+
+element("seasonForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  // A time left as it was goes back exactly (to the second): a running season's start must not move.
+  const time = (/** @type {string} */ id, /** @type {string | null} */ original) => (original !== null && element(id).value === fromUtc(original) ? original : toUtc(element(id).value));
+  const fields = {
+    name: element("seasonName").value.trim(),
+    startsAt: time("seasonStarts", editing?.startsAt ?? null),
+    endsAt: time("seasonEnds", editing?.endsAt ?? null),
+    prizePool: element("seasonPool").value === "" ? null : element("seasonPool").value,
+    entryFee: Number(element("seasonFee").value),
+  };
+  if (editing?.phase === "running" && !window.confirm(`Change the running season "${editing.name}"? Players see the new name and end at once.`)) {
+    return;
+  }
+  try {
+    if (editing === null) {
+      await api("/api/admin/seasons", { id: element("seasonId").value.trim(), ...fields });
+      notice(`Season ${element("seasonId").value.trim()} added.`, "good");
+    } else {
+      await api(`/api/admin/seasons/${encodeURIComponent(editing.id)}`, fields, "PUT");
+      notice(`Season ${editing.id} saved.`, "good");
+    }
+    editSeason(null);
+    await showSeasons();
+  } catch (error) {
+    notice(`Not saved: ${error instanceof Error ? error.message : String(error)}`, "bad");
+  }
+});
+element("seasonCancel").addEventListener("click", () => editSeason(null));
+
 async function refresh() {
   try {
-    await Promise.all([showOverview(), showMaintenance(), showRefunds(), showPrizes(), showAlerts()]);
+    await Promise.all([showOverview(), showMaintenance(), showSeasons(), showRefunds(), showPrizes(), showAlerts()]);
   } catch (error) {
     notice(error instanceof Error ? error.message : String(error), "bad");
   }

@@ -135,6 +135,16 @@ Un allarme si risolve dal pannello con una nota su cosa si è controllato o fatt
 3. Importo sbagliato, memo di un rimborso già pagato o sconosciuto: il server lo registra nell'audit (`payments.refund_mismatch`, `refund_paid_twice`, `refund_unknown`) e nel log come errore. Il denaro inviato per sbaglio si recupera a mano chiedendolo al destinatario.
 
 
+### Stagioni
+
+Il calendario della classificata si gestisce dal pannello `/admin.html`, sezione *Seasons* (orari in UTC):
+
+- **Nuova stagione:** id (minuscole, cifre, `-`), nome, inizio nel futuro, fine facoltativa, ingresso, jackpot (uno dei `prizePools` del file, o nessuno; con il jackpot la fine è obbligatoria). Una stagione senza fine dura fino all'inizio della successiva: aggiungerne una dopo la stagione in corso ne fissa la fine.
+- **Modifica:** una stagione futura cambia in tutto; una in corso solo nome e fine (anticiparla o posticiparla, sempre nel futuro); una finita mai.
+- **Cancellazione:** solo di una stagione futura, e ne resta sempre almeno una.
+
+Il server rifiuta un calendario incoerente (stagioni sovrapposte, fine prima dell'inizio, pool inesistente). Ogni modifica è nell'audit (`admin.season_*`, con prima e dopo). Il file `data/ranked/ranked.json` conta solo per il primo avvio su un database vuoto.
+
 ### Premi di stagione
 
 Alla fine di una stagione con jackpot (doc 21) il server, dopo 30 minuti, congela il jackpot e scrive i premi dei primi tre. Nel pannello `/admin.html`, sezione *Season prizes to send*:

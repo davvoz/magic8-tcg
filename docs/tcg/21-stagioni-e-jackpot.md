@@ -55,9 +55,10 @@ Il pannello si vede anche senza accesso: il jackpot è pubblico. Il client lo ri
 }
 ```
 
+- Le `seasons` del file sono solo il calendario iniziale: il server le copia nel database al primo avvio, poi le stagioni si gestiscono dal pannello `/admin.html` (sezione *Seasons*, doc 09). I `prizePools` invece restano nel file: cambiare le regole dei soldi richiede un deploy.
 - `endsAt` è facoltativo: senza, una stagione finisce quando comincia la successiva (l'ultima non finisce mai). Una stagione con `prizePool` deve averlo.
 - Fra la fine di una stagione e l'inizio della successiva la classificata è chiusa.
-- Una nuova stagione con jackpot è solo una nuova riga in `seasons` che nomina un pool. Si possono definire pool diversi (altra quota, più posizioni, altro asset accettato dallo shop).
+- Una nuova stagione con jackpot si crea dal pannello scegliendo un pool. Pool, quota e fine si possono cambiare finché la stagione non comincia; da quando è in corso si può spostarne solo la fine (il jackpot si chiude 30 minuti dopo la nuova fine). Si possono definire pool diversi nel file (altra quota, più posizioni, altro asset accettato dallo shop).
 - Il server controlla tutto all'avvio: percentuali che sommano a 100, quota non oltre l'intero wallet, pool esistente, banca e asset conosciuti. Un errore ferma l'avvio.
 
 ## Fair play

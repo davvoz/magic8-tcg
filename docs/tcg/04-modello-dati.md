@@ -20,6 +20,7 @@
 | Notifications (009) | `notifications` |
 | Jackpot (015) | `season_jackpots`, `season_prizes` |
 | Entries (016) | `entry_balances` (saldo ≥ 0), `entry_ledger` (movimenti, solo in aggiunta, uno per motivo e riferimento: doc 22) |
+| Stagioni (018) | `seasons` (il calendario della classificata, gestito dal pannello admin: doc 09) |
 | Trasversali | `idempotency_keys` (creata in 001, oggi non usata: le chiavi di idempotenza stanno in `orders`, `trades` e `listings`), `audit_logs` |
 
 ## 2. Invarianti garantite dal database (non solo dal codice)
