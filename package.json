@@ -1,6 +1,6 @@
 {
   "name": "magic8-tcg",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "description": "Multiplayer collectible card game: authoritative server, STEEM identity and payments, purchases, packs, card trades and game results recorded on-chain",
   "type": "module",
