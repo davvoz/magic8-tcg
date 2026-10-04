@@ -31,6 +31,7 @@ import { UiNode } from "../ui/UiNode.js";
  * @property {() => boolean} [usingTouch] whether the player is playing by touch (their last input was a finger or a pen)
  * @property {TextEntry} [textEntry] the device's own text input, for a field tapped with a finger
  * @property {SoundPlayer} [sound] the game's sound (none under test): the cues scenes play, and muting
+ * @property {(url: string) => void} [openLink] opens a web page outside the game, in a new tab (none under test)
  */
 
 /**

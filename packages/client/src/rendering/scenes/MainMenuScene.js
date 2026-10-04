@@ -3,7 +3,8 @@
  * buttons and a content summary. Buttons whose destination scene is not
  * registered are disabled rather than pretending to work. Signed in, the
  * top-right button opens the notifications and counts the unread ones;
- * beside it, Sound opens the sound settings (music, effects, mute).
+ * beside it, Sound opens the sound settings (music, effects, mute), and Info
+ * the screen that explains the game (rules, purchases, sign-in, ranked, shop).
  *
  * On a compact screen (a phone in landscape) the fan, the title and the
  * summary take the left half and the buttons the right one.
@@ -39,6 +40,8 @@ const SUMMARY = Object.freeze({ y: 718, lineHeight: 28, width: 900 });
 const BELL = Object.freeze({ width: 260, height: 48, margin: 40 });
 /** The sound settings button, left of the bell (in its place when there is none). */
 const SOUND = Object.freeze({ width: 160, gap: 12, compactWidth: 130 });
+/** The Info button, left of the sound settings button. */
+const INFO = Object.freeze({ width: 120, compactWidth: 96 });
 /** The jackpot card, right of the button column: its gap from the column and its widest. */
 const JACKPOT = Object.freeze({ gap: 60, maxWidth: 500 });
 /** The signed-in player's portrait and name, in the top-left corner (the bell's mirror). */
@@ -159,8 +162,9 @@ export class MainMenuScene extends Scene {
     });
 
     this.#buildBell(layout);
-    this.#buildSound(layout);
-    this.#buildProfile(layout);
+    const soundX = this.#buildSound(layout);
+    const infoX = this.#buildInfo(layout, soundX);
+    this.#buildProfile(layout, infoX);
     const lines = this.#summaryLines();
     const { summary } = layout;
     const summaryTop = summary.bottom === null ? summary.y : summary.bottom - lines.length * summary.lineHeight;
@@ -262,16 +266,34 @@ export class MainMenuScene extends Scene {
   /**
    * The sound settings button, when the game has sound.
    * @param {MenuLayout} layout
+   * @returns {number} where the header's buttons start so far: the next one goes left of it
    */
   #buildSound({ bell }) {
     const { compact } = this.services.viewport;
     const audio = this.#app.audio;
+    // With no bell, the row ends where the bell would.
+    const edge = this.#bellShown() ? bell.x : bell.x + bell.width + SOUND.gap;
     if (audio === undefined) {
-      return;
+      return edge;
     }
     const width = compact ? SOUND.compactWidth : SOUND.width;
-    const x = this.#bellShown() ? bell.x - SOUND.gap - width : bell.x + bell.width - width;
+    const x = edge - SOUND.gap - width;
     this.#soundButton = this.root.add(new Button({ id: "sound", x, y: bell.y, width, height: bell.height, text: soundLabel(audio.settings), textSize: compact ? "small" : "body", onActivate: () => this.#showAudioSettings() }));
+    return x;
+  }
+
+  /**
+   * The Info button, left of the header's other buttons.
+   * @param {MenuLayout} layout
+   * @param {number} edge where the header's buttons start so far
+   * @returns {number} where it starts
+   */
+  #buildInfo({ bell }, edge) {
+    const { compact } = this.services.viewport;
+    const width = compact ? INFO.compactWidth : INFO.width;
+    const x = edge - SOUND.gap - width;
+    this.root.add(new Button({ id: "info", x, y: bell.y, width, height: bell.height, text: "Info", textSize: compact ? "small" : "body", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO) }));
+    return x;
   }
 
   #showAudioSettings() {
@@ -284,17 +306,19 @@ export class MainMenuScene extends Scene {
   }
 
   /**
-   * The signed-in player's STEEM profile picture and name.
+   * The signed-in player's STEEM profile picture and name, the name stopping short of the header's buttons.
    * @param {MenuLayout} layout
+   * @param {number} edge where the header's buttons start
    */
-  #buildProfile({ profile }) {
+  #buildProfile({ profile }, edge) {
     const state = this.#app.identity?.state;
     const user = state?.status === IdentityStatus.SIGNED_IN ? state.user : null;
     if (user === null || user === undefined) {
       return;
     }
     this.root.add(new AvatarNode({ id: "profile.avatar", x: profile.x, y: profile.y, size: profile.size, account: user.account }));
-    this.root.add(new Label({ id: "profile.name", x: profile.x + profile.size + 12, y: profile.y, width: profile.nameWidth, height: profile.size, text: `@${user.account}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    const nameX = profile.x + profile.size + 12;
+    this.root.add(new Label({ id: "profile.name", x: nameX, y: profile.y, width: Math.min(profile.nameWidth, edge - SOUND.gap - nameX), height: profile.size, text: `@${user.account}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
   }
 
   /** Online play, once signed in and the account is loaded. */

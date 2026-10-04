@@ -9,6 +9,7 @@ import { DeckBuilderScene } from "./DeckBuilderScene.js";
 import { DeckSelectionScene } from "./DeckSelectionScene.js";
 import { ErrorScene } from "./ErrorScene.js";
 import { GameHistoryScene } from "./GameHistoryScene.js";
+import { InfoScene } from "./InfoScene.js";
 import { LeaderboardScene } from "./LeaderboardScene.js";
 import { LiveGamesScene } from "./LiveGamesScene.js";
 import { LoginScene } from "./LoginScene.js";
@@ -33,6 +34,7 @@ export function registerScenes(sceneManager, app) {
     .register(SceneId.DECK_BUILDER, (services) => new DeckBuilderScene(services, app))
     .register(SceneId.MATCH, (services) => new MatchScene(services, { rarityOf: (cardId) => app.rarities?.of(cardId) ?? null, audio: app.audio }))
     .register(SceneId.LOGIN, (services) => new LoginScene(services, app))
+    .register(SceneId.INFO, (services) => new InfoScene(services, app))
     .register(SceneId.ERROR, (services) => new ErrorScene(services));
   if (app.account !== undefined) {
     sceneManager

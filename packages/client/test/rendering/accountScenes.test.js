@@ -98,9 +98,12 @@ describe("MainMenuScene — account", () => {
       assert.ok(node.bounds.y + node.bounds.height <= theme.layout.logicalHeight, `${node.id ?? node.text} overflows`);
     }
     const buttons = nodes(menu).filter((node) => node.interactive);
-    for (let index = 1; index < buttons.length; index += 1) {
-      assert.ok(buttons[index].bounds.y >= buttons[index - 1].bounds.y + buttons[index - 1].bounds.height, "buttons do not overlap");
-    }
+    const apart = (a, b) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+    buttons.forEach((button, index) => {
+      for (const other of buttons.slice(index + 1)) {
+        assert.ok(apart(button.bounds, other.bounds), `${button.id} and ${other.id} do not overlap`);
+      }
+    });
   });
 });
 

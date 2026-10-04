@@ -13,6 +13,7 @@
  *   /tools/preview/?scene=match&turns=6      a match after N auto-played turns (seeded)
  *   /tools/preview/?scene=match&deck=precon_shadow   playing that deck (default: the first playable one)
  *   /tools/preview/?scene=match&inspect=1    plus the inspect overlay on a hand card
+ *   /tools/preview/?scene=info&topic=ranked  the Info screen on a topic (default: how to play)
  *   ...&art=procedural                       every card and the table with procedural art, ignoring data/art/
  *
  * Illustrations are all loaded before the first frame, so a screenshot never
@@ -252,10 +253,12 @@ function inspectFirstCard(sceneManager) {
 /**
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
  * @param {import("../../src/application/AppContext.js").AppContext} app
- * @param {{ scene: string, turns: number, inspect: boolean, deckId: string | null }} request
+ * @param {{ scene: string, turns: number, inspect: boolean, deckId: string | null, topic: string | null }} request
  */
-async function show(sceneManager, app, { scene, turns, inspect, deckId }) {
-  if (scene === "decks") {
+async function show(sceneManager, app, { scene, turns, inspect, deckId, topic }) {
+  if (scene === "info") {
+    sceneManager.navigate(SceneId.INFO, topic === null ? {} : { topic });
+  } else if (scene === "decks") {
     sceneManager.navigate(SceneId.DECK_SELECTION);
   } else if (scene === "starter") {
     sceneManager.navigate(SceneId.STARTER);
@@ -284,6 +287,7 @@ async function boot() {
     turns: Number.parseInt(query.get("turns") ?? "6", 10) || 0,
     inspect: query.get("inspect") === "1",
     deckId: query.get("deck"),
+    topic: query.get("topic"),
     procedural: query.get("art") === "procedural",
   };
   const source = new FetchContentSource(MANIFEST, (url, init) => fetch(url, init));

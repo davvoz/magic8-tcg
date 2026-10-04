@@ -41,12 +41,13 @@ export class SceneManager {
   #navigationListeners = new Set();
 
   /**
-   * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void, textEntry?: import("./Scene.js").TextEntry, touchFirst?: boolean, sound?: import("./Scene.js").SoundPlayer }} deps
+   * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void, textEntry?: import("./Scene.js").TextEntry, touchFirst?: boolean, sound?: import("./Scene.js").SoundPlayer, openLink?: (url: string) => void }} deps
    *   `textEntry`: the device's own text input, for fields tapped with a finger (none under test);
    *   `touchFirst`: the device is mainly played by touch (a phone), assumed until the first input says otherwise;
-   *   `sound`: the game's sound, for the scenes (none under test)
+   *   `sound`: the game's sound, for the scenes (none under test);
+   *   `openLink`: opens a web page outside the game, in a new tab (none under test)
    */
-  constructor({ theme, viewport, logger, requestRender, textEntry, touchFirst = false, sound }) {
+  constructor({ theme, viewport, logger, requestRender, textEntry, touchFirst = false, sound, openLink }) {
     this.#requestRender = requestRender;
     this.#touch = touchFirst;
     this.#textEntry = textEntry;
@@ -60,6 +61,7 @@ export class SceneManager {
       usingTouch: () => this.#touch,
       ...(textEntry === undefined ? {} : { textEntry }),
       ...(sound === undefined ? {} : { sound }),
+      ...(openLink === undefined ? {} : { openLink }),
     });
   }
 

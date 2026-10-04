@@ -20,6 +20,7 @@ import { DeckSelectionScene } from "../../src/rendering/scenes/DeckSelectionScen
 import { ErrorScene } from "../../src/rendering/scenes/ErrorScene.js";
 import { ActiveKeyPrompt } from "../../src/application/wallet/ActiveKeyPrompt.js";
 import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
+import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { NotificationsScene } from "../../src/rendering/scenes/NotificationsScene.js";
 import { OnlineScene } from "../../src/rendering/scenes/OnlineScene.js";
@@ -175,6 +176,8 @@ const SCREENS = Object.freeze([
   { name: "sign in with a posting key", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }) },
   { name: "shop asking for the active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, false), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.key")) },
   { name: "shop unlocking the saved active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, true), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.forget")) },
+  { name: "info", make: (s, app) => new InfoScene(s, app) },
+  { name: "info on signing in", make: (s, app) => new InfoScene({ ...s, openLink: () => undefined }, app), params: { topic: "account" }, after: (scene) => assert.ok(scene.root.findById("info.link")) },
   { name: "error", make: (s) => new ErrorScene(s), params: { title: "Something went wrong", message: "A long explanation of what went wrong." }, controls: false },
 ]);
 

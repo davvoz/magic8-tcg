@@ -14,6 +14,7 @@ export const SceneId = Object.freeze({
   TRADES: "trades",
   MARKET: "market",
   NOTIFICATIONS: "notifications",
+  INFO: "info",
   MATCH: "match",
   ERROR: "error",
 });

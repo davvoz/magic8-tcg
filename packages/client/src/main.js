@@ -270,7 +270,9 @@ function buildPresentation(theme, sound) {
   // A field tapped with a finger is typed into with the phone's own keyboard.
   const textEntry = new TextEntryBar(document, { onChange: () => loop.requestRender() });
   const touchFirst = isTouchFirst();
-  const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender(), textEntry, touchFirst, sound });
+  // Opened from a click or a key press, so the browser does not take it for a popup.
+  const openLink = (/** @type {string} */ url) => void window.open(url, "_blank", "noopener,noreferrer");
+  const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender(), textEntry, touchFirst, sound, openLink });
   const host = new CanvasHost({
     canvas,
     viewport,
