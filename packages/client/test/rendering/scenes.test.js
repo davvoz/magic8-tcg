@@ -212,7 +212,7 @@ describe("MainMenuScene", () => {
     scene.enter({});
     const context = new FakeContext2D();
     scene.render(context);
-    assert.ok(context.texts.includes("DOMIN8"));
+    assert.ok(context.texts.includes("KIJAM"));
     assert.ok(context.texts.some((text) => text.includes(`${content.catalog.size} cards · ${content.preconDecks.length} preconstructed decks`)));
     assert.ok(context.texts.some((text) => text.includes("1 custom deck saved in this browser")));
     const [play, builder] = scene.root.focusableNodes();

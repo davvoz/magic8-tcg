@@ -4,21 +4,21 @@
   <meta charset="utf-8">
   <!-- viewport-fit=cover: the canvas reaches under a notch, the game keeps its controls clear of it (safe-area insets, read below). -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
-  <title>DOMIN8</title>
+  <title>KIJAM</title>
   <meta name="description" content="Multiplayer collectible card game">
   <!-- Installable as an app (PWA): the manifest, its icons, and the service worker (sw.js, registered by src/main.js). -->
   <link rel="manifest" href="app.webmanifest">
   <meta name="theme-color" content="#0a0c14">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <!-- The game's name is set in New Rocker (fonts/, SIL Open Font License: fonts/OFL.txt), here and on the menu's canvas. -->
-  <link rel="preload" href="fonts/NewRocker-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- The game's name is set in Cinzel Decorative (fonts/, SIL Open Font License: fonts/OFL.txt), here and on the menu's canvas. -->
+  <link rel="preload" href="fonts/CinzelDecorative-Black.woff2" as="font" type="font/woff2" crossorigin>
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="DOMIN8">
+  <meta name="apple-mobile-web-app-title" content="KIJAM">
   <style>
-    @font-face { font-family: 'New Rocker'; font-style: normal; font-weight: 100 900; font-display: block; src: url(fonts/NewRocker-Regular.woff2) format('woff2'); }
+    @font-face { font-family: 'Cinzel Decorative'; font-style: normal; font-weight: 900; font-display: block; src: url(fonts/CinzelDecorative-Black.woff2) format('woff2'); }
     /* HTML is used only to host the canvas. All game UI is rendered on the canvas, except the loading screen (shown before any script runs), the maintenance banner, the inputs over the text fields when played by touch and the rotate hint. */
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0a0c14; overflow: hidden; overscroll-behavior: none; }
     body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
@@ -55,7 +55,7 @@
     .loading-sigil .ring-inner { transform-origin: 0 0; animation: loading-turn 40s linear infinite reverse; }
     .loading-sigil .orbit { transform-origin: 0 0; animation: loading-turn 9s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
     .loading-sigil .star { transform-origin: 0 0; animation: loading-pulse 2.8s ease-in-out infinite; }
-    .loading-title { margin: 0; font-family: 'New Rocker', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif; font-size: clamp(36px, 9vmin, 84px); font-weight: 900; letter-spacing: 0.06em; padding-left: 0.06em; line-height: 1; color: #f7dfa0; background: linear-gradient(105deg, transparent 38%, rgba(255, 248, 225, 0.95) 50%, transparent 62%) 160% 0 / 250% 100% no-repeat, linear-gradient(180deg, #fffbe9 0%, #f7dfa0 22%, #e2b25c 47%, #8a5f1e 53%, #e2b25c 60%, #f7dfa0 85%, #c08b3f 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 16px rgba(226, 178, 92, 0.45)); animation: loading-sheen 4.5s ease-in-out 0.6s infinite; }
+    .loading-title { margin: 0; font-family: 'Cinzel Decorative', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif; font-size: clamp(36px, 9vmin, 84px); font-weight: 900; letter-spacing: 0.06em; padding-left: 0.06em; line-height: 1; color: #f7dfa0; background: linear-gradient(105deg, transparent 38%, rgba(255, 248, 225, 0.95) 50%, transparent 62%) 160% 0 / 250% 100% no-repeat, linear-gradient(180deg, #fffbe9 0%, #f7dfa0 22%, #e2b25c 47%, #8a5f1e 53%, #e2b25c 60%, #f7dfa0 85%, #c08b3f 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 16px rgba(226, 178, 92, 0.45)); animation: loading-sheen 4.5s ease-in-out 0.6s infinite; }
     .loading-ornament { position: relative; width: min(320px, 60vw); height: 1px; background: linear-gradient(90deg, transparent, #e2b25c 35%, #e2b25c 65%, transparent); }
     .loading-ornament::after { content: ""; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; background: #f7dfa0; transform: translate(-50%, -50%) rotate(45deg); box-shadow: 0 0 8px #e2b25c; }
     .loading-bar { position: relative; width: min(360px, 70vw); height: 3px; margin-top: clamp(4px, 1.5vmin, 12px); border-radius: 2px; background: rgba(226, 178, 92, 0.16); }
@@ -76,9 +76,9 @@
   </style>
 </head>
 <body>
-  <canvas id="game" aria-label="DOMIN8 card game" role="application"></canvas>
+  <canvas id="game" aria-label="KIJAM card game" role="application"></canvas>
   <div id="safe-area" aria-hidden="true"></div>
-  <div id="loading" class="loading" role="progressbar" aria-label="Loading DOMIN8" aria-busy="true" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+  <div id="loading" class="loading" role="progressbar" aria-label="Loading KIJAM" aria-busy="true" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
     <div class="loading-sigil" aria-hidden="true">
       <svg viewBox="-100 -100 200 200">
         <defs>
@@ -112,12 +112,12 @@
         </g>
       </svg>
     </div>
-    <h1 class="loading-title">DOMIN8</h1>
+    <h1 class="loading-title">KIJAM</h1>
     <div class="loading-ornament" aria-hidden="true"></div>
     <div class="loading-bar" aria-hidden="true"><div class="loading-bar-fill"></div></div>
     <p class="loading-status">Reading the stars…</p>
   </div>
-  <div class="rotate-hint" role="alert">Turn your device sideways<small>DOMIN8 is played in landscape</small></div>
+  <div class="rotate-hint" role="alert">Turn your device sideways<small>KIJAM is played in landscape</small></div>
   <noscript>This game requires JavaScript.</noscript>
   <script type="importmap">{ "imports": { "@magic8/engine/": "/engine/", "@magic8/protocol": "/protocol/index.js", "@magic8/steem": "/steem/index.js", "@noble/hashes/": "/vendor/noble-hashes/", "@noble/curves/": "/vendor/noble-curves/" } }</script>
   <script type="module" src="src/main.js"></script>

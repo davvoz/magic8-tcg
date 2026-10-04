@@ -12,12 +12,12 @@ const KINDS = Object.freeze({
   [ManifestKind.BROADCASTERS]: Object.freeze({
     label: "Broadcaster accounts, comma-separated (posting keys only on the server)",
     build: (/** @type {string[]} */ members, /** @type {number} */ fromBlock) => broadcastersManifest({ accounts: members, fromBlock }),
-    title: "DOMIN8: authorise game record broadcasters",
+    title: "KIJAM: authorise game record broadcasters",
   }),
   [ManifestKind.ACK_KEYS]: Object.freeze({
     label: "Ack public keys (STM…), comma-separated: the server's M8_ACK_KEY, never an account key",
     build: (/** @type {string[]} */ members, /** @type {number} */ fromBlock) => ackKeysManifest({ keys: members, fromBlock }),
-    title: "DOMIN8: name the keys that sign acks to players",
+    title: "KIJAM: name the keys that sign acks to players",
   }),
 });
 

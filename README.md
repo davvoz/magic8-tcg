@@ -1,4 +1,4 @@
-# Magic8 TCG
+# KIJAM
 
 Multiplayer collectible card game built on the magic8 rules engine (forked with its history):
 

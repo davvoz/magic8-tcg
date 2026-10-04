@@ -1,4 +1,4 @@
-# Magic8 TCG — Panoramica funzionale
+# KIJAM — Panoramica funzionale
 
 **Stato:** 2026-09-30. Descrive il gioco e l'ecosistema così come funzionano oggi, senza dettagli di implementazione. Per il *come* rimanda ai documenti tecnici (00–16).
 
@@ -6,7 +6,7 @@
 
 ## 1. In breve
 
-Magic8 TCG è un gioco di carte collezionabili **uno contro uno**, giocato nel browser.
+KIJAM è un gioco di carte collezionabili **uno contro uno**, giocato nel browser.
 
 - Si gioca con **mazzi di 30–40 carte**, creature e magie di cinque fazioni più le neutrali. Vince chi porta a zero la vita dell'avversario.
 - Le carte sono **copie possedute**: ognuna ha un proprietario, un numero di serie e una storia.

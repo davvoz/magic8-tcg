@@ -81,7 +81,7 @@ export class MainMenuScene extends Scene {
   /** @type {JackpotPanel | null} */
   #jackpotPanel = null;
   /** The game's name; kept across rebuilds, so its light keeps its pace. */
-  #title = new TitleLogo({ text: "DOMIN8" });
+  #title = new TitleLogo({ text: "KIJAM" });
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -186,7 +186,7 @@ export class MainMenuScene extends Scene {
     this.root.add(this.#title);
     const jackpot = this.#app.jackpot?.state.jackpot ?? null;
     if (jackpot === null || layout.jackpot.layout !== "banner") {
-      this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.subtitle.y, width: hero.textWidth, height: layout.subtitle.height, text: "A canvas card game engine", size: layout.subtitle.size, colorKey: "textMuted" }));
+      this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.subtitle.y, width: hero.textWidth, height: layout.subtitle.height, text: "A collectible card game on STEEM", size: layout.subtitle.size, colorKey: "textMuted" }));
       this.root.add(new Ornament({ x: hero.centerX - layout.ornament.width / 2, y: layout.ornament.y, width: layout.ornament.width, height: layout.ornament.height }));
     }
     this.#jackpotPanel = jackpot === null ? null : this.#buildJackpot(jackpot, layout);
@@ -407,7 +407,7 @@ export class MainMenuScene extends Scene {
   /** The game's release (so a player can tell which one they run), then the engine's. */
   #versionSummary() {
     const { release, version } = this.#app.environment;
-    return release === undefined ? `engine ${version}` : `DOMIN8 ${release} · engine ${version}`;
+    return release === undefined ? `engine ${version}` : `KIJAM ${release} · engine ${version}`;
   }
 }
 

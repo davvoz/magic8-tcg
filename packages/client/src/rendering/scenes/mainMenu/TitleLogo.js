@@ -5,8 +5,8 @@
  * chipped bright edge, and a gold rule
  * reaching out on either side from a diamond. It lives: now and then a
  * sheen of light sweeps across the gold (the first one soon after the menu
- * opens), sparks wink on the letters' edges, and the 8 at its end — the
- * game's mark — kindles with an arcane glow and settles back.
+ * opens), sparks wink on the letters' edges, and the letter at its end
+ * kindles with an arcane glow and settles back.
  *
  * Presentation state only, like the backdrop's lights: time is fed in by
  * the scene (`update`) and the pauses come from the seed. Frames are asked
@@ -58,11 +58,11 @@ const CHIPS = Object.freeze({ count: 24, longest: 26 });
 const WING = Object.freeze({ gap: 0.24, max: 1.5, min: 0.5, width: 0.024, diamond: 0.075 });
 /** The sheen's half-width, in ems, its tilt (how far it leans across the letters' height), and its strength at its core and in the soft light around it. */
 const SHEEN = Object.freeze({ halfWidth: 0.9, tilt: 0.35, core: 0.95, soft: 0.3 });
-/** The glow behind the word: at rest, and how much a sheen or the 8's kindling adds. */
+/** The glow behind the word: at rest, and how much a sheen or the last letter's kindling adds. */
 const AURA = Object.freeze({ rest: 0.14, sweep: 0.12, kindle: 0.12, height: 0.42 });
 /** The sparks, in ems: how far their rays reach and how thick they are. */
 const SPARK = Object.freeze({ length: 0.42, width: 0.018 });
-/** The 8's kindling, at its top: the halo behind it (reach in capital heights), the light within it and its glowing rim (blur in ems). */
+/** The last letter's kindling, at its top: the halo behind it (reach in capital heights), the light within it and its glowing rim (blur in ems). */
 const KINDLE = Object.freeze({ halo: 1.1, haloAlpha: 0.55, within: 0.9, rim: 0.9, blur: 0.12 });
 
 /** Something that comes now and then, lasts a while, and goes. */
@@ -155,7 +155,7 @@ export class TitleLogo extends UiNode {
     return this.#sweep.progress !== null;
   }
 
-  /** Whether the 8 glows now. */
+  /** Whether the last letter glows now. */
   get kindled() {
     return this.#kindle.progress !== null;
   }
@@ -256,7 +256,7 @@ export class TitleLogo extends UiNode {
     const left = center.x - width / 2;
     const baseline = center.y + cap / 2;
     const wing = Math.min(WING.max * size, (area.width - width) / 2 - WING.gap * size);
-    // Each letter's span, for the sparks and the 8.
+    // Each letter's span, for the sparks and the last letter's kindling.
     const stops = [...this.text].map((_, index) => left + context.measureText(this.text.slice(0, index)).width);
     return { font, size, width, left, baseline, top: baseline - cap, cap, center, wing: wing >= WING.min * size ? wing : 0, stops: [...stops, left + width] };
   }
@@ -490,7 +490,7 @@ function paintGold(context, colors, { left, baseline, top, size }, { text, rust,
 }
 
 /**
- * The arcane faction's tones, for the 8's kindling (the focus blue in a theme without it).
+ * The arcane faction's tones, for the last letter's kindling (the focus blue in a theme without it).
  * @param {Readonly<Record<string, any>>} colors
  * @returns {{ light: string, base: string }}
  */
