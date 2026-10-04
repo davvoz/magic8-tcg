@@ -24,6 +24,7 @@ import { Scene } from "../../src/rendering/scenes/Scene.js";
 import { ScrollList } from "../../src/rendering/ui/ScrollList.js";
 import { TextField } from "../../src/rendering/ui/TextField.js";
 import { Button } from "../../src/rendering/ui/Button.js";
+import { Modal } from "../../src/rendering/ui/Modal.js";
 import { P1, P2 } from "@magic8/engine/testing/fixtures.js";
 import { createScenario } from "@magic8/engine/testing/scenario.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
@@ -225,9 +226,8 @@ describe("MatchScene on a phone", () => {
 
 describe("Touch input", () => {
   /** A scene with a button, a text field and a long list. */
-  function touchScene({ usingTouch = () => true, textEntry } = {}) {
-    const services = { ...phoneServices(PHONE, { usingTouch }), ...(textEntry === undefined ? {} : { textEntry }) };
-    const scene = new Scene(services);
+  function touchScene({ usingTouch = () => true } = {}) {
+    const scene = new Scene(phoneServices(PHONE, { usingTouch }));
     const activated = [];
     const button = scene.root.add(new Button({ id: "button", x: 10, y: 10, width: 200, height: 48, text: "Go", onActivate: () => activated.push("button") }));
     const field = scene.root.add(new TextField({ id: "field", x: 10, y: 70, width: 300, height: 48, placeholder: "Name", keyboard: "account" }));
@@ -258,13 +258,18 @@ describe("Touch input", () => {
     assert.equal(scene.focusedNode, button);
   });
 
-  it("opens the device's keyboard for a text field tapped with a finger, and takes its value back filtered", () => {
-    const opened = [];
-    const { scene, field } = touchScene({ textEntry: { open: (node) => opened.push(node), close: () => undefined } });
+  it("names the text fields the device's inputs go over, and takes their values back filtered", () => {
+    const { scene, field } = touchScene();
+    assert.deepEqual(scene.textFields(), [field]);
     tapAt(scene, centreOf(field.bounds));
-    assert.deepEqual(opened, [field]);
     assert.equal(scene.focusedNode, field, "a text field keeps focus under a finger: a hardware keyboard still types into it");
     assert.equal(field.keyboard, "account");
+    const modal = new Modal({ id: "dialog", width: 800, height: 400, panelWidth: 400, panelHeight: 300, onDismiss: () => undefined });
+    const inModal = modal.panel.add(new TextField({ id: "dialog.field", x: 10, y: 10, width: 200, height: 48 }));
+    modal.panel.add(new TextField({ id: "dialog.off", x: 10, y: 70, width: 200, height: 48, enabled: false }));
+    scene.openModal(modal);
+    assert.deepEqual(scene.textFields(), [inModal], "only the top layer's, and only those that take text now");
+    scene.closeModal();
     assert.equal(field.enter("alice<script>"), "alicescript", "only characters the field allows");
     field.maxLength = 5;
     assert.equal(field.enter("alexander"), "alexa", "capped at its length");
@@ -314,72 +319,5 @@ describe("Touch input", () => {
     scene.onResize();
     assert.equal(layouts, 1, "the same screen at another density keeps the design area");
     assert.equal(viewport.logicalHeight, COMPACT.height);
-  });
-
-  it("keeps the device's keyboard typing into a field the scene rebuilt when the keyboard resized the window", () => {
-    /** The native strip, as TextEntryBar keeps it: the field it types into, and what is in its input. */
-    const entry = {
-      field: /** @type {TextField | null} */ (null),
-      typed: "",
-      open(node) {
-        this.field = node;
-        this.typed = node.value;
-      },
-      close() {
-        this.field = null;
-      },
-      retarget(node) {
-        this.field = node;
-        node.enter(this.typed);
-      },
-      type(text) {
-        this.typed += text;
-        this.field?.enter(this.typed);
-      },
-    };
-    const services = phoneServices(PHONE, { textEntry: entry });
-    class Form extends Scene {
-      /** @type {TextField | null} */
-      field = null;
-      build() {
-        this.root.clear();
-        this.field = this.root.add(new TextField({ id: "name", x: 10, y: 70, width: 300, height: 48, value: this.field?.value ?? "", keyboard: "account" }));
-      }
-      relayout() {
-        this.build();
-      }
-    }
-    const scene = new Form(services);
-    scene.build();
-    const first = scene.field;
-    tapAt(scene, centreOf(first.bounds));
-    assert.equal(entry.field, first);
-    // An installed app on Android: the keyboard takes the bottom of the screen, and the window shrinks.
-    services.viewport.resize({ ...PHONE, cssHeight: 170 });
-    scene.onResize();
-    assert.notEqual(scene.field, first, "the scene laid itself out again");
-    assert.equal(entry.field, scene.field, "the keyboard follows the field now shown");
-    assert.equal(scene.focusedNode, scene.field);
-    entry.type("alice");
-    assert.equal(scene.field.value, "alice", "what is typed lands in the field on screen");
-    services.viewport.resize(PHONE);
-    scene.onResize();
-    assert.equal(scene.field.value, "alice", "and stays when the keyboard goes");
-  });
-
-  it("closes the device's keyboard when its field is gone after a new layout", () => {
-    let closed = 0;
-    const services = phoneServices(PHONE, { textEntry: { field: null, open(node) { this.field = node; }, close: () => { closed += 1; }, retarget: () => assert.fail("no replacement to follow") } });
-    class Vanishing extends Scene {
-      relayout() {
-        this.root.clear();
-      }
-    }
-    const scene = new Vanishing(services);
-    const field = scene.root.add(new TextField({ id: "name", x: 10, y: 70, width: 300, height: 48 }));
-    tapAt(scene, centreOf(field.bounds));
-    services.viewport.resize({ ...PHONE, cssHeight: 170 });
-    scene.onResize();
-    assert.equal(closed, 1);
   });
 });

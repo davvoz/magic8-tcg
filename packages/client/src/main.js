@@ -74,6 +74,7 @@ import { InputManager } from "./input/InputManager.js";
 import { CanvasHost } from "./rendering/canvas/CanvasHost.js";
 import { GameLoop } from "./rendering/canvas/GameLoop.js";
 import { Viewport } from "./rendering/canvas/Viewport.js";
+import { TextField } from "./rendering/ui/TextField.js";
 import { ErrorScene } from "./rendering/scenes/ErrorScene.js";
 import { SceneManager } from "./rendering/scenes/SceneManager.js";
 import { registerScenes } from "./rendering/scenes/registerScenes.js";
@@ -91,7 +92,7 @@ import { soundOnline, soundSales, soundShop } from "./rendering/audio/serviceSou
 import { validateTheme } from "./rendering/theme/Theme.js";
 import { LoadingScreen } from "./rendering/page/LoadingScreen.js";
 import { MaintenanceBanner } from "./rendering/page/MaintenanceBanner.js";
-import { TextEntryBar } from "./rendering/page/TextEntryBar.js";
+import { FieldInputs } from "./rendering/page/FieldInputs.js";
 import { describeBanner } from "./application/maintenance/MaintenanceNotice.js";
 import { MaintenanceWatch } from "./application/maintenance/MaintenanceWatch.js";
 import { registerServiceWorker } from "./infrastructure/pwa/registerServiceWorker.js";
@@ -267,12 +268,19 @@ function buildPresentation(theme, sound) {
     cancelFrame: (handle) => window.cancelAnimationFrame(handle),
     now: () => performance.now(),
   });
-  // A field tapped with a finger is typed into with the phone's own keyboard.
-  const textEntry = new TextEntryBar(document, { onChange: () => loop.requestRender() });
+  // Played by touch, each text field on screen is a real input laid over it: tapped, it opens the phone's own keyboard.
+  const fieldInputs = new FieldInputs(document, {
+    onChange: () => loop.requestRender(),
+    onFocus: (field) => sceneManager.current?.focus(field),
+    focusedField: () => {
+      const node = sceneManager.current?.focusedNode ?? null;
+      return node instanceof TextField ? node : null;
+    },
+  });
   const touchFirst = isTouchFirst();
   // Opened from a click or a key press, so the browser does not take it for a popup.
   const openLink = (/** @type {string} */ url) => void window.open(url, "_blank", "noopener,noreferrer");
-  const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender(), textEntry, touchFirst, sound, openLink });
+  const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender(), touchFirst, sound, openLink });
   const host = new CanvasHost({
     canvas,
     viewport,
@@ -286,6 +294,12 @@ function buildPresentation(theme, sound) {
   const input = new InputManager({ canvas, window, viewport, target: sceneManager });
   host.attach();
   input.attach();
+  // A tap on the game, away from the inputs, puts the keyboard away once the tap has done what it does.
+  window.addEventListener("pointerup", (event) => {
+    if (event.target === canvas) {
+      fieldInputs.blur();
+    }
+  });
   const target = {
     update: (dt) => {
       const scene = sceneManager.update(dt);
@@ -300,12 +314,27 @@ function buildPresentation(theme, sound) {
       context.fillRect(0, 0, cssWidth, cssHeight);
       viewport.applyTransform(context);
       sceneManager.render(context);
+      fieldInputs.sync(placeFields(sceneManager.textFields(), viewport));
     },
     onError: (error) => showFatal("Unexpected error", describeError(error)),
   };
   loop.start(target);
   presentation = { sceneManager, loop, viewport, restart: () => loop.start(target) };
   return presentation;
+}
+
+/**
+ * Where each text field is on the page, in CSS pixels: the canvas fills the window from its top-left corner.
+ * @param {readonly TextField[]} fields
+ * @param {Viewport} viewport
+ * @returns {import("./rendering/page/FieldInputs.js").FieldPlacement[]}
+ */
+function placeFields(fields, viewport) {
+  return fields.map((field) => {
+    const { x, y, width, height } = field.bounds;
+    const corner = viewport.toCss(x, y);
+    return Object.freeze({ field, x: corner.x, y: corner.y, width: width * viewport.scale, height: height * viewport.scale, scale: viewport.scale });
+  });
 }
 
 /**

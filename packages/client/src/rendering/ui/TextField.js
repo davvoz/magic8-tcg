@@ -4,11 +4,11 @@
  * allow-list and a hard length cap. The value is presentation state; the
  * owner validates it through the application service on change/submit.
  *
- * On a phone there are no keydown events to route: a tap opens the device's
- * own keyboard in a native input (Scene → `services.textEntry`), which hands
- * whole values back through `enter` under the same allow-list and cap.
- * `keyboard` tells that input which keyboard to show; a "secret" (a key, a
- * PIN) is drawn as dots and typed into a password input. Text pasted with
+ * On a phone there are no keydown events to route: played by touch, a real
+ * input is laid over the field (page/FieldInputs.js) and hands whole values
+ * back through `enter` under the same allow-list and cap. `keyboard` tells
+ * that input which keyboard to show; a "secret" (a key, a PIN) is drawn as
+ * dots and typed into a password input. Text pasted with
  * the keyboard (Ctrl+V) is added at the end, under the same rules.
  */
 import { drawTextInRect, fillRoundedRect, glowRoundedRect, insetShadow } from "./drawing.js";

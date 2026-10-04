@@ -35,22 +35,18 @@ export class SceneManager {
   #fade = null;
   /** Whether the last input was a finger or a pen (rather than a mouse or a key). */
   #touch = false;
-  /** @type {import("./Scene.js").TextEntry | undefined} */
-  #textEntry;
   /** @type {Set<(sceneId: string) => void>} */
   #navigationListeners = new Set();
 
   /**
-   * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void, textEntry?: import("./Scene.js").TextEntry, touchFirst?: boolean, sound?: import("./Scene.js").SoundPlayer, openLink?: (url: string) => void }} deps
-   *   `textEntry`: the device's own text input, for fields tapped with a finger (none under test);
+   * @param {{ theme: import("../theme/Theme.js").Theme, viewport: import("../canvas/Viewport.js").Viewport, logger: import("../../application/ports/Logger.contract.js").Logger, requestRender: () => void, touchFirst?: boolean, sound?: import("./Scene.js").SoundPlayer, openLink?: (url: string) => void }} deps
    *   `touchFirst`: the device is mainly played by touch (a phone), assumed until the first input says otherwise;
    *   `sound`: the game's sound, for the scenes (none under test);
    *   `openLink`: opens a web page outside the game, in a new tab (none under test)
    */
-  constructor({ theme, viewport, logger, requestRender, textEntry, touchFirst = false, sound, openLink }) {
+  constructor({ theme, viewport, logger, requestRender, touchFirst = false, sound, openLink }) {
     this.#requestRender = requestRender;
     this.#touch = touchFirst;
-    this.#textEntry = textEntry;
     this.#services = Object.freeze({
       theme,
       viewport,
@@ -59,7 +55,6 @@ export class SceneManager {
       navigate: (sceneId, params) => this.navigate(sceneId, params),
       hasScene: (sceneId) => this.#factories.has(sceneId),
       usingTouch: () => this.#touch,
-      ...(textEntry === undefined ? {} : { textEntry }),
       ...(sound === undefined ? {} : { sound }),
       ...(openLink === undefined ? {} : { openLink }),
     });
@@ -80,6 +75,16 @@ export class SceneManager {
     }
     this.#factories.set(sceneId, factory);
     return this;
+  }
+
+  /**
+   * The text fields to lay the device's own inputs over (page/FieldInputs.js):
+   * the current scene's, while the game is played by touch; none otherwise,
+   * the fields then take keys themselves.
+   * @returns {import("../ui/TextField.js").TextField[]}
+   */
+  textFields() {
+    return this.#touch ? (this.#current?.textFields() ?? []) : [];
   }
 
   /** @param {string} sceneId */
@@ -121,7 +126,6 @@ export class SceneManager {
       this.#services.logger.error("unknown scene", { sceneId });
       return false;
     }
-    this.#textEntry?.close();
     this.#current?.exit();
     const scene = factory(this.#services);
     this.#current = scene;
