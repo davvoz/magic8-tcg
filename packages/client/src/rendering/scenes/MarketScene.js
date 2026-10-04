@@ -22,8 +22,9 @@ import { NO_CARD_FILTER, cardFilterOptions, cardIdsMatching, describeCardFilter,
 import { BUSY_BUY_STAGES, BuyStage, PROBLEM_TEXT } from "../../application/sales/SalesService.js";
 import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
+import { CardOption } from "../cards/CardOption.js";
 import { CardStrip } from "../cards/CardStrip.js";
-import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
+import { buildCardInfoModal, copyLabel, rarityOf } from "../cards/cardInfo.js";
 import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
 import { AvatarNode } from "../ui/AvatarNode.js";
@@ -447,7 +448,7 @@ export class MarketScene extends Scene {
     const buyable = account !== null && !own && listing.status === "ACTIVE";
     const lines = [
       { text: this.#cardName(listing.card.definitionId), bold: true, colorKey: "accentLight" },
-      { text: `Copy #${listing.card.serial} · ${listing.card.edition}` },
+      { text: copyLabel(listing.card) },
       { text: `Sold by @${listing.seller}`, avatar: listing.seller },
       { text: `${listing.price.amount} ${listing.price.asset}`, bold: true, colorKey: "accent" },
       { text: listingSubtitle(listing, now), colorKey: "textMuted", avatar: listing.status === "SOLD" ? listing.buyer : null },
@@ -636,9 +637,8 @@ export class MarketScene extends Scene {
     } else {
       const rowWidth = list.rowWidth - this.#screen.action.width - this.#screen.action.gap;
       copies.forEach((copy, index) => {
-        const rarity = rarityOf(this.#app, copy.definitionId);
-        const subtitle = [rarityLabel(rarity), `#${copy.serial}`].filter((part) => part.length > 0).join(" · ");
-        list.add(new OptionRow({ id: `market.copy.${copy.id}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, text: this.#cardName(copy.definitionId), subtitle, selected: copy.id === this.#copy, onActivate: () => this.#pickCopy(copy.id) }));
+        const card = this.#app.content.catalog.get(copy.definitionId);
+        list.add(new CardOption({ id: `market.copy.${copy.id}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, card: card ?? unknownCard(copy.definitionId), broken: card === undefined, rarity: rarityOf(this.#app, copy.definitionId), badge: `#${copy.serial}`, selected: copy.id === this.#copy, onActivate: () => this.#pickCopy(copy.id) }));
         list.add(new Button({ id: `market.copy.info.${copy.id}`, x: rowWidth + this.#screen.action.gap, y: this.#screen.rowY(index), width: this.#screen.action.width, height: this.#screen.row.height, text: "Info", textSize: "small", enabled: this.#app.content.catalog.has(copy.definitionId), onActivate: () => this.#showCardInfo(copy.definitionId, [`Copy #${copy.serial}`]) }));
       });
       list.contentHeight = this.#screen.rowsHeight(copies.length);

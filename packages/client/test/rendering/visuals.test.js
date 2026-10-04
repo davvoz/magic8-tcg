@@ -21,6 +21,7 @@ import { CardVisual } from "../../src/rendering/cards/CardVisual.js";
 import { artSeedOf, paintCardArt } from "../../src/rendering/cards/CardArt.js";
 import { CardFaceProfile, cardFaceLayout, paintCardFace, typeLineFor } from "../../src/rendering/cards/CardFace.js";
 import { drawCardBack } from "../../src/rendering/cards/CardRenderer.js";
+import { CardOption } from "../../src/rendering/cards/CardOption.js";
 import { CardStrip } from "../../src/rendering/cards/CardStrip.js";
 import { HeroNode } from "../../src/rendering/scenes/mainMenu/HeroNode.js";
 import { hexToRgb, mix, rgbToHex, shade, withAlpha } from "../../src/rendering/theme/color.js";
@@ -220,6 +221,38 @@ describe("CardStrip", () => {
     assert.ok(!spellContext.texts.some((text) => text.startsWith("x")), "no count badge at zero copies");
     assert.equal(spellContext.texts.filter((text) => /^\d+$/.test(text)).length, 1, "only the cost is numeric for a spell");
     assertBalanced(spellContext);
+  });
+
+  it("shows a badge in place of the count, and a check once chosen", () => {
+    const creature = content.catalog.all().find((card) => card.isCreature);
+    const context = new FakeContext2D();
+    new CardStrip({ width: 400, height: 56, card: creature, count: 3, badge: "#7", selected: true }).draw(context, theme);
+    assert.ok(context.texts.includes("#7") && !context.texts.includes("x3"), "the badge replaces the count");
+    const plain = new FakeContext2D();
+    new CardStrip({ width: 400, height: 56, card: creature, badge: "#7" }).draw(plain, theme);
+    assert.ok(context.calls.filter((call) => call.method === "arc").length > plain.calls.filter((call) => call.method === "arc").length, "a chosen card is checked");
+    assertBalanced(context);
+  });
+});
+
+describe("CardOption", () => {
+  it("is a button named after its card, whose strip dims when it cannot be chosen", () => {
+    const creature = content.catalog.all().find((card) => card.isCreature);
+    let picked = 0;
+    const option = new CardOption({ id: "pick", width: 400, height: 56, card: creature, rarity: "rare", badge: "#2", selected: true, enabled: false, onActivate: () => (picked += 1) });
+    assert.equal(option.text, creature.name);
+    assert.equal(option.badge, "#2");
+    assert.equal(option.selected, true);
+    const context = new FakeContext2D();
+    option.draw(context, theme);
+    assert.ok(context.texts.includes(creature.name) && context.texts.includes("#2"));
+    assert.equal(option.children[0].muted, true, "disabled: dimmed");
+    option.activate();
+    assert.equal(picked, 0, "a disabled option does nothing");
+    option.enabled = true;
+    option.activate();
+    assert.equal(picked, 1);
+    assertBalanced(context);
   });
 });
 

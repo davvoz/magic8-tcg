@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { AccountStatus } from "../../src/application/account/AccountService.js";
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
+import { copyLabel, editionLabel } from "../../src/rendering/cards/cardInfo.js";
 import { CollectionScene } from "../../src/rendering/scenes/CollectionScene.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
@@ -206,7 +207,15 @@ describe("CollectionScene", () => {
     const count = foundry.entries.find((entry) => entry.cardId === cardId).count;
     assert.equal(byId(scene, "collection.owned").text, `You own ${count} (${count} playable)`);
     assert.equal(byId(scene, "collection.copies").children[0].children.length, count, "one line per copy");
-    assert.ok(rendered(scene).some((text) => /^#\d+ · core-1$/.test(text)));
+    assert.equal(byId(scene, "collection.copiesTitle").text, count === 1 ? "Your copy" : "Your copies");
+    assert.match(byId(scene, "collection.copiesHint").text, /serial number and print edition/, "the copy line is explained");
+    assert.ok(rendered(scene).some((text) => /^Copy #\d+ · Core Set 1$/.test(text)), "a copy reads as its serial and edition");
+  });
+
+  it("names editions and copies as players read them", () => {
+    assert.equal(editionLabel("core-1"), "Core Set 1");
+    assert.equal(editionLabel("promo-2026"), "Promo 2026", "an unknown set is capitalized");
+    assert.equal(copyLabel({ serial: 7, edition: "core-2" }), "Copy #7 · Core Set 2");
   });
 
   it("lights the cards a notification brought, lists them first and goes back to the notifications", async () => {
@@ -228,7 +237,7 @@ describe("CollectionScene", () => {
     click(byId(scene, `collection.view.${dear.definitionId}`));
     assert.equal(byId(scene, "collection.fresh").text, "New: 1 copy just received");
     const firstCopy = byId(scene, "collection.copies").children[0].children[0];
-    assert.equal(firstCopy.text, `#${serial} · ${dear.copies[0].edition} · new`, "the copy received comes first, lit");
+    assert.equal(firstCopy.text, `Copy #${serial} · Core Set 1 · new`, "the copy received comes first, lit");
     assert.equal(firstCopy.colorKey, "success");
 
     assert.equal(byId(scene, "collection.back").text, "Back");

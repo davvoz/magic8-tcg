@@ -140,14 +140,14 @@ describe("TradesScene", () => {
     byId(scene, "trades.filter.faction.all").activate();
     byId(scene, "trades.filter.type.all").activate();
     assert.equal(byId(scene, `trades.give.${uuid(31)}`).selected, true, "a hidden choice stays chosen");
-    assert.equal(byId(scene, "trades.ask.iron_watcher").subtitle, "has 2");
+    assert.equal(byId(scene, "trades.ask.iron_watcher").badge, "x2");
     for (let tap = 0; tap < 3; tap += 1) {
       byId(scene, "trades.ask.iron_watcher").activate();
     }
-    assert.equal(byId(scene, "trades.ask.iron_watcher").subtitle, "has 2", "never more than carol has: the third tap goes back to none");
+    assert.equal(byId(scene, "trades.ask.iron_watcher").badge, "x2", "never more than carol has: the third tap goes back to none");
     byId(scene, "trades.ask.iron_watcher").activate();
     byId(scene, "trades.ask.iron_watcher").activate();
-    assert.equal(byId(scene, "trades.ask.iron_watcher").subtitle, "asking 2 of 2");
+    assert.equal(byId(scene, "trades.ask.iron_watcher").badge, "2/2");
 
     byId(scene, "trades.to").onChange("ghost");
     await flush();

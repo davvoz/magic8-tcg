@@ -14,7 +14,7 @@ import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, mat
 import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardStrip } from "../cards/CardStrip.js";
-import { rarityOf } from "../cards/cardInfo.js";
+import { copyLabel, rarityOf } from "../cards/cardInfo.js";
 import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -23,6 +23,7 @@ import { Hotspot } from "../ui/Hotspot.js";
 import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
+import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
@@ -30,13 +31,15 @@ import { SceneId } from "./sceneIds.js";
 const LIST_ID = "collection.cards";
 const COPIES_ID = "collection.copies";
 /**
- * @typedef {Readonly<{ filterTop: number, listTop: number, filterButton: boolean, titleWidth: number, detail: { width: number, height: number }, copyRow: number, statusOffset: number }>} CollectionMetrics
- *   `filterButton`: the filter as one button beside the list's title; `statusOffset`: where the status line starts, right of the title
+ * @typedef {Readonly<{ filterTop: number, listTop: number, filterButton: boolean, titleWidth: number, detail: { width: number, height: number }, copyRow: number, copiesHeader: { title: number, hint: number, hintSize: import("../theme/Theme.js").FontSize, gap: number }, statusOffset: number }>} CollectionMetrics
+ *   `filterButton`: the filter as one button beside the list's title; `copiesHeader`: the "Your copies" title and its hint (two wrapped lines) above the copies; `statusOffset`: where the status line starts, right of the title
  */
 /** @type {CollectionMetrics} */
-const WIDE = Object.freeze({ filterTop: 60, listTop: 60 + CARD_FILTER_BAR_HEIGHT + 12, filterButton: false, titleWidth: 0, detail: Object.freeze({ width: 380, height: 560 }), copyRow: 30, statusOffset: 260 });
+const WIDE = Object.freeze({ filterTop: 60, listTop: 60 + CARD_FILTER_BAR_HEIGHT + 12, filterButton: false, titleWidth: 0, detail: Object.freeze({ width: 380, height: 560 }), copyRow: 30, copiesHeader: Object.freeze({ title: 26, hint: 44, hintSize: "small", gap: 4 }), statusOffset: 260 });
 /** @type {CollectionMetrics} */
-const COMPACT = Object.freeze({ filterTop: 12, listTop: 12 + CARD_FILTER_BUTTON_HEIGHT + 10, filterButton: true, titleWidth: 150, detail: Object.freeze({ width: 196, height: 274 }), copyRow: 26, statusOffset: 170 });
+const COMPACT = Object.freeze({ filterTop: 12, listTop: 12 + CARD_FILTER_BUTTON_HEIGHT + 10, filterButton: true, titleWidth: 150, detail: Object.freeze({ width: 196, height: 274 }), copyRow: 26, copiesHeader: Object.freeze({ title: 22, hint: 34, hintSize: "tiny", gap: 2 }), statusOffset: 170 });
+/** What a copy's status (and tradeability) means to its owner, shown after its name. */
+const STATUS_NOTES = new Map([["locked", "in a trade"], ["burned", "burned"]]);
 /** Room for the "New: …" line above the copies of a fresh card. */
 const FRESH_LINE = 30;
 
@@ -261,7 +264,7 @@ export class CollectionScene extends Scene {
       return;
     }
     const card = owned.card ?? unknownCard(owned.definitionId);
-    const { detail, copyRow } = this.#metrics;
+    const { detail, copyRow, copiesHeader } = this.#metrics;
     const top = (this.#screen.columns.height - detail.height) / 2;
     if (owned.card !== undefined) {
       panel.add(new CardDetail({ id: "collection.card", x: this.#screen.inset, y: top, width: detail.width, height: detail.height, card: owned.card, rarity: rarityOf(this.#app, owned.definitionId) }));
@@ -279,15 +282,18 @@ export class CollectionScene extends Scene {
       panel.add(new Label({ id: "collection.fresh", x, y: copiesTop - 4, width, height: 28, text: `New: ${fresh.count} cop${fresh.count === 1 ? "y" : "ies"} just received`, size: "small", weight: "bold", align: "left", colorKey: "success", fit: true }));
       copiesTop += FRESH_LINE;
     }
+    panel.add(new Label({ id: "collection.copiesTitle", x, y: copiesTop, width, height: copiesHeader.title, text: owned.copies.length === 1 ? "Your copy" : "Your copies", size: "small", weight: "bold", align: "left", colorKey: "accentLight" }));
+    panel.add(new TextBlock({ id: "collection.copiesHint", x, y: copiesTop + copiesHeader.title, width, height: copiesHeader.hint, text: "Each copy is unique: its serial number and print edition", size: copiesHeader.hintSize, align: "left", colorKey: "textMuted" }));
+    copiesTop += copiesHeader.title + copiesHeader.hint + copiesHeader.gap;
     const list = panel.add(new ScrollList({ id: COPIES_ID, x, y: copiesTop, width, height: detail.height - (copiesTop - top) }));
     // The copies received with the notification (when their serials are known) come first, lit.
     const isNew = (/** @type {{ serial: number }} */ copy) => fresh?.serials.has(copy.serial) ?? false;
     const copies = [...owned.copies].sort((left, right) => Number(isNew(right)) - Number(isNew(left)) || left.edition.localeCompare(right.edition) || left.serial - right.serial);
     copies.forEach((copy, index) => {
-      const status = copy.status === "active" ? "" : ` · ${copy.status}`;
       const lit = isNew(copy);
+      const notes = [copyNote(copy), lit ? "new" : ""].filter((note) => note.length > 0).map((note) => ` · ${note}`).join("");
       const colorKey = copy.status === "active" ? "text" : "disabledText";
-      list.add(new Label({ x: 0, y: index * copyRow, width: list.rowWidth, height: copyRow, text: `#${copy.serial} · ${copy.edition}${status}${lit ? " · new" : ""}`, size: "small", weight: lit ? "bold" : "normal", align: "left", colorKey: lit ? "success" : colorKey, fit: true }));
+      list.add(new Label({ x: 0, y: index * copyRow, width: list.rowWidth, height: copyRow, text: `${copyLabel(copy)}${notes}`, size: "small", weight: lit ? "bold" : "normal", align: "left", colorKey: lit ? "success" : colorKey, fit: true }));
     });
     list.contentHeight = copies.length * copyRow;
   }
@@ -343,4 +349,15 @@ function freshness(value) {
     fresh.set(card.definitionId, entry);
   }
   return fresh;
+}
+
+/**
+ * What the owner should know about a copy beyond its name: in a trade, or a reward that cannot be traded.
+ * @param {import("../../application/ports/CollectionApi.contract.js").OwnedCopy} copy
+ */
+function copyNote(copy) {
+  if (copy.status !== "active") {
+    return STATUS_NOTES.get(copy.status) ?? copy.status;
+  }
+  return copy.tradeable === false ? "not tradeable" : "";
 }

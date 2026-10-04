@@ -7,9 +7,9 @@
  */
 import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
+import { CardOption } from "../cards/CardOption.js";
 import { CardThumb } from "../cards/CardThumb.js";
 import { buildCardInfoModal, rarityOf } from "../cards/cardInfo.js";
-import { rarityLabel } from "../theme/rarity.js";
 import { unknownCard } from "../cards/unknownCard.js";
 import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -321,8 +321,7 @@ export class TradesScene extends Scene {
     const rowWidth = list.rowWidth - this.#screen.action.small - this.#screen.action.gap;
     copies.forEach((copy, index) => {
       const chosen = this.#give.has(copy.id);
-      const subtitle = [rarityLabel(rarityOf(this.#app, copy.definitionId)), `#${copy.serial}`].filter((part) => part.length > 0).join(" · ");
-      list.add(new OptionRow({ id: `trades.give.${copy.id}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, text: this.#cardName(copy.definitionId), subtitle, selected: chosen, enabled: chosen || this.#give.size < MAX_CARDS, onActivate: () => this.#toggleGive(copy.id) }));
+      list.add(new CardOption({ id: `trades.give.${copy.id}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, ...this.#optionCard(copy.definitionId), badge: `#${copy.serial}`, selected: chosen, enabled: chosen || this.#give.size < MAX_CARDS, onActivate: () => this.#toggleGive(copy.id) }));
       this.#infoButton(list, { id: `trades.give.info.${copy.id}`, x: rowWidth + this.#screen.action.gap, y: this.#screen.rowY(index), definitionId: copy.definitionId, lines: [`Copy #${copy.serial}`] });
     });
     list.contentHeight = this.#screen.rowsHeight(copies.length);
@@ -342,11 +341,11 @@ export class TradesScene extends Scene {
       .map(({ definitionId, count }) => ({ definitionId, has: count, name: this.#cardName(definitionId) }))
       .sort((left, right) => left.name.localeCompare(right.name));
     const rowWidth = list.rowWidth - this.#screen.action.small - this.#screen.action.gap;
-    cards.forEach(({ definitionId, has, name }, index) => {
+    cards.forEach(({ definitionId, has }, index) => {
       const count = this.#ask.get(definitionId) ?? 0;
-      const rarity = rarityLabel(rarityOf(this.#app, definitionId));
-      const asked = count === 0 ? `has ${has}` : `asking ${count} of ${has}`;
-      list.add(new OptionRow({ id: `trades.ask.${definitionId}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, text: name, subtitle: rarity.length === 0 ? asked : `${rarity} · ${asked}`, selected: count > 0, onActivate: () => this.#cycleAsk(definitionId, has) }));
+      // What they have, or how many of those are asked.
+      const badge = count === 0 ? `x${has}` : `${count}/${has}`;
+      list.add(new CardOption({ id: `trades.ask.${definitionId}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, ...this.#optionCard(definitionId), badge, selected: count > 0, onActivate: () => this.#cycleAsk(definitionId, has) }));
       this.#infoButton(list, { id: `trades.ask.info.${definitionId}`, x: rowWidth + this.#screen.action.gap, y: this.#screen.rowY(index), definitionId, lines: [`@${this.#to} has ${has}`] });
     });
     if (cards.length === 0) {
@@ -399,6 +398,15 @@ export class TradesScene extends Scene {
   #tradeableCopies() {
     const cards = this.#app.account?.collection.state.cards ?? [];
     return cards.flatMap((entry) => entry.copies.filter((copy) => copy.tradeable === true && copy.status === "active").map((copy) => ({ ...copy, definitionId: entry.definitionId })));
+  }
+
+  /**
+   * A card as a CardOption shows it: its definition (a stand-in when unknown) and rarity.
+   * @param {string} definitionId
+   */
+  #optionCard(definitionId) {
+    const card = this.#app.content.catalog.get(definitionId);
+    return { card: card ?? unknownCard(definitionId), broken: card === undefined, rarity: rarityOf(this.#app, definitionId) };
   }
 
   /** @param {string} definitionId */

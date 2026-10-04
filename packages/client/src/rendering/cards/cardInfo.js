@@ -28,6 +28,24 @@ const COMPACT = Object.freeze({ panel: Object.freeze({ width: 700, height: 384 }
  */
 export const rarityOf = (app, cardId) => app.rarities?.of(cardId) ?? null;
 
+/** Names players read for the sets an edition id starts with ("core-1" is Core Set 1). */
+const SET_NAMES = new Map([["core", "Core Set"]]);
+
+/**
+ * An edition (a printing, e.g. "core-1") as players read it: "Core Set 1".
+ * @param {string} edition
+ */
+export function editionLabel(edition) {
+  const [set = "", ...rest] = edition.split("-").filter((part) => part.length > 0);
+  return [SET_NAMES.get(set) ?? capitalize(set), ...rest.map(capitalize)].join(" ");
+}
+
+/**
+ * One copy as every screen names it: "Copy #2 · Core Set 1".
+ * @param {{ serial: number, edition: string }} copy
+ */
+export const copyLabel = (copy) => `Copy #${copy.serial} · ${editionLabel(copy.edition)}`;
+
 /**
  * @param {{
  *   viewport: { compact?: boolean, logicalWidth: number, logicalHeight: number },
