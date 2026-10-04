@@ -315,4 +315,71 @@ describe("Touch input", () => {
     assert.equal(layouts, 1, "the same screen at another density keeps the design area");
     assert.equal(viewport.logicalHeight, COMPACT.height);
   });
+
+  it("keeps the device's keyboard typing into a field the scene rebuilt when the keyboard resized the window", () => {
+    /** The native strip, as TextEntryBar keeps it: the field it types into, and what is in its input. */
+    const entry = {
+      field: /** @type {TextField | null} */ (null),
+      typed: "",
+      open(node) {
+        this.field = node;
+        this.typed = node.value;
+      },
+      close() {
+        this.field = null;
+      },
+      retarget(node) {
+        this.field = node;
+        node.enter(this.typed);
+      },
+      type(text) {
+        this.typed += text;
+        this.field?.enter(this.typed);
+      },
+    };
+    const services = phoneServices(PHONE, { textEntry: entry });
+    class Form extends Scene {
+      /** @type {TextField | null} */
+      field = null;
+      build() {
+        this.root.clear();
+        this.field = this.root.add(new TextField({ id: "name", x: 10, y: 70, width: 300, height: 48, value: this.field?.value ?? "", keyboard: "account" }));
+      }
+      relayout() {
+        this.build();
+      }
+    }
+    const scene = new Form(services);
+    scene.build();
+    const first = scene.field;
+    tapAt(scene, centreOf(first.bounds));
+    assert.equal(entry.field, first);
+    // An installed app on Android: the keyboard takes the bottom of the screen, and the window shrinks.
+    services.viewport.resize({ ...PHONE, cssHeight: 170 });
+    scene.onResize();
+    assert.notEqual(scene.field, first, "the scene laid itself out again");
+    assert.equal(entry.field, scene.field, "the keyboard follows the field now shown");
+    assert.equal(scene.focusedNode, scene.field);
+    entry.type("alice");
+    assert.equal(scene.field.value, "alice", "what is typed lands in the field on screen");
+    services.viewport.resize(PHONE);
+    scene.onResize();
+    assert.equal(scene.field.value, "alice", "and stays when the keyboard goes");
+  });
+
+  it("closes the device's keyboard when its field is gone after a new layout", () => {
+    let closed = 0;
+    const services = phoneServices(PHONE, { textEntry: { field: null, open(node) { this.field = node; }, close: () => { closed += 1; }, retarget: () => assert.fail("no replacement to follow") } });
+    class Vanishing extends Scene {
+      relayout() {
+        this.root.clear();
+      }
+    }
+    const scene = new Vanishing(services);
+    const field = scene.root.add(new TextField({ id: "name", x: 10, y: 70, width: 300, height: 48 }));
+    tapAt(scene, centreOf(field.bounds));
+    services.viewport.resize({ ...PHONE, cssHeight: 170 });
+    scene.onResize();
+    assert.equal(closed, 1);
+  });
 });

@@ -7,7 +7,9 @@
  * (style in index.html, class "text-entry"). Every change goes straight to
  * the field, which keeps only what it accepts; Enter submits the field.
  * Leaving the input — Done, a tap on the game, the keyboard dismissed —
- * closes the strip.
+ * closes the strip. The keyboard opening may resize the window (an installed
+ * app) and the screen rebuild its fields: the scene then `retarget`s the strip
+ * to the new field.
  *
  * `open` must run inside the tap's own event handler: browsers only show the
  * keyboard for a focus a user gesture asked for.
@@ -77,6 +79,20 @@ export class TextEntryBar {
     this.#element.hidden = false;
     this.#input.focus();
     this.#onChange();
+  }
+
+  /**
+   * The field being edited was rebuilt (the screen laid out again under the
+   * keyboard): the open input carries on into its replacement, with what was
+   * typed so far, without closing the keyboard.
+   * @param {import("../ui/TextField.js").TextField} field
+   */
+  retarget(field) {
+    if (this.#field === null || this.#field === field) {
+      return;
+    }
+    this.#field = field;
+    this.#typed();
   }
 
   close() {

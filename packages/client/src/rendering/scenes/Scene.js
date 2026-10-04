@@ -41,7 +41,8 @@ import { UiNode } from "../ui/UiNode.js";
 
 /**
  * Opens a native text input over the game for a field (a phone shows its keyboard only for one).
- * @typedef {{ open: (field: import("../ui/TextField.js").TextField) => void, close: () => void }} TextEntry
+ * `field` is the one being edited; `retarget` hands the open input over to another (the same field, rebuilt).
+ * @typedef {{ open: (field: import("../ui/TextField.js").TextField) => void, close: () => void, readonly field?: import("../ui/TextField.js").TextField | null, retarget?: (field: import("../ui/TextField.js").TextField) => void }} TextEntry
  */
 
 /** Pointer travel (logical px) after which a press inside a ScrollList becomes a drag. */
@@ -110,6 +111,7 @@ export class Scene {
     if (key !== this.#laidOutFor) {
       this.#laidOutFor = key;
       this.relayout();
+      this.#followTextEntry();
     }
     this.#modal?.cover(this.services.viewport.bounds);
     this.#overlay?.cover(this.services.viewport.bounds);
@@ -321,7 +323,37 @@ export class Scene {
     this.#setHovered(null);
     this.#setPressed(null);
     this.#setFocused(modal.focusableNodes()[0] ?? null);
+    this.#followTextEntry();
     this.services.requestRender();
+  }
+
+  /**
+   * The field the device's keyboard types into was rebuilt — the keyboard
+   * opening resizes the window (an installed app), and the scene lays itself
+   * out again — so the keyboard follows its replacement, the field with the
+   * same id, instead of typing into one no longer shown; with none, it closes.
+   */
+  #followTextEntry() {
+    const entry = this.services.textEntry;
+    const field = entry?.field;
+    if (entry === undefined || field === undefined || field === null || this.#shows(field)) {
+      return;
+    }
+    const replacement = field.id.length > 0 ? (this.#overlay?.findById(field.id) ?? this.root.findById(field.id)) : null;
+    if (replacement !== null && replacement.editsText && entry.retarget !== undefined) {
+      entry.retarget(/** @type {import("../ui/TextField.js").TextField} */ (replacement));
+      this.focus(replacement);
+    } else {
+      entry.close();
+    }
+  }
+
+  /**
+   * @param {UiNode} node
+   * @returns {boolean} whether the node is in the scene's tree or its overlay
+   */
+  #shows(node) {
+    return isWithin(node, this.root) || (this.#overlay !== null && isWithin(node, this.#overlay));
   }
 
   hideOverlay() {
