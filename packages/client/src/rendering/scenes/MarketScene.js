@@ -32,7 +32,7 @@ import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Hotspot } from "../ui/Hotspot.js";
 import { Label } from "../ui/Label.js";
-import { OptionRow } from "../ui/OptionRow.js";
+import { capitalize } from "../text/textUtils.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
@@ -122,6 +122,49 @@ export function listingSubtitle(listing, now) {
     }
     default:
       return `${copy} · ${listing.status.toLowerCase()}`;
+  }
+}
+
+/**
+ * A line of the player's own activity, as its row shows it: what happened (`verb`, in `colorKey`), to whom or how long it
+ * has left (`detail`), the other side (`avatar`) and whether it is over without a deal (`closed`, drawn dimmed).
+ * @typedef {Readonly<{ verb: string, colorKey: string, detail: string, avatar: string, closed: boolean }>} Activity
+ */
+
+/**
+ * One of the player's listings as its row tells it.
+ * @param {import("../../application/ports/SalesApi.contract.js").Listing} listing
+ * @param {number} now
+ * @returns {Activity}
+ */
+export function saleActivity(listing, now) {
+  switch (listing.status) {
+    case "ACTIVE": {
+      const days = Math.max(0, Math.ceil((listing.expiresAt - now) / DAY));
+      return { verb: "On sale", colorKey: "accent", detail: listing.reserved ? "a buyer is paying" : `${days} day(s) left`, avatar: listing.seller, closed: false };
+    }
+    case "SOLD":
+      return { verb: "Sold", colorKey: "success", detail: listing.buyer === null ? "to a player" : `to @${listing.buyer}`, avatar: listing.buyer ?? listing.seller, closed: false };
+    default:
+      return { verb: capitalize(listing.status.toLowerCase()), colorKey: "textMuted", detail: "not sold", avatar: listing.seller, closed: true };
+  }
+}
+
+/**
+ * One of the player's purchases as its row tells it.
+ * @param {import("../../application/ports/SalesApi.contract.js").Purchase} purchase
+ * @returns {Activity}
+ */
+export function purchaseActivity(purchase) {
+  const detail = `from @${purchase.seller}`;
+  switch (purchase.status) {
+    case "COMPLETED":
+      return { verb: "Bought", colorKey: "success", detail, avatar: purchase.seller, closed: false };
+    case "PENDING":
+    case "DETECTED":
+      return { verb: "Buying", colorKey: "resource", detail, avatar: purchase.seller, closed: false };
+    default:
+      return { verb: `Purchase ${purchase.status.toLowerCase()}`, colorKey: "textMuted", detail, avatar: purchase.seller, closed: true };
   }
 }
 
@@ -371,19 +414,48 @@ export class MarketScene extends Scene {
     const now = this.#now();
     // Each row shows the other side when there is one: the buyer of a sold card, the seller of a bought one.
     const rows = [
-      ...listings.map((listing) => ({ kind: /** @type {const} */ ("listing"), id: listing.id, text: `Selling ${this.#cardName(listing.card.definitionId)} · ${listing.price.amount} ${listing.price.asset}`, subtitle: listingSubtitle(listing, now), avatar: listing.buyer ?? listing.seller })),
-      ...purchases.map((purchase) => ({ kind: /** @type {const} */ ("purchase"), id: purchase.id, text: `${purchase.status === "COMPLETED" ? "Bought" : "Buying"} ${this.#cardName(purchase.card.definitionId)} from @${purchase.seller}`, subtitle: `${purchase.price.amount} ${purchase.price.asset} · ${purchase.status.toLowerCase()}`, avatar: purchase.seller })),
+      ...listings.map((listing) => ({ kind: /** @type {const} */ ("listing"), id: listing.id, card: listing.card, price: listing.price, activity: saleActivity(listing, now) })),
+      ...purchases.map((purchase) => ({ kind: /** @type {const} */ ("purchase"), id: purchase.id, card: purchase.card, price: purchase.price, activity: purchaseActivity(purchase) })),
     ];
     if (rows.length === 0) {
       list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * this.#screen.row.height, text: "You have not sold or bought anything yet.", size: "small", colorKey: "textMuted" }));
       list.contentHeight = 2 * this.#screen.row.height;
       return;
     }
-    rows.forEach((row, index) => {
-      const selected = this.#selected?.kind === row.kind && this.#selected.id === row.id;
-      list.add(new OptionRow({ id: `market.mine.${row.id}`, x: 0, y: this.#screen.rowY(index), width: list.rowWidth, height: this.#screen.row.height, text: row.text, subtitle: row.subtitle, avatar: row.avatar, selected, onActivate: () => this.#select(row.kind, row.id) }));
-    });
+    rows.forEach((row, index) => this.#buildActivityRow(list, row, index));
     list.contentHeight = this.#screen.rowsHeight(rows.length);
+  }
+
+  /**
+   * One of the player's sales or purchases, laid out like the board: the card's strip, who and how it stands, the price
+   * (the row's button). A phone has no room for the middle column: what happened becomes the strip's badge.
+   * @param {ScrollList} list
+   * @param {{ kind: "listing" | "purchase", id: string, card: import("../../application/ports/SalesApi.contract.js").ListedCard, price: { amount: string, asset: string }, activity: Activity }} row
+   * @param {number} index
+   */
+  #buildActivityRow(list, { kind, id, card: listed, price, activity }, index) {
+    const selected = this.#selected?.kind === kind && this.#selected.id === id;
+    const select = () => this.#select(kind, id);
+    const top = this.#screen.rowY(index);
+    const height = this.#screen.row.height;
+    const { gap } = this.#screen.action;
+    const { metaWidth, sellerAvatar, priceWidth } = this.#m;
+    const meta = metaWidth > 0;
+    const stripWidth = list.rowWidth - priceWidth - (meta ? metaWidth + gap : 0) - gap;
+    const card = this.#app.content.catalog.get(listed.definitionId);
+    list.add(new CardStrip({ x: 0, y: top, width: stripWidth, height, card: card ?? unknownCard(listed.definitionId), broken: card === undefined, rarity: rarityOf(this.#app, listed.definitionId), badge: meta ? `#${listed.serial}` : activity.verb, selected, muted: activity.closed && !selected }));
+    const metaX = stripWidth + gap;
+    if (meta) {
+      list.add(new AvatarNode({ id: `market.mine.who.${id}`, x: metaX, y: top + (height - sellerAvatar) / 2, size: sellerAvatar, account: activity.avatar }));
+      const textX = metaX + sellerAvatar + 10;
+      const textWidth = metaWidth - sellerAvatar - 10;
+      list.add(new Label({ x: textX, y: top + 4, width: textWidth, height: height / 2 - 4, text: activity.verb, size: "small", weight: "bold", colorKey: activity.colorKey, align: "left", fit: true }));
+      list.add(new Label({ x: textX, y: top + height / 2, width: textWidth, height: height / 2 - 4, text: activity.detail, size: "tiny", colorKey: "textMuted", align: "left", fit: true }));
+    }
+    // The whole row picks it, as the price does; only the price takes the keyboard's focus.
+    const area = list.add(new Hotspot({ x: 0, y: top, width: meta ? metaX + metaWidth : stripWidth, height, onActivate: select }));
+    area.focusable = false;
+    list.add(new Button({ id: `market.mine.${id}`, x: meta ? metaX + metaWidth + gap : metaX, y: top, width: priceWidth, height, text: `${price.amount} ${price.asset}`, textSize: "small", variant: selected ? "primary" : "secondary", onActivate: select }));
   }
 
   /** @param {Panel} panel */

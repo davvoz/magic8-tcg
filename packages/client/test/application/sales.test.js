@@ -14,7 +14,7 @@ import { HttpSalesApi } from "../../src/infrastructure/api/HttpSalesApi.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { immediateScheduler } from "../../src/infrastructure/time/ImmediateScheduler.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { MarketScene, listingSubtitle } from "../../src/rendering/scenes/MarketScene.js";
+import { MarketScene, listingSubtitle, purchaseActivity, saleActivity } from "../../src/rendering/scenes/MarketScene.js";
 import { BalanceService } from "../../src/application/wallet/BalanceService.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
 import { loadBundledContent } from "./fixtures.js";
@@ -284,6 +284,30 @@ describe("MarketScene", () => {
     assert.equal(byId(scene, `market.copy.${uuid(31)}`), null, "an iron copy is not an ember card");
     assert.ok(rendered(scene).includes("No ember cards to sell."));
     assert.equal(byId(scene, "market.list").enabled, false, "a hidden copy is no longer chosen");
+  });
+
+  it("shows the player's sales and purchases as cards, with who, how they stand and the price", async () => {
+    const { scene, api } = market();
+    const sold = { ...LISTING, id: uuid(5), seller: "bob", status: "SOLD", buyer: "carol" };
+    api.mine = async () => ({ ok: true, value: { listings: [sold], purchases: [{ ...PURCHASE, status: "COMPLETED", payment: null, txId: TX_ID }] } });
+    scene.enter({});
+    await flush();
+    byId(scene, "market.tab.mine").activate();
+    await flush();
+    const texts = rendered(scene);
+    const imp = content.catalog.get("ember_imp");
+    assert.ok(texts.filter((text) => text === imp.name).length >= 2, "each row is the card's strip");
+    assert.ok(["Sold", "to @carol", "Bought", "from @alice", "#4", "1.500 STEEM"].every((text) => texts.includes(text)), texts.join(" | "));
+    byId(scene, `market.mine.${sold.id}`).activate();
+    assert.equal(byId(scene, `market.mine.${sold.id}`).variant, "primary", "the chosen row's price lights up");
+  });
+
+  it("tells each sale and purchase in a word, a detail and the other side", () => {
+    assert.deepEqual(saleActivity(LISTING, NOW), { verb: "On sale", colorKey: "accent", detail: "3 day(s) left", avatar: "alice", closed: false });
+    assert.equal(saleActivity({ ...LISTING, reserved: true }, NOW).detail, "a buyer is paying");
+    assert.deepEqual(saleActivity({ ...LISTING, status: "EXPIRED" }, NOW), { verb: "Expired", colorKey: "textMuted", detail: "not sold", avatar: "alice", closed: true });
+    assert.deepEqual(purchaseActivity(PURCHASE), { verb: "Buying", colorKey: "resource", detail: "from @alice", avatar: "alice", closed: false });
+    assert.equal(purchaseActivity({ ...PURCHASE, status: "CANCELLED" }).closed, true);
   });
 
   it("describes listings, and goes back where the player came from", () => {
