@@ -14,6 +14,7 @@
  *   /tools/preview/?scene=match&deck=precon_shadow   playing that deck (default: the first playable one)
  *   /tools/preview/?scene=match&inspect=1    plus the inspect overlay on a hand card
  *   /tools/preview/?scene=info&topic=ranked  the Info screen on a topic (default: how to play)
+ *   /tools/preview/?scene=tutorial&next=5    the tutorial, after N clicks as the coach asks (Next, or what it points at)
  *   ...&art=procedural                       every card and the table with procedural art, ignoring data/art/
  *
  * Illustrations are all loaded before the first frame, so a screenshot never
@@ -28,6 +29,7 @@ import { loadContent } from "../../src/application/content/ContentService.js";
 import { DeckBuildingService } from "../../src/application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
 import { BasicAiController } from "../../src/application/match/BasicAiController.js";
+import { TutorialService } from "../../src/application/tutorial/TutorialService.js";
 import { humanController } from "../../src/application/match/HumanController.js";
 import { MatchSetupService } from "../../src/application/match/MatchSetupService.js";
 import { declareAttackers, declareBlockers, endTurn, playCard } from "@magic8/engine/domain/commands/commandFactories.js";
@@ -84,11 +86,13 @@ const logger = new ConsoleLogger();
  */
 function buildApp(content) {
   const repository = new StoredDeckRepository({ store: new InMemoryStore(), logger });
+  const matchSetup = new MatchSetupService({ content, effects: createCoreEffectRegistry(), scheduler: immediateScheduler, logger });
   return Object.freeze({
     content,
     deckSelection: new DeckSelectionService({ content, repository, logger }),
     deckBuilding: new DeckBuildingService({ content, repository }),
-    matchSetup: new MatchSetupService({ content, effects: createCoreEffectRegistry(), scheduler: immediateScheduler, logger }),
+    matchSetup,
+    tutorial: new TutorialService({ matchSetup, content }),
     createSeed: () => SEED,
     logger,
     environment: Object.freeze({ version: "preview", storage: "memory" }),
@@ -280,14 +284,75 @@ async function show(sceneManager, app, { scene, turns, inspect, deckId, topic })
   }
 }
 
+/**
+ * A whole number from the query string, `fallback` when absent or not one.
+ * @param {URLSearchParams} query
+ * @param {string} name
+ * @param {number} fallback
+ */
+function countParam(query, name, fallback) {
+  const value = Number.parseInt(query.get(name) ?? "", 10);
+  return Number.isNaN(value) ? fallback : value;
+}
+
+/**
+ * The tutorial, after `next` clicks as the coach asks.
+ * @param {SceneManager} sceneManager
+ * @param {import("../../src/application/AppContext.js").AppContext} app
+ * @param {number} next
+ */
+async function showTutorial(sceneManager, app, next) {
+  const started = /** @type {import("../../src/application/tutorial/TutorialService.js").TutorialService} */ (app.tutorial).start({ aiDelayMs: 0 });
+  if (started.ok) {
+    sceneManager.navigate(SceneId.MATCH, { session: started.value.session, coach: started.value.coach });
+    await followCoach(sceneManager, started.value.coach, next);
+  }
+}
+
+/**
+ * Plays the tutorial on, `count` clicks: Next on a lesson, and on a task
+ * what the coach points at (the card to tap, the button to press).
+ * @param {SceneManager} sceneManager
+ * @param {import("../../src/application/tutorial/TutorialCoach.js").TutorialCoach} coach
+ * @param {number} count
+ */
+async function followCoach(sceneManager, coach, count) {
+  for (let clicks = 0; clicks < count; clicks += 1) {
+    let target = null;
+    for (let frames = 0; frames < 900 && target === null; frames += 1) {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      target = coachTarget(sceneManager, coach);
+    }
+    target?.activate();
+  }
+}
+
+/**
+ * What a player following the coach would click now, if anything.
+ * @param {SceneManager} sceneManager
+ * @param {import("../../src/application/tutorial/TutorialCoach.js").TutorialCoach} coach
+ */
+function coachTarget(sceneManager, coach) {
+  const scene = /** @type {any} */ (sceneManager.current);
+  const next = scene?.root.findById("coach.next") ?? null;
+  if (next !== null || scene?.isBusy !== false || coach.lesson !== null) {
+    return next;
+  }
+  const interaction = scene.interaction;
+  const intent = { pickedCardId: interaction.pickedCardId, targetingCardId: interaction.targetingCardId, attackerIds: interaction.selectedAttackerIds, pendingBlockerId: interaction.pendingBlockerId, blocks: interaction.pendingBlocks };
+  const [token] = coach.focusFor(intent);
+  return token === undefined ? null : scene.root.findById(token.slice(token.indexOf(":") + 1));
+}
+
 async function boot() {
   const query = new URL(window.location.href).searchParams;
   const request = {
     scene: query.get("scene") ?? "menu",
-    turns: Number.parseInt(query.get("turns") ?? "6", 10) || 0,
+    turns: countParam(query, "turns", 6),
     inspect: query.get("inspect") === "1",
     deckId: query.get("deck"),
     topic: query.get("topic"),
+    next: countParam(query, "next", 0),
     procedural: query.get("art") === "procedural",
   };
   const source = new FetchContentSource(MANIFEST, (url, init) => fetch(url, init));
@@ -306,7 +371,7 @@ async function boot() {
   await document.fonts.load(`900 72px ${theme.value.fonts.titleFamily}`);
   const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations, tableArt }));
   registerScenes(sceneManager, app);
-  await show(sceneManager, app, request);
+  await (request.scene === "tutorial" ? showTutorial(sceneManager, app, request.next) : show(sceneManager, app, request));
   document.title = `KIJAM preview: ${request.scene}`;
 }
 

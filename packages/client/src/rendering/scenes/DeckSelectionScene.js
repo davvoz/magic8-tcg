@@ -167,7 +167,7 @@ export class DeckSelectionScene extends Scene {
     const width = size.width - 2 * inset;
     const startSpec = { id: "startMatch", variant: /** @type {const} */ ("primary"), enabled: this.#selectedDeckId !== null, text: "Start match", onActivate: () => this.#startMatch() };
     const back = { id: "backToMenu", text: "Back", onActivate: () => navigate(SceneId.MAIN_MENU) };
-    const builder = { id: "editDecks", text: "Deck builder", enabled: hasScene(SceneId.DECK_BUILDER), onActivate: () => navigate(SceneId.DECK_BUILDER) };
+    const builder = { id: "editDecks", text: "Deck builder", enabled: hasScene(SceneId.DECK_BUILDER), onActivate: () => navigate(SceneId.DECK_BUILDER, { from: SceneId.DECK_SELECTION }) };
     if (footer.oneRow) {
       const y = size.height - inset / 2 - footer.height;
       panel.add(new Button({ ...back, x: inset, y, width: COMPACT_FOOTER.back, height: footer.height }));

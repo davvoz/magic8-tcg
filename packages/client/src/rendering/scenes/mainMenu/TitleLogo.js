@@ -1,8 +1,9 @@
 /**
  * The game's name over the main menu's fan, as a crest of old cast gold:
- * once its painted image is ready (Theme.uiArt), the engraved letters of
- * that image with the star in their K; until then (or without it) the
- * letters in the title face (Theme.fonts.titleFamily), carved deep over a
+ * once its painted image is ready (Theme.uiArt), that whole picture (the
+ * engraved letters, its star, its own scrolls and points, so no rules are
+ * drawn beside it), as large as the node holds it; until then (or without
+ * it) the letters in the title face (Theme.fonts.titleFamily), carved deep over a
  * dark shadow, polished like metal but rusted and worn in patches, with a
  * chipped bright edge, and a gold rule
  * reaching out on either side from a diamond. It lives: now and then a
@@ -68,8 +69,6 @@ const AURA = Object.freeze({ rest: 0.14, sweep: 0.12, kindle: 0.12, height: 0.42
 const SPARK = Object.freeze({ length: 0.42, width: 0.018 });
 /** The last letter's kindling, at its top: the halo behind it (reach in capital heights), the light within it and its glowing rim (blur in ems). */
 const KINDLE = Object.freeze({ halo: 1.1, haloAlpha: 0.55, within: 0.9, rim: 0.9, blur: 0.12 });
-/** The painted name's capitals, as a share of the node's height (unless the width, with the rules, is shorter). */
-const PAINTED = Object.freeze({ ofHeight: 0.8 });
 /** The sheen on the painted name: the gold laid again, lighter, in bands narrowing to its core (half-width in sheen widths, strength). */
 const PAINTED_SHEEN = Object.freeze([Object.freeze([0.55, 0.16]), Object.freeze([0.3, 0.2]), Object.freeze([0.12, 0.28])]);
 /** The painted star flaring up: the halo behind it (reach in capital heights), its rays (in ems) and the light at its heart (reach in capital heights). */
@@ -243,8 +242,8 @@ export class TitleLogo extends UiNode {
   }
 
   /**
-   * The painted name: its aura, the rules, the image over its own shadow,
-   * then the light that lives in it, as on the letters of the title face.
+   * The painted name: its aura, the image over its own shadow, then the
+   * light that lives in it, as on the letters of the title face.
    * @param {CanvasRenderingContext2D} context
    * @param {Readonly<Record<string, any>>} colors
    * @param {import("../../images/ImageCache.js").LoadedImage} image
@@ -255,7 +254,6 @@ export class TitleLogo extends UiNode {
     context.save();
     this.#paintAura(context, colors, crest);
     this.#paintStar(context, colors, crest, "halo");
-    paintWings(context, colors, crest);
     context.save();
     context.shadowColor = withAlpha(colors.letterbox, 0.9);
     context.shadowBlur = SHADOW.blur * crest.size;
@@ -269,42 +267,36 @@ export class TitleLogo extends UiNode {
   }
 
   /**
-   * Where the painted name goes: sized by its capitals like the title face
-   * (an em being the capitals' height over CAP_HEIGHT, for the rules and the
-   * light), its letters centred on the node.
+   * Where the painted name goes: the whole picture, as large as the node
+   * holds it, centred; its letters (for the sheen and the sparks, an em
+   * being their height over CAP_HEIGHT) and its star where the layout says.
    * @param {{ width: number, height: number }} image
    * @param {import("../../images/UiArt.js").TitleLayout} letters
    * @returns {{ crest: Crest, box: { x: number, y: number, width: number, height: number } }}
    */
   #paintedLayout(image, letters) {
     const area = this.bounds;
+    const height = Math.max(1, Math.min(area.height, (area.width * image.height) / image.width));
+    const width = (height * image.width) / image.height;
+    const x = area.x + (area.width - width) / 2;
+    const y = area.y + (area.height - height) / 2;
     const first = letters.stops[0];
     const last = letters.stops[letters.stops.length - 1];
-    const tall = letters.bottom - letters.top;
-    // The letters' width for each pixel of their height.
-    const perCap = (image.width * (last - first)) / (image.height * tall);
-    const cap = Math.max(1, Math.min(area.height * PAINTED.ofHeight, area.width / (perCap + (2 * (WING.gap + WING.min)) / CAP_HEIGHT)));
-    const size = cap / CAP_HEIGHT;
-    const height = cap / tall;
-    const width = (height * image.width) / image.height;
-    const center = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
-    const x = center.x - (width * (first + last)) / 2;
-    const y = center.y - (height * (letters.top + letters.bottom)) / 2;
     const left = x + width * first;
     const wordWidth = width * (last - first);
     const top = y + height * letters.top;
-    const wing = Math.min(WING.max * size, (area.width - wordWidth) / 2 - WING.gap * size);
+    const cap = height * (letters.bottom - letters.top);
     return {
       crest: {
         font: "",
-        size,
+        size: cap / CAP_HEIGHT,
         width: wordWidth,
         left,
         baseline: top + cap,
         top,
         cap,
-        center,
-        wing: wing >= WING.min * size ? wing : 0,
+        center: { x: left + wordWidth / 2, y: top + cap / 2 },
+        wing: 0,
         stops: letters.stops.map((stop) => x + width * stop),
         star: { x: x + width * letters.star.x, y: y + height * letters.star.y },
       },

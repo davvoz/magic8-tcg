@@ -8,6 +8,8 @@
  * whose serial is known lit in its details.
  * On a compact screen the filter is one button beside the list's title and
  * a card is picked by tapping its strip.
+ * The header opens the Deck Builder (which comes back here), the market and
+ * the trades.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
@@ -48,6 +50,9 @@ const FRESH_LINE = 30;
  * @typedef {Readonly<{ count: number, serials: ReadonlySet<number> }>} Freshness how many copies of a card are new, and the serials known
  * @typedef {Readonly<{ definitionId: string, card: import("../cards/CardDetail.js").CardLike | undefined, copies: readonly import("../../application/ports/CollectionApi.contract.js").OwnedCopy[] }>} OwnedCard
  */
+
+/** The narrowest the header's status line is worth showing at. */
+const MIN_STATUS_WIDTH = 80;
 
 export class CollectionScene extends Scene {
   /** The frame for the screen in use (the compact one on a phone). */
@@ -151,19 +156,27 @@ export class CollectionScene extends Scene {
 
   /** @returns {Button} the Back button */
   #buildHeader() {
-    const { viewport } = this.services;
+    const { viewport, hasScene, navigate } = this.services;
+    const { header } = this.#screen;
     const { statusOffset } = this.#metrics;
-    const statusX = this.#screen.header.sideMargin + statusOffset;
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: statusOffset, height: this.#screen.header.height, text: "Collection", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    const status = this.#status();
-    this.root.add(new Label({ id: "collection.status", x: statusX, y: this.#screen.header.y, width: viewport.logicalWidth - this.#screen.header.sideMargin - (this.services.hasScene(SceneId.MARKET) ? 3 : 2) * (this.#screen.header.backWidth + 16) - this.#screen.inset - statusX, height: this.#screen.header.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
-    if (this.services.hasScene(SceneId.MARKET)) {
-      this.root.add(new Button({ id: "collection.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 3 * this.#screen.header.backWidth - 32, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.COLLECTION }) }));
+    const statusX = header.sideMargin + statusOffset;
+    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: statusOffset, height: header.height, text: "Collection", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
+    // Right to left from the edge: Back, then the other screens.
+    const buttons = [
+      { id: "collection.back", text: this.#from === SceneId.MAIN_MENU ? this.#screen.backText : "Back", onActivate: () => navigate(this.#from) },
+      ...(hasScene(SceneId.TRADES) ? [{ id: "collection.trades", text: "Trades", onActivate: () => navigate(SceneId.TRADES) }] : []),
+      ...(hasScene(SceneId.MARKET) ? [{ id: "collection.market", text: "Market", onActivate: () => navigate(SceneId.MARKET, { from: SceneId.COLLECTION }) }] : []),
+      ...(hasScene(SceneId.DECK_BUILDER) ? [{ id: "collection.decks", text: "Deck Builder", onActivate: () => navigate(SceneId.DECK_BUILDER, { from: SceneId.COLLECTION }) }] : []),
+    ];
+    const step = header.backWidth + header.gap;
+    const nodes = buttons.map((spec, index) => this.root.add(new Button({ ...spec, x: viewport.logicalWidth - header.sideMargin - header.backWidth - index * step, y: header.y + 4, width: header.backWidth, height: header.height - 8 })));
+    // The status takes what the buttons leave; on a phone that may be nothing.
+    const statusWidth = viewport.logicalWidth - header.sideMargin - buttons.length * step - this.#screen.inset - statusX;
+    if (statusWidth >= MIN_STATUS_WIDTH) {
+      const status = this.#status();
+      this.root.add(new Label({ id: "collection.status", x: statusX, y: header.y, width: statusWidth, height: header.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
     }
-    if (this.services.hasScene(SceneId.TRADES)) {
-      this.root.add(new Button({ id: "collection.trades", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Trades", onActivate: () => this.services.navigate(SceneId.TRADES) }));
-    }
-    return this.root.add(new Button({ id: "collection.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#from === SceneId.MAIN_MENU ? this.#screen.backText : "Back", onActivate: () => this.services.navigate(this.#from) }));
+    return nodes[0];
   }
 
   /** @returns {{ text: string, colorKey: string }} */

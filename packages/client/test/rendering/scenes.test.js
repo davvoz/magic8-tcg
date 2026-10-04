@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { ErrorScene } from "../../src/rendering/scenes/ErrorScene.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { UiPiece } from "../../src/rendering/images/UiArt.js";
 import { Scene } from "../../src/rendering/scenes/Scene.js";
 import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
@@ -226,6 +227,29 @@ describe("MainMenuScene", () => {
     scene.onPointer(down(x + width / 2, y + height / 2));
     scene.onPointer(up(x + width / 2, y + height / 2));
     assert.deepEqual(navigated, [SceneId.DECK_SELECTION, SceneId.DECK_SELECTION]);
+  });
+
+  it("lets the painted logo, once it is ready, stand for the name, its tagline and its ornament, from the fan's top down", () => {
+    let ready = false;
+    const logo = { source: { piece: UiPiece.TITLE }, width: 1100, height: 663 };
+    const uiArt = { layout: { title: { top: 0.39, bottom: 0.72, stops: [0.1, 0.3, 0.4, 0.5, 0.7, 0.9], star: { x: 0.5, y: 0.3 } } }, imageFor: (piece) => (ready && piece === UiPiece.TITLE ? logo : null) };
+    const scene = new MainMenuScene(services({ theme: { ...theme, uiArt } }), app());
+    scene.enter({});
+    const tagline = (/** @type {string[]} */ texts) => texts.some((text) => text.includes("collectible card game"));
+    const first = new FakeContext2D();
+    scene.render(first);
+    assert.ok(tagline(first.texts), "until the logo is ready: the face's name and the tagline");
+    const textTitle = scene.root.findById("title").bounds;
+
+    ready = true;
+    scene.update(16);
+    const painted = new FakeContext2D();
+    scene.render(painted);
+    assert.ok(!tagline(painted.texts), "the logo carries its own");
+    assert.ok(painted.calls.some((call) => call.method === "drawImage" && call.args[0] === logo.source));
+    const logoArea = scene.root.findById("title").bounds;
+    assert.ok(logoArea.y < textTitle.y && logoArea.height > textTitle.height, "a taller place, from the fan's top");
+    scene.exit();
   });
 
   it("reports memory-only storage and an open deck draft", () => {

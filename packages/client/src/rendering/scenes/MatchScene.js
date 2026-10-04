@@ -49,10 +49,19 @@
  * a slim action column instead of the sidebar, its last row opening the
  * battle log and conceding; and on a phone, or played by touch, a hand card
  * is picked first — held up large to be read — and played with "Play".
+ *
+ * The tutorial is a match with a coach (TutorialCoach): its lessons are read
+ * on a card over the board, which waits (no update is shown) until "Next",
+ * the table dimmed round what the lesson is about; its tasks are a line over
+ * the middle of the table (and the side panel's prompt), and only what a
+ * task names glows and answers a tap. Rings and arrows point at what the
+ * coach talks about (CoachCard).
+ * Leaving it is not conceding: the player just goes back to the menu.
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
 import { ControllerKind } from "../../application/match/PlayerController.contract.js";
+import { TutorialCoach } from "../../application/tutorial/TutorialCoach.js";
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
 import { KeyMap, isKey } from "../../input/KeyMap.js";
 import { Highlight, InteractionMode, MatchInteraction } from "../../input/interaction/MatchInteraction.js";
@@ -60,6 +69,7 @@ import { BattleLogNode, createLogScroll } from "../board/BattleLogNode.js";
 import { BoardNode } from "../board/BoardNode.js";
 import { CardNode } from "../board/CardNode.js";
 import { ClockNode } from "../board/ClockNode.js";
+import { CoachFocus, CoachHint, CoachSpotlight, buildCoachCard } from "../board/CoachCard.js";
 import { CoinFlip } from "../board/CoinFlip.js";
 import { CoinTossNode } from "../board/CoinTossNode.js";
 import { EffectsNode } from "../board/EffectsNode.js";
@@ -69,8 +79,9 @@ import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
 import { MatchSoundscape } from "../board/MatchSoundscape.js";
 import { PickedCardNode } from "../board/PickedCardNode.js";
-import { PlayerNode, lifeCrystalCentre } from "../board/PlayerNode.js";
+import { PlayerNode, lifeCrystalCentre, resourceRects } from "../board/PlayerNode.js";
 import { boardFaceProfile } from "../cards/CardRenderer.js";
+import { cardFaceLayout } from "../cards/CardFace.js";
 import { splitIntoBeats } from "../board/StepBeats.js";
 import { LogKind, describeEvent } from "../board/eventLog.js";
 import { CardDetail } from "../cards/CardDetail.js";
@@ -81,6 +92,7 @@ import { buildAudioSettingsModal } from "./audioSettings.js";
 import { Label } from "../ui/Label.js";
 import { Modal } from "../ui/Modal.js";
 import { Panel, PANEL_INSET } from "../ui/Panel.js";
+import { RichTextBlock } from "../ui/RichText.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
@@ -160,6 +172,12 @@ export class MatchScene extends Scene {
   #audio;
   /** @type {(() => void) | null} */
   #unsubscribeAudio = null;
+  /** The tutorial's coach, when this match is the tutorial. @type {TutorialCoach | null} */
+  #coach = null;
+  /** Whether the widgets were last built with the coach's lesson card on the board. */
+  #builtLesson = false;
+  /** Time on the board, for the coach's pulsing ring. */
+  #elapsedMs = 0;
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
@@ -175,7 +193,7 @@ export class MatchScene extends Scene {
     this.#presenter = new MatchPresenter(services.theme.animation);
   }
 
-  /** @param {Readonly<Record<string, unknown>>} params `{ session: MatchSession | RemoteMatchSession, againScene?: string }` */
+  /** @param {Readonly<Record<string, unknown>>} params `{ session: MatchSession | RemoteMatchSession, againScene?: string, coach?: TutorialCoach }`: with a coach, the match is the tutorial */
   enter(params) {
     this.#againScene = typeof params.againScene === "string" ? params.againScene : SceneId.DECK_SELECTION;
     const session = /** @type {import("../../application/match/MatchSession.js").MatchSession | undefined} */ (params.session);
@@ -185,6 +203,8 @@ export class MatchScene extends Scene {
       return;
     }
     this.#session = session;
+    this.#coach = params.coach instanceof TutorialCoach ? params.coach : null;
+    this.#builtLesson = false;
     this.#playerId = session.humanPlayerIds[0] ?? "";
     this.#spectating = session.humanPlayerIds.length === 0;
     this.#gameOverShown = false;
@@ -236,9 +256,11 @@ export class MatchScene extends Scene {
     this.#soundscape?.follow({ presenter: this.#presenter, toss: this.#coinFlip, ending: this.#ending });
     const caughtUp = this.#showNextStep();
     const ending = this.#ending?.update(dtMs) ?? false;
-    const changed = presented || caughtUp || ending || inputChanged || tossChanged || this.#tickClock();
+    this.#elapsedMs += dtMs;
+    const pulsing = this.root.findById("coach.focus") !== null;
+    const changed = presented || caughtUp || ending || inputChanged || tossChanged || pulsing || this.#tickClock();
     this.#maybeShowGameOver();
-    if (this.isBusy !== this.#builtBusy) {
+    if (this.isBusy !== this.#builtBusy || this.#showsLesson !== this.#builtLesson) {
       this.#rebuild();
       return true;
     }
@@ -262,7 +284,7 @@ export class MatchScene extends Scene {
    * @param {Step} step
    */
   #readyFor(step) {
-    if (this.isTossing) {
+    if (this.isTossing || this.#coach?.holdsBoard === true) {
       return false;
     }
     return step.chained ? this.#presenter.hasStruck : !this.#presenter.isBusy;
@@ -358,7 +380,7 @@ export class MatchScene extends Scene {
     if (this.isTossing) {
       return;
     }
-    if (input.type === "keydown" && isKey(input.key, KeyMap.END_TURN) && this.modal === null && !this.isBusy && this.#snapshot?.legalMoves?.canEndTurn === true) {
+    if (input.type === "keydown" && isKey(input.key, KeyMap.END_TURN) && this.modal === null && !this.isBusy && this.#snapshot?.legalMoves?.canEndTurn === true && this.#coachAllows("endTurn")) {
       this.#soundscape?.endedTurn();
       this.#submit(endTurn(this.#playerId));
       return;
@@ -472,6 +494,7 @@ export class MatchScene extends Scene {
     const entries = events.map((event) => describeEvent(event, snapshot)).filter((entry) => entry !== null);
     this.#log = [...this.#log, ...entries].slice(-MAX_LOG_ENTRIES);
     this.#interaction.sync(snapshot);
+    this.#coach?.sync(snapshot);
     this.#rebuild();
     this.#maybeShowGameOver();
   }
@@ -544,7 +567,7 @@ export class MatchScene extends Scene {
 
   /** @param {string} id card instance or player id */
   #tap(id) {
-    if (this.isBusy) {
+    if (this.isBusy || this.#coach?.allowsTap(id) === false) {
       return;
     }
     const command = this.#interaction?.tap(id) ?? null;
@@ -563,6 +586,7 @@ export class MatchScene extends Scene {
       return;
     }
     this.#builtBusy = this.isBusy;
+    this.#builtLesson = this.#showsLesson;
     const focusedId = this.focusedNode?.id ?? "";
     const reopen = this.modal?.id ?? null;
     this.closeModal();
@@ -575,11 +599,12 @@ export class MatchScene extends Scene {
     this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction), turnLabel: (playerId) => this.#turnLabel(snapshot, playerId) }));
     this.#buildSidebar(snapshot, layout, interaction);
     this.#buildLog(layout);
+    this.#buildCoach(snapshot, layout, interaction);
     this.#buildCoinToss(snapshot);
     this.#buildEnding(layout);
     this.#reopen(reopen, snapshot);
     const scope = this.modal ?? this.root;
-    const fallback = this.modal === null ? null : this.modal.focusableNodes()[0] ?? null;
+    const fallback = this.modal === null ? this.root.findById("coach.next") : this.modal.focusableNodes()[0] ?? null;
     this.focus(scope.findById(focusedId) ?? fallback);
     this.services.requestRender();
   }
@@ -607,7 +632,22 @@ export class MatchScene extends Scene {
     if (this.isTossing) {
       return new BoardNode({ layout, banner: TOSS_BANNER, activePlayerId: null });
     }
-    return new BoardNode({ layout, banner: bannerFor(snapshot, this.#viewer()), activePlayerId: activeSeatFor(snapshot) });
+    // The tutorial's line takes the banner's place (turn and phase stay in the side panel).
+    const banner = this.#coachLine() === null ? bannerFor(snapshot, this.#viewer()) : "";
+    return new BoardNode({ layout, banner, activePlayerId: activeSeatFor(snapshot) });
+  }
+
+  /**
+   * The tutorial task's line over the middle of the table, if one is shown
+   * there: not while a card is held up to be read (it covers the middle of
+   * the table; the line stays in the side panel).
+   */
+  #coachLine() {
+    const interaction = this.#interaction;
+    if (this.#coach === null || interaction === null || interaction.pickedCardId !== null || this.isTossing || this.isEnding) {
+      return null;
+    }
+    return this.#coach.hintFor(coachIntent(interaction));
   }
 
   /**
@@ -670,7 +710,8 @@ export class MatchScene extends Scene {
    */
   #highlightFor(interaction, id) {
     const highlight = interaction.highlightFor(id);
-    return this.isBusy && INVITING.has(highlight ?? "") ? null : highlight;
+    const quiet = this.isBusy || this.#coach?.allowsTap(id) === false;
+    return quiet && INVITING.has(highlight ?? "") ? null : highlight;
   }
 
   /**
@@ -686,7 +727,9 @@ export class MatchScene extends Scene {
     panel.add(new Label({ x: metrics.inset, y: metrics.inset, width, height: metrics.titleHeight, text: snapshot.isOver ? "Match over" : `Turn ${snapshot.turnNumber}`, size: layout.compact && snapshot.isOver ? "body" : "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     panel.add(new Label({ x: metrics.inset, y: metrics.inset + metrics.titleHeight, width, height: metrics.phaseHeight, text: phaseName(snapshot.phase), size: "small", colorKey: "textMuted", align: "left", fit: true }));
     const prompt = this.#promptFor(snapshot, interaction);
-    panel.add(new TextBlock({ x: metrics.inset, y: metrics.promptTop, width, height: metrics.promptHeight, text: prompt, size: "small", colorKey: "accent" }));
+    const promptArea = { id: "prompt", x: metrics.inset, y: metrics.promptTop, width, height: metrics.promptHeight, text: prompt, size: /** @type {const} */ ("small"), colorKey: "accent" };
+    // The tutorial's lines name cards and buttons in colour.
+    panel.add(this.#coach === null ? new TextBlock(promptArea) : new RichTextBlock({ ...promptArea, colorKey: "text" }));
     const specs = this.#sidebarButtons(snapshot, interaction).filter((spec) => spec.visible);
     // The compact column keeps leaving for its footer, beside the log.
     const footer = layout.compact ? specs.filter((spec) => spec.id === "leave") : [];
@@ -724,7 +767,104 @@ export class MatchScene extends Scene {
     if (this.isTossing) {
       return "Tossing a coin for the first turn…";
     }
-    return this.#spectating ? `Watching ${snapshot.players.map((player) => nameOf(snapshot, player.id)).join(" vs ")}` : interaction.prompt;
+    if (this.#spectating) {
+      return `Watching ${snapshot.players.map((player) => nameOf(snapshot, player.id)).join(" vs ")}`;
+    }
+    const coach = this.#coach;
+    if ((coach?.lesson ?? null) !== null) {
+      return "Read the tip, then press [Next].";
+    }
+    return coach?.hintFor(coachIntent(interaction)) ?? interaction.prompt;
+  }
+
+  /** True while the coach's lesson is on the board: it waits for the board to finish what it was showing. */
+  get #showsLesson() {
+    return (this.#coach?.lesson ?? null) !== null && !this.#presenter.isBusy && !this.isTossing && !this.isEnding;
+  }
+
+  /** @param {string} buttonId a side panel button that makes a move */
+  #coachAllows(buttonId) {
+    return this.#coach?.allowsButton(buttonId) ?? true;
+  }
+
+  /**
+   * What the confirm button would send, as the coach checks it.
+   * @param {MatchInteraction} interaction
+   */
+  #coachAllowsConfirm(interaction) {
+    return this.#coach?.allowsConfirm(coachIntent(interaction)) ?? true;
+  }
+
+  /**
+   * The tutorial on the board. A lesson: the table dimmed round what it is
+   * about, its card clear of it, and arrows from the card to it. A task: its
+   * line over the middle of the table, and arrows from there to what to tap
+   * or press (once the board has played out what happened).
+   * @param {Snapshot} snapshot
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   * @param {MatchInteraction} interaction
+   */
+  #buildCoach(snapshot, layout, interaction) {
+    const coach = this.#coach;
+    if (coach === null || this.isTossing || this.isEnding) {
+      return;
+    }
+    const intent = coachIntent(interaction);
+    const focus = coach.focusFor(intent);
+    const targets = focus.map((target) => this.#focusRects(snapshot, layout, target));
+    const rects = targets.flat();
+    const lesson = coach.lesson;
+    const clock = () => this.#elapsedMs;
+    if (lesson !== null) {
+      if (!this.#showsLesson) {
+        return;
+      }
+      this.root.add(new CoachSpotlight({ area: this.services.viewport.bounds, holes: rects }));
+      // A gem is kept in sight with the whole card it is on.
+      const avoid = focus.flatMap((target, index) => (GEMS.has(target.split(":")[0]) ? BOARD_FOCUS.card(snapshot, layout, target.split(":")[1]) : targets[index]));
+      const card = this.root.add(buildCoachCard({ lesson, layout, avoid, onNext: () => this.#nextLesson() }));
+      this.root.add(new CoachFocus({ targets, origin: centreOf(card.bounds), clock, compact: layout.compact }));
+      return;
+    }
+    // The arrows start under the line, so it is drawn over them.
+    if (!this.isBusy && rects.length > 0) {
+      const { banner } = layout;
+      const keepClear = { x: banner.x, y: banner.y + banner.height / 2 - HINT_ROOM / 2, width: banner.width, height: HINT_ROOM };
+      this.root.add(new CoachFocus({ targets, room: { column: banner, bounds: layout, keepClear }, clock, compact: layout.compact }));
+    }
+    const line = this.#coachLine();
+    if (line !== null) {
+      this.root.add(new CoachHint({ text: line, layout }));
+    }
+  }
+
+  /**
+   * Where a coach's focus target is on the board (see TutorialCoach's
+   * FocusTarget): none when it is not there.
+   * @param {Snapshot} snapshot
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   * @param {string} target
+   * @returns {import("@magic8/engine/shared/geometry.js").Rect[]}
+   */
+  #focusRects(snapshot, layout, target) {
+    const [kind, id] = target.split(":");
+    if (kind === "button") {
+      const button = this.root.findById(id);
+      return button === null ? [] : [button.bounds];
+    }
+    return BOARD_FOCUS[kind]?.(snapshot, layout, id) ?? [];
+  }
+
+  /** The lesson is read: the board takes up what it held back. */
+  #nextLesson() {
+    const coach = this.#coach;
+    if (coach === null || !coach.next()) {
+      return;
+    }
+    if (this.#snapshot !== null) {
+      coach.sync(this.#snapshot);
+    }
+    this.#rebuild();
   }
 
   /**
@@ -799,12 +939,27 @@ export class MatchScene extends Scene {
       return [{ id: "leave", text: "Leave", visible: true, enabled: true, plays: false, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
     }
     return [
-      { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: true, plays: true, variant: "primary", onActivate: () => this.#confirm() },
+      { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: this.#coachAllowsConfirm(interaction), plays: true, variant: "primary", onActivate: () => this.#confirm() },
       { id: "cancel", text: "Cancel", visible: interaction.canCancel, enabled: true, plays: false, variant: "secondary", onActivate: () => this.onCancel() },
-      { id: "endPhase", text: "End phase", visible: playing, enabled: moves?.canEndPhase === true && !busy, plays: true, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
-      { id: "endTurn", text: this.#keyHints() ? "End turn (E)" : "End turn", visible: playing, enabled: moves?.canEndTurn === true && !busy, plays: true, variant: "primary", cue: SoundCue.TURN_END, onActivate: () => this.#submit(endTurn(this.#playerId)) },
-      { id: "leave", text: snapshot.isOver ? "Back to menu" : "Concede", shortText: snapshot.isOver ? "Menu" : "Concede", visible: true, enabled: true, plays: false, variant: snapshot.isOver ? "secondary" : "danger", onActivate: () => (snapshot.isOver ? this.#leave(SceneId.MAIN_MENU) : this.#confirmConcede()) },
+      { id: "endPhase", text: "End phase", visible: playing, enabled: moves?.canEndPhase === true && !busy && this.#coachAllows("endPhase"), plays: true, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
+      { id: "endTurn", text: this.#keyHints() ? "End turn (E)" : "End turn", visible: playing, enabled: moves?.canEndTurn === true && !busy && this.#coachAllows("endTurn"), plays: true, variant: "primary", cue: SoundCue.TURN_END, onActivate: () => this.#submit(endTurn(this.#playerId)) },
+      this.#leaveButton(snapshot),
     ];
+  }
+
+  /**
+   * Conceding, or once the match is over going back to the menu; the tutorial is simply left.
+   * @param {Snapshot} snapshot
+   */
+  #leaveButton(snapshot) {
+    const base = { id: "leave", visible: true, enabled: true, plays: false };
+    if (snapshot.isOver) {
+      return { ...base, text: "Back to menu", shortText: "Menu", variant: /** @type {const} */ ("secondary"), onActivate: () => this.#leave(SceneId.MAIN_MENU) };
+    }
+    if (this.#coach !== null) {
+      return { ...base, text: "Leave tutorial", shortText: "Leave", variant: /** @type {const} */ ("secondary"), onActivate: () => this.#confirmLeaveTutorial() };
+    }
+    return { ...base, text: "Concede", shortText: "Concede", variant: /** @type {const} */ ("danger"), onActivate: () => this.#confirmConcede() };
   }
 
   /** Keyboard shortcuts are worth naming only to someone with a keyboard at hand. */
@@ -832,7 +987,7 @@ export class MatchScene extends Scene {
   }
 
   #confirm() {
-    if (this.isBusy) {
+    if (this.isBusy || (this.#interaction !== null && !this.#coachAllowsConfirm(this.#interaction))) {
       return;
     }
     const command = this.#interaction?.confirm() ?? null;
@@ -897,6 +1052,19 @@ export class MatchScene extends Scene {
     );
   }
 
+  #confirmLeaveTutorial() {
+    this.openModal(
+      buildConfirmModal({
+        viewport: this.services.viewport,
+        title: "Leave the tutorial?",
+        message: "You can play it again from the main menu.",
+        confirmText: "Leave",
+        onConfirm: () => this.#leave(SceneId.MAIN_MENU),
+        onCancel: () => this.closeModal(),
+      }),
+    );
+  }
+
   /** @param {Snapshot} snapshot */
   #showGameOver(snapshot) {
     const { viewport } = this.services;
@@ -907,10 +1075,13 @@ export class MatchScene extends Scene {
     const victory = this.#spectating || snapshot.winnerId === this.#playerId;
     const top = viewport.compact ? 24 : 40;
     panel.add(new Label({ x: PANEL_INSET, y: top, width, height: 90, text: outcomeFor(snapshot, this.#viewer()), size: "title", weight: "bold", colorKey: victory ? "accentLight" : "danger", glow: true }));
-    panel.add(new Label({ x: PANEL_INSET, y: top + 100, width, height: 30, text: reasonFor(snapshot), size: "body", colorKey: "textMuted" }));
+    const tutorial = this.#coach !== null;
+    const subtitle = tutorial && snapshot.winnerId === this.#playerId ? "Tutorial complete: you know the basics!" : reasonFor(snapshot);
+    panel.add(new Label({ x: PANEL_INSET, y: top + 100, width, height: 30, text: subtitle, size: "body", colorKey: "textMuted", fit: true }));
     const third = (width - 2 * 14) / 3;
     const y = size.height - 20 - 52;
-    panel.add(new Button({ id: "gameOver.again", x: PANEL_INSET, y, width: third, height: 52, text: this.#spectating ? "Watch another" : "Play again", variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
+    const again = this.#spectating ? "Watch another" : "Play again";
+    panel.add(new Button({ id: "gameOver.again", x: PANEL_INSET, y, width: third, height: 52, text: tutorial ? "Practice vs AI" : again, variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
     panel.add(new Button({ id: "gameOver.menu", x: PANEL_INSET + third + 14, y, width: third, height: 52, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
     panel.add(new Button({ id: "gameOver.board", x: PANEL_INSET + 2 * (third + 14), y, width: third, height: 52, text: "View board", onActivate: () => this.closeModal() }));
     this.openModal(modal);
@@ -955,6 +1126,102 @@ export class MatchScene extends Scene {
     this.#session?.stop();
     this.services.navigate(sceneId);
   }
+}
+
+/**
+ * @typedef {(snapshot: Snapshot, layout: import("../board/BoardLayout.js").BoardLayout, id: string) => import("@magic8/engine/shared/geometry.js").Rect[]} FocusResolver
+ */
+
+/**
+ * Where the coach's focus targets lie on the board, by kind (see TutorialCoach's FocusTarget).
+ * @type {Readonly<Record<string, FocusResolver>>}
+ */
+const BOARD_FOCUS = Object.freeze({
+  card: (snapshot, layout, id) => (layout.cards[id] === undefined ? [] : [layout.cards[id]]),
+  cost: (snapshot, layout, id) => gemRect(snapshot, layout, id, "cost"),
+  attack: (snapshot, layout, id) => gemRect(snapshot, layout, id, "attack"),
+  health: (snapshot, layout, id) => gemRect(snapshot, layout, id, "health"),
+  hud: (snapshot, layout, side) => [seatOn(layout, side).hud],
+  life: (snapshot, layout, side) => {
+    const crystal = lifeCrystalCentre(seatOn(layout, side).hud);
+    return [{ x: crystal.x - crystal.radius, y: crystal.y - crystal.radius, width: 2 * crystal.radius, height: 2 * crystal.radius }];
+  },
+  mana: (snapshot, layout, side) => resourceRects(seatOn(layout, side).hud, playerOn(snapshot, layout, side)?.resources.max ?? 0),
+  hand: (snapshot, layout, side) => handRect(layout, playerOn(snapshot, layout, side)?.hand ?? []),
+});
+
+/** How tall the tutorial's line over the table may be: arrows keep clear of it. */
+const HINT_ROOM = 56;
+
+/** The focus kinds that are a gem on a card. */
+const GEMS = new Set(["cost", "attack", "health"]);
+
+/**
+ * @param {import("../board/BoardLayout.js").BoardLayout} layout
+ * @param {string} side "mine" or "theirs"
+ */
+function seatOn(layout, side) {
+  return side === "mine" ? layout.me : layout.opponent;
+}
+
+/**
+ * @param {Snapshot} snapshot
+ * @param {import("../board/BoardLayout.js").BoardLayout} layout
+ * @param {string} side "mine" or "theirs"
+ */
+function playerOn(snapshot, layout, side) {
+  const seat = seatOn(layout, side);
+  return snapshot.players.find((player) => player.id === seat.id);
+}
+
+/**
+ * What the player has chosen so far, as the coach reads it.
+ * @param {MatchInteraction} interaction
+ * @returns {import("../../application/tutorial/TutorialCoach.js").Intent}
+ */
+function coachIntent(interaction) {
+  return { pickedCardId: interaction.pickedCardId, targetingCardId: interaction.targetingCardId, attackerIds: interaction.selectedAttackerIds, pendingBlockerId: interaction.pendingBlockerId, blocks: interaction.pendingBlocks };
+}
+
+/** @param {import("@magic8/engine/shared/geometry.js").Rect} area */
+function centreOf(area) {
+  return { x: area.x + area.width / 2, y: area.y + area.height / 2 };
+}
+
+/**
+ * One gem of a card on the board (its cost, attack or health), as a square round it.
+ * @param {Snapshot} snapshot
+ * @param {import("../board/BoardLayout.js").BoardLayout} layout
+ * @param {string} instanceId
+ * @param {"cost" | "attack" | "health"} gem
+ * @returns {import("@magic8/engine/shared/geometry.js").Rect[]}
+ */
+function gemRect(snapshot, layout, instanceId, gem) {
+  const slot = layout.cards[instanceId];
+  const card = snapshot.players.flatMap((player) => [...(player.hand ?? []), ...player.battlefield]).find((candidate) => candidate.instanceId === instanceId);
+  if (slot === undefined || card === undefined) {
+    return [];
+  }
+  const { x, y, radius } = cardFaceLayout(slot, boardFaceProfile(layout.face), card.type)[gem];
+  return [{ x: x - radius, y: y - radius, width: 2 * radius, height: 2 * radius }];
+}
+
+/**
+ * The player's hand on the board: the cards' slots, as one area.
+ * @param {import("../board/BoardLayout.js").BoardLayout} layout
+ * @param {readonly { instanceId: string }[]} hand
+ * @returns {import("@magic8/engine/shared/geometry.js").Rect[]}
+ */
+function handRect(layout, hand) {
+  const slots = hand.map((card) => layout.cards[card.instanceId]).filter((slot) => slot !== undefined);
+  if (slots.length === 0) {
+    return [];
+  }
+  const left = Math.min(...slots.map((slot) => slot.x));
+  const top = Math.min(...slots.map((slot) => slot.y));
+  const right = Math.max(...slots.map((slot) => slot.x + slot.width));
+  const bottom = Math.max(...slots.map((slot) => slot.y + slot.height));
+  return [{ x: left, y: top, width: right - left, height: bottom - top }];
 }
 
 /**

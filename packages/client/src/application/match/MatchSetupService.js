@@ -6,6 +6,9 @@
  * Who plays first: the first seat, unless a `coinSeed` is given — then a
  * coin is tossed (CoinToss) and its winner takes the first turn. The toss
  * draws from its own seed so it never shares randomness with the shuffles.
+ *
+ * A scripted match (the tutorial) may deal its decks unshuffled, in their
+ * lists' order, and play by rules of its own (a shorter game).
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
@@ -41,12 +44,13 @@ export class MatchSetupService {
   }
 
   /**
-   * @param {{ seats: readonly SeatSetup[], seed: string | number, coinSeed?: string | number, aiDelayMs?: number }} options
+   * @param {{ seats: readonly SeatSetup[], seed: string | number, coinSeed?: string | number, aiDelayMs?: number, shuffle?: boolean, rules?: import("@magic8/engine/domain/game/GameRules.js").GameRules }} options
    *   `seed`: a 32-byte hex key (see infrastructure/random/seedProvider.js); integers are accepted for tests and tools.
    *   `coinSeed`: same form; when given, a coin toss decides who plays first and the session shows it before the first turn.
+   *   `shuffle`: false deals every deck in its list's order, top first; `rules`: the match's rules, when not the game's
    * @returns {import("@magic8/engine/shared/Result.js").Ok<MatchSession> | import("@magic8/engine/shared/Result.js").Fail}
    */
-  createMatch({ seats, seed, coinSeed, aiDelayMs = 0 }) {
+  createMatch({ seats, seed, coinSeed, aiDelayMs = 0, shuffle = true, rules = this.#content.gameRules }) {
     for (const seat of seats) {
       const report = validateDeck(seat.deckList, this.#content.deckRules, this.#content.catalog);
       if (!report.valid) {
@@ -58,12 +62,13 @@ export class MatchSetupService {
     }
     const openingToss = coinSeed === undefined ? null : tossBetween(seats, coinSeed);
     const engine = GameEngine.create({
-      rules: this.#content.gameRules,
+      rules,
       catalog: this.#content.catalog,
       effects: this.#effects,
       commands: createCoreCommandRegistry(),
       players: firstPlayerAhead(seats, openingToss).map((seat) => ({ id: seat.id, name: seat.name, deckList: seat.deckList })),
       seed,
+      shuffle,
     });
     if (!engine.ok) {
       return engine;

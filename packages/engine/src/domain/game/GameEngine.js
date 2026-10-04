@@ -59,16 +59,17 @@ export class GameEngine {
   }
 
   /**
-   * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, effects: import("../effects/EffectRegistry.js").EffectRegistry, commands: import("../commands/CommandRegistry.js").CommandRegistry, players: readonly import("./MatchSetup.js").PlayerSetup[], seed: string | Uint8Array | number }} setup
+   * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, effects: import("../effects/EffectRegistry.js").EffectRegistry, commands: import("../commands/CommandRegistry.js").CommandRegistry, players: readonly import("./MatchSetup.js").PlayerSetup[], seed: string | Uint8Array | number, shuffle?: boolean }} setup
    *   `seed`: a 32-byte key (64 lowercase hex characters or bytes) for real matches; a safe integer only for tests, tools and offline practice.
+   *   `shuffle`: false deals every deck in its list's order, top first (a scripted match: the tutorial); never for a real match.
    * @returns {import("../../shared/Result.js").Ok<GameEngine> | import("../../shared/Result.js").Fail}
    */
-  static create({ rules, catalog, effects, commands, players, seed }) {
+  static create({ rules, catalog, effects, commands, players, seed, shuffle = true }) {
     if (!ChaChaRandom.isValidSeed(seed)) {
       return fail(CommandError.INVALID_COMMAND, "seed must be a 32-byte key (hex or bytes) or a safe integer");
     }
     const resourceSystem = createResourceSystem(rules);
-    const initial = createInitialState({ rules, catalog, resourceSystem, players, rng: ChaChaRandom.fromSeed(seed) });
+    const initial = createInitialState({ rules, catalog, resourceSystem, players, rng: ChaChaRandom.fromSeed(seed), shuffle });
     if (!initial.ok) {
       return initial;
     }

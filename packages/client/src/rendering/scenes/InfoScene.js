@@ -4,8 +4,9 @@
  * shop and the other ways to get cards); the chosen one reads on the right
  * as a scrolling article (wheel, drag, Page Up / Page Down, Home / End).
  * The account topic ends with a button that opens join.cur8.fun, where a
- * new player gets a Steem account (their wallet) for free. Needs no game
- * server: it is there offline too.
+ * new player gets a Steem account (their wallet) for free; how to play ends
+ * with the one that starts the tutorial (a guided first match), when the
+ * game has it. Needs no game server: it is there offline too.
  */
 import { InfoTopicId, infoTopics } from "../../application/info/infoTopics.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -16,6 +17,7 @@ import { screenLayout } from "./deckBuilder/layout.js";
 import { InfoArticle } from "./info/InfoArticle.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { startTutorial } from "./startTutorial.js";
 
 /**
  * The topic tabs' column and the article's parts, wide and compact (a phone in landscape).
@@ -51,6 +53,8 @@ export class InfoScene extends Scene {
   #scroll = {};
   /** @type {InfoArticle | null} */
   #article = null;
+  /** The guided first match, offered under how to play; absent in tools and previews. */
+  #tutorial;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -59,6 +63,7 @@ export class InfoScene extends Scene {
   constructor(services, app) {
     super(services);
     this.#topics = infoTopics(app.content);
+    this.#tutorial = app.tutorial;
   }
 
   /** @param {{ topic?: string, back?: string }} [params] `topic`: the one shown first; `back`: where Back leads */
@@ -154,7 +159,8 @@ export class InfoScene extends Scene {
     const inner = width - 2 * inset;
     panel.add(new Label({ id: "info.title", x: inset, y: inset, width: inner, height: m.title, text: topic.title, size: compact ? "body" : "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     const top = inset + m.title + SPACING;
-    const linkRoom = topic.link === null ? 0 : m.link + SPACING;
+    const action = this.#actionFor(topic);
+    const linkRoom = action === null ? 0 : m.link + SPACING;
     this.#article = panel.add(
       new InfoArticle({
         id: "info.article",
@@ -168,11 +174,26 @@ export class InfoScene extends Scene {
         onScroll: (scrollY) => (this.#scroll[topic.id] = scrollY),
       }),
     );
+    if (action !== null) {
+      panel.add(new Button({ ...action, x: inset, y: columns.height - inset - m.link, width: inner, height: m.link, textSize: compact ? "small" : "body", variant: "primary" }));
+    }
+  }
+
+  /**
+   * The button a topic ends with: its link, or under how to play the tutorial; null for none.
+   * @param {import("../../application/info/infoTopics.js").InfoTopic} topic
+   * @returns {{ id: string, text: string, enabled: boolean, onActivate: () => void } | null}
+   */
+  #actionFor(topic) {
     const link = topic.link;
     if (link !== null) {
-      const open = this.services.openLink;
-      panel.add(new Button({ id: "info.link", x: inset, y: columns.height - inset - m.link, width: inner, height: m.link, text: link.text, textSize: compact ? "small" : "body", variant: "primary", enabled: open !== undefined, onActivate: () => this.#open(link.url) }));
+      return { id: "info.link", text: link.text, enabled: this.services.openLink !== undefined, onActivate: () => this.#open(link.url) };
     }
+    const tutorial = this.#tutorial;
+    if (topic.id === InfoTopicId.MECHANICS && tutorial !== undefined) {
+      return { id: "info.tutorial", text: "Learn by playing: start the tutorial", enabled: true, onActivate: () => startTutorial(this.services, tutorial) };
+    }
+    return null;
   }
 
   /** @param {string} topicId */

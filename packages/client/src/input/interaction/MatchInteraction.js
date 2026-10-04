@@ -127,6 +127,11 @@ export class MatchInteraction {
     return this.#mode === InteractionMode.TARGETING || this.#attackers.length > 0 || this.#blocks.length > 0 || this.#pendingBlockerId !== null || this.#pickedId !== null;
   }
 
+  /** The card whose targets are being chosen (TARGETING mode), or null. */
+  get targetingCardId() {
+    return this.#targeting?.cardId ?? null;
+  }
+
   get targetingStep() {
     return this.#targeting === null ? null : { step: this.#targeting.chosen.length + 1, total: this.#targeting.groups.length };
   }

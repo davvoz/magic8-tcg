@@ -73,6 +73,7 @@ describe("MainMenuScene — account", () => {
     assert.equal(byId(menu, "starter"), null);
     assert.equal(byId(menu, "collection"), null, "nothing to show while signed out");
     assert.ok(byId(menu, "signIn"), "signed out: sign in");
+    assert.ok(byId(menu, "deckBuilder"), "signed out, the Deck Builder has a button of its own");
 
     world.identity.become(ALICE);
     assert.ok(rendered(menu).some((text) => text.includes("loading your collection")));
@@ -84,6 +85,7 @@ describe("MainMenuScene — account", () => {
     await world.account.claimStarter("precon_foundry");
     assert.equal(byId(menu, "starter"), null);
     assert.equal(byId(menu, "collection").text, "Collection");
+    assert.equal(byId(menu, "deckBuilder"), null, "signed in, the Deck Builder opens from the collection");
     assert.ok(rendered(menu).some((text) => text.includes("30 cards owned")));
     assert.ok(rendered(menu).some((text) => text === "1 custom deck saved to @alice's account"));
     menu.exit();
@@ -191,6 +193,13 @@ describe("CollectionScene", () => {
     scene.enter(params);
     return { ...world, scene };
   }
+
+  it("opens the Deck Builder, which comes back to it", async () => {
+    const { scene, navigated } = await collectionScene();
+    click(byId(scene, "collection.decks"));
+    assert.deepEqual(navigated.at(-1), { id: SceneId.DECK_BUILDER, params: { from: SceneId.COLLECTION } });
+    scene.exit();
+  });
 
   it("lists owned cards with their copies and shows the selected card's serials", async () => {
     const { scene } = await collectionScene({ notice: "Iron Foundry is yours" });

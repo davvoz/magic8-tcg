@@ -12,6 +12,11 @@
  * When the ranked season has a jackpot, it is shown beside the buttons (as a
  * banner under the title on a compact screen), its countdown ticking; signed
  * in, a click on it opens the leaderboard.
+ *
+ * The tutorial (a guided first match) is offered under the play buttons.
+ * The Deck Builder has a button of its own only while there is no
+ * collection to open (signed out, or offline); signed in, it is opened from
+ * the collection, beside the cards it builds with.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
@@ -25,13 +30,17 @@ import { deckStorageText } from "./deckStorage.js";
 import { JACKPOT_HEIGHT, JackpotPanel } from "./jackpot/JackpotPanel.js";
 import { HeroNode } from "./mainMenu/HeroNode.js";
 import { TitleLogo } from "./mainMenu/TitleLogo.js";
+import { UiPiece } from "../images/UiArt.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { startTutorial } from "./startTutorial.js";
 
 const BUTTON_WIDTH = 360;
 const BUTTON_HEIGHT = 48;
 const BUTTON_GAP = 10;
 const HERO = Object.freeze({ y: 20, height: 280 });
+/** What the painted logo keeps clear above a phone's jackpot banner. */
+const LOGO_GAP = 4;
 const TITLE = Object.freeze({ y: 150, height: 110 });
 const SUBTITLE_Y = 268;
 const ORNAMENT_Y = 314;
@@ -82,6 +91,8 @@ export class MainMenuScene extends Scene {
   #jackpotPanel = null;
   /** The game's name; kept across rebuilds, so its light keeps its pace. */
   #title = new TitleLogo({ text: "KIJAM" });
+  /** Whether the heading was last laid out for the painted logo. */
+  #paintedTitle = false;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -132,11 +143,12 @@ export class MainMenuScene extends Scene {
     const layout = viewport.compact ? compactLayout(width) : wideLayout(width);
     this.#buildHeading(layout);
 
+    const collection = this.#collectionEntries();
     const entries = [
       ...this.#onlineEntries(),
       { id: "play", text: this.#onlineEntries().length > 0 ? "Practice vs AI" : "Play", scene: SceneId.DECK_SELECTION, variant: this.#onlineEntries().length > 0 ? "secondary" : "primary" },
-      { id: "deckBuilder", text: "Deck Builder", scene: SceneId.DECK_BUILDER, variant: "secondary" },
-      ...this.#collectionEntries(),
+      ...this.#tutorialEntries(),
+      ...(collection.length === 0 ? [{ id: "deckBuilder", text: "Deck Builder", scene: SceneId.DECK_BUILDER, variant: "secondary" }] : collection),
       ...(this.#app.shop === undefined ? [] : [{ id: "shop", text: "Shop", scene: SceneId.SHOP, variant: "secondary" }]),
       ...this.#accountEntries(),
     ];
@@ -177,19 +189,30 @@ export class MainMenuScene extends Scene {
 
   /**
    * The fan, the game's name, and under it the subtitle and the ornament, or on a phone the jackpot banner in their place.
+   * The painted logo (once ready) carries its own tagline and scrolls: it takes their place too, from the fan's top down.
    * @param {MenuLayout} layout
    */
   #buildHeading(layout) {
     const { hero } = layout;
     this.root.add(new HeroNode({ x: hero.centerX - hero.width / 2, y: hero.y, width: hero.width, height: hero.height }));
-    Object.assign(this.#title, { x: hero.centerX - hero.textWidth / 2, y: layout.title.y, width: hero.textWidth, height: layout.title.height });
-    this.root.add(this.#title);
     const jackpot = this.#app.jackpot?.state.jackpot ?? null;
-    if (jackpot === null || layout.jackpot.layout !== "banner") {
+    const banner = jackpot !== null && layout.jackpot.layout === "banner";
+    this.#paintedTitle = this.#paintedLogoReady();
+    const bottom = banner ? layout.jackpot.y - LOGO_GAP : layout.ornament.y + layout.ornament.height;
+    const area = this.#paintedTitle ? { y: hero.y, height: bottom - hero.y } : layout.title;
+    Object.assign(this.#title, { x: hero.centerX - hero.textWidth / 2, y: area.y, width: hero.textWidth, height: area.height });
+    this.root.add(this.#title);
+    if (!banner && !this.#paintedTitle) {
       this.root.add(new Label({ x: hero.centerX - hero.textWidth / 2, y: layout.subtitle.y, width: hero.textWidth, height: layout.subtitle.height, text: "A collectible card game on STEEM", size: layout.subtitle.size, colorKey: "textMuted" }));
       this.root.add(new Ornament({ x: hero.centerX - layout.ornament.width / 2, y: layout.ornament.y, width: layout.ornament.width, height: layout.ornament.height }));
     }
     this.#jackpotPanel = jackpot === null ? null : this.#buildJackpot(jackpot, layout);
+  }
+
+  /** Whether the painted logo is ready to stand for the name (Theme.uiArt). */
+  #paintedLogoReady() {
+    const art = this.services.theme.uiArt;
+    return art?.layout.title !== undefined && art.imageFor(UiPiece.TITLE) !== null;
   }
 
   /** The summary under the buttons; the jackpot banner leaves a phone's one line less. */
@@ -207,6 +230,10 @@ export class MainMenuScene extends Scene {
 
   /** @param {number} dtMs */
   update(dtMs) {
+    if (this.#paintedLogoReady() !== this.#paintedTitle) {
+      // The painted logo arrived (or went) since the heading was laid out: lay it out again for it.
+      this.#rebuild();
+    }
     const base = super.update(dtMs);
     const ticked = this.#jackpotPanel?.tick() ?? false;
     return this.#title.update(dtMs) || ticked || base;
@@ -319,6 +346,12 @@ export class MainMenuScene extends Scene {
     this.root.add(new AvatarNode({ id: "profile.avatar", x: profile.x, y: profile.y, size: profile.size, account: user.account }));
     const nameX = profile.x + profile.size + 12;
     this.root.add(new Label({ id: "profile.name", x: nameX, y: profile.y, width: Math.min(profile.nameWidth, edge - SOUND.gap - nameX), height: profile.size, text: `@${user.account}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+  }
+
+  /** The tutorial, when the game has one. */
+  #tutorialEntries() {
+    const tutorial = this.#app.tutorial;
+    return tutorial === undefined ? [] : [{ id: "tutorial", text: "Tutorial", scene: null, variant: "secondary", onActivate: () => startTutorial(this.services, tutorial) }];
   }
 
   /** Online play, once signed in and the account is loaded. */

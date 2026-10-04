@@ -81,6 +81,14 @@ describe("DeckBuilderScene — library", () => {
     click(byId(scene, "builder.back"));
     assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
   });
+
+  it("goes back where it was opened from: the collection", () => {
+    const { scene, navigated } = harness();
+    scene.enter({ from: SceneId.COLLECTION });
+    assert.equal(byId(scene, "builder.back").text, "Back");
+    click(byId(scene, "builder.back"));
+    assert.deepEqual(navigated, [SceneId.COLLECTION]);
+  });
 });
 
 describe("DeckBuilderScene — editor", () => {

@@ -7,6 +7,7 @@
  * @property {import("./decks/DeckSelectionService.js").DeckSelectionService} deckSelection
  * @property {import("./decks/DeckBuildingService.js").DeckBuildingService} deckBuilding
  * @property {import("./match/MatchSetupService.js").MatchSetupService} matchSetup
+ * @property {import("./tutorial/TutorialService.js").TutorialService} [tutorial] the guided first match; absent in tools and previews
  * @property {() => string} createSeed
  * @property {import("./ports/Logger.contract.js").Logger} logger
  * @property {Readonly<{ version: string, release?: string, storage: "local" | "memory" }>} environment `version` the engine's; `release` the game's ("v0.2.0 (0253e2b)"), absent in tools and previews

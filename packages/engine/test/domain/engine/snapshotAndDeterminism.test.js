@@ -170,4 +170,25 @@ describe("createInitialState", () => {
     assert.deepEqual(fromHex.value.getStateDigest(), fromBytes.value.getStateDigest());
     assert.equal(create(key.toUpperCase()).ok, false);
   });
+
+  it("GameEngine.create without shuffling deals each deck in its list's order, whatever the seed", () => {
+    const create = (seed) =>
+      GameEngine.create({
+        rules: rulesWith(),
+        catalog,
+        effects,
+        commands: createCoreCommandRegistry(),
+        players: [
+          { id: "p1", name: "A", deckList: emberDeck },
+          { id: "p2", name: "B", deckList: emberDeck },
+        ],
+        seed,
+        shuffle: false,
+      }).value;
+    const listed = emberDeck.entries.flatMap((entry) => Array.from({ length: entry.count }, () => entry.cardId));
+    const hands = (seed) => create(seed).getSnapshot(null).players.map((player) => player.hand.map((card) => card.definitionId));
+    const opening = listed.slice(0, rulesWith().startingHandSize);
+    assert.deepEqual(hands(1), [opening, opening], "the top of the list is the opening hand");
+    assert.deepEqual(hands(2), hands(1), "the seed no longer orders the decks");
+  });
 });

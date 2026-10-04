@@ -31,6 +31,8 @@ export class DeckBuilderScene extends Scene {
   #scroll = {};
   /** Card shown in the inspect overlay, if any. @type {string | null} */
   #inspecting = null;
+  /** Where Back leads: the scene the player came from. @type {string} */
+  #from = SceneId.MAIN_MENU;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -54,7 +56,9 @@ export class DeckBuilderScene extends Scene {
     this.#editor = new EditorView(host);
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ from?: string }`: where Back leads (the collection, deck selection), the menu by default */
+  enter(params = {}) {
+    this.#from = typeof params.from === "string" && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
     this.#rebuild();
   }
 
@@ -97,7 +101,7 @@ export class DeckBuilderScene extends Scene {
     const title = this.isEditing ? "Deck Builder · editing" : "Deck Builder";
     const backX = viewport.logicalWidth - header.sideMargin - header.backWidth;
     this.root.add(new Label({ x: header.sideMargin, y: header.y, width: Math.min(800, backX - header.sideMargin - header.gap), height: header.height, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    this.root.add(new Button({ id: "builder.back", x: backX, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: backText, onActivate: () => this.#leave() }));
+    this.root.add(new Button({ id: "builder.back", x: backX, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#from === SceneId.MAIN_MENU ? backText : "Back", onActivate: () => this.#leave() }));
   }
 
   /** Scroll offsets survive rebuilds so adding a card does not jump the list. */
@@ -169,6 +173,6 @@ export class DeckBuilderScene extends Scene {
   }
 
   #leave() {
-    this.services.navigate(SceneId.MAIN_MENU);
+    this.services.navigate(this.#from);
   }
 }

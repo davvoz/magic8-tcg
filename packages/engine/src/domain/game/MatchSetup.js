@@ -1,6 +1,8 @@
 /**
  * Builds the initial GameState from validated inputs: instantiates each
- * deck, shuffles with the injected RNG, draws opening hands. Deck-building
+ * deck, shuffles with the injected RNG, draws opening hands. Unshuffled
+ * (`shuffle: false`), each library keeps its deck list's order, top first:
+ * a scripted match (the tutorial) knows what everyone draws. Deck-building
  * legality (size, copies, factions) is the application layer's concern via
  * DeckValidator; this module only refuses what would break the engine.
  */
@@ -24,10 +26,11 @@ const PLAYER_ID_PATTERN = LIMITS.ID_PATTERN;
  */
 
 /**
- * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, resourceSystem: import("../resources/ResourceSystem.contract.js").ResourceSystem, players: readonly PlayerSetup[], rng: import("../random/RandomSource.contract.js").RandomSource }} setup
+ * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, resourceSystem: import("../resources/ResourceSystem.contract.js").ResourceSystem, players: readonly PlayerSetup[], rng: import("../random/RandomSource.contract.js").RandomSource, shuffle?: boolean }} setup
+ *   `shuffle`: false keeps every library in its deck list's order
  * @returns {import("../../shared/Result.js").Ok<GameState> | import("../../shared/Result.js").Fail}
  */
-export function createInitialState({ rules, catalog, resourceSystem, players, rng }) {
+export function createInitialState({ rules, catalog, resourceSystem, players, rng, shuffle = true }) {
   const playersProblem = validatePlayers(players);
   if (playersProblem !== null) {
     return fail(SetupError.INVALID_PLAYERS, playersProblem);
@@ -36,7 +39,7 @@ export function createInitialState({ rules, catalog, resourceSystem, players, rn
   const allocateId = () => `c${nextInstanceNumber++}`;
   const built = [];
   for (const setup of players) {
-    const result = buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId });
+    const result = buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId, shuffle });
     if (!result.ok) {
       return result;
     }
@@ -68,10 +71,10 @@ function validatePlayers(players) {
 
 /**
  * @param {PlayerSetup} setup
- * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, resourceSystem: import("../resources/ResourceSystem.contract.js").ResourceSystem, rng: import("../random/RandomSource.contract.js").RandomSource, allocateId: () => string }} deps
+ * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, resourceSystem: import("../resources/ResourceSystem.contract.js").ResourceSystem, rng: import("../random/RandomSource.contract.js").RandomSource, allocateId: () => string, shuffle: boolean }} deps
  * @returns {import("../../shared/Result.js").Ok<Player> | import("../../shared/Result.js").Fail}
  */
-function buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId }) {
+function buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId, shuffle }) {
   const instances = [];
   for (const entry of setup.deckList.entries) {
     const definition = catalog.get(entry.cardId);
@@ -86,7 +89,7 @@ function buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId })
     return fail(SetupError.EMPTY_DECK, `deck "${setup.deckList.id}" is empty`);
   }
   const player = new Player({ id: setup.id, name: setup.name, life: rules.startingLife, resources: resourceSystem.createPool() });
-  for (const card of rng.shuffle(instances)) {
+  for (const card of shuffle ? rng.shuffle(instances) : instances) {
     player.library.add(card);
   }
   for (let drawn = 0; drawn < rules.startingHandSize; drawn += 1) {

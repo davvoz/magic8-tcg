@@ -292,6 +292,24 @@ export function lifeCrystalCentre(hud) {
 }
 
 /**
+ * Where a player's mana shows on a HUD: the counter beside the crystal
+ * ("1 / 1 resources") and the row of orbs under it. The tutorial points at them.
+ * @param {import("@magic8/engine/shared/geometry.js").Rect} hud
+ * @param {number} max the player's mana this turn (one orb each)
+ * @returns {import("@magic8/engine/shared/geometry.js").Rect[]}
+ */
+export function resourceRects(hud, max) {
+  const s = scaleOf(hud);
+  const crystal = lifeCrystalCentre(hud);
+  const counter = { x: crystal.x + crystal.radius + 10 * s, y: crystal.y - 4 * s, width: 64 * s, height: 38 * s };
+  const orb = ORB_RADIUS * s;
+  const count = Math.min(MAX_ORBS, Math.max(1, max));
+  const rowY = hud.y + (PAD + NAME_HEIGHT + 8 + CRYSTAL_RADIUS * 2 + 14) * s;
+  const row = { x: hud.x + PAD * s, y: rowY - orb, width: count * (orb * 2 + ORB_GAP * s) - ORB_GAP * s, height: orb * 2 };
+  return [counter, row];
+}
+
+/**
  * The colour of a life total that just moved: red when it fell, green when it rose.
  * @param {import("../theme/Theme.js").Theme} theme
  * @param {{ delta: number }} kick

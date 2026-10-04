@@ -122,7 +122,7 @@ describe("TitleLogo", () => {
 });
 
 describe("TitleLogo, painted", () => {
-  it("lays the painted name once ready, its letters centred on the node, instead of the title face", () => {
+  it("lays the whole painted name once ready, centred and as large as the node holds it, instead of the title face", () => {
     const title = new TitleLogo({ text: "KIJAM", timing: TIMING, ...WIDE });
     const { context } = frame(title, 0, painted);
     const drawn = namesDrawn(context);
@@ -130,14 +130,14 @@ describe("TitleLogo, painted", () => {
     const [x, y, width, height] = drawn[0].box;
     assert.ok(Math.abs(x + width / 2 - (WIDE.x + WIDE.width / 2)) <= 1, "centred across");
     assert.ok(Math.abs(y + height / 2 - (WIDE.y + WIDE.height / 2)) <= 1, "centred down");
-    assert.ok(Math.abs(height * (LETTERS.bottom - LETTERS.top) - WIDE.height * 0.8) <= 1, "its capitals 80% of the node's height");
+    assert.equal(height, WIDE.height, "the node's whole height (its width holds more)");
     assert.ok(Math.abs(width / height - NAME_IMAGE.width / NAME_IMAGE.height) < 0.01, "not stretched");
     assert.ok(!context.texts.includes("KIJAM"), "no letters of the face");
-    assert.ok(context.calls.some((call) => call.method === "stroke"), "the rules, with room for them");
+    assert.ok(!context.calls.some((call) => call.method === "stroke"), "no rules drawn: the picture has its own scrolls");
     assertBalanced(context);
   });
 
-  it("shrinks to fit a narrow node, the rules gone first", () => {
+  it("shrinks to fit a narrow node", () => {
     const narrow = { x: 0, y: 0, width: 240, height: 110 };
     const { context } = frame(new TitleLogo({ text: "KIJAM", timing: TIMING, ...narrow }), 0, painted);
     const [x, , width] = namesDrawn(context)[0].box;

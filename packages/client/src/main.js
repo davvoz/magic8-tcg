@@ -36,6 +36,7 @@ import { DeckSelectionService } from "./application/decks/DeckSelectionService.j
 import { IdentityService } from "./application/identity/IdentityService.js";
 import { CoinFace } from "./application/match/CoinToss.js";
 import { MatchSetupService } from "./application/match/MatchSetupService.js";
+import { TutorialService } from "./application/tutorial/TutorialService.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { WebAudioOutput } from "./infrastructure/audio/WebAudioOutput.js";
 import { createBrowserAudioContext, followVisibility, unlockOnGesture } from "./infrastructure/audio/browserAudio.js";
@@ -167,11 +168,11 @@ const UI_ART = Object.freeze({
     [UiPiece.DIVIDER]: "DIVISORE_TITOLI.jpg",
     [UiPiece.BUTTON_PRIMARY]: "BOTTONE_PRIMARIO.jpg",
     [UiPiece.BUTTON_SECONDARY]: "BOTTONE_SECONDARIO.jpg",
-    // Cut out on transparency (1000×306), not gold on black.
+    // Cut out on transparency (1100×663), not gold on black: the name, "Trading card game" and their scrolls.
     [UiPiece.TITLE]: "Logo_KIJAM.webp",
   }),
   layout: Object.freeze({
-    title: Object.freeze({ top: 0.06, bottom: 0.95, stops: Object.freeze([0.01, 0.288, 0.383, 0.529, 0.727, 0.99]), star: Object.freeze({ x: 0.1273, y: 0.4773 }) }),
+    title: Object.freeze({ top: 0.39, bottom: 0.72, stops: Object.freeze([0.083, 0.285, 0.39, 0.479, 0.68, 0.93]), star: Object.freeze({ x: 0.4943, y: 0.2905 }) }),
     corner: Object.freeze({ extent: Object.freeze({ x: 0.0485, y: 0.0274, width: 0.8954, height: 0.9015 }), lines: Object.freeze({ x: 0.1046, y: 0.0702 }) }),
     divider: Object.freeze({ x: 0.1678, y: 0.1684, width: 0.6644, height: 0.6531 }),
     buttons: Object.freeze({
@@ -523,13 +524,15 @@ async function boot() {
     }
   });
 
+  const matchSetup = new MatchSetupService({ content: content.value, effects: createCoreEffectRegistry(), scheduler: browserScheduler, logger });
   /** @type {import("./application/AppContext.js").AppContext} */
   const app = Object.freeze({
     content: content.value,
     // Signed in, the player's decks are the account's; the preconstructed ones are offline practice only.
     deckSelection: new DeckSelectionService({ content: content.value, repository, logger, showPreconstructed: () => repository.storage === DeckStorage.BROWSER }),
     deckBuilding,
-    matchSetup: new MatchSetupService({ content: content.value, effects: createCoreEffectRegistry(), scheduler: browserScheduler, logger }),
+    matchSetup,
+    tutorial: new TutorialService({ matchSetup, content: content.value }),
     createSeed,
     logger,
     environment: Object.freeze({ version: ENGINE_VERSION, release: describeRelease(RELEASE), storage: storageAvailable ? "local" : "memory" }),
