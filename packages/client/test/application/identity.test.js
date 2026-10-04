@@ -131,6 +131,62 @@ function fakeKeys({ saved = null, accepts = async () => ok(undefined), save = as
   return { keys, log };
 }
 
+/**
+ * A SignInRecord in memory.
+ * @param {{ account: string, method: string } | null} [entry] what it remembers at first
+ */
+function fakeRecord(entry = null) {
+  let kept = entry;
+  return { record: { read: () => kept, write: (next) => (kept = { ...next }), clear: () => (kept = null) } };
+}
+
+describe("IdentityService: signing as the session was opened", () => {
+  it("remembers how the player signed in, and forgets it on signing out", async () => {
+    const record = fakeRecord();
+    const service = new IdentityService({ api: fakeApi().api, wallet: fakeWallet().wallet, keys: fakeKeys().keys, record: record.record });
+    await service.signInWithKey("alice", "5Kkey");
+    assert.deepEqual(record.record.read(), { account: "alice", method: SignInMethod.KEYS });
+    await service.signOut();
+    assert.equal(record.record.read(), null);
+    await service.signIn("alice");
+    assert.deepEqual(record.record.read(), { account: "alice", method: SignInMethod.KEYCHAIN });
+  });
+
+  it("closes a posting-key session whose key this browser no longer holds, and never takes it for a Keychain one", async () => {
+    const { api, calls } = fakeApi({ currentUser: async () => ok(USER) });
+    const keychain = fakeWallet({ available: true });
+    const record = fakeRecord({ account: "alice", method: SignInMethod.KEYS });
+    const service = new IdentityService({ api, wallet: keychain.wallet, keys: fakeKeys({ saved: null }).keys, record: record.record });
+    const state = await service.restore();
+    assert.equal(state.status, IdentityStatus.SIGNED_OUT);
+    assert.equal(state.method, null);
+    assert.equal(state.error.code, "KEY_MISSING");
+    assert.match(state.error.message, /sign in again/);
+    assert.equal(calls.at(-1).name, "deleteSession", "the session is closed on the server too");
+    assert.equal(keychain.requests.length, 0, "Keychain is never asked, though it is here");
+    assert.equal(record.record.read(), null);
+  });
+
+  it("keeps a Keychain session Keychain's, even before the extension shows up", async () => {
+    const record = fakeRecord({ account: "alice", method: SignInMethod.KEYCHAIN });
+    const service = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet({ available: false }).wallet, keys: fakeKeys().keys, record: record.record });
+    assert.deepEqual(await service.restore(), { status: IdentityStatus.SIGNED_IN, user: USER, method: SignInMethod.KEYCHAIN, error: null });
+  });
+
+  it("with nothing remembered, takes a keyless session for Keychain's only where Keychain is", async () => {
+    const withKeychain = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet({ available: true }).wallet, keys: fakeKeys().keys, record: fakeRecord().record });
+    assert.equal((await withKeychain.restore()).method, SignInMethod.KEYCHAIN);
+    const without = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet({ available: false }).wallet, keys: fakeKeys().keys, record: fakeRecord().record });
+    const state = await without.restore();
+    assert.deepEqual([state.status, state.error.code], [IdentityStatus.SIGNED_OUT, "KEY_MISSING"], "a phone without Keychain: sign in again, never a Keychain that is not there");
+  });
+
+  it("signs with the key it holds, whatever was remembered", async () => {
+    const service = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet().wallet, keys: fakeKeys({ saved: "alice" }).keys, record: fakeRecord({ account: "alice", method: SignInMethod.KEYCHAIN }).record });
+    assert.equal((await service.restore()).method, SignInMethod.KEYS);
+  });
+});
+
 describe("IdentityService with the player's own keys", () => {
   it("signs in with a posting key: checked on the chain, signs the challenge, saved once the server accepted it", async () => {
     const { api, calls } = fakeApi();
@@ -215,6 +271,17 @@ describe("IdentityService with the player's own keys", () => {
     await signedIn.signOut();
     assert.equal(out.log.at(-1), "forget");
     assert.equal(signedIn.state.method, null);
+  });
+
+  it("keeps the saved key when signing in again fails for any reason but the chain refusing it", async () => {
+    for (const code of ["INTERNAL", "CHALLENGE_INVALID", "VALIDATION", "MAINTENANCE"]) {
+      const held = fakeKeys({ saved: "alice" });
+      const record = fakeRecord({ account: "alice", method: SignInMethod.KEYS });
+      const service = new IdentityService({ api: fakeApi({ createSession: async () => fail(code, "not now") }).api, wallet: fakeWallet().wallet, keys: held.keys, record: record.record });
+      assert.equal((await service.restore()).status, IdentityStatus.SIGNED_OUT, code);
+      assert.ok(!held.log.includes("forget"), `${code}: the key stays for the next start`);
+      assert.deepEqual(record.record.read(), { account: "alice", method: SignInMethod.KEYS }, `${code}: and how it signs`);
+    }
   });
 
   it("offers key sign-in only with keys to sign with", async () => {

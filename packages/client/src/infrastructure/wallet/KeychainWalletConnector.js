@@ -62,7 +62,11 @@ export class KeychainWalletConnector {
     if (!AMOUNT_PATTERN.test(amount)) {
       return Promise.resolve(fail(WalletFailure.BAD_RESPONSE, "the payment amount is not a 3-decimal amount"));
     }
-    if (typeof (/** @type {any} */ (this.#locate())?.requestTransfer) !== "function") {
+    const extension = this.#keychain();
+    if (extension === null) {
+      return Promise.resolve(fail(WalletFailure.NOT_INSTALLED, "Steem Keychain was not found in this browser"));
+    }
+    if (typeof (/** @type {any} */ (extension).requestTransfer) !== "function") {
       return Promise.resolve(fail(WalletFailure.NOT_INSTALLED, "this version of Steem Keychain cannot send transfers"));
     }
     return this.#request((keychain, callback) => keychain.requestTransfer(from, to, amount, memo, asset, callback, true), interpretTransfer);

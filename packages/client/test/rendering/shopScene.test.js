@@ -24,10 +24,10 @@ const theme = loadTheme();
 const content = await loadBundledContent();
 
 /**
- * @param {{ signedIn?: boolean, budget?: string, listing?: object, entries?: object, params?: object }} [options] `budget`: the STEEM the player's wallet holds (no balance service without it);
- *   `entries`: the entry service; `params`: what the scene is entered with
+ * @param {{ signedIn?: boolean, budget?: string, listing?: object, entries?: object, params?: object, now?: () => number }} [options] `budget`: the STEEM the player's wallet holds (no balance service without it);
+ *   `entries`: the entry service; `params`: what the scene is entered with; `now`: the scene's clock (the fake server's orders are due at 1)
  */
-async function harness({ signedIn = true, budget, listing = LISTING, entries, params = {} } = {}) {
+async function harness({ signedIn = true, budget, listing = LISTING, entries, params = {}, now } = {}) {
   const world = accountWorld(content);
   if (signedIn) {
     world.identity.become(ALICE);
@@ -55,7 +55,7 @@ async function harness({ signedIn = true, budget, listing = LISTING, entries, pa
     ...(entries === undefined ? {} : { entries }),
   };
   const services = { theme, viewport, logger: world.logger, requestRender: () => undefined, navigate: (id, sceneParams) => navigated.push({ id, params: sceneParams }), hasScene: () => true };
-  const scene = new ShopScene(services, app);
+  const scene = new ShopScene(services, app, now);
   scene.enter(params);
   await settle();
   return { ...world, market, shop, scene, app, services, navigated, transfers };
@@ -366,6 +366,45 @@ describe("ShopScene", () => {
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });
     assert.equal(scene.modal, null);
     assert.equal(world.app.shop.state.purchase.stage, PurchaseStage.NONE);
+  });
+
+  it("lists the unpaid orders behind Orders (n), each to pay or cancel", async () => {
+    const { scene, market, shop, transfers } = await harness({ now: () => -10 * 60_000 });
+    assert.equal(byId(scene, "shop.orders"), null, "no unpaid order: no button");
+    const first = (await market.api.createOrder({ items: [{ productId: "core_booster", quantity: 1 }], asset: "STEEM" }, "k1")).value;
+    const second = (await market.api.createOrder({ items: [{ productId: "core_mini_booster", quantity: 3 }], asset: "STEEM" }, "k2")).value;
+    await shop.loadOrders();
+    assert.equal(byId(scene, "shop.orders").text, "Orders (2)");
+    click(byId(scene, "shop.orders"));
+    await settle();
+    assert.equal(scene.modal?.id, "orders");
+    const inDialog = (id) => scene.modal.findById(id);
+    assert.equal(inDialog(`orders.items.${second.id}`).text, "3 × core_mini_booster");
+    assert.match(inDialog(`orders.detail.${second.id}`).text, /^3\.000 STEEM · ordered just now · 11 min left to pay$/);
+    assert.equal(scene.focusedNode?.id, `orders.pay.${second.id}`, "the newest first, ready to pay");
+
+    click(inDialog(`orders.cancel.${first.id}`));
+    await settle();
+    assert.equal(scene.modal?.id, "orders", "stays open");
+    assert.equal(inDialog(`orders.row.${first.id}`), null);
+    assert.equal(byId(scene, "shop.orders").text, "Orders (1)");
+
+    click(inDialog(`orders.pay.${second.id}`));
+    await settle();
+    assert.deepEqual(transfers.map((transfer) => transfer.amount), ["3.000"], "that order's own payment");
+    assert.notEqual(scene.modal?.id, "orders", "closed to follow the payment");
+    assert.equal(byId(scene, "shop.orders"), null, "nothing left unpaid");
+  });
+
+  it("offers no payment for an order whose time is up, only Cancel", async () => {
+    const { scene, market, shop } = await harness();
+    const order = (await market.api.createOrder({ items: [{ productId: "core_booster", quantity: 1 }], asset: "STEEM" }, "k1")).value;
+    await shop.loadOrders();
+    click(byId(scene, "shop.orders"));
+    await settle();
+    assert.equal(scene.modal.findById(`orders.pay.${order.id}`).isEffectivelyEnabled, false);
+    assert.equal(scene.modal.findById(`orders.cancel.${order.id}`).isEffectivelyEnabled, true);
+    assert.match(scene.modal.findById(`orders.detail.${order.id}`).text, /time to pay is over: it closes on its own$/);
   });
 
   it("is reachable from the main menu", async () => {

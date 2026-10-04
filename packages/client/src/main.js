@@ -65,6 +65,7 @@ import { ConsoleLogger } from "./infrastructure/logging/ConsoleLogger.js";
 import { InMemoryStore } from "./infrastructure/persistence/InMemoryStore.js";
 import { LocalStorageStore } from "./infrastructure/persistence/LocalStorageStore.js";
 import { StoredDeckRepository } from "./infrastructure/persistence/StoredDeckRepository.js";
+import { StoredSignIn } from "./infrastructure/persistence/StoredSignIn.js";
 import { createSeed } from "./infrastructure/random/seedProvider.js";
 import { browserScheduler } from "./infrastructure/time/BrowserScheduler.js";
 import { KeychainWalletConnector } from "./infrastructure/wallet/KeychainWalletConnector.js";
@@ -412,8 +413,8 @@ async function boot() {
     locate: () => globalThis.steem_keychain,
     timers: { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (id) => globalThis.clearTimeout(id) },
   });
-  const { activeKeys, keys } = buildLocalKeys(localStore, storageAvailable, httpFetch);
-  const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet: keychain, keys });
+  const { activeKeys, keys, signIns } = buildLocalKeys(localStore, storageAvailable, httpFetch);
+  const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet: keychain, keys, record: signIns });
   // Games, the shop and the market sign with whichever the player signed in with.
   const wallet = new WalletSwitch({ identity, keychain, keys });
   // The painted table and menus are downloaded alongside the content: the first screen waits for them.
@@ -620,19 +621,22 @@ function buildPaintedArt() {
  * The player's own keys, the other way to sign besides Keychain
  * (docs/tcg/20-chiavi.md): the posting key kept encrypted in local storage,
  * the active key asked for (`activeKeys`, shown by the screens that take
- * payments) when a payment needs it.
+ * payments) when a payment needs it; and how the player signed in
+ * (`signIns`), kept beside the key, so a reload signs as the session was
+ * opened, never the other way.
  * @param {LocalStorageStore} localStore
  * @param {boolean} storageAvailable without it, a key lasts only as long as the page
  * @param {typeof fetch} httpFetch
  */
 function buildLocalKeys(localStore, storageAvailable, httpFetch) {
+  const store = storageAvailable ? localStore : new InMemoryStore();
   const activeKeys = new ActiveKeyPrompt();
   const keys = new LocalKeyWallet({
-    vault: new KeyVault({ store: storageAvailable ? localStore : new InMemoryStore(), subtle: crypto.subtle, randomBytes: (length) => crypto.getRandomValues(new Uint8Array(length)) }),
+    vault: new KeyVault({ store, subtle: crypto.subtle, randomBytes: (length) => crypto.getRandomValues(new Uint8Array(length)) }),
     api: new HttpWalletApi({ fetch: httpFetch }),
     prompt: activeKeys,
   });
-  return { activeKeys, keys };
+  return { activeKeys, keys, signIns: new StoredSignIn({ store }) };
 }
 
 /**

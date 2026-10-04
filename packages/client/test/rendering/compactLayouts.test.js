@@ -159,6 +159,19 @@ function askForActiveKey(app, saved) {
   void activeKeys.ask({ account: "alice", saved });
 }
 
+/**
+ * A shop whose server holds three unpaid orders (the fake server's are due at 1: the scene's clock is set before that).
+ * @param {any} app
+ */
+function withUnpaidOrders(app) {
+  const market = fakeMarketApi();
+  for (const [productId, quantity] of [["core_booster", 1], ["core_mini_booster", 3], ["core_booster_box", 1]]) {
+    void market.api.createOrder({ items: [{ productId, quantity }], asset: "STEEM" }, `key-${productId}`);
+  }
+  Object.assign(app, { shop: new ShopService({ api: market.api, wallet: { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async () => ok("ef".repeat(20)) }, account: app.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000002" }) });
+}
+const BEFORE_DUE = () => -10 * 60_000;
+
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
   { name: "main menu", make: (s, app) => new MainMenuScene(s, app) },
@@ -169,6 +182,8 @@ const SCREENS = Object.freeze([
   { name: "shop", make: (s, app) => new ShopScene(s, app) },
   { name: "shop singles", make: (s, app) => new ShopScene(s, app), after: (scene) => scene.root.findById("shop.tab.singles")?.activate() },
   { name: "shop decks", make: (s, app) => new ShopScene(s, app), after: (scene) => scene.root.findById("shop.tab.decks")?.activate() },
+  { name: "shop with unpaid orders", make: (s, app) => new ShopScene(s, app, BEFORE_DUE), before: withUnpaidOrders, after: (scene) => assert.ok(scene.root.findById("shop.orders")) },
+  { name: "shop's unpaid orders", make: (s, app) => new ShopScene(s, app, BEFORE_DUE), before: withUnpaidOrders, after: (scene) => scene.root.findById("shop.orders")?.activate() },
   { name: "starter", make: (s, app) => new StarterScene(s, app), starter: false },
   { name: "notifications", make: (s, app) => new NotificationsScene(s, app) },
   { name: "online lobby", make: (s, app) => new OnlineScene(s, app) },

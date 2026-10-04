@@ -33,6 +33,22 @@ const randomBytes = (length) => globalThis.crypto.getRandomValues(new Uint8Array
 const vaultOn = (store) => new KeyVault({ store, subtle: globalThis.crypto.subtle, randomBytes, iterations: 1000 });
 
 /**
+ * A store over `inner` whose device key cannot be read while `failing.device` holds (a storage hiccup).
+ * @param {InMemoryStore} inner
+ */
+function hiccupStore(inner) {
+  const failing = { device: true };
+  return {
+    failing,
+    store: {
+      read: (key) => (failing.device && key.endsWith(".device") ? fail("STORE_UNAVAILABLE", "local storage is not readable") : inner.read(key)),
+      write: (key, value) => inner.write(key, value),
+      delete: (key) => inner.delete(key),
+    },
+  };
+}
+
+/**
  * The game server as the wallet sees it: alice's keys on the chain, and what was broadcast.
  * @param {{ reference?: () => any, broadcast?: (transaction: any) => any }} [options]
  */
@@ -96,6 +112,23 @@ describe("KeyVault", () => {
     assert.equal(vault.has("posting"), false);
   });
 
+  it("never replaces a device key it cannot read, and makes none just to open a secret", async () => {
+    const inner = new InMemoryStore();
+    await vaultOn(inner).seal("posting", POSTING.wif);
+    const device = inner.read("magic8.keys.device").value;
+    const { store, failing } = hiccupStore(inner);
+    const opened = await vaultOn(store).open("posting");
+    assert.equal(opened.error.code, "KEY_STORAGE", "unreadable now, not gone");
+    assert.equal(inner.read("magic8.keys.device").value, device, "the device key is the same one");
+    failing.device = false;
+    assert.deepEqual(await vaultOn(store).open("posting"), { ok: true, value: POSTING.wif }, "readable again: the secret opens");
+
+    const orphan = new InMemoryStore();
+    orphan.write("magic8.keys.posting", inner.read("magic8.keys.posting").value);
+    assert.equal((await vaultOn(orphan).open("posting")).error.code, "KEY_DAMAGED", "its device key is gone: it can never open");
+    assert.equal(orphan.read("magic8.keys.device").value, null, "no device key made by opening");
+  });
+
   it("keeps a secret under a PIN that is never stored", async () => {
     const store = new InMemoryStore();
     const vault = vaultOn(store);
@@ -137,6 +170,18 @@ describe("LocalKeyWallet: the posting key", () => {
     assert.equal((await refusal("alice", "hello")).code, "KEY_INVALID");
     assert.equal((await refusal("nobody", POSTING.wif)).code, "NOT_FOUND");
     assert.equal(keys.account, null);
+  });
+
+  it("keeps a saved key the storage could not hand over now, for the next start", async () => {
+    const inner = new InMemoryStore();
+    const { keys } = wallet({ store: inner });
+    await keys.usePostingKey("alice", POSTING.wif);
+    await keys.save();
+    const { store, failing } = hiccupStore(inner);
+    assert.equal(await wallet({ store }).keys.restore(), null);
+    assert.notEqual(inner.read("magic8.keys.posting").value, null, "still saved");
+    failing.device = false;
+    assert.equal(await wallet({ store }).keys.restore(), "alice");
   });
 
   it("drops a saved entry it cannot read", async () => {

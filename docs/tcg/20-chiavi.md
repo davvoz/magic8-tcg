@@ -18,6 +18,7 @@ Modello preso da cur8.fun: la posting key è la chiave di tutti i giorni, la act
 | La active key sbloccata resta **in memoria fino alla chiusura della pagina**; all'avvio non si sblocca mai da sola. | Un pagamento dopo l'altro non chiede il PIN ogni volta, ma ogni visita sì. |
 | I trasferimenti firmati nel browser passano dal **server di gioco**, che li inoltra al nodo. | La pagina non parla con i nodi STEEM (la CSP resta `connect-src 'self'`), il failover dei nodi è uno solo. Il server non può cambiare quello che è firmato. |
 | Il logout dimentica tutte le chiavi dell'account (posting e active salvata). Anche un login con Keychain dimentica le chiavi salvate. | Un browser, un giocatore: le chiavi di chi c'era prima non restano. |
+| Si firma **sempre con il metodo del login**, mai con l'altro come ripiego: login con Keychain → Keychain; login con posting key → posting key, e la active key per i pagamenti. Il metodo si ricorda in `magic8.signin`. | Il cookie di sessione sopravvive a un ricaricamento ma non dice con cosa si è entrati. Senza ricordarlo, una sessione la cui posting key non c'è più sembrerebbe di Keychain. |
 
 ## Il flusso
 
@@ -27,7 +28,11 @@ Modello preso da cur8.fun: la posting key è la chiave di tutti i giorni, la act
 2. fa il solito login a challenge (doc 02 §2): firma il messaggio con la posting key come farebbe `requestSignBuffer` di Keychain;
 3. solo dopo che il server ha aperto la sessione salva la chiave cifrata (`magic8.keys.posting`).
 
-**All'avvio** la posting key salvata si decifra e si carica in memoria. Se il cookie di sessione è scaduto, il client rifà il login da solo con la chiave; se la blockchain non la accetta più (chiave cambiata) la dimentica, se non si è potuta controllare (rete) la tiene per la prossima volta.
+**All'avvio** la posting key salvata si decifra e si carica in memoria. Se il cookie di sessione è scaduto, il client rifà il login da solo con la chiave; la dimentica **solo** se la blockchain non la accetta più (`LOGIN_FAILED`: chiave cambiata). Qualsiasi altro errore (rete, server che riparte durante un deploy, challenge scaduta) la lascia per la prossima volta.
+
+Se la sessione è ancora aperta ma la posting key non c'è più (il browser ha cancellato i dati del sito: Safari su iPhone lo fa dopo 7 giorni senza visite, mentre il cookie può restare), il client **non** la scambia per una sessione Keychain: chiude la sessione e mostra il login con la posting key e il motivo (`KEY_MISSING`). Lo stesso se non si ricorda il metodo e Keychain non è nel browser. Con Keychain ricordato, la sessione resta di Keychain anche se l'estensione non si è ancora caricata.
+
+La posting key salvata si cancella dallo storage solo quando non potrà mai più aprirsi (la chiave del dispositivo non c'è più, o il dato è danneggiato: `KEY_DAMAGED`). Uno storage che in quel momento non si lascia leggere (`KEY_STORAGE`) la lascia dov'è, e la chiave del dispositivo non viene mai sostituita mentre esiste: una nuova renderebbe illeggibile tutto quello che era cifrato con la vecchia.
 
 **Partite online.** L'autorizzazione della chiave di partita (doc 12) si firma con la posting key, senza finestre da approvare.
 
@@ -52,6 +57,8 @@ Tutto in localStorage, prefisso `magic8.keys.`:
 | `posting` | `{ v: 1, iv, data }`: `{ account, wif }` cifrato con la chiave del dispositivo. |
 | `active.<account>` | `{ v: 1, salt, iterations, iv, data }`: la WIF cifrata con una chiave derivata dal PIN (PBKDF2-SHA-256, 600.000 iterazioni, salt di 16 byte). |
 
+Fuori dal prefisso, `magic8.signin`: `{ schemaVersion: 1, payload: { account, method } }`, con `method` `"keychain"` o `"keys"`. Nessun segreto: solo come si è entrati, scritto a ogni login e cancellato al logout.
+
 Ogni segreto è legato al suo nome (dati aggiuntivi di AES-GCM): un blob spostato sotto un altro nome non si apre. Un PIN sbagliato fa fallire l'autenticazione di AES-GCM.
 
 ## Limiti da conoscere
@@ -64,4 +71,4 @@ Ogni segreto è legato al suo nome (dati aggiuntivi di AES-GCM): un blob spostat
 
 - `packages/steem`: serializzazione del `transfer` (`transactions/transaction.js`), `SteemWalletProvider.keyRolesOf` / `reference` / `broadcastTransfer`.
 - `packages/server`: `AuthService.keyRoles` / `chainReference` / `relayTransfer`, rotte in `identity/http/identityRoutes.js`.
-- `packages/client`: `KeyVault` e `LocalKeyWallet` (`infrastructure/wallet`), `HttpWalletApi`, `ActiveKeyPrompt` e `WalletSwitch` (`application/wallet`), `IdentityService.signInWithKey`, `LoginScene`, `ActiveKeyDialog`, `Scene.showOverlay`, campi `TextField` con `keyboard: "secret"` e incolla.
+- `packages/client`: `KeyVault` e `LocalKeyWallet` (`infrastructure/wallet`), `HttpWalletApi`, `ActiveKeyPrompt` e `WalletSwitch` (`application/wallet`), `IdentityService.signInWithKey` e `restore`, `StoredSignIn` (`infrastructure/persistence`, porta `SignInRecord`), `LoginScene`, `ActiveKeyDialog`, `Scene.showOverlay`, campi `TextField` con `keyboard: "secret"` e incolla.

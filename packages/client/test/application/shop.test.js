@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { fail, ok } from "@magic8/engine/shared/Result.js";
-import { MAX_CART_LINES, PurchaseStage, ShopError, ShopService, ShopStatus } from "../../src/application/shop/ShopService.js";
+import { MAX_CART_LINES, OrdersStatus, PurchaseStage, ShopError, ShopService, ShopStatus } from "../../src/application/shop/ShopService.js";
 import { ALICE, BOB, accountWorld, settle } from "./accountWorld.js";
 import { fakeMarketApi } from "./fakeMarketApi.js";
 import { loadBundledContent } from "./fixtures.js";
@@ -27,6 +27,56 @@ function world({ account = "alice", transfer = async () => ok(TX), ...options } 
   const shop = new ShopService({ api: market.api, wallet, account: accountService, scheduler: { delay: async () => undefined }, newKey: () => `key-${String((keys += 1)).padStart(12, "0")}`, maxPolls: 10 });
   return { shop, market, transfers, refreshes, accountService };
 }
+
+describe("ShopService: unpaid orders", () => {
+  it("keeps the orders refused payments leave, to cancel or pay later; paying one leaves the cart alone", async () => {
+    let refuse = true;
+    const { shop, market, transfers } = world({ transfer: async () => (refuse ? fail("WALLET_REJECTED", "the transfer was cancelled") : ok(TX)) });
+    await shop.load();
+    assert.equal((await shop.buy({ productId: "core_booster", quantity: 1, asset: "STEEM" })).ok, false);
+    assert.equal((await shop.buy({ productId: "core_mini_booster", quantity: 2, asset: "STEEM" })).ok, false);
+    await shop.loadOrders();
+    assert.equal(shop.state.orders.status, OrdersStatus.READY);
+    const [newest, oldest] = shop.state.orders.open;
+    assert.equal(shop.state.orders.open.length, 2, "both still wait for their payment");
+    assert.deepEqual(newest.items.map((item) => item.productId), ["core_mini_booster"], "newest first");
+
+    assert.equal((await shop.cancelOpenOrder(oldest.id)).ok, true);
+    assert.deepEqual(market.calls.filter((call) => call.name === "cancelOrder").map((call) => call.args[0]), [oldest.id]);
+    assert.deepEqual(shop.state.orders.open.map((order) => order.id), [newest.id], "read again after cancelling");
+
+    shop.dismiss();
+    shop.addToCart("core_booster", 3);
+    refuse = false;
+    const paid = await shop.payOpenOrder(newest.id);
+    assert.equal(paid.ok, true, JSON.stringify(paid));
+    assert.equal(transfers.at(-1).amount, "2.000", "exactly that order's payment");
+    assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
+    assert.deepEqual(shop.state.cart, [{ productId: "core_booster", quantity: 3 }], "the cart was not what it paid for");
+    await shop.loadOrders();
+    assert.deepEqual(shop.state.orders.open, [], "paid: no longer unpaid");
+  });
+
+  it("never offers again an order whose payment was sent, though the server still shows it unpaid", async () => {
+    const { shop, transfers } = world({ progression: [] });
+    await shop.load();
+    const bought = await shop.buy({ productId: "core_booster", quantity: 1, asset: "STEEM" });
+    assert.equal(bought.error.code, ShopError.STILL_WAITING, "the chain has not confirmed it yet");
+    await shop.loadOrders();
+    assert.deepEqual(shop.state.orders.open, [], "not to be paid twice");
+    assert.equal(transfers.length, 1);
+  });
+
+  it("has none signed out, and pays only an order still open", async () => {
+    const signedOut = world({ account: null });
+    await signedOut.shop.loadOrders();
+    assert.deepEqual(signedOut.shop.state.orders.open, []);
+    assert.equal(signedOut.market.calls.some((call) => call.name === "listOrders"), false, "not even asked");
+    const { shop } = world();
+    await shop.load();
+    assert.equal((await shop.payOpenOrder("00000000-0000-4000-8000-000000000099")).error.code, ShopError.ORDER_CLOSED);
+  });
+});
 
 describe("ShopService", () => {
   it("loads the listing, signed out too", async () => {

@@ -8,7 +8,15 @@
  * A posting key is checked against the account on the chain before anything
  * is signed, and saved (encrypted) once the server accepted the sign-in. At
  * start-up it is loaded again; if the session has expired meanwhile, it signs
- * in again by itself. Signing out forgets the keys.
+ * in again by itself. Signing out forgets the keys. The saved key is dropped
+ * only when the chain no longer accepts it, never because the server or the
+ * network failed for a moment.
+ *
+ * How the player signed in is remembered too (SignInRecord), so a session
+ * kept across a reload signs as it was opened: a Keychain session with
+ * Keychain, a posting-key session with that key. A posting-key session whose
+ * key this browser no longer holds (its storage was cleared) is never taken
+ * for a Keychain one: it is closed, and the player asked to sign in again.
  *
  * States: unknown → (restore) → signed-out | signed-in | offline;
  *         signed-out → signing-in → signed-in | signed-out (with an error).
@@ -36,12 +44,14 @@ export const IdentityError = Object.freeze({
   BUSY: "BUSY",
   INVALID_ACCOUNT: "INVALID_ACCOUNT",
   KEYS_UNSUPPORTED: "KEYS_UNSUPPORTED",
+  /** The session was opened with a posting key this browser no longer holds. */
+  KEY_MISSING: "KEY_MISSING",
 });
 
 /** Loose client-side check for early feedback; the server applies the real rules. */
 const ACCOUNT_PATTERN = /^[a-z][a-z0-9.-]{2,15}$/;
-/** Failures that say nothing about the key: the server or the chain could not be asked. */
-const UNREACHABLE = Object.freeze([ApiFailure.NETWORK, ApiFailure.UNAVAILABLE, "CHAIN_UNAVAILABLE", "RATE_LIMITED"]);
+/** The server's answer when the chain says the signature does not prove control of the account: the key is no use any more. */
+const KEY_REFUSED = "LOGIN_FAILED";
 
 /**
  * @typedef {Readonly<{ status: string, user: import("../ports/AuthApi.contract.js").SessionUser | null, method: string | null, error: Readonly<{ code: string, message: string }> | null }>} IdentityState
@@ -57,19 +67,22 @@ export class IdentityService {
   #wallet;
   /** @type {KeyWallet | null} */
   #keys;
+  /** @type {import("../ports/SignInRecord.contract.js").SignInRecord | null} */
+  #record;
   /** @type {IdentityState} */
   #state = Object.freeze({ status: IdentityStatus.UNKNOWN, user: null, method: null, error: null });
   /** @type {Set<(state: IdentityState) => void>} */
   #listeners = new Set();
 
   /**
-   * @param {{ api: import("../ports/AuthApi.contract.js").AuthApi, wallet: import("../ports/WalletConnector.contract.js").WalletConnector, keys?: KeyWallet }} deps
-   *   `wallet`: Steem Keychain; `keys`: the player's own keys (absent: Keychain only)
+   * @param {{ api: import("../ports/AuthApi.contract.js").AuthApi, wallet: import("../ports/WalletConnector.contract.js").WalletConnector, keys?: KeyWallet, record?: import("../ports/SignInRecord.contract.js").SignInRecord }} deps
+   *   `wallet`: Steem Keychain; `keys`: the player's own keys (absent: Keychain only); `record`: how the player signed in, kept across reloads
    */
-  constructor({ api, wallet, keys }) {
+  constructor({ api, wallet, keys, record }) {
     this.#api = api;
     this.#wallet = wallet;
     this.#keys = keys ?? null;
+    this.#record = record ?? null;
   }
 
   get state() {
@@ -124,8 +137,39 @@ export class IdentityService {
       // A key of another account than the session's: it does not belong to whoever plays here now.
       this.#keys?.forget();
     }
-    this.#set({ status: IdentityStatus.SIGNED_IN, user, method: saved === user.account ? SignInMethod.KEYS : SignInMethod.KEYCHAIN, error: null });
+    const method = this.#methodOf(user.account, saved === user.account);
+    if (method === null) {
+      await this.#closeKeylessSession();
+      return this.#state;
+    }
+    this.#set({ status: IdentityStatus.SIGNED_IN, user, method, error: null });
     return this.#state;
+  }
+
+  /** A session opened with a posting key this browser no longer holds: nothing here can sign for it, so it closes. */
+  async #closeKeylessSession() {
+    await this.#api.deleteSession();
+    this.#record?.clear();
+    this.#set({ status: IdentityStatus.SIGNED_OUT, user: null, method: null, error: { code: IdentityError.KEY_MISSING, message: "your posting key is no longer saved in this browser: sign in again with it" } });
+  }
+
+  /**
+   * How a session kept across a reload signs: with the key loaded, as it was
+   * remembered, or (nothing remembered: storage cleared, or kept from before
+   * it was) with Keychain where there is one.
+   * @param {string} account the session's
+   * @param {boolean} holdsKey whether this browser holds the account's posting key
+   * @returns {string | null} a SignInMethod; null when the posting key it needs is gone
+   */
+  #methodOf(account, holdsKey) {
+    if (holdsKey) {
+      return SignInMethod.KEYS;
+    }
+    const remembered = this.#record?.read() ?? null;
+    if (remembered?.account === account) {
+      return remembered.method === SignInMethod.KEYS ? null : SignInMethod.KEYCHAIN;
+    }
+    return this.#keys === null || this.#wallet.isAvailable() ? SignInMethod.KEYCHAIN : null;
   }
 
   /**
@@ -148,6 +192,7 @@ export class IdentityService {
     }
     // Keychain holds the keys now: none of a previous player stays behind.
     this.#keys?.forget();
+    this.#record?.write({ account: signedIn.value.account, method: SignInMethod.KEYCHAIN });
     this.#set({ status: IdentityStatus.SIGNED_IN, user: signedIn.value, method: SignInMethod.KEYCHAIN, error: null });
     return signedIn;
   }
@@ -179,6 +224,7 @@ export class IdentityService {
       return this.#failSignIn(signedIn);
     }
     const saved = await this.#keys.save();
+    this.#record?.write({ account: signedIn.value.account, method: SignInMethod.KEYS });
     // Not saved (storage full or blocked): the key still works until the page closes.
     this.#set({ status: IdentityStatus.SIGNED_IN, user: signedIn.value, method: SignInMethod.KEYS, error: saved.ok ? null : saved.error });
     return signedIn;
@@ -187,14 +233,16 @@ export class IdentityService {
   async signOut() {
     const result = await this.#api.deleteSession();
     this.#keys?.forget();
+    this.#record?.clear();
     this.#set({ status: IdentityStatus.SIGNED_OUT, user: null, method: null, error: result.ok ? null : result.error });
     return result;
   }
 
   /**
    * The session expired but the saved posting key is still here: sign in
-   * again with it. A key the chain no longer accepts is forgotten; one that
-   * could not be checked (no network) stays for the next start.
+   * again with it. A key the chain no longer accepts is forgotten; any other
+   * failure (no network, the server restarting, a challenge gone stale)
+   * leaves it for the next start.
    * @param {string} account
    */
   async #signInWithHeldKey(account) {
@@ -202,12 +250,14 @@ export class IdentityService {
     this.#set({ status: IdentityStatus.SIGNING_IN, user: null, method: null, error: null });
     const signedIn = await this.#authenticate(account, keys);
     if (!signedIn.ok) {
-      if (!UNREACHABLE.includes(signedIn.error.code)) {
+      if (signedIn.error.code === KEY_REFUSED) {
         keys.forget();
+        this.#record?.clear();
       }
       this.#failSignIn(signedIn);
       return;
     }
+    this.#record?.write({ account: signedIn.value.account, method: SignInMethod.KEYS });
     this.#set({ status: IdentityStatus.SIGNED_IN, user: signedIn.value, method: SignInMethod.KEYS, error: null });
   }
 

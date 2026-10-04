@@ -3,6 +3,10 @@
  * player market: Steem Keychain or the player's own keys, whichever they
  * signed in with (IdentityState.method). A WalletConnector itself, so the
  * services that sign never know which one answers.
+ *
+ * Strictly the one they signed in with, never the other as a fallback: a
+ * Keychain player pays in Keychain; a posting-key player pays with their
+ * active key, asked for the first time a payment needs it.
  */
 import { SignInMethod } from "../identity/IdentityService.js";
 

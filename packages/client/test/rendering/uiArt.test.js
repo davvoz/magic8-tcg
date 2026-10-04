@@ -155,16 +155,34 @@ describe("painting the menus", () => {
     assertBalanced(disabled);
   });
 
-  it("small-text buttons, buttons too narrow for the plate's ends and buttons without art keep the drawn slab", () => {
-    for (const [label, options, look] of [
-      ["small text", { textSize: "small" }, withArt],
-      ["narrow", { width: 45 }, withArt],
-      ["no art", {}, noArt],
-    ]) {
-      const context = new FakeContext2D();
-      new Button({ x: 0, y: 0, width: 300, height: 50, text: "Go", onActivate: () => undefined, ...options }).draw(context, look);
-      assert.deepEqual(drawn(context), [], label);
-      assert.ok(context.texts.includes("Go"), label);
-    }
+  it("every button lies on a plate once there is art: small text too, a narrow one on the plate's rim alone, never squeezed", () => {
+    const small = new FakeContext2D();
+    new Button({ x: 0, y: 0, width: 300, height: 50, text: "Go", textSize: "small", onActivate: () => undefined }).draw(small, withArt);
+    assert.equal(drawn(small).length, 3, "small text: the whole plate");
+    assert.ok(small.texts.includes("Go"));
+
+    const narrow = new FakeContext2D();
+    new Button({ x: 0, y: 0, width: 45, height: 50, text: "+", onActivate: () => undefined }).draw(narrow, withArt);
+    // Ends of 2×20px do not fit 80% of 45px: only their outer rim, 12% of the plate's height (60 image px → 6px), at the same scale.
+    assert.deepEqual(drawn(narrow).map((slice) => slice.target), [[5, 0, 35, 50], [0, 0, 6, 50], [39, 0, 6, 50]]);
+    assert.deepEqual(drawn(narrow).map((slice) => slice.source), [[200, 250, 600, 500], [0, 250, 60, 500], [940, 250, 60, 500]], "the plain middle, never the ornaments");
+    assert.ok(narrow.texts.includes("+"));
+    assertBalanced(narrow);
+
+    const plain = new FakeContext2D();
+    new Button({ x: 0, y: 0, width: 300, height: 50, text: "Go", onActivate: () => undefined }).draw(plain, noArt);
+    assert.deepEqual(drawn(plain), [], "no art (yet): the drawn slab");
+    assert.ok(plain.texts.includes("Go"));
+  });
+
+  it("never writes a label over the ornate ends: one they would crowd keeps the rim alone, and is never shortened", () => {
+    const context = new FakeContext2D();
+    const text = "Player market";
+    new Button({ x: 0, y: 0, width: 130, height: 50, text, onActivate: () => undefined }).draw(context, withArt);
+    assert.deepEqual(drawn(context).slice(1).map((slice) => slice.source[2]), [60, 60], "the rim's ends, not the ornaments");
+    assert.ok(context.texts.includes(text), `"${text}" whole, not "${context.texts.join("|")}"`);
+    const roomy = new FakeContext2D();
+    new Button({ x: 0, y: 0, width: 200, height: 50, text, onActivate: () => undefined }).draw(roomy, withArt);
+    assert.deepEqual(drawn(roomy).slice(1).map((slice) => slice.source[2]), [200, 200], "with room for both: the ornate ends");
   });
 });

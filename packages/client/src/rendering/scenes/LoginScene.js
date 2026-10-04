@@ -7,7 +7,7 @@
  * Either way the game server verifies the signature against the chain.
  * Without key sign-in (tools, previews) only the wallet is offered.
  */
-import { IdentityStatus } from "../../application/identity/IdentityService.js";
+import { IdentityError, IdentityStatus } from "../../application/identity/IdentityService.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -62,6 +62,7 @@ const FAILURE_TEXT = Object.freeze({
   NETWORK: "The game server cannot be reached.",
   UNAVAILABLE: "The game server is not available.",
   NOT_FOUND: "There is no such account on the Steem blockchain.",
+  KEY_MISSING: "Your posting key is no longer saved in this browser (its site data was cleared): sign in again with it.",
 });
 
 export class LoginScene extends Scene {
@@ -90,8 +91,10 @@ export class LoginScene extends Scene {
 
   enter() {
     const identity = this.#requireIdentity();
-    // The extension when it is here (the keys never leave it), the posting key otherwise (a phone).
-    this.#mode = identity.keysAvailable && !identity.walletAvailable ? Mode.KEYS : Mode.KEYCHAIN;
+    // The extension when it is here (the keys never leave it), the posting key otherwise (a phone), or when the
+    // session closed because its posting key was no longer saved here.
+    const keyMissing = identity.state.error?.code === IdentityError.KEY_MISSING;
+    this.#mode = identity.keysAvailable && (!identity.walletAvailable || keyMissing) ? Mode.KEYS : Mode.KEYCHAIN;
     this.#build(identity, { account: "", key: "" }, this.#initialStatus(identity));
     this.#unsubscribe = identity.subscribe((state) => this.#show(state));
   }
@@ -231,6 +234,9 @@ export class LoginScene extends Scene {
    */
   #initialStatus(identity) {
     if (this.#mode === Mode.KEYS) {
+      if (identity.state.error?.code === IdentityError.KEY_MISSING) {
+        return { text: FAILURE_TEXT.KEY_MISSING, colorKey: "danger" };
+      }
       return { text: "Your posting key is checked on the chain, then kept encrypted in this browser. It cannot move your funds.", colorKey: "textMuted" };
     }
     const text = identity.walletAvailable ? "Keychain will ask you to sign a one-time login message with your posting key." : FAILURE_TEXT.WALLET_NOT_INSTALLED;

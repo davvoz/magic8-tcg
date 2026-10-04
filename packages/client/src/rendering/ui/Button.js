@@ -11,12 +11,14 @@ const GLOW_BLUR = 16;
 const FOCUS_LINE_WIDTH = 3;
 /**
  * The painted plates: how much of a button's width their two ornate ends may
- * take at most (narrower buttons keep the drawn slab), how far the label
- * keeps from them (a fraction of an end's width), and the washes laid over
+ * take at most (a narrower button keeps only the rim's ends, `rim` of the
+ * plate's height each, the ornaments left out), how far the label keeps
+ * from the ends (a fraction of an end's width), and the washes laid over
  * the plate for each state.
  */
 const PLATE = Object.freeze({
   maxCapsShare: 0.8,
+  rim: 0.12,
   textClearance: 0.6,
   disabledAlpha: 0.55,
   wash: Object.freeze({ hover: 0.1, pressed: 0.3, danger: 0.32, disabled: 0.5, primaryGlow: 0.22 }),
@@ -31,10 +33,13 @@ const VARIANT_CUES = Object.freeze({ primary: SoundCue.UI_CONFIRM, secondary: So
  * @typedef {{
  *   image: import("../images/ImageCache.js").LoadedImage,
  *   source: { x: number, y: number, width: number, height: number },
+ *   ends: { left: number, right: number },
  *   caps: { left: number, right: number },
  *   scale: number,
  *   radius: number,
- * }} Plate a plate fitted to the button: `source` and `caps` in image pixels, `scale` image → button, `radius` in button pixels
+ * }} Plate a plate fitted to the button: `source`, `ends` and `caps` in image pixels, `scale` image → button, `radius` in button pixels;
+ *   `ends`: the ornate ends (the plain middle lies between them); `caps`: what is drawn of them, the whole ends or, on a narrow
+ *   button, their outer rim only
  */
 
 /**
@@ -42,13 +47,13 @@ const VARIANT_CUES = Object.freeze({ primary: SoundCue.UI_CONFIRM, secondary: So
  * gradient in the variant's colour; hover lifts it, pressing sinks it,
  * focus and hover add a halo. `onActivate` fires on click, tap, Enter or Space.
  * `textSize: "small"` fits short labels into narrow buttons (filter rows).
- * A body-size button wide enough for them is laid on a painted plate
- * instead (Theme.uiArt) once its image is ready: its ornate ends kept whole,
- * its plain middle stretched to the width. A label the ends would crowd
- * into an ellipsis keeps the drawn slab and is shown whole (narrow buttons
- * on a phone); one still too long for it is set in the small size before
- * it is ever shortened. Activating it makes its variant's sound (`cue` to
- * choose another, or none).
+ * Once its image is ready (Theme.uiArt) every button is laid on a painted
+ * plate instead, so all of them look alike: its ornate ends kept whole and
+ * its plain middle stretched to the width, or, on a button too narrow for
+ * the ends and its label between them (many on a phone), only the plate's
+ * gold rim, never squeezed and never written over. A label too long for
+ * the body size is set in the small size before it is ever shortened.
+ * Activating it makes its variant's sound (`cue` to choose another, or none).
  */
 export class Button extends UiNode {
   text;
@@ -90,16 +95,14 @@ export class Button extends UiNode {
   paint(context, theme) {
     const area = this.bounds;
     const look = this.#look(theme);
-    const fitted = this.#plate(theme);
-    const platePadding = fitted === null ? 0 : Math.max(TEXT_PADDING.body, Math.max(fitted.caps.left, fitted.caps.right) * fitted.scale * PLATE.textClearance);
-    const plate = fitted !== null && this.#labelFits(context, theme, platePadding) ? fitted : null;
+    const plate = this.#plate(context, theme);
     const radius = plate === null ? theme.spacing.radius : plate.radius;
     if (look.halo !== null) {
       glowRoundedRect(context, area, { color: look.halo, radius, blur: GLOW_BLUR, lineWidth: 2, alpha: 0.9 });
     }
     if (plate !== null) {
       this.#paintPlate(context, theme, plate);
-      this.#paintText(context, theme, this.#plateTextColor(theme), platePadding);
+      this.#paintText(context, theme, this.#plateTextColor(theme), this.#platePadding(context, theme, plate));
       return;
     }
     fillRoundedRect(context, area, { fill: verticalGradient(context, area, look.gradient), stroke: look.stroke, radius, lineWidth: this.focused ? FOCUS_LINE_WIDTH : 1.5 });
@@ -110,15 +113,15 @@ export class Button extends UiNode {
   }
 
   /**
-   * The painted plate fitted to this button, or null when the button keeps
-   * the drawn slab: small text, no art (yet), or too narrow for the plate's ends.
-   * Primary buttons have their own plate; every other variant shares one.
+   * The painted plate fitted to this button, or null while there is no art
+   * (yet). Primary buttons have their own plate; every other variant shares one.
+   * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
    * @returns {Plate | null}
    */
-  #plate(theme) {
+  #plate(context, theme) {
     const art = theme.uiArt;
-    if (art === undefined || this.textSize !== "body") {
+    if (art === undefined) {
       return null;
     }
     const primary = this.variant === "primary";
@@ -129,11 +132,46 @@ export class Button extends UiNode {
     const layout = primary ? art.layout.buttons.primary : art.layout.buttons.secondary;
     const source = inPixels(layout.plate, image);
     const scale = this.height / source.height;
-    const caps = { left: layout.caps.left * source.width, right: layout.caps.right * source.width };
-    if ((caps.left + caps.right) * scale > this.width * PLATE.maxCapsShare) {
-      return null;
-    }
-    return { image, source, caps, scale, radius: layout.radius * this.height };
+    const ends = { left: layout.caps.left * source.width, right: layout.caps.right * source.width };
+    // The ornate ends only with room for them and, wholly between them, the label in its own size.
+    context.font = fontFor(theme, this.textSize, "bold");
+    const between = this.width - 2 * Math.max(ends.left, ends.right) * scale;
+    const ornate = (ends.left + ends.right) * scale <= this.width * PLATE.maxCapsShare && context.measureText(this.text).width <= between;
+    const rim = source.height * PLATE.rim;
+    const caps = ornate ? ends : { left: Math.min(rim, ends.left), right: Math.min(rim, ends.right) };
+    return { image, source, ends, caps, scale, radius: layout.radius * this.height };
+  }
+
+  /**
+   * How far the label keeps from the plate's sides: clear of what is drawn
+   * of its ends when it fits so, closer when it must (only over a bare rim,
+   * never under the small padding).
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   * @param {Plate} plate
+   */
+  #platePadding(context, theme, plate) {
+    const clear = this.#clearOf(Math.max(plate.caps.left, plate.caps.right) * plate.scale);
+    const room = (this.width - this.#smallestLabelWidth(context, theme)) / 2;
+    return Math.max(TEXT_PADDING.small, Math.min(clear, room));
+  }
+
+  /**
+   * The padding that keeps the label clear of an end this wide (in button pixels).
+   * @param {number} end
+   */
+  #clearOf(end) {
+    return Math.max(TEXT_PADDING[this.textSize], end * PLATE.textClearance);
+  }
+
+  /**
+   * The label's width in the smallest size it is ever set in (#paintText).
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   */
+  #smallestLabelWidth(context, theme) {
+    context.font = fontFor(theme, "small", "bold");
+    return context.measureText(this.text).width;
   }
 
   /**
@@ -146,7 +184,7 @@ export class Button extends UiNode {
   #paintPlate(context, theme, plate) {
     const area = this.bounds;
     const { colors } = theme;
-    const { image, source, caps, scale } = plate;
+    const { image, source, ends, caps, scale } = plate;
     const enabled = this.isEffectivelyEnabled;
     const left = caps.left * scale;
     const right = caps.right * scale;
@@ -158,8 +196,8 @@ export class Button extends UiNode {
     if (!enabled) {
       context.globalAlpha = PLATE.disabledAlpha;
     }
-    // The middle overlaps the ends by a pixel so no seam shows between the slices.
-    context.drawImage(image.source, source.x + caps.left, source.y, source.width - caps.left - caps.right, source.height, area.x + left - 1, area.y, area.width - left - right + 2, area.height);
+    // The plain middle (between the whole ends, whatever is drawn of them) overlaps the caps by a pixel so no seam shows.
+    context.drawImage(image.source, source.x + ends.left, source.y, source.width - ends.left - ends.right, source.height, area.x + left - 1, area.y, area.width - left - right + 2, area.height);
     context.drawImage(image.source, source.x, source.y, caps.left, source.height, area.x, area.y, left, area.height);
     context.drawImage(image.source, source.x + source.width - caps.right, source.y, caps.right, source.height, area.x + area.width - right, area.y, right, area.height);
     context.globalAlpha = 1;
@@ -218,17 +256,6 @@ export class Button extends UiNode {
    * @param {string} color
    * @param {number} padding
    */
-  /**
-   * Whether the whole label fits between paddings this wide.
-   * @param {CanvasRenderingContext2D} context
-   * @param {import("../theme/Theme.js").Theme} theme
-   * @param {number} padding
-   */
-  #labelFits(context, theme, padding) {
-    context.font = fontFor(theme, this.textSize, "bold");
-    return context.measureText(this.text).width <= this.width - 2 * padding;
-  }
-
   #paintText(context, theme, color, padding) {
     const budget = Math.max(0, this.width - 2 * padding);
     let font = fontFor(theme, this.textSize, "bold");

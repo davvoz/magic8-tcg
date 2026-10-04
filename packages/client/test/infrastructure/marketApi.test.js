@@ -143,7 +143,10 @@ describe("KeychainWalletConnector transfers", () => {
     const odd = new KeychainWalletConnector({ locate: () => keychainWith((callback) => callback({ success: true, result: { id: "nope" } })).keychain, timers: realTimers });
     assert.equal((await odd.requestTransfer(REQUEST)).error.code, "WALLET_BAD_RESPONSE");
     const old = new KeychainWalletConnector({ locate: () => ({ requestSignBuffer: () => undefined }), timers: realTimers });
-    assert.equal((await old.requestTransfer(REQUEST)).error.code, "WALLET_NOT_INSTALLED");
+    const tooOld = await old.requestTransfer(REQUEST);
+    assert.deepEqual([tooOld.error.code, tooOld.error.message], ["WALLET_NOT_INSTALLED", "this version of Steem Keychain cannot send transfers"]);
+    const none = await new KeychainWalletConnector({ locate: () => undefined, timers: realTimers }).requestTransfer(REQUEST);
+    assert.deepEqual([none.error.code, none.error.message], ["WALLET_NOT_INSTALLED", "Steem Keychain was not found in this browser"], "no Keychain at all is not an old one");
     const { keychain, transfers } = keychainWith(() => undefined);
     const badAmount = new KeychainWalletConnector({ locate: () => keychain, timers: realTimers });
     assert.equal((await badAmount.requestTransfer({ ...REQUEST, amount: "1" })).error.code, "WALLET_BAD_RESPONSE");

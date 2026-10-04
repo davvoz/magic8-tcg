@@ -6,7 +6,11 @@
  * - `seal`/`open`: encrypted with the device key, a random AES key kept in
  *   the same storage. It only keeps the secret from being read at a glance
  *   (someone looking at the storage sees no key); whoever can read all of
- *   the browser's data can decrypt it.
+ *   the browser's data can decrypt it. The device key is made by the first
+ *   `seal` and never replaced while it is there: a new one would leave every
+ *   secret sealed with the old one unreadable. A storage that cannot be read
+ *   (now) is a STORAGE failure; a secret that can never be opened (its device
+ *   key gone, or damaged) is DAMAGED.
  * - `sealWithPin`/`openWithPin`: encrypted with a key derived from a PIN
  *   (PBKDF2-SHA-256, a random salt per secret). The PIN is never stored; a
  *   wrong one fails AES-GCM's authentication.
@@ -45,6 +49,14 @@ function fromBase64(text) {
     return Uint8Array.from(globalThis.atob(text), (character) => character.codePointAt(0) ?? 0);
   } catch {
     return null;
+  }
+}
+
+/** No device key is stored: whatever was sealed with one can never be opened. */
+class MissingDeviceKey extends Error {
+  constructor() {
+    super("there is no device key");
+    this.name = "MissingDeviceKey";
   }
 }
 
@@ -99,7 +111,7 @@ export class KeyVault {
    */
   async seal(name, secret) {
     try {
-      return this.#write(name, await this.#encrypt(await this.#device(), name, secret), {});
+      return this.#write(name, await this.#encrypt(await this.#device({ create: true }), name, secret), {});
     } catch {
       return fail(KeyFailure.STORAGE, "this browser could not encrypt the key");
     }
@@ -117,10 +129,16 @@ export class KeyVault {
     if (stored.salt !== undefined) {
       return fail(KeyFailure.WRONG_PIN, "this key is protected by a PIN");
     }
+    let device;
     try {
-      return ok(await this.#decrypt(await this.#device(), name, stored));
+      device = await this.#device({ create: false });
+    } catch (error) {
+      return error instanceof MissingDeviceKey ? fail(KeyFailure.DAMAGED, "the saved key can no longer be opened in this browser") : fail(KeyFailure.STORAGE, "the saved key could not be read");
+    }
+    try {
+      return ok(await this.#decrypt(device, name, stored));
     } catch {
-      return fail(KeyFailure.STORAGE, "the saved key could not be read");
+      return fail(KeyFailure.DAMAGED, "the saved key can no longer be opened in this browser");
     }
   }
 
@@ -213,19 +231,33 @@ export class KeyVault {
     return decoder.decode(await this.#subtle.decrypt({ name: AES, iv, additionalData: encoder.encode(name) }, key, data));
   }
 
-  /** The device key, created on first use. */
-  #device() {
-    this.#deviceKey ??= this.#loadDeviceKey().catch((error) => {
+  /**
+   * The device key; made when `create` and there is none yet.
+   * @param {{ create: boolean }} options
+   */
+  #device({ create }) {
+    this.#deviceKey ??= this.#loadDeviceKey(create).catch((error) => {
       this.#deviceKey = null;
       throw error;
     });
     return this.#deviceKey;
   }
 
-  async #loadDeviceKey() {
+  /**
+   * @param {boolean} create
+   * @throws {MissingDeviceKey} when there is none and `create` is false; Error when the storage cannot be used
+   */
+  async #loadDeviceKey(create) {
     const stored = this.#store.read(this.#prefix + DEVICE_KEY);
-    let raw = stored.ok ? fromBase64(stored.value) : null;
+    if (!stored.ok) {
+      // Unreadable now is not absent: a new key would orphan every secret sealed with this one.
+      throw new Error("the device key could not be read");
+    }
+    let raw = fromBase64(stored.value);
     if (raw === null || raw.length !== KEY_BYTES) {
+      if (!create) {
+        throw new MissingDeviceKey();
+      }
       raw = this.#randomBytes(KEY_BYTES);
       const written = this.#store.write(this.#prefix + DEVICE_KEY, toBase64(raw));
       if (!written.ok) {

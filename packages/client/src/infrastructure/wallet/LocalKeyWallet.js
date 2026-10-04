@@ -74,8 +74,9 @@ export class LocalKeyWallet {
     const opened = await this.#vault.open(POSTING);
     const saved = opened.ok ? readSaved(opened.value) : null;
     if (saved === null) {
-      if (!opened.ok || opened.value !== null) {
-        // Unreadable (another device key, a damaged entry): it can never be used, so it goes.
+      // Only a key that can never be used goes (its device key gone, a damaged entry); one the storage
+      // could not hand over now stays for the next start.
+      if (opened.ok ? opened.value !== null : opened.error.code === KeyFailure.DAMAGED) {
         this.#vault.remove(POSTING);
       }
       return null;

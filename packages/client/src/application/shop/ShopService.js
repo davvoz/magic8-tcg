@@ -17,6 +17,12 @@
  *   failed      something refused; an order that can still be paid can be
  *               paid again or cancelled
  *
+ * The player's unpaid orders (`orders`) are kept too, read from the server:
+ * those a refused or abandoned payment left behind, which count against the
+ * server's limit of unpaid orders until paid, cancelled or expired. Each can
+ * be paid or cancelled from there; the list is read again whenever an order
+ * is made, refused, paid or cancelled.
+ *
  * The client never computes an amount or a recipient: it forwards the
  * server's instructions to the wallet unchanged.
  */
@@ -31,21 +37,27 @@ export const PurchaseStage = Object.freeze({ NONE: "none", ORDERING: "ordering",
  */
 export const BUSY_STAGES = Object.freeze([PurchaseStage.ORDERING, PurchaseStage.SIGNING, PurchaseStage.CONFIRMING]);
 export const ShopError = Object.freeze({ BUSY: "BUSY", SIGNED_OUT: "SIGNED_OUT", NOT_READY: "SHOP_NOT_READY", STILL_WAITING: "STILL_WAITING", ORDER_CLOSED: "ORDER_CLOSED", CART: "CART" });
+export const OrdersStatus = Object.freeze({ IDLE: "idle", LOADING: "loading", READY: "ready", FAILED: "failed" });
 /** Most different products in the cart (the server's lines per order). */
 export const MAX_CART_LINES = 20;
 
 /** @type {readonly string[]} */
 const TERMINAL = Object.freeze([OrderStatus.FAILED, OrderStatus.EXPIRED, OrderStatus.CANCELLED]);
+/** Orders still waiting for their payment. @type {readonly string[]} */
+const UNPAID = Object.freeze([OrderStatus.CREATED, OrderStatus.PAYMENT_PENDING]);
 
 /**
  * @typedef {Readonly<{ productId: string, quantity: number }>} CartLine
  * @typedef {Readonly<{ stage: string, order: import("../ports/MarketApi.contract.js").Order | null, txId: string | null, error: Readonly<{ code: string, message: string }> | null, cart: readonly CartLine[] | null }>} Purchase `cart`: the lines, when the purchase is the cart's
- * @typedef {Readonly<{ status: string, listing: import("../ports/MarketApi.contract.js").Listing | null, error: Readonly<{ code: string, message: string }> | null, purchase: Purchase, cart: readonly CartLine[] }>} ShopState
+ * @typedef {Readonly<{ status: string, open: readonly import("../ports/MarketApi.contract.js").Order[], error: Readonly<{ code: string, message: string }> | null }>} UnpaidOrders `open`: newest first
+ * @typedef {Readonly<{ status: string, listing: import("../ports/MarketApi.contract.js").Listing | null, error: Readonly<{ code: string, message: string }> | null, purchase: Purchase, cart: readonly CartLine[], orders: UnpaidOrders }>} ShopState
  */
 
 const NO_PURCHASE = Object.freeze({ stage: PurchaseStage.NONE, order: null, txId: null, error: null, cart: null });
 /** @type {readonly CartLine[]} */
 const EMPTY_CART = Object.freeze([]);
+/** @type {UnpaidOrders} */
+const NO_ORDERS = Object.freeze({ status: OrdersStatus.IDLE, open: Object.freeze([]), error: null });
 
 export class ShopService {
   #api;
@@ -56,11 +68,17 @@ export class ShopService {
   #pollIntervalMs;
   #maxPolls;
   /** @type {ShopState} */
-  #state = Object.freeze({ status: ShopStatus.IDLE, listing: null, error: null, purchase: NO_PURCHASE, cart: EMPTY_CART });
+  #state = Object.freeze({ status: ShopStatus.IDLE, listing: null, error: null, purchase: NO_PURCHASE, cart: EMPTY_CART, orders: NO_ORDERS });
   /** @type {Set<(state: ShopState) => void>} */
   #listeners = new Set();
   /** Increases when the purchase is reset, so a poll for a dismissed purchase stops. */
   #generation = 0;
+  /**
+   * Orders whose payment the wallet sent: never offered again, though the
+   * server shows them unpaid until the chain confirms (about a minute).
+   * @type {Set<string>}
+   */
+  #sent = new Set();
 
   /**
    * @param {{
@@ -85,6 +103,7 @@ export class ShopService {
     account.subscribe?.((state) => {
       if (owner !== null && state.account !== owner) {
         this.clearCart();
+        this.#set({ orders: NO_ORDERS });
       }
       owner = state.account;
     });
@@ -128,6 +147,7 @@ export class ShopService {
     const created = await this.#api.createOrder({ items: [{ productId, quantity }], asset }, this.#newKey());
     if (!created.ok) {
       this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.FAILED, error: created.error });
+      void this.loadOrders();
       return created;
     }
     return this.#payOrder(created.value);
@@ -194,6 +214,7 @@ export class ShopService {
     const created = await this.#api.createOrder({ items: cart, asset }, this.#newKey());
     if (!created.ok) {
       this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.FAILED, error: created.error });
+      void this.loadOrders();
       return created;
     }
     return this.#payOrder(created.value);
@@ -218,6 +239,60 @@ export class ShopService {
     if (cancelled.ok) {
       this.dismiss();
     }
+    void this.loadOrders();
+    return cancelled;
+  }
+
+  /** Reads the player's unpaid orders again. */
+  async loadOrders() {
+    if (this.#account.state.account === null) {
+      this.#set({ orders: NO_ORDERS });
+      return ok(NO_ORDERS.open);
+    }
+    this.#set({ orders: Object.freeze({ ...this.#state.orders, status: OrdersStatus.LOADING }) });
+    const listed = await this.#api.listOrders();
+    if (!listed.ok) {
+      this.#set({ orders: Object.freeze({ ...this.#state.orders, status: OrdersStatus.FAILED, error: listed.error }) });
+      return listed;
+    }
+    const open = listed.value.filter((order) => UNPAID.includes(order.status) && order.payment !== null && !this.#sent.has(order.id)).sort((left, right) => right.createdAt - left.createdAt);
+    this.#set({ orders: Object.freeze({ status: OrdersStatus.READY, open: Object.freeze(open), error: null }) });
+    return ok(this.#state.orders.open);
+  }
+
+  /**
+   * Pays one of the unpaid orders, as Pay again would; its progress shows as the purchase's.
+   * @param {string} orderId
+   */
+  async payOpenOrder(orderId) {
+    const refused = this.#refuseToStart();
+    if (refused !== null) {
+      return refused;
+    }
+    const order = this.#state.orders.open.find((candidate) => candidate.id === orderId);
+    if (order === undefined || order.payment === null) {
+      return fail(ShopError.ORDER_CLOSED, "this order can no longer be paid");
+    }
+    if (this.#state.purchase.order?.id !== orderId) {
+      // Another order than the last purchase's: the cart's lines are not what it pays for.
+      this.#setPurchase(NO_PURCHASE);
+    }
+    return this.#payOrder(order);
+  }
+
+  /**
+   * Cancels one of the unpaid orders.
+   * @param {string} orderId
+   */
+  async cancelOpenOrder(orderId) {
+    if (this.#busy() && this.#state.purchase.order?.id === orderId) {
+      return fail(ShopError.BUSY, "this order is being paid");
+    }
+    const cancelled = await this.#api.cancelOrder(orderId);
+    if (cancelled.ok && this.#state.purchase.order?.id === orderId) {
+      this.dismiss();
+    }
+    await this.loadOrders();
     return cancelled;
   }
 
@@ -234,14 +309,17 @@ export class ShopService {
     const paid = await this.#wallet.requestTransfer({ from: instructions.from, to: instructions.to, amount: instructions.amount, asset: instructions.asset, memo: instructions.memo });
     if (!paid.ok) {
       this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.FAILED, error: paid.error });
+      void this.loadOrders();
       return paid;
     }
+    this.#sent.add(order.id);
     this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.CONFIRMING, txId: paid.value });
     this.#takeFromCart(this.#state.purchase.cart ?? []);
     const hinted = await this.#api.paymentHint(order.id, paid.value);
     if (hinted.ok) {
       this.#setPurchase({ ...this.#state.purchase, order: hinted.value });
     }
+    void this.loadOrders();
     return this.#waitForCards(order.id);
   }
 
@@ -258,11 +336,13 @@ export class ShopService {
         if (current.value.status === OrderStatus.FULFILLED) {
           this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.DONE });
           await this.#account.refresh();
+          void this.loadOrders();
           return ok(current.value);
         }
         if (TERMINAL.includes(current.value.status)) {
           const error = { code: current.value.status, message: `the order is ${current.value.status.toLowerCase()}` };
           this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.FAILED, error });
+          void this.loadOrders();
           return fail(error.code, error.message);
         }
       }

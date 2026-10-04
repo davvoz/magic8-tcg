@@ -9,6 +9,7 @@ import { StoreError } from "../../src/infrastructure/persistence/KeyValueStore.c
 import { LocalStorageStore } from "../../src/infrastructure/persistence/LocalStorageStore.js";
 import { EnvelopeError, openEnvelope, sealEnvelope } from "../../src/infrastructure/persistence/StorageEnvelope.js";
 import { DECKS_STORAGE_KEY, DeckRepositoryError, StoredDeckRepository } from "../../src/infrastructure/persistence/StoredDeckRepository.js";
+import { SIGN_IN_STORAGE_KEY, StoredSignIn } from "../../src/infrastructure/persistence/StoredSignIn.js";
 import { createSeed } from "../../src/infrastructure/random/seedProvider.js";
 
 const deck = (id, name = id) => new DeckList({ id, name, entries: [{ cardId: "ember_imp", count: 2 }] });
@@ -154,5 +155,23 @@ describe("seedProvider", () => {
     const seeds = new Set(Array.from({ length: 20 }, () => createSeed()));
     assert.ok([...seeds].every((seed) => /^[0-9a-f]{64}$/.test(seed)));
     assert.equal(seeds.size, 20);
+  });
+});
+
+describe("StoredSignIn", () => {
+  it("remembers the account and how it signed in, and nothing it cannot read back", () => {
+    const store = new InMemoryStore();
+    const record = new StoredSignIn({ store });
+    assert.equal(record.read(), null);
+    record.write({ account: "alice", method: "keys" });
+    assert.deepEqual(new StoredSignIn({ store }).read(), { account: "alice", method: "keys" }, "after a reload");
+    assert.ok(!store.read(SIGN_IN_STORAGE_KEY).value.includes("5K"), "no key in it");
+    store.write(SIGN_IN_STORAGE_KEY, JSON.stringify({ schemaVersion: 1, payload: { account: "alice", method: "owner" } }));
+    assert.equal(record.read(), null, "an unknown method reads as nothing");
+    store.write(SIGN_IN_STORAGE_KEY, "{oops");
+    assert.equal(record.read(), null);
+    record.write({ account: "bob", method: "keychain" });
+    record.clear();
+    assert.equal(record.read(), null);
   });
 });

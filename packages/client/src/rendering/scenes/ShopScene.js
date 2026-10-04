@@ -26,7 +26,7 @@
  */
 import { SoundCue } from "../../application/audio/SoundCue.js";
 import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
-import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
+import { BUSY_STAGES, OrdersStatus, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
 import { deckMix } from "../../application/decks/deckMix.js";
 import { ShopCategory, cartSummary, deckBreakdown, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
 import { RANKED_ENTRY } from "../../application/ports/EntriesApi.contract.js";
@@ -67,6 +67,7 @@ const RARE_REVEAL = Object.freeze({ topRarities: 3, delayMs: 650, gain: 1.15, st
  *   deckThumb: { width: number, gap: number, rarity: number }, top: { title: number, titleHeight: number, description: number, content: number }, descriptionLines: number,
  *   reveal: { width: number, height: number, row: number, gap: number, packGap: number, title: number, button: number, serial: number },
  *   cart: { width: number, height: number, footer: number, perRow: number, gap: number, tile: number, fan: number, step: { width: number, height: number }, remove: number, title: number },
+ *   orders: { width: number, height: number, footer: number, row: number, gap: number, button: number, title: number },
  * }>} ShopMetrics `compactPurchase`: the status line on top, then quantity, then Buy beside Add to cart;
  *   cart `step`: the − and + buttons (wide enough for their sign past the button's padding); `0` sizes in `reveal`/`cart` mean "as large as the screen allows"
  */
@@ -90,6 +91,8 @@ const WIDE = Object.freeze({
   reveal: Object.freeze({ width: 1100, height: 780, row: 44, gap: 6, packGap: 16, title: 80, button: 56, serial: 210 }),
   /** The cart: a grid of tiles, each the product's cards over its name, price and quantity. */
   cart: Object.freeze({ width: 1100, height: 860, footer: 56, perRow: 3, gap: 16, tile: 300, fan: 170, step: Object.freeze({ width: 56, height: 44 }), remove: 48, title: 60 }),
+  /** The unpaid orders: one row each, what it holds and how long is left to pay, with Pay and Cancel. */
+  orders: Object.freeze({ width: 1000, height: 700, footer: 56, row: 96, gap: 10, button: 150, title: 60 }),
 });
 /** @type {ShopMetrics} */
 const COMPACT = Object.freeze({
@@ -109,10 +112,15 @@ const COMPACT = Object.freeze({
   descriptionLines: 2,
   reveal: Object.freeze({ width: 0, height: 0, row: 44, gap: 6, packGap: 12, title: 56, button: 46, serial: 90 }),
   cart: Object.freeze({ width: 0, height: 0, footer: 46, perRow: 3, gap: 10, tile: 196, fan: 84, step: Object.freeze({ width: 48, height: 40 }), remove: 40, title: 50 }),
+  orders: Object.freeze({ width: 0, height: 0, footer: 46, row: 84, gap: 8, button: 104, title: 50 }),
 });
 /** How far a compact dialog (the cart, the reveal) keeps from the screen's edges. */
 const COMPACT_DIALOG_MARGIN = 8;
 const CART_LIST_ID = "cart.lines";
+const ORDERS_LIST_ID = "orders.list";
+const MINUTE = 60_000;
+/** An unpaid order is offered for payment only while this much of its time is left: a transfer the chain sees after the deadline is refunded, not fulfilled. */
+const PAY_MARGIN_MS = 2 * MINUTE;
 
 const TAB_TITLES = Object.freeze({ [ShopCategory.PACKS]: "Packs", [ShopCategory.DECKS]: "Decks", [ShopCategory.SINGLES]: "Singles", [ShopCategory.RANKED]: "Ranked", [ShopCategory.OFFERS]: "Offers" });
 /** Shelves shown only while something is on them. */
@@ -141,6 +149,21 @@ const rarityColor = (rarity) => rarityColorKey(rarity);
 const priceText = (product) => `${priceOf(product).amount} ${priceOf(product).asset}`;
 /** @param {number} count */
 const cardsText = (count) => `${count} card${count === 1 ? "" : "s"}`;
+
+/**
+ * An unpaid order's amount, age and time left to pay, and whether it may
+ * still be paid (PAY_MARGIN_MS before its deadline).
+ * @param {import("../../application/ports/MarketApi.contract.js").Order} order
+ * @param {number} now
+ */
+function describeUnpaid(order, now) {
+  const left = (order.payment?.expiresAt ?? 0) - now;
+  const payable = left > PAY_MARGIN_MS;
+  const age = Math.max(0, Math.floor((now - order.createdAt) / MINUTE));
+  const ordered = age < 1 ? "just now" : `${age} min ago`;
+  const when = payable ? `${Math.ceil(left / MINUTE)} min left to pay` : "time to pay is over: it closes on its own";
+  return { detail: `${order.total.amount} ${order.total.asset} · ordered ${ordered} · ${when}`, payable };
+}
 
 export class ShopScene extends Scene {
   /** The frame for the screen in use (the compact one on a phone). */
@@ -179,6 +202,7 @@ export class ShopScene extends Scene {
   }
 
   #app;
+  #now;
   /** The active key a payment with the player's own keys needs, asked for over the shop. @type {ActiveKeyDialog | null} */
   #activeKey = null;
   /** @type {(() => void) | null} */
@@ -200,16 +224,20 @@ export class ShopScene extends Scene {
   #heardFulfilment = null;
   /** The cart is open (it stays open across rebuilds, behind a reveal). */
   #cartShown = false;
+  /** The unpaid orders are open. */
+  #ordersShown = false;
   /** What the last Add to cart did, until the next choice. @type {{ text: string, colorKey: string } | null} */
   #notice = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
    * @param {import("../../application/AppContext.js").AppContext} app
+   * @param {() => number} [now] the time, for how long an unpaid order has left
    */
-  constructor(services, app) {
+  constructor(services, app, now = () => Date.now()) {
     super(services);
     this.#app = app;
+    this.#now = now;
   }
 
   /** @param {{ category?: string, from?: string }} [params] `category`: the shelf to open (e.g. Ranked, from the lobby); `from`: where Back returns */
@@ -228,6 +256,7 @@ export class ShopScene extends Scene {
     };
     if (this.#signedIn()) {
       void this.#app.balance?.refresh();
+      void shop.loadOrders();
     }
     this.#revealClosed = false;
     if (shop.state.status === ShopStatus.IDLE || shop.state.status === ShopStatus.FAILED) {
@@ -269,8 +298,8 @@ export class ShopScene extends Scene {
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     const scrollY = this.#takeScroll();
-    const cartList = this.modal?.findById(CART_LIST_ID);
-    const cartScrollY = cartList instanceof ScrollList ? cartList.scrollY : 0;
+    const cartScrollY = this.#dialogScroll(CART_LIST_ID);
+    const ordersScrollY = this.#dialogScroll(ORDERS_LIST_ID);
     this.closeModal();
     this.root.clear();
     const shelves = this.#shelves();
@@ -279,9 +308,18 @@ export class ShopScene extends Scene {
     const firstControl = this.#buildShelfControls(listPanel, shelves);
     const firstRow = this.#buildList(listPanel, shelves, scrollY);
     const buy = this.#buildDetail(shelves);
-    const modalFocus = this.#openRevealIfDone() ?? this.#openCartIfShown(focusedId, cartScrollY);
+    const modalFocus = this.#openRevealIfDone() ?? this.#openCartIfShown(focusedId, cartScrollY) ?? this.#openOrdersIfShown(focusedId, ordersScrollY);
     this.focus(modalFocus ?? this.root.findById(focusedId) ?? buy ?? firstRow ?? firstControl ?? back);
     this.services.requestRender();
+  }
+
+  /**
+   * Where a list in the open dialog was scrolled (0 when it is not open).
+   * @param {string} id
+   */
+  #dialogScroll(id) {
+    const list = this.modal?.findById(id);
+    return list instanceof ScrollList ? list.scrollY : 0;
   }
 
   /** Where the list was scrolled, or the top after a change of shelf or filter. */
@@ -332,7 +370,9 @@ export class ShopScene extends Scene {
     const title = this.#screen.compact ? 90 : 200;
     this.root.add(new Label({ x: header.sideMargin, y: header.y, width: title, height: header.height, text: "Shop", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const market = this.services.hasScene(SceneId.MARKET);
-    const buttons = market ? 3 : 2;
+    const unpaid = this.#shop().state.orders.open.length;
+    const cartSlot = market ? 3 : 2;
+    const buttons = unpaid > 0 ? cartSlot + 1 : cartSlot;
     const noteX = header.sideMargin + title;
     const noteWidth = viewport.logicalWidth - 2 * header.sideMargin - title - buttons * (header.backWidth + 16);
     if (account === null) {
@@ -346,7 +386,7 @@ export class ShopScene extends Scene {
     this.root.add(
       new Button({
         id: "shop.cart",
-        x: viewport.logicalWidth - this.#screen.header.sideMargin - buttons * this.#screen.header.backWidth - (buttons - 1) * 16,
+        x: viewport.logicalWidth - this.#screen.header.sideMargin - cartSlot * this.#screen.header.backWidth - (cartSlot - 1) * 16,
         y: this.#screen.header.y + 4,
         width: this.#screen.header.backWidth,
         height: this.#screen.header.height - 8,
@@ -355,10 +395,25 @@ export class ShopScene extends Scene {
         onActivate: () => this.#showCart(true),
       }),
     );
+    this.#buildOrdersButton(unpaid, buttons);
     if (market) {
       this.root.add(new Button({ id: "shop.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
     }
     return this.root.add(new Button({ id: "shop.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(this.#from) }));
+  }
+
+  /**
+   * "Orders (n)", left of the other header buttons, while the player has unpaid orders.
+   * @param {number} unpaid how many
+   * @param {number} slot its place, counted from the right
+   */
+  #buildOrdersButton(unpaid, slot) {
+    if (unpaid === 0) {
+      return;
+    }
+    const { header } = this.#screen;
+    const x = this.services.viewport.logicalWidth - header.sideMargin - slot * header.backWidth - (slot - 1) * 16;
+    this.root.add(new Button({ id: "shop.orders", x, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: `Orders (${unpaid})`, variant: "danger", onActivate: () => this.#showOrders(true) }));
   }
 
   /**
@@ -834,7 +889,8 @@ export class ShopScene extends Scene {
    */
   #statusLine(purchase, amount, asset) {
     if (purchase.error !== null) {
-      return { text: purchase.error.message, colorKey: purchase.stage === PurchaseStage.FAILED ? "danger" : "accent" };
+      const where = purchase.error.code === "LIMIT_REACHED" && this.#shop().state.orders.open.length > 0 ? " (Orders, at the top)" : "";
+      return { text: `${purchase.error.message}${where}`, colorKey: purchase.stage === PurchaseStage.FAILED ? "danger" : "accent" };
     }
     const text = STAGE_TEXT[/** @type {keyof typeof STAGE_TEXT} */ (purchase.stage)];
     if (text !== undefined) {
@@ -1159,6 +1215,117 @@ export class ShopScene extends Scene {
     this.#cartShown = false;
     this.#notice = null;
     this.#shop().checkout(asset);
+  }
+
+  /** @param {boolean} shown */
+  #showOrders(shown) {
+    this.#ordersShown = shown;
+    if (shown) {
+      void this.#shop().loadOrders();
+    }
+    this.#rebuild();
+  }
+
+  /**
+   * The unpaid orders, over the shop: one row each with Pay and Cancel.
+   * @param {string} focusedId the node focused before the rebuild, kept when it is in the dialog
+   * @param {number} scrollY where the list was scrolled
+   * @returns {import("../ui/UiNode.js").UiNode | null} the node to focus in the dialog
+   */
+  #openOrdersIfShown(focusedId, scrollY) {
+    if (!this.#ordersShown) {
+      return null;
+    }
+    const { orders } = this.#shop().state;
+    const { viewport } = this.services;
+    const { inset, compact } = this.#screen;
+    const ORDERS = { ...this.#m.orders, ...this.#dialogSize(this.#m.orders) };
+    const { line: LINE } = this.#m;
+    const modal = new Modal({ id: "orders", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: ORDERS.width, panelHeight: ORDERS.height, onDismiss: () => this.#showOrders(false) });
+    const { panel } = modal;
+    const width = ORDERS.width - 2 * inset;
+    const titleY = compact ? 6 : inset;
+    panel.add(new Label({ x: inset, y: titleY, width, height: 44, text: "Your unpaid orders", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    const footerY = ORDERS.height - inset - ORDERS.footer;
+    const noteY = footerY - (compact ? 4 : inset) - LINE;
+    const listY = titleY + ORDERS.title;
+    const list = panel.add(new ScrollList({ id: ORDERS_LIST_ID, x: inset, y: listY, width, height: noteY - listY - 6 }));
+    const pays = this.#buildOrderRows(list, orders.open, scrollY);
+    const note = orders.error === null ? { text: "Nothing is paid until you approve the transfer. An unpaid order closes on its own when its time is up.", colorKey: "textMuted" } : { text: `Your orders could not be read: ${orders.error.message}`, colorKey: "danger" };
+    panel.add(new Label({ id: "orders.note", x: inset, y: noteY, width, height: LINE, text: note.text, size: "small", align: "left", colorKey: note.colorKey, fit: true }));
+    const close = panel.add(new Button({ id: "orders.close", x: inset + width - ORDERS.button * 1.5, y: footerY, width: ORDERS.button * 1.5, height: ORDERS.footer, text: "Close", onActivate: () => this.#showOrders(false) }));
+    this.openModal(modal);
+    const kept = modal.findById(focusedId);
+    return [kept, ...pays, close].find((node) => node?.isEffectivelyEnabled) ?? null;
+  }
+
+  /**
+   * One row per unpaid order, newest first, or a line saying there is none.
+   * @param {ScrollList} list
+   * @param {readonly import("../../application/ports/MarketApi.contract.js").Order[]} open
+   * @param {number} scrollY
+   * @returns {Button[]} the Pay buttons, in order
+   */
+  #buildOrderRows(list, open, scrollY) {
+    const { line: LINE, orders: ORDERS } = this.#m;
+    if (open.length === 0) {
+      const loading = this.#shop().state.orders.status === OrdersStatus.LOADING;
+      list.add(new TextBlock({ id: "orders.empty", x: 0, y: 0, width: list.rowWidth, height: 2 * LINE, text: loading ? "Reading your orders…" : "You have no unpaid orders.", size: "body", colorKey: "textMuted" }));
+      list.contentHeight = 2 * LINE;
+      return [];
+    }
+    const pays = open.map((order, index) => this.#buildOrderRow(list, order, index * (ORDERS.row + ORDERS.gap)));
+    list.contentHeight = open.length * (ORDERS.row + ORDERS.gap) - ORDERS.gap;
+    list.scrollTo(scrollY);
+    return pays;
+  }
+
+  /**
+   * An unpaid order: what it holds, its amount, how long ago it was made and
+   * how long is left to pay; Pay while there is time, Cancel always.
+   * @param {ScrollList} list
+   * @param {import("../../application/ports/MarketApi.contract.js").Order} order
+   * @param {number} y
+   * @returns {Button} its Pay button
+   */
+  #buildOrderRow(list, order, y) {
+    const shop = this.#shop();
+    const { orders: ORDERS } = this.#m;
+    const compact = this.#screen.compact;
+    const pad = compact ? 8 : 12;
+    const width = list.rowWidth;
+    const gap = this.#screen.action.gap;
+    const buttonY = y + pad;
+    const buttonHeight = ORDERS.row - 2 * pad;
+    const textSize = compact ? /** @type {const} */ ("small") : undefined;
+    const textWidth = width - 2 * pad - 2 * ORDERS.button - 2 * gap;
+    const { detail, payable } = describeUnpaid(order, this.#now());
+    const paying = BUSY_STAGES.includes(shop.state.purchase.stage) && shop.state.purchase.order?.id === order.id;
+    list.add(new Panel({ id: `orders.row.${order.id}`, x: 0, y, width, height: ORDERS.row }));
+    const items = order.items.map((item) => `${item.quantity} × ${item.name}`).join(" · ");
+    list.add(new Label({ id: `orders.items.${order.id}`, x: pad, y: y + pad, width: textWidth, height: (ORDERS.row - 2 * pad) / 2, text: items, weight: "bold", align: "left", fit: true }));
+    list.add(new Label({ id: `orders.detail.${order.id}`, x: pad, y: y + ORDERS.row / 2, width: textWidth, height: (ORDERS.row - 2 * pad) / 2, text: detail, size: "small", align: "left", colorKey: payable ? "textMuted" : "danger", fit: true }));
+    const payX = width - pad - 2 * ORDERS.button - gap;
+    const pay = list.add(
+      new Button({
+        id: `orders.pay.${order.id}`,
+        x: payX,
+        y: buttonY,
+        width: ORDERS.button,
+        height: buttonHeight,
+        text: paying ? "Paying…" : "Pay",
+        variant: "primary",
+        textSize,
+        enabled: payable && this.#canBuy() && !this.#isShort(order.total.amount, order.total.asset),
+        onActivate: () => {
+          this.#ordersShown = false;
+          this.#notice = null;
+          void shop.payOpenOrder(order.id);
+        },
+      }),
+    );
+    list.add(new Button({ id: `orders.cancel.${order.id}`, x: payX + ORDERS.button + gap, y: buttonY, width: ORDERS.button, height: buttonHeight, text: "Cancel", variant: "danger", textSize, enabled: !paying, onActivate: () => void shop.cancelOpenOrder(order.id) }));
+    return pay;
   }
 
   /**

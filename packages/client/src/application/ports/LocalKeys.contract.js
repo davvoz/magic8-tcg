@@ -40,8 +40,10 @@ export const KeyFailure = Object.freeze({
   WRONG_PIN: "KEY_WRONG_PIN",
   /** The PIN is too short to protect anything. */
   WEAK_PIN: "KEY_WEAK_PIN",
-  /** The browser could not store or read the key. */
+  /** The browser could not store or read the key (it may again later). */
   STORAGE: "KEY_STORAGE",
+  /** The saved key can never be opened again: its device key is gone, or it was damaged. */
+  DAMAGED: "KEY_DAMAGED",
 });
 
 export const LOCAL_KEYS_METHODS = Object.freeze(["restore", "usePostingKey", "save", "forget"]);

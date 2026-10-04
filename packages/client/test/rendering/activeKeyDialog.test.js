@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { ok } from "@magic8/engine/shared/Result.js";
+import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { IdentityStatus, SignInMethod } from "../../src/application/identity/IdentityService.js";
 import { ActiveKeyPrompt, ActiveKeyStatus } from "../../src/application/wallet/ActiveKeyPrompt.js";
 import { WalletSwitch } from "../../src/application/wallet/WalletSwitch.js";
@@ -83,6 +83,16 @@ describe("WalletSwitch", () => {
     assert.equal(wallet.usesKeys, true);
     assert.equal(wallet.name, "your keys");
     assert.equal((await wallet.signMessage({ account: "a", message: "m", keyRole: "Posting" })).value, "your keys");
+  });
+
+  it("never pays with the other wallet: a Keychain player whose Keychain is missing is told so, not asked for a key", async () => {
+    const identity = { state: { status: IdentityStatus.SIGNED_IN, user: null, method: SignInMethod.KEYCHAIN, error: null } };
+    const asked = [];
+    const keys = { name: "your keys", isAvailable: () => false, signMessage: async () => ok("keys"), requestTransfer: async () => (asked.push("keys"), ok("paid with the active key")) };
+    const keychain = { name: "Steem Keychain", isAvailable: () => false, signMessage: async () => ok("keychain"), requestTransfer: async () => fail("WALLET_NOT_INSTALLED", "Steem Keychain was not found in this browser") };
+    const wallet = new WalletSwitch({ identity, keychain, keys });
+    assert.equal((await wallet.requestTransfer({ from: "a", to: "b", amount: "1.000", asset: "STEEM", memo: "" })).error.code, "WALLET_NOT_INSTALLED");
+    assert.deepEqual(asked, []);
   });
 });
 

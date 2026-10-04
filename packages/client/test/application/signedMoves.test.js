@@ -23,6 +23,13 @@ const flush = async () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 };
+/** Waits until `done` holds: the session key is made by real WebCrypto, which takes longer when the machine is busy. */
+const until = async (done, label) => {
+  for (let waited = 0; !done(); waited += 10) {
+    assert.ok(waited < 5000, `${label} comes`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
 const GAME = "01j8x3r6h2qkq4w0v7m5a9c1dz";
 const POSTING = new Uint8Array(32).fill(0x21);
 const VIEW = (overrides = {}) => ({ gameId: GAME, seat: "s0", status: "ACTIVE", protocol: 2, opponent: { account: "bob" }, version: 7, snapshot: { version: 7, isOver: false }, ...overrides });
@@ -77,7 +84,7 @@ describe("signed moves on the client", () => {
     const { online, requests, prompts, push } = world();
     await flush();
     push("match.found", { gameId: GAME, seat: "s0", opponent: { account: "bob" }, seedCommit: "ef".repeat(32), protocol: 2 });
-    await flush();
+    await until(() => requests.some((request) => request.t === "game.session"), "the session key's grant");
     const grant = requests.find((request) => request.t === "game.session").d;
     assert.match(grant.key, /^04[0-9a-f]{128}$/);
     assert.deepEqual(prompts, [{ account: "alice", message: sessionAuthorization(GAME, grant.key), keyRole: "Posting" }], "one Keychain prompt, with the key in plain sight");

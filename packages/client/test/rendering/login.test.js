@@ -155,6 +155,22 @@ describe("LoginScene with a posting key", () => {
     scene.exit();
   });
 
+  it("asks for the posting key again, not Keychain, when the session closed because the key was no longer saved here", async () => {
+    let remembered = { account: "alice", method: "keys" };
+    const service = new IdentityService({
+      api: { currentUser: async () => ok(USER), createChallenge: async () => ok({ challengeId: "c1", message: "m", keyRole: "Posting", expiresAt: 1 }), createSession: async () => ok(USER), deleteSession: async () => ok(null) },
+      wallet: { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => fail("X", "x") },
+      keys: { account: null, restore: async () => null, usePostingKey: async () => ok(undefined), save: async () => ok(undefined), forget: () => undefined, signMessage: async () => ok(`20${"ab".repeat(64)}`) },
+      record: { read: () => remembered, write: (entry) => (remembered = entry), clear: () => (remembered = null) },
+    });
+    await service.restore();
+    const scene = new LoginScene(services(), appWith(service));
+    scene.enter({});
+    assert.ok(scene.root.findById("login.key"), "the posting key form, though Keychain is installed");
+    assert.ok(texts(scene).some((text) => /posting key is no longer saved in this browser/i.test(text)), "and why");
+    scene.exit();
+  });
+
   it("offers Keychain first when it is installed, and switches to the key form, keeping the account", () => {
     const scene = new LoginScene(services(), appWith(keyIdentity({ walletAvailable: true }).service));
     scene.enter({});
