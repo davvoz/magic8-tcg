@@ -1,11 +1,12 @@
 /**
  * The painted furniture of the screens around the match: the backdrop of
  * every menu, the gold corner that dresses large panels, the medallion of
- * the title divider and the plates of the buttons. Each ornament is painted
- * gold on pure black (JPEG, no alpha) and laid with the "screen" blend, so
- * its black drops out; the button plates are cut out along their rounded
- * outline instead. Until a piece's image is ready its painter draws it
- * procedurally.
+ * the title divider, the plates of the buttons and the game's name. Each
+ * ornament is painted gold on pure black (JPEG, no alpha) and laid with the
+ * "screen" blend, so its black drops out; the button plates are cut out
+ * along their rounded outline instead, and the name comes already cut out
+ * (WebP with alpha), so its letters stay solid over what lies beneath. Until
+ * a piece's image is ready its painter draws it procedurally.
  */
 import { PieceArt } from "./PieceArt.js";
 
@@ -20,6 +21,8 @@ export const UiPiece = Object.freeze({
   BUTTON_PRIMARY: "buttonPrimary",
   /** The plate of every other button: thin gold rim. */
   BUTTON_SECONDARY: "buttonSecondary",
+  /** The game's name over the main menu, engraved gold letters on transparency. */
+  TITLE: "title",
 });
 
 /**
@@ -32,12 +35,22 @@ export const UiPiece = Object.freeze({
  * }>} PlateLayout `caps`: the ornate ends, as fractions of the plate's width, kept whole while
  *   the plain middle stretches; `radius`: the plate's corner radius as a fraction of its height
  * @typedef {Readonly<{
+ *   top: number,
+ *   bottom: number,
+ *   stops: readonly number[],
+ *   star: Readonly<{ x: number, y: number }>,
+ * }>} TitleLayout where the letters are in the name's image: their capitals' top and foot (fractions
+ *   of its height), where each letter starts and then where the last ends (fractions of its width),
+ *   and the star's heart
+ * @typedef {Readonly<{
  *   corner: Readonly<{ extent: FractionRect, lines: Readonly<{ x: number, y: number }> }>,
  *   divider: FractionRect,
  *   buttons: Readonly<{ primary: PlateLayout, secondary: PlateLayout }>,
+ *   title?: TitleLayout,
  * }>} UiArtLayout where things are in each image. `corner.extent`: the painted part;
  *   `corner.lines`: where its vertical and horizontal lines run, laid on the panel's rim.
- *   `divider`: the medallion, centred on the divider's line
+ *   `divider`: the medallion, centred on the divider's line. `title`: the name's letters (without it
+ *   the name is drawn in the title face)
  * @typedef {Readonly<{ imageFor: (piece: string) => LoadedImage | null, layout: UiArtLayout }>} UiArtSource what the painters read (Theme.uiArt)
  */
 

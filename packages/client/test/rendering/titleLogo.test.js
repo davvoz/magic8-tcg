@@ -1,12 +1,14 @@
 /**
- * The game's name on the main menu: cast gold in its own face, with rules
- * on either side when there is room; a sheen sweeps it soon after the menu
- * opens, sparks wink on it and its 8 kindles, now and then; frames asked
+ * The game's name on the main menu: its painted image once ready, cast gold
+ * in its own face until then, with rules on either side when there is room;
+ * a sheen sweeps it soon after the menu opens, sparks wink on it and its
+ * star (in the face, its last letter) kindles, now and then; frames asked
  * for only while its light moves on a screen that draws it.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { UiPiece } from "../../src/rendering/images/UiArt.js";
 import { TitleLogo } from "../../src/rendering/scenes/mainMenu/TitleLogo.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
 
@@ -21,12 +23,27 @@ const TIMING = Object.freeze({
 const FRAME_MS = 16;
 const WIDE = Object.freeze({ x: 0, y: 150, width: 1600, height: 110 });
 
+/** The painted name (1000×300), its letters filling the middle 80% of its width and height. */
+const LETTERS = Object.freeze({ top: 0.1, bottom: 0.9, stops: Object.freeze([0.1, 0.26, 0.42, 0.58, 0.74, 0.9]), star: Object.freeze({ x: 0.18, y: 0.5 }) });
+const NAME_IMAGE = Object.freeze({ source: Object.freeze({ piece: UiPiece.TITLE }), width: 1000, height: 300 });
+const uiArt = (ready) => ({ layout: { title: LETTERS }, imageFor: (piece) => (ready && piece === UiPiece.TITLE ? NAME_IMAGE : null) });
+const painted = { ...theme, uiArt: uiArt(true) };
+
 /** A frame drawn as the loop does: time moves on, then the screen showing it is drawn. */
-function frame(title, dtMs = FRAME_MS) {
+function frame(title, dtMs = FRAME_MS, withTheme = theme) {
   const wanted = title.update(dtMs);
   const context = new FakeContext2D();
-  title.draw(context, theme);
+  title.draw(context, withTheme);
   return { wanted, context };
+}
+
+/** The painted name's images drawn: [x, y, width, height] each. */
+const namesDrawn = (context) => context.calls.filter((call) => call.method === "drawImage" && call.args[0] === NAME_IMAGE.source).map((call) => ({ box: call.args.slice(1).map(Math.round) }));
+
+function assertBalanced(context) {
+  assert.equal(context.calls.filter((call) => call.method === "save").length, context.calls.filter((call) => call.method === "restore").length, "save/restore balanced");
+  assert.equal(context.globalAlpha, 1, "alpha restored");
+  assert.equal(context.globalCompositeOperation, "source-over", "blend restored");
 }
 
 /** Runs frames until `done` holds. */
@@ -101,6 +118,54 @@ describe("TitleLogo", () => {
     }
     assert.equal(asked, true, "the first frame after it was last drawn");
     assert.equal(title.update(FRAME_MS), false);
+  });
+});
+
+describe("TitleLogo, painted", () => {
+  it("lays the painted name once ready, its letters centred on the node, instead of the title face", () => {
+    const title = new TitleLogo({ text: "KIJAM", timing: TIMING, ...WIDE });
+    const { context } = frame(title, 0, painted);
+    const drawn = namesDrawn(context);
+    assert.equal(drawn.length, 1, "once, at rest");
+    const [x, y, width, height] = drawn[0].box;
+    assert.ok(Math.abs(x + width / 2 - (WIDE.x + WIDE.width / 2)) <= 1, "centred across");
+    assert.ok(Math.abs(y + height / 2 - (WIDE.y + WIDE.height / 2)) <= 1, "centred down");
+    assert.ok(Math.abs(height * (LETTERS.bottom - LETTERS.top) - WIDE.height * 0.8) <= 1, "its capitals 80% of the node's height");
+    assert.ok(Math.abs(width / height - NAME_IMAGE.width / NAME_IMAGE.height) < 0.01, "not stretched");
+    assert.ok(!context.texts.includes("KIJAM"), "no letters of the face");
+    assert.ok(context.calls.some((call) => call.method === "stroke"), "the rules, with room for them");
+    assertBalanced(context);
+  });
+
+  it("shrinks to fit a narrow node, the rules gone first", () => {
+    const narrow = { x: 0, y: 0, width: 240, height: 110 };
+    const { context } = frame(new TitleLogo({ text: "KIJAM", timing: TIMING, ...narrow }), 0, painted);
+    const [x, , width] = namesDrawn(context)[0].box;
+    const letters = width * (LETTERS.stops[5] - LETTERS.stops[0]);
+    assert.ok(letters <= narrow.width, "the letters fit");
+    assert.ok(x + width * LETTERS.stops[0] >= narrow.x - 1, "inside on the left");
+  });
+
+  it("is drawn in the title face while its image is on its way", () => {
+    const { context } = frame(new TitleLogo({ text: "KIJAM", timing: TIMING, ...WIDE }), 0, { ...theme, uiArt: uiArt(false) });
+    assert.deepEqual(namesDrawn(context), []);
+    assert.ok(context.texts.includes("KIJAM"));
+  });
+
+  it("a sheen lays the gold again, lighter; the star flares up, then all settles back", () => {
+    const title = new TitleLogo({ text: "KIJAM", timing: TIMING, ...WIDE });
+    frame(title, 0, painted);
+    until(title, () => title.sweeping);
+    const sweep = frame(title, TIMING.sweep.durationMs / 2, painted).context;
+    assert.ok(namesDrawn(sweep).length >= 3, "the name, then the sheen's bands over it");
+    assert.ok(sweep.calls.some((call) => call.method === "clip"), "each held to its band");
+    assertBalanced(sweep);
+    until(title, () => title.kindled);
+    const kindle = frame(title, TIMING.kindle.durationMs / 2, painted).context;
+    const rays = kindle.calls.filter((call) => call.method === "stroke").length;
+    const atRest = frame(new TitleLogo({ text: "KIJAM", timing: TIMING, ...WIDE }), 0, painted).context.calls.filter((call) => call.method === "stroke").length;
+    assert.ok(rays >= atRest + 8, "the star's eight rays");
+    assertBalanced(kindle);
   });
 });
 

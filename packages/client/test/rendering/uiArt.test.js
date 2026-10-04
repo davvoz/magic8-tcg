@@ -58,11 +58,13 @@ describe("UiArt", () => {
     assert.throws(() => new UiArt({ urls: { [UiPiece.BACKDROP]: "b.jpg" }, layout: LAYOUT, loadImage: async () => ({ source: {}, width: 1, height: 1 }), logger }), /each piece/);
   });
 
-  it("the bundled art is there: one JPEG per piece", () => {
+  it("the bundled art is there: one JPEG per ornament, and the cut-out name", () => {
     for (const file of ["Sfondo_Menu.jpg", "Angolo_decorativo_pannelli.jpg", "DIVISORE_TITOLI.jpg", "BOTTONE_PRIMARIO.jpg", "BOTTONE_SECONDARIO.jpg"]) {
       const bytes = readFileSync(new URL(`../../../../data/art/${file}`, import.meta.url));
       assert.deepEqual([bytes[0], bytes[1]], [0xff, 0xd8], `${file} is a JPEG`);
     }
+    const name = readFileSync(new URL("../../../../data/art/Logo_KIJAM.webp", import.meta.url));
+    assert.deepEqual([name.toString("latin1", 0, 4), name.toString("latin1", 8, 12)], ["RIFF", "WEBP"], "the name is a WebP (with its alpha)");
   });
 });
 

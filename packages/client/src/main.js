@@ -166,8 +166,11 @@ const UI_ART = Object.freeze({
     [UiPiece.DIVIDER]: "DIVISORE_TITOLI.jpg",
     [UiPiece.BUTTON_PRIMARY]: "BOTTONE_PRIMARIO.jpg",
     [UiPiece.BUTTON_SECONDARY]: "BOTTONE_SECONDARIO.jpg",
+    // Cut out on transparency (1000×306), not gold on black.
+    [UiPiece.TITLE]: "Logo_KIJAM.webp",
   }),
   layout: Object.freeze({
+    title: Object.freeze({ top: 0.06, bottom: 0.95, stops: Object.freeze([0.01, 0.288, 0.383, 0.529, 0.727, 0.99]), star: Object.freeze({ x: 0.1273, y: 0.4773 }) }),
     corner: Object.freeze({ extent: Object.freeze({ x: 0.0485, y: 0.0274, width: 0.8954, height: 0.9015 }), lines: Object.freeze({ x: 0.1046, y: 0.0702 }) }),
     divider: Object.freeze({ x: 0.1678, y: 0.1684, width: 0.6644, height: 0.6531 }),
     buttons: Object.freeze({

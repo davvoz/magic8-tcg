@@ -1,18 +1,22 @@
 /**
- * The game's name over the main menu's fan, as a crest of old cast gold: the
+ * The game's name over the main menu's fan, as a crest of old cast gold:
+ * once its painted image is ready (Theme.uiArt), the engraved letters of
+ * that image with the star in their K; until then (or without it) the
  * letters in the title face (Theme.fonts.titleFamily), carved deep over a
  * dark shadow, polished like metal but rusted and worn in patches, with a
  * chipped bright edge, and a gold rule
  * reaching out on either side from a diamond. It lives: now and then a
  * sheen of light sweeps across the gold (the first one soon after the menu
- * opens), sparks wink on the letters' edges, and the letter at its end
- * kindles with an arcane glow and settles back.
+ * opens), sparks wink on the letters' edges, and the painted star flares
+ * up (in the title face, the letter at its end kindles with an arcane glow)
+ * and settles back.
  *
  * Presentation state only, like the backdrop's lights: time is fed in by
  * the scene (`update`) and the pauses come from the seed. Frames are asked
  * for only while something moves on a screen that draws it, and at most
  * every `frameMs`. Decorative and non-interactive.
  */
+import { UiPiece } from "../../images/UiArt.js";
 import { withAlpha, mix, shade } from "../../theme/color.js";
 import { drawFlare } from "../../ui/Glimmer.js";
 import { randomStream } from "../../ui/backdropLight.js";
@@ -64,6 +68,12 @@ const AURA = Object.freeze({ rest: 0.14, sweep: 0.12, kindle: 0.12, height: 0.42
 const SPARK = Object.freeze({ length: 0.42, width: 0.018 });
 /** The last letter's kindling, at its top: the halo behind it (reach in capital heights), the light within it and its glowing rim (blur in ems). */
 const KINDLE = Object.freeze({ halo: 1.1, haloAlpha: 0.55, within: 0.9, rim: 0.9, blur: 0.12 });
+/** The painted name's capitals, as a share of the node's height (unless the width, with the rules, is shorter). */
+const PAINTED = Object.freeze({ ofHeight: 0.8 });
+/** The sheen on the painted name: the gold laid again, lighter, in bands narrowing to its core (half-width in sheen widths, strength). */
+const PAINTED_SHEEN = Object.freeze([Object.freeze([0.55, 0.16]), Object.freeze([0.3, 0.2]), Object.freeze([0.12, 0.28])]);
+/** The painted star flaring up: the halo behind it (reach in capital heights), its rays (in ems) and the light at its heart (reach in capital heights). */
+const STAR = Object.freeze({ halo: 0.9, haloAlpha: 0.5, length: 0.75, width: 0.03, heart: 0.28, heartAlpha: 0.7 });
 
 /** Something that comes now and then, lasts a while, and goes. */
 class Beat {
@@ -155,7 +165,7 @@ export class TitleLogo extends UiNode {
     return this.#sweep.progress !== null;
   }
 
-  /** Whether the last letter glows now. */
+  /** Whether the painted star (in the title face, the last letter) glows now. */
   get kindled() {
     return this.#kindle.progress !== null;
   }
@@ -208,6 +218,12 @@ export class TitleLogo extends UiNode {
    */
   paint(context, theme) {
     this.#shown = true;
+    const painted = theme.uiArt?.imageFor(UiPiece.TITLE) ?? null;
+    const letters = theme.uiArt?.layout.title;
+    if (painted !== null && letters !== undefined) {
+      this.#paintPainted(context, theme.colors, painted, letters);
+      return;
+    }
     const crest = this.#layout(context, theme);
     const { colors } = theme;
     context.save();
@@ -224,6 +240,141 @@ export class TitleLogo extends UiNode {
     this.#paintSheen(context, crest);
     context.restore();
     this.#paintSparks(context, colors, crest);
+  }
+
+  /**
+   * The painted name: its aura, the rules, the image over its own shadow,
+   * then the light that lives in it, as on the letters of the title face.
+   * @param {CanvasRenderingContext2D} context
+   * @param {Readonly<Record<string, any>>} colors
+   * @param {import("../../images/ImageCache.js").LoadedImage} image
+   * @param {import("../../images/UiArt.js").TitleLayout} letters
+   */
+  #paintPainted(context, colors, image, letters) {
+    const { crest, box } = this.#paintedLayout(image, letters);
+    context.save();
+    this.#paintAura(context, colors, crest);
+    this.#paintStar(context, colors, crest, "halo");
+    paintWings(context, colors, crest);
+    context.save();
+    context.shadowColor = withAlpha(colors.letterbox, 0.9);
+    context.shadowBlur = SHADOW.blur * crest.size;
+    context.shadowOffsetY = SHADOW.drop * crest.size;
+    context.drawImage(image.source, box.x, box.y, box.width, box.height);
+    context.restore();
+    this.#paintPaintedSheen(context, crest, image, box);
+    this.#paintStar(context, colors, crest, "within");
+    context.restore();
+    this.#paintSparks(context, colors, crest);
+  }
+
+  /**
+   * Where the painted name goes: sized by its capitals like the title face
+   * (an em being the capitals' height over CAP_HEIGHT, for the rules and the
+   * light), its letters centred on the node.
+   * @param {{ width: number, height: number }} image
+   * @param {import("../../images/UiArt.js").TitleLayout} letters
+   * @returns {{ crest: Crest, box: { x: number, y: number, width: number, height: number } }}
+   */
+  #paintedLayout(image, letters) {
+    const area = this.bounds;
+    const first = letters.stops[0];
+    const last = letters.stops[letters.stops.length - 1];
+    const tall = letters.bottom - letters.top;
+    // The letters' width for each pixel of their height.
+    const perCap = (image.width * (last - first)) / (image.height * tall);
+    const cap = Math.max(1, Math.min(area.height * PAINTED.ofHeight, area.width / (perCap + (2 * (WING.gap + WING.min)) / CAP_HEIGHT)));
+    const size = cap / CAP_HEIGHT;
+    const height = cap / tall;
+    const width = (height * image.width) / image.height;
+    const center = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
+    const x = center.x - (width * (first + last)) / 2;
+    const y = center.y - (height * (letters.top + letters.bottom)) / 2;
+    const left = x + width * first;
+    const wordWidth = width * (last - first);
+    const top = y + height * letters.top;
+    const wing = Math.min(WING.max * size, (area.width - wordWidth) / 2 - WING.gap * size);
+    return {
+      crest: {
+        font: "",
+        size,
+        width: wordWidth,
+        left,
+        baseline: top + cap,
+        top,
+        cap,
+        center,
+        wing: wing >= WING.min * size ? wing : 0,
+        stops: letters.stops.map((stop) => x + width * stop),
+        star: { x: x + width * letters.star.x, y: y + height * letters.star.y },
+      },
+      box: { x, y, width, height },
+    };
+  }
+
+  /**
+   * The sheen crossing the painted gold: the image laid again, lighter,
+   * within leaning bands that narrow to the sheen's core.
+   * @param {CanvasRenderingContext2D} context
+   * @param {Crest} crest
+   * @param {import("../../images/ImageCache.js").LoadedImage} image
+   * @param {{ x: number, y: number, width: number, height: number }} box
+   */
+  #paintPaintedSheen(context, { left, width, size }, image, box) {
+    const progress = this.#sweep.progress;
+    if (progress === null) {
+      return;
+    }
+    const half = SHEEN.halfWidth * size;
+    const lean = SHEEN.tilt * size;
+    const eased = progress * progress * (3 - 2 * progress);
+    const x = left - half - lean + eased * (width + 2 * (half + lean));
+    const strength = Math.sin(Math.PI * progress);
+    for (const [reach, alpha] of PAINTED_SHEEN) {
+      const band = half * reach;
+      context.save();
+      context.beginPath();
+      context.moveTo(x - band, box.y);
+      context.lineTo(x + band, box.y);
+      context.lineTo(x + band + lean, box.y + box.height);
+      context.lineTo(x - band + lean, box.y + box.height);
+      context.closePath();
+      context.clip();
+      context.globalCompositeOperation = "lighter";
+      context.globalAlpha = alpha * strength;
+      context.drawImage(image.source, box.x, box.y, box.width, box.height);
+      context.restore();
+    }
+  }
+
+  /**
+   * The painted star flaring up, then settling back: a halo behind it
+   * (under the letters), then its rays and a light at its heart (over them).
+   * @param {CanvasRenderingContext2D} context
+   * @param {Readonly<Record<string, any>>} colors
+   * @param {Crest} crest
+   * @param {"halo" | "within"} layer
+   */
+  #paintStar(context, colors, crest, layer) {
+    const strength = this.#kindle.swell;
+    const star = crest.star;
+    if (strength <= 0 || star === undefined) {
+      return;
+    }
+    const glow = mix(colors.accentLight, "#ffffff", 0.45);
+    context.save();
+    if (layer === "halo") {
+      const reach = crest.cap * STAR.halo;
+      context.fillStyle = radialGradient(context, star, reach, [[0, withAlpha(glow, STAR.haloAlpha * strength)], [0.45, withAlpha(colors.accent, 0.3 * STAR.haloAlpha * strength)], [1, withAlpha(colors.accent, 0)]]);
+      context.fillRect(star.x - reach, star.y - reach, reach * 2, reach * 2);
+    } else {
+      context.globalCompositeOperation = "lighter";
+      const heart = crest.cap * STAR.heart;
+      context.fillStyle = radialGradient(context, star, heart, [[0, withAlpha(glow, STAR.heartAlpha * strength)], [1, withAlpha(glow, 0)]]);
+      context.fillRect(star.x - heart, star.y - heart, heart * 2, heart * 2);
+      drawFlare(context, colors, star, { length: STAR.length * crest.size * (0.6 + 0.4 * strength), width: Math.max(1, STAR.width * crest.size), strength });
+    }
+    context.restore();
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -278,7 +429,7 @@ export class TitleLogo extends UiNode {
   }
 
   /**
-   * The 8 catching an arcane fire, then settling back to gold: a halo
+   * The last letter catching an arcane fire, then settling back to gold: a halo
    * behind it (under the carving), then a light within its gold and a
    * glowing rim (over its face).
    * @param {CanvasRenderingContext2D} context
@@ -374,8 +525,9 @@ export class TitleLogo extends UiNode {
 /**
  * @typedef {Readonly<{
  *   font: string, size: number, width: number, left: number, baseline: number, top: number, cap: number,
- *   center: { x: number, y: number }, wing: number, stops: readonly number[],
- * }>} Crest `stops`: where each letter starts, then where the word ends; `wing`: each rule's length (0: none)
+ *   center: { x: number, y: number }, wing: number, stops: readonly number[], star?: { x: number, y: number },
+ * }>} Crest `stops`: where each letter starts, then where the word ends; `wing`: each rule's length (0: none);
+ *   `star`: the painted star's heart (the painted name only)
  */
 
 /**
