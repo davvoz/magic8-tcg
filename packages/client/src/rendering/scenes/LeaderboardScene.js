@@ -114,9 +114,9 @@ export class LeaderboardScene extends Scene {
     const buttons = history ? 2 : 1;
     const titleWidth = Math.min(900, viewport.logicalWidth - 2 * this.#screen.header.sideMargin - buttons * (this.#screen.header.backWidth + 16));
     this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: titleWidth, height: this.#screen.header.height, text: season === null ? "Leaderboard" : `Leaderboard — ${season}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    const back = this.root.add(new Button({ id: "leaderboard.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.onCancel() }));
+    const back = this.root.add(new Button({ keepPlate: true, id: "leaderboard.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.onCancel() }));
     if (history) {
-      this.root.add(new Button({ id: "leaderboard.history", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "My games", onActivate: () => this.#openHistory() }));
+      this.root.add(new Button({ keepPlate: true, id: "leaderboard.history", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "My games", onActivate: () => this.#openHistory() }));
     }
     return back;
   }

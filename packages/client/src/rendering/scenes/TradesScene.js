@@ -150,7 +150,7 @@ export class TradesScene extends Scene {
     const message = state.error ?? state.notice ?? "Card for card. Offered cards are held until the offer is answered or expires.";
     this.root.add(new Label({ id: "trades.status", x: this.#screen.header.sideMargin + statusX, y: this.#screen.header.y, width: viewport.logicalWidth - 2 * this.#screen.header.sideMargin - 2 * (this.#screen.header.backWidth + 16) - statusX, height: this.#screen.header.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
     this.root.add(new Button({ id: "trades.new", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#newOfferText(), onActivate: () => this.#toggleComposer() }));
-    return this.root.add(new Button({ id: "trades.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Collection", onActivate: () => this.services.navigate(SceneId.COLLECTION) }));
+    return this.root.add(new Button({ keepPlate: true, id: "trades.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Collection", onActivate: () => this.services.navigate(SceneId.COLLECTION) }));
   }
 
   #buildList() {

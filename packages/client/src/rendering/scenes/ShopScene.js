@@ -386,6 +386,7 @@ export class ShopScene extends Scene {
     this.root.add(
       new Button({
         id: "shop.cart",
+        keepPlate: true,
         x: viewport.logicalWidth - this.#screen.header.sideMargin - cartSlot * this.#screen.header.backWidth - (cartSlot - 1) * 16,
         y: this.#screen.header.y + 4,
         width: this.#screen.header.backWidth,
@@ -397,9 +398,9 @@ export class ShopScene extends Scene {
     );
     this.#buildOrdersButton(unpaid, buttons);
     if (market) {
-      this.root.add(new Button({ id: "shop.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
+      this.root.add(new Button({ keepPlate: true, id: "shop.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
     }
-    return this.root.add(new Button({ id: "shop.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(this.#from) }));
+    return this.root.add(new Button({ keepPlate: true, id: "shop.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(this.#from) }));
   }
 
   /**
@@ -413,7 +414,7 @@ export class ShopScene extends Scene {
     }
     const { header } = this.#screen;
     const x = this.services.viewport.logicalWidth - header.sideMargin - slot * header.backWidth - (slot - 1) * 16;
-    this.root.add(new Button({ id: "shop.orders", x, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: `Orders (${unpaid})`, variant: "danger", onActivate: () => this.#showOrders(true) }));
+    this.root.add(new Button({ id: "shop.orders", x, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: `Orders (${unpaid})`, variant: "danger", keepPlate: true, onActivate: () => this.#showOrders(true) }));
   }
 
   /**
@@ -814,7 +815,7 @@ export class ShopScene extends Scene {
     panel.add(new Label({ id: "shop.each", x: eachX, y: quantityY, width: inset + width - eachX, height: quantity.height, text: each, size: "small", align: "left", colorKey: "textMuted", fit: true }));
     const buyY = quantityY + quantity.height + rowGap;
     const buyWidth = Math.round(width * 0.6);
-    const buy = panel.add(new Button({ id: "shop.buy", x: inset, y: buyY, width: buyWidth, height: buyRow.height, text: `Buy for ${amount} ${price.asset}`, variant: "primary", enabled: this.#canBuy() && !this.#isShort(amount, price.asset), onActivate: () => {
+    const buy = panel.add(new Button({ id: "shop.buy", x: inset, y: buyY, width: buyWidth, height: buyRow.height, text: `Buy for ${amount} ${price.asset}`, variant: "primary", keepPlate: true, enabled: this.#canBuy() && !this.#isShort(amount, price.asset), onActivate: () => {
       this.#notice = null;
       shop.buy({ productId: product.id, quantity: this.#quantity, asset: price.asset });
     } }));
@@ -822,10 +823,10 @@ export class ShopScene extends Scene {
     const side = inset + width - sideX;
     if (purchase.stage === PurchaseStage.FAILED && purchase.order?.payment) {
       const half = (side - action.gap) / 2;
-      panel.add(new Button({ id: "shop.payAgain", x: sideX, y: buyY, width: half, height: buyRow.height, text: "Pay again", textSize: "small", onActivate: () => shop.payAgain() }));
+      panel.add(new Button({ id: "shop.payAgain", x: sideX, y: buyY, width: half, height: buyRow.height, text: "Pay again", textSize: "small", keepPlate: true, onActivate: () => shop.payAgain() }));
       panel.add(new Button({ id: "shop.cancel", x: sideX + half + action.gap, y: buyY, width: half, height: buyRow.height, text: "Cancel", variant: "danger", textSize: "small", onActivate: () => shop.cancel() }));
     } else {
-      panel.add(new Button({ id: "shop.addToCart", x: sideX, y: buyY, width: side, height: buyRow.height, text: "Add to cart", enabled: shop.state.status === ShopStatus.READY, onActivate: () => this.#addToCart(product) }));
+      panel.add(new Button({ id: "shop.addToCart", x: sideX, y: buyY, width: side, height: buyRow.height, text: "Add to cart", keepPlate: true, enabled: shop.state.status === ShopStatus.READY, onActivate: () => this.#addToCart(product) }));
     }
     return buy;
   }
@@ -1316,6 +1317,7 @@ export class ShopScene extends Scene {
         text: paying ? "Paying…" : "Pay",
         variant: "primary",
         textSize,
+        keepPlate: true,
         enabled: payable && this.#canBuy() && !this.#isShort(order.total.amount, order.total.asset),
         onActivate: () => {
           this.#ordersShown = false;
@@ -1324,7 +1326,7 @@ export class ShopScene extends Scene {
         },
       }),
     );
-    list.add(new Button({ id: `orders.cancel.${order.id}`, x: payX + ORDERS.button + gap, y: buttonY, width: ORDERS.button, height: buttonHeight, text: "Cancel", variant: "danger", textSize, enabled: !paying, onActivate: () => void shop.cancelOpenOrder(order.id) }));
+    list.add(new Button({ id: `orders.cancel.${order.id}`, x: payX + ORDERS.button + gap, y: buttonY, width: ORDERS.button, height: buttonHeight, text: "Cancel", variant: "danger", textSize, keepPlate: true, enabled: !paying, onActivate: () => void shop.cancelOpenOrder(order.id) }));
     return pay;
   }
 

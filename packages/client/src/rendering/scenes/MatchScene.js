@@ -736,7 +736,7 @@ export class MatchScene extends Scene {
     let y = metrics.buttonsTop;
     for (const spec of specs.filter((candidate) => !footer.includes(candidate))) {
       const held = spec.plays ? this.isBusy : this.isTossing;
-      panel.add(new Button({ id: spec.id, x: metrics.inset, y, width, height: metrics.buttonHeight, text: spec.text, enabled: spec.enabled && !held, variant: spec.variant, onActivate: spec.onActivate, ...(spec.cue === undefined ? {} : { cue: spec.cue }) }));
+      panel.add(new Button({ id: spec.id, x: metrics.inset, y, width, height: metrics.buttonHeight, text: spec.text, enabled: spec.enabled && !held, variant: spec.variant, keepPlate: true, onActivate: spec.onActivate, ...(spec.cue === undefined ? {} : { cue: spec.cue }) }));
       y += metrics.buttonHeight + metrics.gap;
     }
     if (layout.compact) {
@@ -753,9 +753,9 @@ export class MatchScene extends Scene {
   #buildFooter(panel, leave, { width, height, metrics }) {
     const footerY = height - metrics.inset - metrics.footerHeight;
     const logWidth = Math.round(width * COMPACT_LOG_SHARE);
-    panel.add(new Button({ id: "log.open", x: metrics.inset, y: footerY, width: logWidth, height: metrics.footerHeight, text: "Log", textSize: "small", onActivate: () => this.#showLog() }));
+    panel.add(new Button({ id: "log.open", x: metrics.inset, y: footerY, width: logWidth, height: metrics.footerHeight, text: "Log", textSize: "small", keepPlate: true, onActivate: () => this.#showLog() }));
     for (const spec of leave) {
-      panel.add(new Button({ id: spec.id, x: metrics.inset + logWidth + metrics.gap, y: footerY, width: width - logWidth - metrics.gap, height: metrics.footerHeight, text: spec.shortText ?? spec.text, enabled: spec.enabled && !this.isTossing, variant: spec.variant, textSize: "small", onActivate: spec.onActivate }));
+      panel.add(new Button({ id: spec.id, x: metrics.inset + logWidth + metrics.gap, y: footerY, width: width - logWidth - metrics.gap, height: metrics.footerHeight, text: spec.shortText ?? spec.text, enabled: spec.enabled && !this.isTossing, variant: spec.variant, textSize: "small", keepPlate: true, onActivate: spec.onActivate }));
     }
   }
 

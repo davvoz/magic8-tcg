@@ -305,7 +305,7 @@ export class MainMenuScene extends Scene {
     }
     const width = compact ? SOUND.compactWidth : SOUND.width;
     const x = edge - SOUND.gap - width;
-    this.#soundButton = this.root.add(new Button({ id: "sound", x, y: bell.y, width, height: bell.height, text: soundLabel(audio.settings), textSize: compact ? "small" : "body", onActivate: () => this.#showAudioSettings() }));
+    this.#soundButton = this.root.add(new Button({ id: "sound", x, y: bell.y, width, height: bell.height, text: soundLabel(audio.settings), textSize: compact ? "small" : "body", keepPlate: true, onActivate: () => this.#showAudioSettings() }));
     return x;
   }
 
@@ -319,7 +319,7 @@ export class MainMenuScene extends Scene {
     const { compact } = this.services.viewport;
     const width = compact ? INFO.compactWidth : INFO.width;
     const x = edge - SOUND.gap - width;
-    this.root.add(new Button({ id: "info", x, y: bell.y, width, height: bell.height, text: "Info", textSize: compact ? "small" : "body", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO) }));
+    this.root.add(new Button({ id: "info", x, y: bell.y, width, height: bell.height, text: "Info", textSize: compact ? "small" : "body", keepPlate: true, enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO) }));
     return x;
   }
 

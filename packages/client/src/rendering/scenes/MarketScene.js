@@ -309,7 +309,7 @@ export class MarketScene extends Scene {
     const statusX = this.#screen.header.sideMargin + Math.min(200, title);
     this.root.add(new Label({ id: "market.status", x: statusX, y: this.#screen.header.y, width: viewport.logicalWidth - this.#screen.header.sideMargin - buttons * (this.#screen.header.backWidth + 16) - statusX, height: this.#screen.header.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
     if (this.#signedIn()) {
-      this.root.add(new Button({ id: "market.sell", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#sellButtonText(), enabled: !this.#buyingBusy(), onActivate: () => this.#toggleSelling() }));
+      this.root.add(new Button({ keepPlate: true, id: "market.sell", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#sellButtonText(), enabled: !this.#buyingBusy(), onActivate: () => this.#toggleSelling() }));
     }
     return this.root.add(new Button({ id: "market.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.services.navigate(this.#from) }));
   }
@@ -328,7 +328,7 @@ export class MarketScene extends Scene {
     /** @type {Button | null} */
     let first = null;
     tabs.forEach(({ tab, text }, index) => {
-      const button = panel.add(new Button({ id: `market.tab.${tab}`, x: this.#screen.inset + index * (width + this.#m.tabs.gap), y: this.#m.tabs.top, width, height: this.#m.tabs.height, text, variant: this.#tab === tab ? "primary" : "secondary", onActivate: () => this.#switchTab(tab) }));
+      const button = panel.add(new Button({ keepPlate: true, id: `market.tab.${tab}`, x: this.#screen.inset + index * (width + this.#m.tabs.gap), y: this.#m.tabs.top, width, height: this.#m.tabs.height, text, variant: this.#tab === tab ? "primary" : "secondary", onActivate: () => this.#switchTab(tab) }));
       first ??= button;
     });
     return first;
@@ -558,7 +558,7 @@ export class MarketScene extends Scene {
     } else if (short) {
       text = `Not enough ${asset} in your wallet`;
     }
-    panel.add(new Button({ id: "market.buy", x: this.#screen.inset, y, width, height: this.#m.button, text, variant: "primary", enabled: !listing.reserved && !short && !this.#buyingBusy(), onActivate: () => this.#sales().buy(listing.id) }));
+    panel.add(new Button({ keepPlate: true, id: "market.buy", x: this.#screen.inset, y, width, height: this.#m.button, text, variant: "primary", enabled: !listing.reserved && !short && !this.#buyingBusy(), onActivate: () => this.#sales().buy(listing.id) }));
   }
 
   /** @param {Readonly<{ amount: string, asset: string }>} price */
@@ -608,7 +608,7 @@ export class MarketScene extends Scene {
     const fullWidth = this.#screen.columns.right.width - 2 * this.#screen.inset;
     if (purchase === null) {
       panel.add(new TextBlock({ id: "market.buying", x: this.#screen.inset, y: this.#screen.inset, width: fullWidth, height: 90, text: error?.message ?? STAGE_TEXT[BuyStage.RESERVING](), size: "body", colorKey: error === null ? "text" : "danger" }));
-      panel.add(new Button({ id: "market.buying.close", x: this.#screen.inset, y: this.#screen.columns.height - this.#screen.inset - this.#m.button, width: fullWidth, height: this.#m.button, text: "Close", enabled: stage === BuyStage.FAILED, onActivate: () => sales.dismiss() }));
+      panel.add(new Button({ keepPlate: true, id: "market.buying.close", x: this.#screen.inset, y: this.#screen.columns.height - this.#screen.inset - this.#m.button, width: fullWidth, height: this.#m.button, text: "Close", enabled: stage === BuyStage.FAILED, onActivate: () => sales.dismiss() }));
       return;
     }
     const { x, width } = this.#cardWithLines(panel, purchase.card.definitionId, this.#buyingLines(purchase));
@@ -652,7 +652,7 @@ export class MarketScene extends Scene {
     }
     if (!payable) {
       const closable = !BUSY_BUY_STAGES.includes(stage) || sales.state.buying.error !== null;
-      panel.add(new Button({ id: "market.buying.close", x: this.#screen.inset, y, width, height: this.#m.button, text: stage === BuyStage.DONE ? "Done" : "Close", variant: stage === BuyStage.DONE ? "primary" : "secondary", enabled: closable, onActivate: () => sales.dismiss() }));
+      panel.add(new Button({ keepPlate: true, id: "market.buying.close", x: this.#screen.inset, y, width, height: this.#m.button, text: stage === BuyStage.DONE ? "Done" : "Close", variant: stage === BuyStage.DONE ? "primary" : "secondary", enabled: closable, onActivate: () => sales.dismiss() }));
       return;
     }
     const half = (width - 16) / 2;
@@ -679,8 +679,8 @@ export class MarketScene extends Scene {
       sales.dismiss();
       this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.MARKET });
     };
-    panel.add(new Button({ id: "market.buying.collection", x: this.#screen.inset, y, width: half, height: this.#m.button, text: "View collection", variant: "primary", onActivate: view }));
-    panel.add(new Button({ id: "market.buying.close", x: this.#screen.inset + half + 16, y, width: half, height: this.#m.button, text: "Done", onActivate: () => sales.dismiss() }));
+    panel.add(new Button({ keepPlate: true, id: "market.buying.collection", x: this.#screen.inset, y, width: half, height: this.#m.button, text: "View collection", variant: "primary", onActivate: view }));
+    panel.add(new Button({ keepPlate: true, id: "market.buying.close", x: this.#screen.inset + half + 16, y, width: half, height: this.#m.button, text: "Done", onActivate: () => sales.dismiss() }));
     return true;
   }
 

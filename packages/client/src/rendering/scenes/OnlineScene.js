@@ -213,12 +213,12 @@ export class OnlineScene extends Scene {
     this.root.clear();
     const { viewport } = this.services;
     this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: this.#m.title, height: this.#screen.header.height, text: "Play online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    const back = this.root.add(new Button({ id: "online.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.#leave() }));
+    const back = this.root.add(new Button({ keepPlate: true, id: "online.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.#leave() }));
     if (this.#app.ranking !== undefined && this.services.hasScene(SceneId.LEADERBOARD)) {
-      this.root.add(new Button({ id: "online.leaderboard", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Leaderboard", onActivate: () => this.services.navigate(SceneId.LEADERBOARD) }));
+      this.root.add(new Button({ keepPlate: true, id: "online.leaderboard", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Leaderboard", onActivate: () => this.services.navigate(SceneId.LEADERBOARD) }));
     }
     if (this.services.hasScene(SceneId.LIVE_GAMES)) {
-      this.root.add(new Button({ id: "online.watch", x: viewport.logicalWidth - this.#screen.header.sideMargin - 3 * this.#screen.header.backWidth - 32, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Watch", onActivate: () => this.services.navigate(SceneId.LIVE_GAMES) }));
+      this.root.add(new Button({ keepPlate: true, id: "online.watch", x: viewport.logicalWidth - this.#screen.header.sideMargin - 3 * this.#screen.header.backWidth - 32, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Watch", onActivate: () => this.services.navigate(SceneId.LIVE_GAMES) }));
     }
     const firstDeck = this.#buildDecks();
     this.#buildPlayers();
@@ -348,7 +348,7 @@ export class OnlineScene extends Scene {
     if (note) {
       panel.add(new TextBlock({ x: this.#screen.inset, y: top + 190, width, height: 5 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and every move of the game is recorded.", size: "small", colorKey: "textMuted" }));
     }
-    return panel.add(new Button({ ...this.#mainAction(), x: this.#screen.inset, y: buttonY, width, height: button }));
+    return panel.add(new Button({ keepPlate: true, ...this.#mainAction(), x: this.#screen.inset, y: buttonY, width, height: button }));
   }
 
   /** The challenge the player has out, while they wait for an answer (not once a game is on). */

@@ -169,7 +169,7 @@ export class CollectionScene extends Scene {
       ...(hasScene(SceneId.DECK_BUILDER) ? [{ id: "collection.decks", text: "Deck Builder", onActivate: () => navigate(SceneId.DECK_BUILDER, { from: SceneId.COLLECTION }) }] : []),
     ];
     const step = header.backWidth + header.gap;
-    const nodes = buttons.map((spec, index) => this.root.add(new Button({ ...spec, x: viewport.logicalWidth - header.sideMargin - header.backWidth - index * step, y: header.y + 4, width: header.backWidth, height: header.height - 8 })));
+    const nodes = buttons.map((spec, index) => this.root.add(new Button({ keepPlate: true, ...spec, x: viewport.logicalWidth - header.sideMargin - header.backWidth - index * step, y: header.y + 4, width: header.backWidth, height: header.height - 8 })));
     // The status takes what the buttons leave; on a phone that may be nothing.
     const statusWidth = viewport.logicalWidth - header.sideMargin - buttons.length * step - this.#screen.inset - statusX;
     if (statusWidth >= MIN_STATUS_WIDTH) {

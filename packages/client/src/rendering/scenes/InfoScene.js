@@ -137,6 +137,7 @@ export class InfoScene extends Scene {
           height: m.tab.height,
           text: compact ? topic.shortTitle : topic.title,
           textSize: compact ? "small" : "body",
+          keepPlate: true,
           variant: topic.id === this.#topicId ? "primary" : "secondary",
           onActivate: () => this.#show(topic.id),
         }),
@@ -175,7 +176,7 @@ export class InfoScene extends Scene {
       }),
     );
     if (action !== null) {
-      panel.add(new Button({ ...action, x: inset, y: columns.height - inset - m.link, width: inner, height: m.link, textSize: compact ? "small" : "body", variant: "primary" }));
+      panel.add(new Button({ ...action, x: inset, y: columns.height - inset - m.link, width: inner, height: m.link, textSize: compact ? "small" : "body", keepPlate: true, variant: "primary" }));
     }
   }
 
