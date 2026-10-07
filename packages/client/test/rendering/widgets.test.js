@@ -250,7 +250,7 @@ describe("Label fit and CardDetail", () => {
     assert.ok(context.texts.includes(creature.name));
     assert.ok(context.texts.includes(String(creature.cost)));
     assert.ok(context.texts.includes(typeLineFor(creature)));
-    assert.ok(context.texts.includes(creature.keywords.join(" · ")));
+    assert.ok(creature.keywords.every((keyword) => context.texts.includes(`${keyword[0].toUpperCase()}${keyword.slice(1)}`)), "keywords named in the rules text");
     const statTexts = context.texts.slice(context.texts.indexOf(typeLineFor(creature)) + 1);
     assert.ok(statTexts.includes(String(creature.attack)) && statTexts.includes(String(creature.health)), "attack and health gems");
     const spellContext = new FakeContext2D();

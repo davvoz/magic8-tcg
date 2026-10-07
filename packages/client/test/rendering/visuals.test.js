@@ -120,18 +120,19 @@ describe("CardFace layout", () => {
     assert.ok(creature.textBox.y + creature.textBox.height <= creature.attack.y - creature.attack.radius + creature.attack.radius * 0.5, "text box ends above the stat gems");
   });
 
-  it("capitalises the type line and draws name, cost, keywords and stats in the full profile", () => {
+  it("capitalises the type line and draws name, cost, keywords and stats", () => {
     const creature = content.catalog.all().find((card) => card.isCreature && card.keywords.length > 0);
     assert.equal(typeLineFor(creature), `${creature.type[0].toUpperCase()}${creature.type.slice(1)} · ${creature.faction[0].toUpperCase()}${creature.faction.slice(1)}`);
     const context = new FakeContext2D();
     paintCardFace(context, theme, creature, { frame: { x: 10, y: 10, width: 380, height: 540 }, profile: CardFaceProfile.FULL });
     assert.ok(context.texts.includes(creature.name));
     assert.ok(context.texts.includes(String(creature.cost)));
-    assert.ok(context.texts.includes(creature.keywords.join(" · ")), "keywords line in the full profile");
+    const named = (/** @type {string} */ keyword) => `${keyword[0].toUpperCase()}${keyword.slice(1)}`;
+    assert.ok(creature.keywords.every((keyword) => context.texts.includes(named(keyword))), "keywords named in the full profile's rules text");
     assertBalanced(context);
     const compact = new FakeContext2D();
     paintCardFace(compact, theme, creature, { frame: { x: 0, y: 0, width: 130, height: 182 }, profile: CardFaceProfile.COMPACT });
-    assert.ok(!compact.texts.includes(creature.keywords.join(" · ")), "no keywords line in the compact profile (the rules text says it)");
+    assert.ok(creature.keywords.every((keyword) => compact.texts.includes(named(keyword))), "and in the compact profile's");
     assertBalanced(compact);
     const empty = new FakeContext2D();
     paintCardFace(empty, theme, creature, { frame: { x: 0, y: 0, width: 0, height: 0 }, profile: CardFaceProfile.COMPACT });

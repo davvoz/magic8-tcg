@@ -2,7 +2,7 @@
  * The face of a card, drawn procedurally at any size: a bevelled frame in
  * the faction's tones with a gold rim, a cost gem, the name on a banner,
  * the art window (see CardArt), a type ribbon ending in the rarity gem (when
- * the rarity is known), the rules text box and, for creatures, attack and
+ * the rarity is known), the rules text box (its keywords in gold) and, for creatures, attack and
  * health gems. Runtime state (damage, summoning
  * sickness, exhaustion) is layered on top when present, so the deck
  * builder's inspect view and the board share one painter.
@@ -18,7 +18,8 @@ import { mix, shade, withAlpha } from "../theme/color.js";
 import { rarityColor, rarityLabel } from "../theme/rarity.js";
 import { bodyFont, displayFont, factionTones } from "../theme/Theme.js";
 import { bevelRoundedRect, drawOutlinedText, drawTextInRect, fillRoundedRect, insetRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
-import { capitalize, ellipsize, wrapText } from "../text/textUtils.js";
+import { capitalize, ellipsize } from "../text/textUtils.js";
+import { drawRuns, rulesTextFor, wrapRuns } from "../text/keywordText.js";
 import { paintCardArt } from "./CardArt.js";
 import { drawGem } from "../ui/shapes.js";
 import { drawCostGem, drawStatGem } from "./statGem.js";
@@ -35,9 +36,9 @@ const ELLIPSIS = "…";
  * @typedef {Readonly<{
  *   id: string,
  *   nameRatio: number, textRatio: number, typeRatio: number, statRatio: number, costRatio: number,
- *   lineGapRatio: number, keywordsLine: boolean, keywordsOnly?: boolean, band?: Readonly<Partial<Record<keyof typeof BAND_DEFAULTS, number>>>,
+ *   lineGapRatio: number, rarityWord: boolean, keywordsOnly?: boolean, band?: Readonly<Partial<Record<keyof typeof BAND_DEFAULTS, number>>>,
  * }>} CardFaceProfile ratios are fractions of the frame height (cost: of the width); `typeRatio` 0 leaves the type ribbon
- *   without words; `keywordsOnly`: the text box holds the keywords and no rules text; `band`: vertical proportions of its own
+ *   without words; `rarityWord`: the type ribbon names the rarity beside its gem; `keywordsOnly`: the text box holds the keywords and no rules text; `band`: vertical proportions of its own
  *
  * @typedef {Readonly<{
  *   frame: Rect, header: Rect, cost: { x: number, y: number, radius: number }, art: Rect, typeLine: Rect, textBox: Rect,
@@ -53,9 +54,9 @@ const BAND_DEFAULTS = Object.freeze({ headerTop: 0.03, headerHeight: 0.09, artTo
 
 /** @type {Readonly<Record<"COMPACT" | "FULL" | "MINI", CardFaceProfile>>} */
 export const CardFaceProfile = Object.freeze({
-  COMPACT: Object.freeze({ id: "compact", nameRatio: 0.066, textRatio: 0.05, typeRatio: 0.046, statRatio: 0.07, costRatio: 0.095, lineGapRatio: 0.005, keywordsLine: false }),
-  FULL: Object.freeze({ id: "full", nameRatio: 0.058, textRatio: 0.036, typeRatio: 0.03, statRatio: 0.055, costRatio: 0.075, lineGapRatio: 0.009, keywordsLine: true }),
-  MINI: Object.freeze({ id: "mini", nameRatio: 0.092, textRatio: 0.082, typeRatio: 0, statRatio: 0.098, costRatio: 0.13, lineGapRatio: 0.012, keywordsLine: true, keywordsOnly: true, band: Object.freeze({ headerHeight: 0.12, artTop: 0.16, typeHeight: 0.04, statsY: 0.9 }) }),
+  COMPACT: Object.freeze({ id: "compact", nameRatio: 0.066, textRatio: 0.05, typeRatio: 0.046, statRatio: 0.07, costRatio: 0.095, lineGapRatio: 0.005, rarityWord: false }),
+  FULL: Object.freeze({ id: "full", nameRatio: 0.058, textRatio: 0.036, typeRatio: 0.03, statRatio: 0.055, costRatio: 0.075, lineGapRatio: 0.009, rarityWord: true }),
+  MINI: Object.freeze({ id: "mini", nameRatio: 0.092, textRatio: 0.082, typeRatio: 0, statRatio: 0.098, costRatio: 0.13, lineGapRatio: 0.012, rarityWord: true, keywordsOnly: true, band: Object.freeze({ headerHeight: 0.12, artTop: 0.16, typeHeight: 0.04, statsY: 0.9 }) }),
 });
 /** Width over height of the painted illustrations (1344×768): the art window keeps it, so nothing is cropped. */
 const ART_ASPECT = 7 / 4;
@@ -208,7 +209,7 @@ function paintTypeLine({ context, theme, model, tones, layout, profile, rarity }
     paintRarityGem(context, typeLine, rarity === null ? null : rarityColor(theme, rarity));
     return;
   }
-  const text = typeLineFor(model, profile.keywordsLine ? rarity : null);
+  const text = typeLineFor(model, profile.rarityWord ? rarity : null);
   const font = bodyFont(theme, frame.height * profile.typeRatio, "bold");
   context.font = font;
   // The gem narrows the ribbon: only then may the text need shortening.
@@ -234,8 +235,9 @@ function paintRarityGem(context, typeLine, color) {
 }
 
 /**
- * Rules text in a sunken box; the keywords line (full profile) comes first
- * in bold, the last line is ellipsized when the text is longer than the box.
+ * Rules text in a sunken box, its keywords in bold gold (each named, see
+ * rulesTextFor); the last line ends with an ellipsis when the text is
+ * longer than the box.
  * @param {Face} face
  */
 function paintRulesText({ context, theme, model, tones, layout, profile }) {
@@ -247,24 +249,25 @@ function paintRulesText({ context, theme, model, tones, layout, profile }) {
   const padding = textBox.width * 0.05;
   const width = textBox.width - 2 * padding;
   const font = bodyFont(theme, textFont);
-  context.font = font;
-  const measure = (text) => context.measureText(text).width;
-  const keywords = profile.keywordsLine ? (model.keywords ?? []) : [];
+  const bold = bodyFont(theme, textFont, "bold");
+  const keywords = model.keywords ?? [];
+  const lineAt = (/** @type {number} */ index) => ({ x: textBox.x + padding, y: textBox.y + textInset + index * lineHeight, width, height: lineHeight });
   if (profile.keywordsOnly === true) {
     // Each keyword on a line of its own, in bold: a mini card has no room for the rules.
-    const lines = fitLines(keywords.map(capitalize), textLines, measure, width);
-    const bold = bodyFont(theme, textFont, "bold");
+    context.font = bold;
+    const lines = fitLines(keywords.map(capitalize), textLines, (text) => context.measureText(text).width, width);
     lines.forEach((line, index) => {
-      drawTextInRect(context, line, { x: textBox.x + padding, y: textBox.y + textInset + index * lineHeight, width, height: lineHeight }, { font: bold, color: theme.colors.accentLight });
+      drawTextInRect(context, line, lineAt(index), { font: bold, color: theme.colors.accentLight });
     });
     return;
   }
-  const keywordLines = keywords.length === 0 ? [] : [keywords.join(" · ")];
-  const lines = fitLines([...keywordLines, ...wrapText(measure, model.text, width)], textLines, measure, width);
-  lines.forEach((line, index) => {
-    const bold = index === 0 && keywordLines.length > 0;
-    drawTextInRect(context, line, { x: textBox.x + padding, y: textBox.y + textInset + index * lineHeight, width, height: lineHeight }, { font: bold ? bodyFont(theme, textFont, "bold") : font, color: theme.colors.text, align: "left" });
-  });
+  const style = { font, keywordFont: bold, color: theme.colors.text, keywordColor: theme.colors.accentLight };
+  const lines = wrapRuns(context, rulesTextFor(model), { keywords, width, style });
+  const kept = lines.slice(0, textLines);
+  if (lines.length > kept.length && kept.length > 0) {
+    kept[kept.length - 1] = [...kept[kept.length - 1], { text: ELLIPSIS, keyword: false }];
+  }
+  kept.forEach((runs, index) => drawRuns(context, runs, lineAt(index), style));
 }
 
 /**

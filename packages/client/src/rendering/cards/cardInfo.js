@@ -1,13 +1,14 @@
 /**
  * A card's details, the same on every screen that shows a card to sell,
  * buy, trade or look at: the card at full size (rarity gem included) and,
- * beside it, its name, rarity, type, cost and stats, keywords, rules text
- * and whatever the screen adds (serial, edition, price…). Returns a Modal
+ * beside it, its name, rarity, type, cost and stats, keywords and rules
+ * text (the keywords in gold) and whatever the screen adds (serial, edition, price…). Returns a Modal
  * for the scene to open; Close and Escape call `onClose`. On a compact
  * screen (a phone in landscape) it is as tall as the screen allows.
  */
 import { CardType } from "@magic8/engine/domain/cards/CardType.js";
 import { capitalize } from "../text/textUtils.js";
+import { rulesTextFor } from "../text/keywordText.js";
 import { rarityColorKey, rarityLabel } from "../theme/rarity.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -68,16 +69,20 @@ export function buildCardInfoModal({ viewport, card, rarity, lines = [], onClose
   panel.add(new Label({ id: "cardInfo.rarity", x, y, width, height: LINE, text: rarity === null ? "Rarity unknown" : rarityLabel(rarity), weight: "bold", align: "left", colorKey: rarityColorKey(rarity) }));
   y += LINE;
   const facts = [`${capitalize(card.type)} · ${capitalize(card.faction)} · cost ${card.cost}`, ...(card.type === CardType.CREATURE ? [`Attack ${card.attack} · Health ${card.health}`] : [])];
-  const keywords = (card.keywords ?? []).map(capitalize).join(", ");
-  for (const text of [...facts, ...(keywords.length === 0 ? [] : [`Keywords: ${keywords}`])]) {
+  for (const text of facts) {
     panel.add(new Label({ x, y, width, height: LINE, text, size: "small", align: "left", colorKey: "textMuted", fit: true }));
+    y += LINE;
+  }
+  const keywords = card.keywords ?? [];
+  if (keywords.length > 0) {
+    panel.add(new Label({ id: "cardInfo.keywords", x, y, width, height: LINE, text: keywords.map(capitalize).join(" · "), size: "small", weight: "bold", align: "left", colorKey: "accentLight", fit: true }));
     y += LINE;
   }
   y += 8;
   const closeY = PANEL.height - INSET - BUTTON_HEIGHT;
   const extraHeight = lines.length * LINE;
   const textHeight = Math.max(LINE, closeY - y - extraHeight - 16);
-  panel.add(new TextBlock({ id: "cardInfo.text", x, y, width, height: textHeight, text: card.text.length > 0 ? card.text : "No rules text.", size: "small", align: "left", colorKey: "text" }));
+  panel.add(new TextBlock({ id: "cardInfo.text", x, y, width, height: textHeight, text: rulesTextFor(card) || "No rules text.", size: "small", align: "left", colorKey: "text", keywords }));
   y += textHeight + 8;
   lines.forEach((text, index) => panel.add(new Label({ id: `cardInfo.line.${index}`, x, y: y + index * LINE, width, height: LINE, text, size: "small", align: "left", colorKey: "accentLight", fit: true })));
   panel.add(new Button({ id: "cardInfo.close", x, y: closeY, width, height: BUTTON_HEIGHT, text: "Close", onActivate: onClose }));

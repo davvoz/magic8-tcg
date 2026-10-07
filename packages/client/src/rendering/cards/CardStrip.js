@@ -1,7 +1,7 @@
 /**
  * A card as a one-line strip for lists (deck builder, collection, shop,
  * market, trades): faction stripe, cost gem, name in the display face, rarity
- * (in its colour, when known), type and keywords, the copy count (or any
+ * (in its colour, when known), type and keywords (in gold), the copy count (or any
  * short `badge`, e.g. a copy's serial) and, for creatures, attack and health
  * gems. A `fresh` card (just received) is lit and tagged "NEW"; a `selected`
  * one is rimmed in gold and checked; a `lifted` one (under the pointer) is
@@ -17,6 +17,7 @@ import { displayFont, factionTones, fontFor } from "../theme/Theme.js";
 import { drawTextInRect, fillRoundedRect, glowRoundedRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
 import { drawCheckIcon } from "../ui/shapes.js";
 import { capitalize, ellipsize } from "../text/textUtils.js";
+import { drawRuns, keywordRuns } from "../text/keywordText.js";
 import { UiNode } from "../ui/UiNode.js";
 import { drawCostGem, drawStatGem } from "./statGem.js";
 
@@ -238,10 +239,9 @@ export class CardStrip extends UiNode {
     context.font = nameFont;
     const name = ellipsize((text) => context.measureText(text).width, this.card.name, width);
     drawTextInRect(context, name, { x, y: area.y, width, height: area.height * 0.58 }, { font: nameFont, color: this.broken ? theme.colors.danger : theme.colors.accentLight, align: "left" });
-    const keywords = (this.card.keywords ?? []).join(" · ");
-    const kind = keywords.length === 0 ? capitalize(this.card.type) : `${capitalize(this.card.type)} · ${keywords}`;
+    const keywords = this.card.keywords ?? [];
     const lead = [...(badgeInText ? [this.badgeText] : []), ...(statsInText ? [`${this.card.attack}/${this.card.health}`] : [])];
-    const subtitle = [...lead, kind].join(" · ");
+    const subtitle = [...lead, capitalize(this.card.type), ...keywords.map(capitalize)].join(" · ");
     const line = { x, y: area.y + area.height * 0.55, width, height: area.height * 0.4 };
     let offset = 0;
     if (this.rarity) {
@@ -251,7 +251,8 @@ export class CardStrip extends UiNode {
       offset = Math.min(width, context.measureText(label).width);
       drawTextInRect(context, label, { ...line, width: offset }, { font, color: rarityColor(theme, this.rarity), align: "left" });
     }
-    context.font = fontFor(theme, "tiny");
-    drawTextInRect(context, ellipsize((text) => context.measureText(text).width, subtitle, width - offset), { ...line, x: x + offset, width: width - offset }, { font: fontFor(theme, "tiny"), color: theme.colors.textMuted, align: "left" });
+    const runs = keywordRuns(subtitle, keywords);
+    const style = { font: fontFor(theme, "tiny"), keywordFont: fontFor(theme, "tiny", "bold"), color: theme.colors.textMuted, keywordColor: theme.colors.accentLight };
+    drawRuns(context, runs, { ...line, x: x + offset, width: width - offset }, style);
   }
 }
