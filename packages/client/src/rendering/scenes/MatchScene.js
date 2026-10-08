@@ -37,7 +37,8 @@
  * When the match ends, the blow that ended it plays out first, then the end
  * itself (GameOverSequence, drawn by GameOverNode over the board): the
  * fallen crystal breaks, the table darkens, the outcome comes down. Only
- * then is the result offered.
+ * then is the result offered: the two players face to face (MatchResultNode),
+ * the winner crowned, the loser's portrait cracked.
  *
  * What the board shows is heard too (MatchSoundscape): each beat's sounds
  * land with its animations, the moments over the table, the toss and the
@@ -88,6 +89,7 @@ import { HelpHeadline, HelpPointers } from "../board/HelpOverlay.js";
 import { GameOverMood, GameOverSequence } from "../board/GameOverSequence.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
+import { MatchResultNode, Standing } from "../board/MatchResultNode.js";
 import { MatchSoundscape } from "../board/MatchSoundscape.js";
 import { PickedCardNode } from "../board/PickedCardNode.js";
 import { PlayerNode, lifeCrystalCentre, resourceRects } from "../board/PlayerNode.js";
@@ -123,8 +125,9 @@ const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
 const SOUND_BUTTON = Object.freeze({ width: 84, height: 26, dialogWidth: 110 });
 /** The battle log opened from a compact board's action column, as large as the screen allows. */
 const LOG_MODAL = Object.freeze({ width: 600, height: 380, margin: 10 });
-const GAME_OVER = Object.freeze({ width: 720, height: 320 });
-const COMPACT_GAME_OVER = Object.freeze({ width: 600, height: 280 });
+/** The result dialog: its size, where the title, the duel and the buttons sit, and the room a tutorial's closing line takes. */
+const GAME_OVER = Object.freeze({ width: 800, height: 480, top: 22, title: 84, duelGap: 6, buttonHeight: 52, buttonGap: 14, foot: 22, line: 32 });
+const COMPACT_GAME_OVER = Object.freeze({ width: 700, height: 370, top: 12, title: 60, duelGap: 0, buttonHeight: 46, buttonGap: 12, foot: 14, line: 26 });
 const INSPECT = Object.freeze({ width: 448, height: 640, card: Object.freeze({ width: 380, height: 540 }) });
 /** A compact screen's inspect view: the card on the left, Close beside it. */
 const COMPACT_INSPECT = Object.freeze({ width: 420, height: 376, card: Object.freeze({ width: 244, height: 342 }), close: Object.freeze({ width: 118, height: 46 }) });
@@ -164,6 +167,8 @@ export class MatchScene extends Scene {
   /** Where the log is scrolled to, kept across rebuilds. */
   #logScroll = createLogScroll();
   #gameOverShown = false;
+  /** When the result was first offered, on the board's clock (`#elapsedMs`): its duel plays in from there. */
+  #resultSinceMs = 0;
   /** The opening coin toss being played, null once it is over (or when there was none). @type {CoinFlip | null} */
   #coinFlip = null;
   #now;
@@ -278,7 +283,7 @@ export class MatchScene extends Scene {
     const caughtUp = this.#showNextStep();
     const ending = this.#ending?.update(dtMs) ?? false;
     this.#elapsedMs += dtMs;
-    const pulsing = ["coach.focus", "help.headline", "help.pointers"].some((id) => this.root.findById(id) !== null);
+    const pulsing = ["coach.focus", "help.headline", "help.pointers", "gameOver.duel"].some((id) => this.root.findById(id) !== null);
     const changed = presented || caughtUp || ending || inputChanged || tossChanged || pulsing || this.#tickClock();
     this.#maybeShowGameOver();
     if (this.isBusy !== this.#builtBusy || this.#showsLesson !== this.#builtLesson) {
@@ -551,6 +556,7 @@ export class MatchScene extends Scene {
     }
     if (this.#ending.isDone) {
       this.#gameOverShown = true;
+      this.#resultSinceMs = this.#elapsedMs;
       this.#showGameOver(snapshot);
     }
   }
@@ -569,7 +575,7 @@ export class MatchScene extends Scene {
           const seat = [layout.me, layout.opponent].find((candidate) => candidate.id === player.id);
           return seat === undefined ? [] : [lifeCrystalCentre(seat.hud)];
         });
-    return new GameOverSequence({ mood: moodFor(snapshot, this.#viewer()), title: outcomeFor(snapshot, this.#viewer()), subtitle: reasonFor(snapshot), crystals, animation: this.services.theme.animation });
+    return new GameOverSequence({ mood: moodFor(snapshot, this.#viewer()), title: outcomeFor(snapshot, this.#viewer()), subtitle: `${finishFor(snapshot)} · Turn ${snapshot.turnNumber}`, crystals, animation: this.services.theme.animation });
   }
 
   /**
@@ -1213,7 +1219,11 @@ export class MatchScene extends Scene {
     );
   }
 
-  /** @param {Snapshot} snapshot */
+  /**
+   * The result: the outcome over the two players face to face (who won,
+   * who lost, how and when), then what to do next.
+   * @param {Snapshot} snapshot
+   */
   #showGameOver(snapshot) {
     const { viewport } = this.services;
     const size = viewport.compact ? COMPACT_GAME_OVER : GAME_OVER;
@@ -1221,18 +1231,46 @@ export class MatchScene extends Scene {
     const { panel } = modal;
     const width = size.width - 2 * PANEL_INSET;
     const victory = this.#spectating || snapshot.winnerId === this.#playerId;
-    const top = viewport.compact ? 24 : 40;
-    panel.add(new Label({ x: PANEL_INSET, y: top, width, height: 90, text: outcomeFor(snapshot, this.#viewer()), size: "title", weight: "bold", colorKey: victory ? "accentLight" : "danger", glow: true }));
+    panel.add(new Label({ id: "gameOver.title", x: PANEL_INSET, y: size.top, width, height: size.title, text: outcomeFor(snapshot, this.#viewer()), size: "title", weight: "bold", colorKey: victory || snapshot.winnerId === null ? "accentLight" : "danger", glow: true }));
+    const buttonsY = size.height - size.foot - size.buttonHeight;
     const tutorial = this.#coach !== null;
-    const subtitle = tutorial && snapshot.winnerId === this.#playerId ? "Tutorial complete: you know the basics!" : reasonFor(snapshot);
-    panel.add(new Label({ x: PANEL_INSET, y: top + 100, width, height: 30, text: subtitle, size: "body", colorKey: "textMuted", fit: true }));
-    const third = (width - 2 * 14) / 3;
-    const y = size.height - 20 - 52;
+    const line = tutorial && snapshot.winnerId === this.#playerId ? "Tutorial complete: you know the basics!" : null;
+    const duelTop = size.top + size.title + size.duelGap;
+    const duelBottom = buttonsY - size.buttonGap - (line === null ? 0 : size.line);
+    panel.add(new MatchResultNode({ id: "gameOver.duel", x: PANEL_INSET, y: duelTop, width, height: duelBottom - duelTop, result: this.#resultFor(snapshot), clock: () => this.#elapsedMs - this.#resultSinceMs }));
+    if (line !== null) {
+      panel.add(new Label({ x: PANEL_INSET, y: duelBottom, width, height: size.line, text: line, size: "body", weight: "bold", colorKey: "success", fit: true }));
+    }
+    const third = (width - 2 * size.buttonGap) / 3;
     const again = this.#spectating ? "Watch another" : "Play again";
-    panel.add(new Button({ id: "gameOver.again", x: PANEL_INSET, y, width: third, height: 52, text: tutorial ? "Practice vs AI" : again, variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
-    panel.add(new Button({ id: "gameOver.menu", x: PANEL_INSET + third + 14, y, width: third, height: 52, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
-    panel.add(new Button({ id: "gameOver.board", x: PANEL_INSET + 2 * (third + 14), y, width: third, height: 52, text: "View board", onActivate: () => this.closeModal() }));
+    panel.add(new Button({ id: "gameOver.again", x: PANEL_INSET, y: buttonsY, width: third, height: size.buttonHeight, text: tutorial ? "Practice vs AI" : again, variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
+    panel.add(new Button({ id: "gameOver.menu", x: PANEL_INSET + third + size.buttonGap, y: buttonsY, width: third, height: size.buttonHeight, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
+    panel.add(new Button({ id: "gameOver.board", x: PANEL_INSET + 2 * (third + size.buttonGap), y: buttonsY, width: third, height: size.buttonHeight, text: "View board", onActivate: () => this.closeModal() }));
     this.openModal(modal);
+  }
+
+  /**
+   * The two players as the result shows them: the viewer on the left (a
+   * spectator sees the seats as the board does), each with their portrait,
+   * name, how they came out of it and the life they ended on.
+   * @param {Snapshot} snapshot
+   * @returns {import("../board/MatchResultNode.js").MatchResult}
+   */
+  #resultFor(snapshot) {
+    const online = this.#isOnline(snapshot);
+    const order = this.#layout === null ? snapshot.players.map((player) => player.id) : [this.#layout.me.id, this.#layout.opponent.id];
+    const [left, right] = order.map((playerId) => {
+      const player = snapshot.players.find((candidate) => candidate.id === playerId);
+      const isViewer = !this.#spectating && playerId === this.#playerId;
+      return Object.freeze({
+        name: this.#displayName(snapshot, playerId),
+        account: online ? player?.name ?? null : null,
+        life: player?.life ?? 0,
+        standing: standingOf(snapshot, playerId),
+        isViewer,
+      });
+    });
+    return Object.freeze({ left, right, verdict: finishFor(snapshot).toUpperCase(), turn: snapshot.turnNumber });
   }
 
   /** @param {import("../cards/CardDetail.js").CardLike} card */
@@ -1440,14 +1478,29 @@ function moodFor(snapshot, viewer) {
   return viewer.spectating || snapshot.winnerId === viewer.playerId ? GameOverMood.TRIUMPH : GameOverMood.DEFEAT;
 }
 
-/** @param {Snapshot} snapshot */
-function reasonFor(snapshot) {
-  const reasons = {
-    [GameEndReason.LIFE_DEPLETED]: "Life reached zero.",
-    [GameEndReason.CONCEDE]: "A player conceded.",
-    [GameEndReason.DRAW]: "Both players fell at once.",
+/**
+ * How the match was settled, in a word or two: the finishing blow, as a fighting game calls it.
+ * @param {Snapshot} snapshot
+ */
+function finishFor(snapshot) {
+  const finishes = {
+    [GameEndReason.LIFE_DEPLETED]: "Knockout",
+    [GameEndReason.CONCEDE]: "Surrender",
+    [GameEndReason.DRAW]: "Double knockout",
   };
-  return reasons[snapshot.endReason ?? ""] ?? "The match ended.";
+  return finishes[snapshot.endReason ?? ""] ?? "Match over";
+}
+
+/**
+ * How a player came out of the match.
+ * @param {Snapshot} snapshot
+ * @param {string} playerId
+ */
+function standingOf(snapshot, playerId) {
+  if (snapshot.winnerId === null) {
+    return Standing.DRAW;
+  }
+  return snapshot.winnerId === playerId ? Standing.WINNER : Standing.LOSER;
 }
 
 /** @param {import("../../application/audio/AudioSettings.js").AudioSettings} settings */

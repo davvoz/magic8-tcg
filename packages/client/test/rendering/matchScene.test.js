@@ -666,7 +666,12 @@ describe("MatchScene on the board", () => {
     untilResult(scene);
     assert.ok(scene.modal, "game over modal");
     assert.ok(rendered(scene).includes("Victory"));
-    assert.ok(rendered(scene).includes("Life reached zero."));
+    scene.update(5000);
+    const result = rendered(scene);
+    for (const text of ["WINNER", "DEFEATED", "VS", "KNOCKOUT", "YOU"]) {
+      assert.ok(result.includes(text), `the result shows ${text}`);
+    }
+    assert.equal(scene.update(16), true, "the winner's rays keep turning while the result is open");
     tapNode(byId(scene, "gameOver.board"));
     assert.equal(scene.modal, null);
     assert.equal(byId(scene, "endTurn"), null, "no turn controls after the match");
@@ -703,7 +708,7 @@ describe("MatchScene on the board", () => {
       ending.draw(overlay, theme);
       cracked ||= !scene.ending.burst && scene.ending.crack > 0 && overlay.calls.some((call) => call.method === "lineTo" && within({ x: call.args[0], y: call.args[1] }));
       shattered ||= scene.ending.shards.length > 0 && scene.ending.crystals.every(within);
-      titled ||= overlay.texts.includes("Victory") && overlay.texts.includes("Life reached zero.");
+      titled ||= overlay.texts.includes("Victory") && overlay.texts.some((text) => /^Knockout · Turn \d+$/.test(text));
       return scene.modal !== null;
     }, "the result");
     assert.ok(shook, "the table shakes");

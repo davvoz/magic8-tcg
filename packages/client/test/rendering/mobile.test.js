@@ -207,6 +207,23 @@ describe("MatchScene on a phone", () => {
     assert.ok(inside(scene.modal.panel.bounds, { x: 0, y: 0, width: viewport.logicalWidth, height: viewport.logicalHeight }));
   });
 
+  it("offers the result in a dialog that fits the smallest phone, the duel and the buttons inside it", async () => {
+    const { scene, session } = await phoneMatch({ p1: {}, p2: {} }, SMALL_PHONE);
+    session.submit({ type: "CONCEDE", playerId: P1 });
+    await session.whenIdle();
+    for (let elapsed = 0; elapsed < 20000 && scene.modal?.id !== "gameOver"; elapsed += 40) {
+      scene.update(40);
+    }
+    assert.equal(scene.modal?.id, "gameOver");
+    const { viewport } = scene.services;
+    const panel = scene.modal.panel.bounds;
+    assert.ok(inside(panel, { x: 0, y: 0, width: viewport.logicalWidth, height: viewport.logicalHeight }));
+    for (const id of ["gameOver.title", "gameOver.duel", "gameOver.again", "gameOver.menu", "gameOver.board"]) {
+      assert.ok(inside(scene.modal.findById(id).bounds, panel), `${id} inside the dialog`);
+    }
+    assert.ok(scene.modal.findById("gameOver.duel").bounds.y + scene.modal.findById("gameOver.duel").bounds.height <= scene.modal.findById("gameOver.again").bounds.y, "the duel above the buttons");
+  });
+
   it("re-lays out for the new screen when a desktop window shrinks to a phone's", async () => {
     const { session } = sessionFromScenario({ p1: { hand: ["lava_brute"] }, p2: {} });
     session.start();

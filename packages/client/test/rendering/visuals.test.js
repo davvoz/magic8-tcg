@@ -16,6 +16,7 @@ import { TriggerFlare } from "../../src/rendering/board/TriggerFlare.js";
 import { TurnBanner } from "../../src/rendering/board/TurnBanner.js";
 import { GameOverNode } from "../../src/rendering/board/GameOverNode.js";
 import { GameOverMood, GameOverSequence } from "../../src/rendering/board/GameOverSequence.js";
+import { MatchResultNode, Standing } from "../../src/rendering/board/MatchResultNode.js";
 import { PlayerNode } from "../../src/rendering/board/PlayerNode.js";
 import { CardVisual } from "../../src/rendering/cards/CardVisual.js";
 import { artSeedOf, paintCardArt } from "../../src/rendering/cards/CardArt.js";
@@ -450,6 +451,58 @@ describe("game over sequence", () => {
       heavy.update(20);
     }
     assert.equal(thud, true, "a defeat lands with a thud");
+  });
+});
+
+describe("match result duel", () => {
+  const fighter = (name, standing, extra = {}) => Object.freeze({ name, account: null, life: 0, standing, isViewer: false, ...extra });
+  const duel = (result, timeMs, { width = 720, height = 260, avatars } = {}) => {
+    const node = new MatchResultNode({ width, height, result, clock: () => timeMs });
+    const context = new FakeContext2D();
+    node.draw(context, avatars === undefined ? theme : { ...theme, avatars });
+    assertBalanced(context);
+    assertFinite(context);
+    return context;
+  };
+  const won = Object.freeze({ left: fighter("@alice", Standing.WINNER, { account: "alice", life: 7, isViewer: true }), right: fighter("@bob", Standing.LOSER, { account: "bob" }), verdict: "KNOCKOUT", turn: 9 });
+
+  it("names both players under their portraits, crowns the winner and ribbons who won and who lost", () => {
+    const settled = duel(won, 5000);
+    for (const text of ["@alice", "@bob", "WINNER", "DEFEATED", "VS", "KNOCKOUT", "Turn 9", "YOU", "7", "0"]) {
+      assert.ok(settled.texts.includes(text), `shows ${text}`);
+    }
+    assert.ok(settled.calls.some((call) => call.method === "clip"), "the portraits are cut round");
+  });
+
+  it("plays in: the seats first, then the medallion, then the ribbons and the verdict", () => {
+    const start = duel(won, 0);
+    assert.ok(start.texts.includes("@alice") && start.texts.includes("@bob"), "the seats from the start");
+    assert.ok(!start.texts.includes("VS") && !start.texts.includes("WINNER") && !start.texts.includes("KNOCKOUT"), "nothing else yet");
+    assert.ok(duel(won, 400).texts.includes("VS"), "the medallion is stamped down");
+    assert.ok(!duel(won, 400).texts.includes("WINNER"), "before the ribbons land");
+  });
+
+  it("ribbons a draw alike, with no crown", () => {
+    const draw = { left: fighter("You", Standing.DRAW), right: fighter("Ember AI", Standing.DRAW), verdict: "DOUBLE KNOCKOUT", turn: 4 };
+    const texts = duel(draw, 5000).texts;
+    assert.equal(texts.filter((text) => text === "DRAW").length, 2);
+    assert.ok(!texts.includes("WINNER") && !texts.includes("DEFEATED"));
+  });
+
+  it("asks for the profile pictures of STEEM accounts only, never for a seat without one", () => {
+    const asked = [];
+    const avatars = { imageFor: (account) => (asked.push(account), null) };
+    duel(won, 5000, { avatars });
+    assert.deepEqual([...new Set(asked)].sort(), ["alice", "bob"]);
+    asked.length = 0;
+    duel({ ...won, left: fighter("You", Standing.WINNER), right: fighter("Ember AI", Standing.LOSER) }, 5000, { avatars });
+    assert.deepEqual(asked, [], "the local AI has no picture to fetch");
+  });
+
+  it("is drawn smaller, all alike, in a phone's dialog", () => {
+    const context = duel(won, 5000, { width: 632, height: 190 });
+    const scale = context.calls.find((call) => call.method === "scale");
+    assert.ok(scale !== undefined && scale.args[0] < 1 && scale.args[0] === scale.args[1]);
   });
 });
 

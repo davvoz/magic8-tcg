@@ -14,12 +14,13 @@ const FALLBACK_TONES = Object.freeze(["#7a3b2e", "#2e5a7a", "#4a6b2e", "#6b2e6b"
 /**
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").Theme} theme
- * @param {{ account: string, center: { x: number, y: number }, radius: number }} portrait
+ * @param {{ account: string, center: { x: number, y: number }, radius: number, picture?: boolean }} portrait
+ *   `picture`: false for a seat with no STEEM account (the local AI): only its initial is drawn, and no picture is fetched
  */
-export function drawAvatar(context, theme, { account, center, radius }) {
+export function drawAvatar(context, theme, { account, center, radius, picture = true }) {
   const { colors } = theme;
   const area = { x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2 };
-  const image = theme.avatars?.imageFor(account) ?? null;
+  const image = picture ? theme.avatars?.imageFor(account) ?? null : null;
   context.save();
   context.beginPath();
   context.arc(center.x, center.y, radius, 0, Math.PI * 2);
