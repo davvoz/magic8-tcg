@@ -57,10 +57,20 @@
  * task names glows and answers a tap. Rings and arrows point at what the
  * coach talks about (CoachCard).
  * Leaving it is not conceding: the player just goes back to the menu.
+ *
+ * Any other match the player plays has the help (HelpSettings), unless they
+ * turned it off: the "?" in the banner's left margin (or H) turns it off and
+ * on again. While it is on and the player has a move to make, it shouts
+ * rather than explains (HelpOverlay): a two-word headline over the table
+ * ("ATTACK!"), and on every card, portrait or button that can be used now a
+ * pulsing ring, a bouncing arrow and a one-word label of what it does
+ * ("BLOCK", "CLICK!"), in the colour of the move (matchHelp). Unlike the
+ * tutorial it allows everything and never holds the board.
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
 import { ControllerKind } from "../../application/match/PlayerController.contract.js";
+import { helpFor } from "../../application/help/matchHelp.js";
 import { TutorialCoach } from "../../application/tutorial/TutorialCoach.js";
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
 import { KeyMap, isKey } from "../../input/KeyMap.js";
@@ -74,6 +84,7 @@ import { CoinFlip } from "../board/CoinFlip.js";
 import { CoinTossNode } from "../board/CoinTossNode.js";
 import { EffectsNode } from "../board/EffectsNode.js";
 import { GameOverNode } from "../board/GameOverNode.js";
+import { HelpHeadline, HelpPointers } from "../board/HelpOverlay.js";
 import { GameOverMood, GameOverSequence } from "../board/GameOverSequence.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
@@ -119,6 +130,8 @@ const INSPECT = Object.freeze({ width: 448, height: 640, card: Object.freeze({ w
 const COMPACT_INSPECT = Object.freeze({ width: 420, height: 376, card: Object.freeze({ width: 244, height: 342 }), close: Object.freeze({ width: 118, height: 46 }) });
 /** Marks that invite a tap, dropped while moves are held back. @type {ReadonlySet<string>} */
 const INVITING = new Set([Highlight.PLAYABLE, Highlight.TARGETABLE]);
+/** How far the help's headline keeps from the help button and the clock either side of it. */
+const HELP_GAP = 6;
 
 /**
  * @typedef {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} Snapshot
@@ -178,18 +191,23 @@ export class MatchScene extends Scene {
   #builtLesson = false;
   /** Time on the board, for the coach's pulsing ring. */
   #elapsedMs = 0;
+  /** Whether the match help is on, when the game has it. @type {import("../../application/help/HelpSettings.js").HelpSettings | undefined} */
+  #help;
+  /** @type {(() => void) | null} */
+  #unsubscribeHelp = null;
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
    * @param {import("./Scene.js").SceneServices} services
-   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"] }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
-   *   `audio`: the sound settings (AudioService), opened from the battle log
+   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"], help?: import("../../application/help/HelpSettings.js").HelpSettings }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
+   *   `audio`: the sound settings (AudioService), opened from the battle log; `help`: whether the match help is on
    */
-  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio } = {}) {
+  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio, help } = {}) {
     super(services);
     this.#rarityOf = rarityOf;
     this.#now = now;
     this.#audio = audio;
+    this.#help = help;
     this.#presenter = new MatchPresenter(services.theme.animation);
   }
 
@@ -227,6 +245,7 @@ export class MatchScene extends Scene {
       }
       this.services.requestRender();
     }) ?? null;
+    this.#unsubscribeHelp = this.#help?.subscribe(() => this.#rebuild()) ?? null;
     this.#taken = session.snapshotFor(this.#playerId);
     this.#show({ snapshot: this.#taken, events: [], chained: false }, false);
     if (this.#coinFlip === null) {
@@ -239,6 +258,8 @@ export class MatchScene extends Scene {
     this.#unsubscribe = null;
     this.#unsubscribeAudio?.();
     this.#unsubscribeAudio = null;
+    this.#unsubscribeHelp?.();
+    this.#unsubscribeHelp = null;
     this.#coinFlip = null;
   }
 
@@ -257,7 +278,7 @@ export class MatchScene extends Scene {
     const caughtUp = this.#showNextStep();
     const ending = this.#ending?.update(dtMs) ?? false;
     this.#elapsedMs += dtMs;
-    const pulsing = this.root.findById("coach.focus") !== null;
+    const pulsing = ["coach.focus", "help.headline", "help.pointers"].some((id) => this.root.findById(id) !== null);
     const changed = presented || caughtUp || ending || inputChanged || tossChanged || pulsing || this.#tickClock();
     this.#maybeShowGameOver();
     if (this.isBusy !== this.#builtBusy || this.#showsLesson !== this.#builtLesson) {
@@ -380,12 +401,27 @@ export class MatchScene extends Scene {
     if (this.isTossing) {
       return;
     }
-    if (input.type === "keydown" && isKey(input.key, KeyMap.END_TURN) && this.modal === null && !this.isBusy && this.#snapshot?.legalMoves?.canEndTurn === true && this.#coachAllows("endTurn")) {
+    if (input.type !== "keydown" || this.modal !== null || !this.#onShortcut(input.key)) {
+      super.onKey(input);
+    }
+  }
+
+  /**
+   * The board's own keys: E ends the turn, H turns the help off and on.
+   * @param {string} key
+   * @returns {boolean} whether the key was the board's
+   */
+  #onShortcut(key) {
+    if (isKey(key, KeyMap.END_TURN) && !this.isBusy && this.#snapshot?.legalMoves?.canEndTurn === true && this.#coachAllows("endTurn")) {
       this.#soundscape?.endedTurn();
       this.#submit(endTurn(this.#playerId));
-      return;
+      return true;
     }
-    super.onKey(input);
+    if (isKey(key, KeyMap.HELP) && this.#offersHelp) {
+      this.#help?.toggle();
+      return true;
+    }
+    return false;
   }
 
   /** The board re-fits to the new screen: cards snap to their new places, an open modal stays open. */
@@ -596,9 +632,12 @@ export class MatchScene extends Scene {
     this.#buildPlayers(snapshot, layout, interaction);
     this.#buildCards(snapshot, layout, interaction);
     this.#buildPicked(snapshot, layout, interaction);
+    // Under what the board announces ("Your turn", a cast): the help waits its turn to be read.
+    this.#buildHelpHeadline(snapshot, layout);
     this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction), turnLabel: (playerId) => this.#turnLabel(snapshot, playerId) }));
     this.#buildSidebar(snapshot, layout, interaction);
     this.#buildLog(layout);
+    this.#buildHelpPointers(snapshot, layout, interaction);
     this.#buildCoach(snapshot, layout, interaction);
     this.#buildCoinToss(snapshot);
     this.#buildEnding(layout);
@@ -632,8 +671,8 @@ export class MatchScene extends Scene {
     if (this.isTossing) {
       return new BoardNode({ layout, banner: TOSS_BANNER, activePlayerId: null });
     }
-    // The tutorial's line takes the banner's place (turn and phase stay in the side panel).
-    const banner = this.#coachLine() === null ? bannerFor(snapshot, this.#viewer()) : "";
+    // The tutorial's line, or the help's headline, takes the banner's place (turn and phase stay in the side panel).
+    const banner = this.#coachLine() === null && this.#helpHeadline(snapshot) === null ? bannerFor(snapshot, this.#viewer()) : "";
     return new BoardNode({ layout, banner, activePlayerId: activeSeatFor(snapshot) });
   }
 
@@ -836,6 +875,115 @@ export class MatchScene extends Scene {
     if (line !== null) {
       this.root.add(new CoachHint({ text: line, layout }));
     }
+  }
+
+  /** Whether this board offers the help: to a player (not a spectator), outside the tutorial, in a game that has it. */
+  get #offersHelp() {
+    return this.#help !== undefined && this.#coach === null && !this.#spectating;
+  }
+
+  /**
+   * What the help shouts now, if it is on and the player has a move to make; null otherwise.
+   * @param {Snapshot} snapshot
+   */
+  #helpNow(snapshot) {
+    const interaction = this.#interaction;
+    if (!this.#offersHelp || this.#help?.enabled !== true || interaction === null || this.isTossing || this.isEnding) {
+      return null;
+    }
+    return helpFor({ snapshot, playerId: this.#playerId, intent: coachIntent(interaction) });
+  }
+
+  /**
+   * The help's headline, if one is shown over the table: not while a card is
+   * held up to be read (it covers the middle of the table).
+   * @param {Snapshot} snapshot
+   */
+  #helpHeadline(snapshot) {
+    return this.#interaction?.pickedCardId === null ? this.#helpNow(snapshot) : null;
+  }
+
+  /**
+   * The help's button in the banner's left margin and, while it is on, its
+   * headline over the middle of the table, clear of the button and of the clock.
+   * @param {Snapshot} snapshot
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   */
+  #buildHelpHeadline(snapshot, layout) {
+    const settings = this.#help;
+    if (!this.#offersHelp || settings === undefined) {
+      return;
+    }
+    this.root.add(new Button({ id: "help", ...layout.help, text: "?", textSize: layout.compact ? "small" : "body", variant: settings.enabled ? "primary" : "secondary", enabled: !this.isTossing, onActivate: () => settings.toggle() }));
+    const help = this.#helpHeadline(snapshot);
+    if (help !== null) {
+      const { banner, clock } = layout;
+      const side = Math.max(layout.help.x + layout.help.width - banner.x, banner.x + banner.width - clock.x) + HELP_GAP;
+      const area = { x: banner.x + side, y: banner.y, width: banner.width - 2 * side, height: banner.height };
+      this.root.add(new HelpHeadline({ text: help.headline, tone: help.tone, area, compact: layout.compact, clock: () => this.#elapsedMs }));
+    }
+  }
+
+  /**
+   * While the help is on and the board has played out what happened, a ring,
+   * a bouncing arrow and a label on everything that can be used now: the
+   * cards and portraits that answer a tap (labelled with what the tap does),
+   * and every side panel button that can be pressed (labelled with what it does).
+   * @param {Snapshot} snapshot
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   * @param {MatchInteraction} interaction
+   */
+  #buildHelpPointers(snapshot, layout, interaction) {
+    const help = this.#helpNow(snapshot);
+    if (help === null || this.isBusy) {
+      return;
+    }
+    // A card held up to be read covers the table: only the buttons are pointed at then.
+    const tappable = interaction.pickedCardId === null ? this.#tappablePointers(snapshot, layout, interaction, help.marks) : [];
+    // Every button that can be pressed now: the help says what each does.
+    const buttons = help.buttons.flatMap(({ id, label, primary }) => {
+      const node = this.root.findById(id);
+      return node instanceof Button && node.isEffectivelyEnabled ? [{ area: node.bounds, label, from: /** @type {const} */ ("left"), primary }] : [];
+    });
+    const pointers = [...tappable, ...buttons];
+    if (pointers.length > 0) {
+      this.root.add(new HelpPointers({ pointers, tone: help.tone, bounds: layout, compact: layout.compact, clock: () => this.#elapsedMs }));
+    }
+  }
+
+  /**
+   * The cards and portraits that answer a tap now, each with the label of
+   * what the tap does: the arrows come at the portraits from the table, at
+   * the player's creatures from below (the side of their hand), at the rest from above.
+   * @param {Snapshot} snapshot
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   * @param {MatchInteraction} interaction
+   * @param {import("../../application/help/matchHelp.js").MatchHelp["marks"]} marks
+   * @returns {import("../board/HelpOverlay.js").Pointer[]}
+   */
+  #tappablePointers(snapshot, layout, interaction, marks) {
+    const labelFor = (/** @type {string} */ id) => {
+      const highlight = this.#highlightFor(interaction, id);
+      if (highlight === Highlight.PLAYABLE) {
+        return marks.playable;
+      }
+      return highlight === Highlight.TARGETABLE ? marks.targetable : null;
+    };
+    const mine = new Set(snapshot.players.find((player) => player.id === layout.me.id)?.battlefield.map((card) => card.instanceId) ?? []);
+    const pointers = [];
+    for (const seat of [layout.opponent, layout.me]) {
+      const label = labelFor(seat.id);
+      if (label !== null) {
+        pointers.push({ area: seat.hud, label, from: /** @type {const} */ ("right") });
+      }
+    }
+    for (const [id, area] of Object.entries(layout.cards)) {
+      const label = labelFor(id);
+      if (label !== null) {
+        pointers.push({ area, label, from: mine.has(id) ? /** @type {const} */ ("below") : /** @type {const} */ ("above") });
+      }
+    }
+    return pointers;
   }
 
   /**

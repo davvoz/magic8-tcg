@@ -101,10 +101,11 @@ const COMPACT = Object.freeze({
  *   x: number, y: number, width: number, height: number,
  *   compact: boolean,
  *   me: SeatLayout, opponent: SeatLayout,
- *   banner: Rect, clock: Rect, sidebar: Rect, log: Rect | null,
+ *   banner: Rect, clock: Rect, help: Rect, sidebar: Rect, log: Rect | null,
  *   cards: Readonly<Record<string, Rect>>,
  *   sizes: BoardMetrics["sizes"], face: string,
  * }>} BoardLayout `x`…`height`: the area the board fills; `clock`: where the decision clock docks, in the banner's unused right margin;
+ *   `help`: where the button turning the match help on and off sits, in its left margin, the clock's mirror;
  *   `log`: the battle-log panel, null on a compact board; `sizes`: the cards' sizes on this board, and of a card held up to be read (`reveal`);
  *   `face`: the BoardFace its cards are drawn with
  */
@@ -139,6 +140,7 @@ export function computeBoardLayout(snapshot, perspectiveId, { x, y, width, heigh
   const bannerInset = banner.width * BANNER_INSET_FRACTION;
   const clockSize = metrics.clockSize;
   const clock = rect(Math.round(banner.x + banner.width - bannerInset / 2 - clockSize / 2), Math.round(banner.y + banner.height / 2 - clockSize / 2), clockSize, clockSize);
+  const help = rect(Math.round(banner.x + bannerInset / 2 - clockSize / 2), clock.y, clockSize, clockSize);
   const myField = rect(centerX, banner.y + banner.height + metrics.bannerGap, centerWidth, fieldHeight);
 
   /** @type {Record<string, Rect>} */
@@ -163,6 +165,7 @@ export function computeBoardLayout(snapshot, perspectiveId, { x, y, width, heigh
     me: Object.freeze({ id: me.id, hud: rect(left + margin, bottom - margin - hudHeight, sideWidth, hudHeight), hand: myHand, battlefield: myField, handSlots: Object.freeze(myBacks) }),
     banner,
     clock,
+    help,
     sidebar,
     log,
     cards: Object.freeze(cards),

@@ -125,6 +125,7 @@ function mechanics({ gameRules: rules, deckRules: deck }) {
     bullet("\"Cancel\" undoes the choice you are making."),
     bullet("\"End phase\" moves on to the next phase. \"End turn\" (or the E key) ends your whole turn."),
     bullet("\"Concede\" gives up the game. The Battle log beside the board lists everything that happened."),
+    bullet("Help: while it is on, the middle of the table tells you your move (\"ATTACK!\") and arrows point at every card and button you can use. The \"?\" left of the banner (or the H key) turns it off and on."),
 
     heading("Online games: time limits"),
     bullet("You have 90 seconds per turn, plus a 90-second reserve for the whole game. You have 60 seconds to choose your blocks."),

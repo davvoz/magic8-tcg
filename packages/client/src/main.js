@@ -8,6 +8,7 @@
  */
 import { ContentResource } from "./application/ports/ContentSource.contract.js";
 import { AudioService } from "./application/audio/AudioService.js";
+import { HelpSettings } from "./application/help/HelpSettings.js";
 import { MusicTrack, SoundCue } from "./application/audio/SoundCue.js";
 import { AccountService, AccountStatus } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
@@ -42,6 +43,7 @@ import { WebAudioOutput } from "./infrastructure/audio/WebAudioOutput.js";
 import { createBrowserAudioContext, followVisibility, unlockOnGesture } from "./infrastructure/audio/browserAudio.js";
 import { createCoreSoundBank } from "./infrastructure/audio/registerCorePatches.js";
 import { StoredAudioPreferences } from "./infrastructure/persistence/StoredAudioPreferences.js";
+import { StoredHelpPreferences } from "./infrastructure/persistence/StoredHelpPreferences.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
@@ -449,6 +451,7 @@ async function boot() {
     logger.warn("local storage unavailable; decks will not persist");
   }
   const audio = buildAudio(localStore, storageAvailable);
+  const help = buildHelp(localStore, storageAvailable);
   const browserDecks = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
   // Signed in, decks live in the account (only owned cards); otherwise in this browser.
   const collectionApi = new HttpCollectionApi({ fetch: httpFetch });
@@ -551,6 +554,7 @@ async function boot() {
     sales,
     notifications,
     audio,
+    help,
     ...rarities,
   });
 
@@ -640,6 +644,16 @@ function buildLocalKeys(localStore, storageAvailable, httpFetch) {
     prompt: activeKeys,
   });
   return { activeKeys, keys, signIns: new StoredSignIn({ store }) };
+}
+
+/**
+ * The match help: on until the player turns it off, remembered in `store`.
+ * @param {LocalStorageStore} localStore
+ * @param {boolean} storageAvailable without it, the choice lasts only as long as the page
+ */
+function buildHelp(localStore, storageAvailable) {
+  const store = storageAvailable ? localStore : new InMemoryStore();
+  return new HelpSettings({ preferences: new StoredHelpPreferences({ store, logger }) });
 }
 
 /**

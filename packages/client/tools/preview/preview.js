@@ -13,6 +13,7 @@
  *   /tools/preview/?scene=match&turns=6      a match after N auto-played turns (seeded)
  *   /tools/preview/?scene=match&deck=precon_shadow   playing that deck (default: the first playable one)
  *   /tools/preview/?scene=match&inspect=1    plus the inspect overlay on a hand card
+ *   /tools/preview/?scene=match&help=0       with the match help off (it is on, as for a new player)
  *   /tools/preview/?scene=info&topic=ranked  the Info screen on a topic (default: how to play)
  *   /tools/preview/?scene=tutorial&next=5    the tutorial, after N clicks as the coach asks (Next, or what it points at)
  *   ...&art=procedural                       every card and the table with procedural art, ignoring data/art/
@@ -30,6 +31,7 @@ import { DeckBuildingService } from "../../src/application/decks/DeckBuildingSer
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
 import { BasicAiController } from "../../src/application/match/BasicAiController.js";
 import { TutorialService } from "../../src/application/tutorial/TutorialService.js";
+import { HelpSettings } from "../../src/application/help/HelpSettings.js";
 import { humanController } from "../../src/application/match/HumanController.js";
 import { MatchSetupService } from "../../src/application/match/MatchSetupService.js";
 import { declareAttackers, declareBlockers, endTurn, playCard } from "@magic8/engine/domain/commands/commandFactories.js";
@@ -82,9 +84,10 @@ const logger = new ConsoleLogger();
 
 /**
  * @param {import("../../src/application/content/ContentService.js").GameContent} content
+ * @param {boolean} help whether the match help is on
  * @returns {import("../../src/application/AppContext.js").AppContext}
  */
-function buildApp(content) {
+function buildApp(content, help) {
   const repository = new StoredDeckRepository({ store: new InMemoryStore(), logger });
   const matchSetup = new MatchSetupService({ content, effects: createCoreEffectRegistry(), scheduler: immediateScheduler, logger });
   return Object.freeze({
@@ -96,6 +99,7 @@ function buildApp(content) {
     createSeed: () => SEED,
     logger,
     environment: Object.freeze({ version: "preview", storage: "memory" }),
+    help: new HelpSettings({ preferences: { load: () => ({ enabled: help }), save: () => undefined } }),
   });
 }
 
@@ -354,6 +358,7 @@ async function boot() {
     topic: query.get("topic"),
     next: countParam(query, "next", 0),
     procedural: query.get("art") === "procedural",
+    help: query.get("help") !== "0",
   };
   const source = new FetchContentSource(MANIFEST, (url, init) => fetch(url, init));
   const [rawTheme, content, rawIllustrations] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("illustrations")]);
@@ -364,7 +369,7 @@ async function boot() {
   if (!theme.ok) {
     throw new Error(theme.error.message);
   }
-  const app = request.scene === "starter" ? Object.freeze({ ...buildApp(content.value), account: /** @type {any} */ (await starterAccount(content.value)) }) : buildApp(content.value);
+  const app = request.scene === "starter" ? Object.freeze({ ...buildApp(content.value, request.help), account: /** @type {any} */ (await starterAccount(content.value)) }) : buildApp(content.value, request.help);
   const illustrations = await loadIllustrations(request.procedural || !rawIllustrations.ok ? null : rawIllustrations.value, content.value.catalog);
   const tableArt = request.procedural ? undefined : await loadTableArt();
   // The title face too, so the menu's name is never caught in the fallback one.

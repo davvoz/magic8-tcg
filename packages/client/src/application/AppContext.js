@@ -27,6 +27,7 @@
  * @property {import("./notifications/NotificationService.js").NotificationService} [notifications] the player's notification feed; absent with `identity`
  * @property {import("./content/CardRarities.js").CardRarities} [rarities] how rare each card is; absent when the rarities file could not be read
  * @property {import("./audio/AudioService.js").AudioService} [audio] the game's sound and its settings; absent in tools and previews
+ * @property {import("./help/HelpSettings.js").HelpSettings} [help] whether the match help is on; absent in tools and previews
  */
 
 export const APP_CONTEXT_KEYS = Object.freeze(["content", "deckSelection", "deckBuilding", "matchSetup", "createSeed", "logger", "environment"]);

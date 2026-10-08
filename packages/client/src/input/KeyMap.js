@@ -7,6 +7,8 @@ export const KeyMap = Object.freeze({
   END_TURN: Object.freeze(["e", "E"]),
   /** Secondary action on the focused node (card inspect); same as right-click / long-press. */
   INSPECT: Object.freeze(["i", "I"]),
+  /** The match help off and on again, on the board. */
+  HELP: Object.freeze(["h", "H"]),
   /** Sound off and on again, on any screen. */
   MUTE: Object.freeze(["m", "M"]),
 });
