@@ -120,6 +120,10 @@ describe("OnlineScene with ranked entries", () => {
   it("shows from the start what a ranked game costs in STEEM, that it goes into the jackpot, and how many entries the player has", async () => {
     const { scene, requests } = await harness({ ranked: { balance: 3, perGame: 1 }, shop: true });
     assert.equal(byId(scene, "online.entries").text, "A ranked game costs 1.000 STEEM, and every entry goes into the season's jackpot: you have 3 ranked entries.");
+    const tickets = byId(scene, "online.tickets");
+    assert.equal(tickets.count, 3, "the tickets held, as a stack");
+    assert.equal(tickets.face, "1.000 STEEM", "printed with what an entry costs");
+    assert.ok(rendered(scene).includes("×3"), "sealed with the count");
     assert.equal(byId(scene, "online.mode.ranked").text, "Ranked · 1.000 STEEM");
     assert.equal(byId(scene, "online.find").text, "Find a match", "casual is free");
     byId(scene, "online.mode.ranked").activate();
@@ -132,6 +136,7 @@ describe("OnlineScene with ranked entries", () => {
   it("offers to get ranked entries in the shop instead of a search the server would refuse", async () => {
     const { scene, navigated, requests } = await harness({ ranked: { balance: 0, perGame: 1 } });
     assert.match(byId(scene, "online.entries").text, /you have no ranked entries yet\.$/);
+    assert.equal(byId(scene, "online.tickets").count, 0, "a faded ticket sealed at 0");
     assert.ok(byId(scene, "online.find"), "casual needs no entries");
     byId(scene, "online.mode.ranked").activate();
     assert.equal(byId(scene, "online.find"), null);
@@ -151,6 +156,7 @@ describe("OnlineScene with ranked entries", () => {
   it("says nothing of entries while ranked play is free", async () => {
     const { scene } = await harness({ ranked: { balance: 0, perGame: 0 } });
     assert.equal(byId(scene, "online.entries"), null);
+    assert.equal(byId(scene, "online.tickets"), null);
     byId(scene, "online.mode.ranked").activate();
     assert.ok(byId(scene, "online.find"));
   });

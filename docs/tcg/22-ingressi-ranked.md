@@ -19,12 +19,16 @@ Ai giocatori diciamo solo che **gli ingressi finiscono nel jackpot**, senza spie
 
 | Dove | Cosa |
 |---|---|
-| Lobby online, da subito | il pulsante della modalità è *Ranked · 1.000 STEEM*, e in Ranked la ricerca è *Find a match · 1.000 STEEM* (il prezzo viene dal listino dello shop). Sotto il rating, anche prima che il giocatore possa giocare ranked: *A ranked game costs 1.000 STEEM, and every entry goes into the season's jackpot: you have 3 ranked entries.* In rosso quando non ne ha. |
+| Lobby online, da subito | il pulsante della modalità è *Ranked · 1.000 STEEM*, e in Ranked la ricerca è *Find a match · 1.000 STEEM* (il prezzo viene dal listino dello shop). Sotto il rating, anche prima che il giocatore possa giocare ranked, i suoi **biglietti** (vedi sotto) e accanto *A ranked game costs 1.000 STEEM, and every entry goes into the season's jackpot: you have 3 ranked entries.* In rosso quando non ne ha. Sul telefono accanto ai biglietti c'è solo *Every entry goes into the season's jackpot.*: quanti ne ha lo dice il sigillo. |
 | Lobby, modalità Ranked senza ingressi | al posto di *Find a match* c'è **Get ranked entries**, che apre lo shop sullo scaffale Ranked (*Back* torna alla lobby) |
 | Sfide ranked | il pulsante è *Ranked game · 1.000 STEEM*; *Ranked game* e *Accept* sono disattivati senza ingressi, e il dialogo spiega perché |
-| Shop, scaffale **Ranked** | *1 ranked game · 1.000 STEEM · into the jackpot*; nel dettaglio *Every entry goes into the season's jackpot.*, quanti ingressi ha il giocatore, quantità fino a 50 per ordine |
+| Shop, scaffale **Ranked** | *1 ranked game · 1.000 STEEM · into the jackpot*; nel dettaglio *Every entry goes into the season's jackpot.*, quanti ingressi ha il giocatore, quantità fino a 50 per ordine. Sotto, i biglietti del giocatore e quanti ne aggiunge l'ordine (*+5 ranked entries*, *You will hold 7 after this order.*); sul telefono i biglietti stanno accanto alle righe |
 | Dopo l'acquisto | *Done: 5 ranked entries are yours, and in the season's jackpot.* (niente rivelazione di carte) e la notifica *Your ranked entries are ready*, che porta alla lobby |
 | Pannello del jackpot | *grows with every pack sold and every ranked game* |
+
+### I biglietti
+
+Ogni ingresso è disegnato come un **biglietto di carta invecchiata** (`rendering/scenes/entries/EntryTickets.js`): oro del tema, cornice doppia stampata, *ADMIT ONE · RANKED*, il prezzo di un ingresso, la matrice da strappare con un **sigillo d'oro** che dice quanti ne ha il giocatore (*×3*) e il timbro *JACKPOT*. Più ne ha, più biglietti spuntano dietro (fino a tre). Senza ingressi resta il contorno tratteggiato in rosso, sigillo a *0*. L'usura (bordi bruniti, alone di caffè, macchie, piega) è generata da un seme, quindi sempre uguale per lo stesso biglietto. Solo disegno: nessuna logica nuova, i numeri vengono da `EntryService`.
 
 ## Come funziona
 

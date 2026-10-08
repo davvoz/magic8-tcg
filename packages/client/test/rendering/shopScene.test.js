@@ -229,9 +229,13 @@ describe("ShopScene", () => {
     assert.ok(texts.includes("Every entry goes into the season's jackpot."));
     assert.ok(texts.includes("Every ranked game takes one entry from each player."));
     assert.ok(texts.includes("You have 2 ranked entries."));
+    assert.equal(byId(scene, "shop.tickets").count, 2, "the tickets held, as a stack");
+    assert.equal(byId(scene, "shop.tickets.added").text, "+1 ranked entry");
     for (let more = 0; more < 4; more += 1) {
       click(byId(scene, "shop.more"));
     }
+    assert.equal(byId(scene, "shop.tickets.added").text, "+5 ranked entries");
+    assert.equal(byId(scene, "shop.tickets.after").text, "You will hold 7 after this order.");
     assert.equal(byId(scene, "shop.buy").text, "Buy for 5.000 STEEM");
     click(byId(scene, "shop.buy"));
     await settle();

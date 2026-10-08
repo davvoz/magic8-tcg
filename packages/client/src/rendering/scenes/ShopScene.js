@@ -6,8 +6,9 @@
  *   Singles  every card, priced by its rarity; filterable by faction,
  *            rarity and type
  *
- * (plus Ranked, the entries ranked games take, and Offers, only when the
- * server sells them). On the right,
+ * (plus Ranked, the entries ranked games take, drawn as the stack of old
+ * tickets the player holds, and Offers, only when the server sells them).
+ * On the right,
  * the selected item: a pack's odds, a deck's card-by-card price, a card at
  * full size with the price list by rarity; then the
  * quantity, Buy and Add to cart. The cart (header) lists what was added from
@@ -52,10 +53,13 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { Scene } from "./Scene.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
+import { EntryTickets } from "./entries/EntryTickets.js";
 import { SceneId } from "./sceneIds.js";
 import { approveTransferText, transferPreviewText } from "./walletText.js";
 
 const LIST_ID = "shop.list";
+/** A ranked product's tickets: how tall, wide and compact, the least worth drawing, and the gap around them. */
+const TICKETS = Object.freeze({ wide: 170, compact: 80, least: 40, gap: 20 });
 /** A rare card received: which rarities count (the top ones), how long after the chime its sweep comes, and how loud it is for the very rarest (a step softer for each rarity below). */
 const RARE_REVEAL = Object.freeze({ topRarities: 3, delayMs: 650, gain: 1.15, step: 0.2 });
 /**
@@ -550,7 +554,12 @@ export class ShopScene extends Scene {
     if (deck !== undefined) {
       this.#buildDeckContents(panel, product, deck, shelves.singles);
     } else {
-      this.#buildContentLines(panel, [...this.#contentLines(product), ...this.#oddsLines(product)]);
+      const lines = [...this.#contentLines(product), ...this.#oddsLines(product)];
+      const tickets = rankedEntriesOf(product) > 0 ? this.#ticketsArea(lines.length) : null;
+      this.#buildContentLines(panel, lines, this.#screen.compact && tickets !== null ? tickets.width + TICKETS.gap : 0);
+      if (tickets !== null) {
+        this.#buildTickets(panel, product, tickets);
+      }
     }
     return this.#buildPurchase(panel, product);
   }
@@ -559,17 +568,58 @@ export class ShopScene extends Scene {
    * What a pack or an offer holds and its odds, line by line; scrolling on a compact screen, where they may not fit above the purchase.
    * @param {Panel} panel
    * @param {{ text: string, colorKey: string }[]} lines
+   * @param {number} [reserve] the width kept free on their right (a compact screen's tickets)
    */
-  #buildContentLines(panel, lines) {
+  #buildContentLines(panel, lines, reserve = 0) {
     const { line: LINE, top } = this.#m;
-    const parent = this.#screen.compact ? panel.add(new ScrollList({ id: "shop.contents", x: this.#screen.inset, y: top.content, width: this.#detailWidth, height: this.#purchaseTop - 6 - top.content })) : panel;
+    const parent = this.#screen.compact ? panel.add(new ScrollList({ id: "shop.contents", x: this.#screen.inset, y: top.content, width: this.#detailWidth - reserve, height: this.#purchaseTop - 6 - top.content })) : panel;
     const x = this.#screen.compact ? 0 : this.#screen.inset;
     const y = this.#screen.compact ? 0 : top.content;
-    const width = parent instanceof ScrollList ? parent.rowWidth : this.#detailWidth;
+    const width = parent instanceof ScrollList ? parent.rowWidth : this.#detailWidth - reserve;
     lines.forEach((line, index) => parent.add(new Label({ x, y: y + index * LINE, width, height: LINE, text: line.text, size: "small", align: "left", colorKey: line.colorKey, fit: true })));
     if (parent instanceof ScrollList) {
       parent.contentHeight = lines.length * LINE;
     }
+  }
+
+  /**
+   * Where a ranked product's tickets go: under its lines on a wide screen, beside them on a compact one; null when there is no room.
+   * @param {number} lineCount
+   * @returns {{ x: number, y: number, width: number, height: number } | null}
+   */
+  #ticketsArea(lineCount) {
+    const { line, top } = this.#m;
+    if (this.#screen.compact) {
+      const height = Math.min(TICKETS.compact, this.#purchaseTop - 6 - top.content);
+      const width = EntryTickets.widthFor(height);
+      return height < TICKETS.least ? null : { x: this.#screen.inset + this.#detailWidth - width, y: top.content, width, height };
+    }
+    const y = top.content + lineCount * line + TICKETS.gap;
+    const height = Math.min(TICKETS.wide, this.#purchaseTop - TICKETS.gap - y);
+    return height < TICKETS.least ? null : { x: this.#screen.inset, y, width: EntryTickets.widthFor(height), height };
+  }
+
+  /**
+   * The ranked tickets the player holds, and (wide) how many this order adds.
+   * @param {Panel} panel
+   * @param {Product} product
+   * @param {{ x: number, y: number, width: number, height: number }} area
+   */
+  #buildTickets(panel, product, area) {
+    const held = this.#app.entries?.ranked?.balance ?? null;
+    const price = priceOf(product);
+    const face = price === undefined ? null : `${price.amount} ${price.asset}`;
+    panel.add(new EntryTickets({ id: "shop.tickets", ...area, count: held, title: "Ranked", face: rankedEntriesOf(product) === 1 ? face : null, seed: `shop:${product.id}` }));
+    if (this.#screen.compact) {
+      return;
+    }
+    const added = rankedEntriesOf(product) * this.#quantity;
+    const x = area.x + area.width + TICKETS.gap;
+    const width = this.#detailWidth - (x - this.#screen.inset);
+    const middle = area.y + area.height / 2;
+    panel.add(new Label({ id: "shop.tickets.added", x, y: middle - 44, width, height: 44, text: `+${rankedEntriesText(added)}`, size: "heading", weight: "bold", colorKey: "success", align: "left", fit: true }));
+    const after = held === null ? "with this order" : `You will hold ${held + added} after this order.`;
+    panel.add(new Label({ id: "shop.tickets.after", x, y: middle + 4, width, height: this.#m.line, text: after, size: "small", colorKey: "textMuted", align: "left", fit: true }));
   }
 
   /**

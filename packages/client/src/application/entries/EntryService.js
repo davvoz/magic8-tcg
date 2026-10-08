@@ -105,6 +105,15 @@ export function entriesText(ranked, price = null) {
   return `A ranked game costs ${fee}, and every entry goes into the season's jackpot: ${held}.`;
 }
 
+/**
+ * What the lobby says beside the tickets on a small screen, where the tickets alone say how many the player holds;
+ * null when ranked play is free (or not known yet).
+ * @param {Entries | null} ranked
+ */
+export function entriesNoteText(ranked) {
+  return ranked === null || ranked.perGame === 0 ? null : "Every entry goes into the season's jackpot.";
+}
+
 /** "entry" or "entries" @param {number} count */
 const entryWord = (count) => (count === 1 ? "entry" : "entries");
 

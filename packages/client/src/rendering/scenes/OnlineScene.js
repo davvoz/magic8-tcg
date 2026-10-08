@@ -20,8 +20,10 @@
  * entries the player holds and that every entry goes into the jackpot; a
  * player without enough is offered to get them (the shop's Ranked shelf:
  * many entries, one payment) instead of a search that would be refused.
+ * The entries are drawn as a stack of old tickets with a seal saying how
+ * many the player holds (a faded outline when none).
  */
-import { entriesText, rankedFeeText } from "../../application/entries/EntryService.js";
+import { entriesNoteText, entriesText, rankedFeeText } from "../../application/entries/EntryService.js";
 import { ChallengeMode, PlayerActivity } from "../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
 import { ShopStatus } from "../../application/shop/ShopService.js";
@@ -37,6 +39,7 @@ import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
+import { EntryTickets } from "./entries/EntryTickets.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
@@ -59,6 +62,8 @@ const LAYOUT = Object.freeze({
 });
 /** On a compact screen: the columns' share of the width (decks, players, game) and the gap between them. */
 const COMPACT_COLUMNS = Object.freeze({ shares: Object.freeze([0.32, 0.34, 0.34]), gap: 8 });
+/** Between the ranked tickets and what they say. */
+const TICKETS_GAP = 14;
 const DIALOG = Object.freeze({ width: 680, height: 320, avatar: 72, buttonHeight: 52, gap: 14 });
 export const QueueMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
 /** @typedef {typeof QueueMode[keyof typeof QueueMode]} Mode */
@@ -431,12 +436,30 @@ export class OnlineScene extends Scene {
     const line = compact ? 22 : 26;
     const standingY = MODE.y + MODE.height + (compact ? 4 : 10);
     panel.add(new TextBlock({ id: "online.standing", x: this.#screen.inset, y: standingY, width, height: 2 * line, text: standingText(ranking.state), size: "small", colorKey: "textMuted" }));
-    const entries = entriesText(this.#app.entries?.ranked ?? null, this.#entryPrice());
-    if (entries === null) {
-      return MODE.y + MODE.height + (compact ? 52 : 70);
+    return MODE.y + MODE.height + (compact ? 52 : 70) + this.#buildEntries(panel, width, standingY + 2 * line);
+  }
+
+  /**
+   * The ranked tickets the player holds, then what they are for: three lines wide, two on a phone (where the tickets alone say how many).
+   * @param {Panel} panel
+   * @param {number} width
+   * @param {number} y
+   * @returns {number} the height they take (0 while ranked play is free, or not known yet)
+   */
+  #buildEntries(panel, width, y) {
+    const compact = this.#screen.compact;
+    const ranked = this.#app.entries?.ranked ?? null;
+    const price = this.#entryPrice();
+    const entries = compact ? entriesNoteText(ranked) : entriesText(ranked, price);
+    if (entries === null || ranked === null) {
+      return 0;
     }
-    panel.add(new TextBlock({ id: "online.entries", x: this.#screen.inset, y: standingY + 2 * line, width, height: 2 * line, text: entries, size: "small", colorKey: this.#hasEntries() ? "accent" : "danger" }));
-    return MODE.y + MODE.height + (compact ? 52 + 2 * line : 70 + 2 * line);
+    const height = compact ? 2 * 22 : 3 * 26;
+    const ticketsWidth = EntryTickets.widthFor(height);
+    panel.add(new EntryTickets({ id: "online.tickets", x: this.#screen.inset, y, width: ticketsWidth, height, count: ranked.balance, title: "Ranked", face: price === null ? null : `${price.amount} ${price.asset}`, seed: "lobby" }));
+    const textX = this.#screen.inset + ticketsWidth + TICKETS_GAP;
+    panel.add(new TextBlock({ id: "online.entries", x: textX, y, width: width - ticketsWidth - TICKETS_GAP, height, text: entries, size: "small", colorKey: this.#hasEntries() ? "accent" : "danger" }));
+    return height;
   }
 
   /**
