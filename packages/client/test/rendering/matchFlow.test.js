@@ -14,6 +14,7 @@ import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStor
 import { StoredDeckRepository } from "../../src/infrastructure/persistence/StoredDeckRepository.js";
 import { immediateScheduler } from "../../src/infrastructure/time/ImmediateScheduler.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
+import { IdentityStatus } from "../../src/application/identity/IdentityService.js";
 import { DeckSelectionScene } from "../../src/rendering/scenes/DeckSelectionScene.js";
 import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
 import { registerScenes } from "../../src/rendering/scenes/registerScenes.js";
@@ -100,6 +101,21 @@ describe("DeckSelectionScene", () => {
     assert.equal(navigated[0].id, SceneId.MATCH);
     assert.ok(navigated[0].params.session instanceof MatchSession);
     assert.deepEqual(navigated[0].params.session.humanPlayerIds, ["player"]);
+  });
+
+  it("seats a signed-in player as their account, named and pictured; signed out, as You", () => {
+    const start = (identity) => {
+      const navigated = [];
+      const scene = new DeckSelectionScene(services({ navigate: (id, params) => navigated.push({ id, params }) }), { ...appContext(), identity });
+      scene.enter({});
+      buttonNamed(scene, "Start match").activate();
+      const session = navigated[0].params.session;
+      return { account: session.accountOf("player"), name: session.snapshotFor("player").players.find((player) => player.id === "player").name, ai: session.accountOf("ai") };
+    };
+    const signedIn = { state: { status: IdentityStatus.SIGNED_IN, user: { account: "alice" }, method: null, error: null } };
+    assert.deepEqual(start(signedIn), { account: "alice", name: "alice", ai: null });
+    assert.deepEqual(start(undefined), { account: null, name: "You", ai: null });
+    assert.deepEqual(start({ state: { status: IdentityStatus.SIGNED_OUT, user: null, method: null, error: null } }), { account: null, name: "You", ai: null });
   });
 
   it("shows unplayable decks disabled with the reason, and disables start when nothing is playable", async () => {

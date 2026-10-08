@@ -35,6 +35,8 @@ export class MatchSession {
   #aiDelayMs;
   /** @type {import("./CoinToss.js").CoinToss | null} */
   #openingToss;
+  /** The STEEM account playing each seat that has one. @type {ReadonlyMap<string, string>} */
+  #accounts;
   #started = false;
   /** @type {Set<(update: SessionUpdate) => void>} */
   #listeners = new Set();
@@ -43,16 +45,18 @@ export class MatchSession {
   #stopped = false;
 
   /**
-   * @param {{ engine: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, controllers: ReadonlyMap<string, import("./PlayerController.contract.js").PlayerController>, scheduler: import("../ports/Scheduler.contract.js").Scheduler, logger: import("../ports/Logger.contract.js").Logger, aiDelayMs?: number, openingToss?: import("./CoinToss.js").CoinToss | null }} deps
-   *   `openingToss`: the toss that seated the engine's first player, to be shown before the match begins
+   * @param {{ engine: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, controllers: ReadonlyMap<string, import("./PlayerController.contract.js").PlayerController>, scheduler: import("../ports/Scheduler.contract.js").Scheduler, logger: import("../ports/Logger.contract.js").Logger, aiDelayMs?: number, openingToss?: import("./CoinToss.js").CoinToss | null, accounts?: ReadonlyMap<string, string> }} deps
+   *   `openingToss`: the toss that seated the engine's first player, to be shown before the match begins;
+   *   `accounts`: the STEEM account playing each seat that has one (the signed-in player; never the AI)
    */
-  constructor({ engine, controllers, scheduler, logger, aiDelayMs = 0, openingToss = null }) {
+  constructor({ engine, controllers, scheduler, logger, aiDelayMs = 0, openingToss = null, accounts = new Map() }) {
     this.#engine = engine;
     this.#controllers = new Map(controllers);
     this.#scheduler = scheduler;
     this.#logger = logger;
     this.#aiDelayMs = aiDelayMs;
     this.#openingToss = openingToss;
+    this.#accounts = new Map(accounts);
   }
 
   get isOver() {
@@ -158,6 +162,15 @@ export class MatchSession {
   /** @param {string} playerId */
   controllerKindOf(playerId) {
     return this.#controllers.get(playerId)?.kind ?? null;
+  }
+
+  /**
+   * The STEEM account playing a seat, whose name and profile picture the board shows; null for none.
+   * @param {string} playerId
+   * @returns {string | null}
+   */
+  accountOf(playerId) {
+    return this.#accounts.get(playerId) ?? null;
   }
 
   #scheduleDrive() {

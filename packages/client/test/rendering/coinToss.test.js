@@ -194,12 +194,13 @@ describe("CoinTossNode", () => {
     assert.ok(!texts.some((text) => text.endsWith("first")), "no verdict before the coin lands");
   });
 
-  it("leads each name with the player's portrait online, and with none against the AI", () => {
+  it("leads each name with the player's portrait when they have an account, and names the viewer by it", () => {
     const flip = new CoinFlip({ toss: tossWonBy("ai", "ai"), animation });
     const online = new CoinTossNode({ flip, width: 1600, height: 900, viewerId: "player", nameOf: (id) => `@${id}`, accountOf: (id) => id });
     flip.update(animation.longMs);
     const texts = paintedTexts(online);
-    assert.deepEqual(texts.filter((text) => ["P", "You", "A", "@ai"].includes(text)), ["P", "You", "A", "@ai"], "each initial (no picture yet) before its name");
+    assert.deepEqual(texts.filter((text) => ["P", "@player", "A", "@ai"].includes(text)), ["P", "@player", "A", "@ai"], "each initial (no picture yet) before its name");
+    assert.ok(!texts.includes("You"), "the viewer by their account, not as You");
     const offline = nodeFor(tossWonBy("ai", "ai"), "player");
     offline.flip.update(animation.longMs);
     assert.ok(!paintedTexts(offline.node).includes("P"));
@@ -331,7 +332,7 @@ describe("MatchScene coin toss (online)", () => {
     assert.equal(scene.isTossing, true);
     runUntil(scene, () => scene.isTossing === false || rendered(scene).includes("@bob plays first"), "the verdict");
     const texts = rendered(scene);
-    assert.ok(texts.includes("You"));
+    assert.ok(texts.includes("@alice"), "the viewer by their account");
     assert.ok(texts.includes("@bob"));
     assert.ok(texts.includes("@bob plays first"));
     runUntil(scene, () => !scene.isTossing, "the toss ends");

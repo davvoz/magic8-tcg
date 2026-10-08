@@ -54,7 +54,7 @@ export class CoinTossNode extends UiNode {
 
   /**
    * @param {{ flip: import("./CoinFlip.js").CoinFlip, x?: number, y?: number, width: number, height: number, viewerId: string | null, nameOf: (playerId: string) => string, accountOf?: (playerId: string) => string | null, stage?: import("@magic8/engine/shared/geometry.js").Rect }} options
-   *   `viewerId`: the player looking at the board (shown on the left and addressed as "you"), null for a spectator;
+   *   `viewerId`: the player looking at the board (shown on the left, named by their account — "You" without one — and addressed as "you"), null for a spectator;
    *   `nameOf`: how to name a player on the plates;
    *   `accountOf`: the STEEM account whose portrait leads a player's name, null for none (the local AI);
    *   `stage`: where the toss must fit (clear of a notch), the whole node by default
@@ -241,9 +241,12 @@ export class CoinTossNode extends UiNode {
     return second === this.#viewerId ? [second, first] : [first, second];
   }
 
-  /** @param {string} playerId */
+  /**
+   * A player's name on their plate: the viewer by their account when they have one (signed in), else "You".
+   * @param {string} playerId
+   */
   #plateName(playerId) {
-    return playerId === this.#viewerId ? "You" : this.#nameOf(playerId);
+    return playerId === this.#viewerId && this.#accountOf(playerId) === null ? "You" : this.#nameOf(playerId);
   }
 }
 

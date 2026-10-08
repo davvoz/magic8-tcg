@@ -193,6 +193,7 @@ describe("Decision clock (MatchScene)", () => {
       stop: () => undefined,
       // Timed games are online ones: the other seat is a remote player.
       controllerKindOf: (playerId) => (playerId === P1 ? "human" : "remote"),
+      accountOf: (playerId) => snapshot.players.find((player) => player.id === playerId)?.name ?? null,
     };
   }
 
@@ -681,6 +682,27 @@ describe("MatchScene on the board", () => {
     assert.equal(session.isStopped, true);
   });
 
+  it("names and pictures the signed-in player against the AI, on the HUD and in the result; the AI by its seat name", async () => {
+    const { engine } = createScenario({ p1: {}, p2: {} });
+    const session = new MatchSession({ engine, controllers: new Map([[P1, humanController], [P2, new BasicAiController()]]), scheduler: immediateScheduler, logger: new MemoryLogger(), accounts: new Map([[P1, "alice"]]) });
+    session.start();
+    await session.whenIdle();
+    const asked = new Set();
+    const scene = new MatchScene(services({ theme: { ...theme, avatars: { imageFor: (account) => (asked.add(account), null) } } }));
+    scene.enter({ session });
+    const hud = byId(scene, P1);
+    assert.deepEqual([hud.avatar, byId(scene, P2).avatar], ["alice", null]);
+    tapNode(byId(scene, "leave"));
+    tapNode(byId(scene, "confirm.ok"));
+    untilResult(scene);
+    scene.update(5000);
+    const texts = rendered(scene);
+    const aiName = session.snapshotFor(P1).players.find((player) => player.id === P2).name;
+    assert.ok(texts.includes("@alice"), "the player by their account");
+    assert.ok(texts.includes(aiName) && !texts.includes(`@${aiName}`), "the AI by its seat name");
+    assert.deepEqual([...asked], ["alice"], "only the player's picture is fetched");
+  });
+
   it("plays out the end before offering the result: the fallen crystal cracks and bursts, the table shakes, the outcome comes down", async () => {
     const { scene, session } = await sceneFor({ p1: { hand: ["ember_bolt"], resources: 2 }, p2: { life: 3 } });
     tapNode(cardNamed(scene, "Ember Bolt"));
@@ -1125,6 +1147,7 @@ describe("MatchScene on the board", () => {
       snapshotFor: (playerId) => session.snapshotFor(playerId),
       eventsFor: (events, playerId) => session.eventsFor(events, playerId),
       controllerKindOf: (playerId) => session.controllerKindOf(playerId),
+      accountOf: (playerId) => session.accountOf(playerId),
       begin: () => undefined,
       stop: () => undefined,
       submit: (command) => {

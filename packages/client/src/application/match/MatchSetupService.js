@@ -24,7 +24,8 @@ export const MatchSetupError = Object.freeze({
 });
 
 /**
- * @typedef {{ id: string, name: string, deckList: import("@magic8/engine/domain/decks/DeckList.js").DeckList, controller: import("./PlayerController.contract.js").PlayerController }} SeatSetup
+ * @typedef {{ id: string, name: string, deckList: import("@magic8/engine/domain/decks/DeckList.js").DeckList, controller: import("./PlayerController.contract.js").PlayerController, account?: string | null }} SeatSetup
+ *   `account`: the STEEM account playing the seat (the signed-in player), whose profile picture the board shows
  */
 
 export class MatchSetupService {
@@ -74,7 +75,8 @@ export class MatchSetupService {
       return engine;
     }
     const controllers = new Map(seats.map((seat) => [seat.id, seat.controller]));
-    return ok(new MatchSession({ engine: engine.value, controllers, scheduler: this.#scheduler, logger: this.#logger, aiDelayMs, openingToss }));
+    const accounts = new Map(seats.flatMap((seat) => (typeof seat.account === "string" ? [[seat.id, seat.account]] : [])));
+    return ok(new MatchSession({ engine: engine.value, controllers, scheduler: this.#scheduler, logger: this.#logger, aiDelayMs, openingToss, accounts }));
   }
 }
 

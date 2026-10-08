@@ -251,4 +251,13 @@ export class RemoteMatchSession {
   controllerKindOf(playerId) {
     return playerId === this.#seat ? "human" : "remote";
   }
+
+  /**
+   * Online, every seat is a STEEM account: the player's name.
+   * @param {string} playerId
+   * @returns {string | null}
+   */
+  accountOf(playerId) {
+    return this.#snapshot?.players?.find((/** @type {{ id: string }} */ player) => player.id === playerId)?.name ?? null;
+  }
 }

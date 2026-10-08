@@ -70,7 +70,6 @@
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
-import { ControllerKind } from "../../application/match/PlayerController.contract.js";
 import { helpFor } from "../../application/help/matchHelp.js";
 import { TutorialCoach } from "../../application/tutorial/TutorialCoach.js";
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
@@ -701,13 +700,12 @@ export class MatchScene extends Scene {
    * @param {MatchInteraction} interaction
    */
   #buildPlayers(snapshot, layout, interaction) {
-    const online = this.#isOnline(snapshot);
     for (const seat of [layout.opponent, layout.me]) {
       const player = snapshot.players.find((candidate) => candidate.id === seat.id);
       if (player === undefined) {
         continue;
       }
-      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeKick: () => this.#presenter.lifeKickFor(player.id), avatar: online ? player.name : null }));
+      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeKick: () => this.#presenter.lifeKickFor(player.id), avatar: this.#accountOf(player.id) }));
     }
   }
 
@@ -1032,17 +1030,16 @@ export class MatchScene extends Scene {
     }
     const { viewport } = this.services;
     const viewerId = this.#spectating ? null : this.#playerId;
-    const online = this.#isOnline(snapshot);
-    const accountOf = (playerId) => (online ? snapshot.players.find((player) => player.id === playerId)?.name ?? null : null);
-    this.root.add(new CoinTossNode({ flip, ...viewport.bounds, stage: viewport.safeBounds, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId), accountOf }));
+    this.root.add(new CoinTossNode({ flip, ...viewport.bounds, stage: viewport.safeBounds, viewerId, nameOf: (playerId) => this.#displayName(snapshot, playerId), accountOf: (playerId) => this.#accountOf(playerId) }));
   }
 
   /**
-   * Online, every seat is a STEEM account (its name): the HUD and the toss show their profile pictures.
-   * @param {Snapshot} snapshot
+   * The STEEM account playing a seat, whose profile picture the HUD, the toss and the result show:
+   * every seat online, the signed-in player against the AI; null for none (the AI, a player not signed in).
+   * @param {string} playerId
    */
-  #isOnline(snapshot) {
-    return snapshot.players.some((player) => this.#session?.controllerKindOf(player.id) === "remote");
+  #accountOf(playerId) {
+    return this.#session?.accountOf(playerId) ?? null;
   }
 
   /**
@@ -1067,15 +1064,13 @@ export class MatchScene extends Scene {
   }
 
   /**
-   * A player as the toss names them: @account for someone playing online, the seat name for the local AI.
+   * A player as the toss and the result name them: @account for a STEEM account, else the seat's name (the AI, a player not signed in).
    * @param {Snapshot} snapshot
    * @param {string} playerId
    */
   #displayName(snapshot, playerId) {
-    if (this.#session?.controllerKindOf(playerId) === ControllerKind.AI) {
-      return snapshot.players.find((player) => player.id === playerId)?.name ?? "?";
-    }
-    return nameOf(snapshot, playerId);
+    const account = this.#accountOf(playerId);
+    return account === null ? snapshot.players.find((player) => player.id === playerId)?.name ?? "?" : `@${account}`;
   }
 
   /**
@@ -1257,14 +1252,13 @@ export class MatchScene extends Scene {
    * @returns {import("../board/MatchResultNode.js").MatchResult}
    */
   #resultFor(snapshot) {
-    const online = this.#isOnline(snapshot);
     const order = this.#layout === null ? snapshot.players.map((player) => player.id) : [this.#layout.me.id, this.#layout.opponent.id];
     const [left, right] = order.map((playerId) => {
       const player = snapshot.players.find((candidate) => candidate.id === playerId);
       const isViewer = !this.#spectating && playerId === this.#playerId;
       return Object.freeze({
         name: this.#displayName(snapshot, playerId),
-        account: online ? player?.name ?? null : null,
+        account: this.#accountOf(playerId),
         life: player?.life ?? 0,
         standing: standingOf(snapshot, playerId),
         isViewer,

@@ -71,6 +71,11 @@ describe("AI vs AI", () => {
 });
 
 describe("human vs AI", () => {
+  it("knows the STEEM account playing a seat: the signed-in player's, never the AI's", () => {
+    const { session } = setup({ p1: { name: "alice", account: "alice" } });
+    assert.deepEqual([session.accountOf("p1"), session.accountOf("p2")], ["alice", null]);
+  });
+
   it("waits for the human, then lets the AI play its whole turn and hands control back", async () => {
     const { session } = setup();
     session.start();
@@ -80,6 +85,7 @@ describe("human vs AI", () => {
     assert.equal(snapshot.turnNumber, 1);
     assert.deepEqual(session.humanPlayerIds, ["p1"]);
     assert.equal(session.controllerKindOf("p2"), "ai");
+    assert.deepEqual([session.accountOf("p1"), session.accountOf("p2")], [null, null], "nobody signed in");
 
     const result = session.submit(endTurn("p1"));
     assert.equal(result.ok, true);

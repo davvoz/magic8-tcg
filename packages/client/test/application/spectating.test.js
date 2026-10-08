@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 
 import { SPECTATOR } from "@magic8/engine/domain/game/GameSnapshot.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
-import { P1 } from "@magic8/engine/testing/fixtures.js";
+import { P1, P2 } from "@magic8/engine/testing/fixtures.js";
 import { createScenario } from "@magic8/engine/testing/scenario.js";
 import { OnlineService } from "../../src/application/online/OnlineService.js";
 import { RemoteMatchSession } from "../../src/application/online/RemoteMatchSession.js";
@@ -174,6 +174,7 @@ describe("MatchScene for a spectator", () => {
     const stopped = [];
     const session = new RemoteMatchSession({ gameId: GAME, seat: null, request: async () => ok({ t: "error", d: {} }), newCommandId: () => "x", onStop: () => stopped.push(true) });
     session.apply({ version: snapshot.version, snapshot });
+    assert.deepEqual([P1, P2].map((id) => session.accountOf(id)), snapshot.players.map((player) => player.name), "every seat online is a STEEM account");
     const navigated = [];
     const scene = new MatchScene(services({ navigate: (id) => navigated.push(id) }));
     scene.enter({ session, againScene: SceneId.LIVE_GAMES });

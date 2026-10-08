@@ -4,7 +4,8 @@
  * A coin toss (with its own seed) decides who plays first; the match screen
  * shows it and starts the match once the coin has landed.
  * Signed in, "your decks" are the account's (the starter you took and the
- * decks you built); offline, the preconstructed decks too. Each deck is a
+ * decks you built), and the player sits at the table as that account (its
+ * name and profile picture); offline, the preconstructed decks too. Each deck is a
  * banner row striped with its faction mix; decks that break the rules are shown
  * disabled with the first problem so the player knows to fix them.
  * On a compact screen the panel fills it and the footer is one row.
@@ -13,6 +14,7 @@ import { BasicAiController } from "../../application/match/BasicAiController.js"
 import { DeckSource } from "../../application/decks/DeckSelectionService.js";
 import { deckMix } from "../../application/decks/deckMix.js";
 import { humanController } from "../../application/match/HumanController.js";
+import { IdentityStatus } from "../../application/identity/IdentityService.js";
 import { deckSummary, mixBands } from "../cards/deckStripe.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -57,6 +59,7 @@ const COMPACT = Object.freeze({
 });
 /** In the compact footer: Back and Deck builder take these widths, Start the rest. */
 const COMPACT_FOOTER = Object.freeze({ back: 140, builder: 190 });
+/** The player's seat; signed in, it is named after their account instead. */
 const HUMAN_SEAT = Object.freeze({ id: "player", name: "You" });
 const AI_SEAT = Object.freeze({ id: "ai", name: "Opponent" });
 const LIST_ID = "decks";
@@ -207,7 +210,7 @@ export class DeckSelectionScene extends Scene {
     const rival = others.length === 0 ? selected : others[seedIndex(seed, others.length)];
     const created = this.#app.matchSetup.createMatch({
       seats: [
-        { ...HUMAN_SEAT, deckList: selected.deck, controller: humanController },
+        { ...this.#humanSeat(), deckList: selected.deck, controller: humanController },
         { ...AI_SEAT, deckList: rival.deck, controller: new BasicAiController() },
       ],
       seed,
@@ -220,6 +223,13 @@ export class DeckSelectionScene extends Scene {
     }
     this.#app.logger.info("match created", { deck: selected.deck.id, rival: rival.deck.id, seed, coinSeed, first: created.value.openingToss?.firstPlayerId ?? null });
     this.services.navigate(SceneId.MATCH, { session: created.value });
+  }
+
+  /** The player's seat: signed in, their STEEM account, so the board names them and shows their picture. */
+  #humanSeat() {
+    const state = this.#app.identity?.state;
+    const account = state?.status === IdentityStatus.SIGNED_IN ? state.user?.account ?? null : null;
+    return account === null ? HUMAN_SEAT : { ...HUMAN_SEAT, name: account, account };
   }
 }
 
