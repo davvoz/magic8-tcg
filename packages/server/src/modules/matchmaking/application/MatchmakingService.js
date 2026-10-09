@@ -10,10 +10,12 @@
  * - Pairing takes the two oldest tickets of a mode, locked with SKIP LOCKED,
  *   and creates the game in the same unit of work: two servers can never
  *   pair the same ticket twice. The match is announced only after commit.
- * - Ranked (docs/tcg/09-classificata.md): only eligible players, but no
- *   pairing rules: like casual, the two oldest tickets play each other
- *   straight away, whatever their ratings or how often they met today
- *   (games over the daily limit are recorded but not rated, T24).
+ * - Ranked (docs/tcg/09-classificata.md): only eligible players, and one
+ *   pairing rule: two players who played their rated games of the day
+ *   together (T24) are not paired again until they may. The oldest ticket
+ *   plays the oldest one it may play, whatever their ratings; when nobody
+ *   waiting may be paired, those held apart are told who with, why, and
+ *   for how long (once per search).
  * - Direct games (a challenge accepted in the lobby) skip the queue but
  *   are created here too, under the same rule: one game per player.
  * - Paid modes (ranked, when the season charges an entry fee: docs/tcg/22):
@@ -30,6 +32,17 @@ const MODES = Object.freeze(Object.values(QueueMode));
 export const TicketStatus = Object.freeze({ WAITING: "WAITING", MATCHED: "MATCHED", CANCELLED: "CANCELLED", EXPIRED: "EXPIRED" });
 const DEFAULT_RATING = 1000;
 const MAX_PAIRS_PER_RUN = 50;
+/** Ranked tickets looked at for a pair: past the oldest, whoever the oldest may play. */
+const RANKED_CANDIDATES = 20;
+/**
+ * @typedef {Awaited<ReturnType<import("../infrastructure/PgMatchmakingRepository.js").PgMatchmakingRepository["lockOldest"]>>[number]} Ticket
+ * @typedef {Readonly<{ userId: string, ticketId: string, mode: string, since: number, opponent: string, nextAt: number }>} HeldApart a ranked player
+ *   waiting with nobody they may play: the opponent they may play again the soonest, and when
+ */
+
+/** @param {string} first @param {string} second */
+const pairKey = (first, second) => (first < second ? `${first}|${second}` : `${second}|${first}`);
+
 /** Entries when every mode is free. */
 const FREE_ENTRIES = Object.freeze({ assertCanEnter: async () => undefined, shortOf: async () => Object.freeze([]), charge: async () => 0 });
 
@@ -46,6 +59,8 @@ export class MatchmakingService {
   #ranking;
   #entries;
   #gate;
+  /** user → the search and opponent they were last told they are held apart from (told once per search). @type {Map<string, string>} */
+  #heldApartTold = new Map();
 
   /**
    * @param {{
@@ -204,6 +219,10 @@ export class MatchmakingService {
       if (outcome === null) {
         return created;
       }
+      if ("heldApart" in outcome) {
+        this.#tellHeldApart(outcome.heldApart);
+        return created;
+      }
       if (outcome.staged === null) {
         for (const userId of outcome.dropped) {
           this.#notifier.send(userId, "queue.status", { state: "idle", reason: "entries" });
@@ -219,15 +238,20 @@ export class MatchmakingService {
   }
 
   /**
-   * Inside a unit of work: the two oldest tickets of a mode become a game (its fee taken from both), or the
-   * players among them who can no longer pay leave the queue; null when fewer than two wait.
+   * Inside a unit of work: the two oldest tickets of a mode that may play each other become a game (its fee taken
+   * from both), or the players among them who can no longer pay leave the queue; null when fewer than two wait, and
+   * the pairs held apart when none of those waiting may play each other.
    * @param {string} mode
-   * @returns {Promise<{ staged: Awaited<ReturnType<import("../../gameplay/index.js").GameService["stageGame"]>>, dropped: readonly string[] } | { staged: null, dropped: readonly string[] } | null>}
+   * @returns {Promise<{ staged: Awaited<ReturnType<import("../../gameplay/index.js").GameService["stageGame"]>>, dropped: readonly string[] } | { staged: null, dropped: readonly string[] } | { heldApart: readonly HeldApart[] } | null>}
    */
   async #pairOldest(mode) {
-    const tickets = await this.#repository.lockOldestPair(mode);
-    if (tickets.length < 2) {
+    const waiting = await this.#repository.lockOldest(mode, mode === QueueMode.RANKED ? RANKED_CANDIDATES : 2);
+    if (waiting.length < 2) {
       return null;
+    }
+    const { tickets, heldApart } = mode === QueueMode.RANKED ? await this.#rankedPair(waiting) : { tickets: waiting, heldApart: [] };
+    if (tickets === null) {
+      return { heldApart };
     }
     const userIds = tickets.map((ticket) => ticket.userId);
     const short = await this.#entries.shortOf(userIds, mode);
@@ -241,6 +265,47 @@ export class MatchmakingService {
     await this.#entries.charge({ gameId: staged.game.id, mode, userIds });
     await this.#repository.markMatched(tickets.map((ticket) => ticket.id), staged.game.id, this.#clock.now());
     return { staged, dropped: Object.freeze([]) };
+  }
+
+  /**
+   * The oldest ranked ticket with the oldest one its player may play (T24), else, when no two may play each
+   * other, each waiting player with the opponent they may play again the soonest.
+   * @param {readonly Ticket[]} waiting oldest first
+   * @returns {Promise<{ tickets: readonly Ticket[], heldApart: readonly HeldApart[] } | { tickets: null, heldApart: readonly HeldApart[] }>}
+   */
+  async #rankedPair(waiting) {
+    const limited = await this.#ranking.pairsAtLimit(waiting.map((ticket) => ticket.userId));
+    const nextAt = new Map(limited.map((pair) => [pairKey(...pair.userIds), pair.nextAt]));
+    for (const [index, first] of waiting.entries()) {
+      const second = waiting.slice(index + 1).find((other) => !nextAt.has(pairKey(first.userId, other.userId)));
+      if (second !== undefined) {
+        return { tickets: [first, second], heldApart: [] };
+      }
+    }
+    const heldApart = waiting.map((ticket) => {
+      const [soonest] = waiting
+        .filter((other) => other !== ticket)
+        .map((other) => ({ opponent: other.account, nextAt: /** @type {number} */ (nextAt.get(pairKey(ticket.userId, other.userId))) }))
+        .sort((left, right) => left.nextAt - right.nextAt);
+      return Object.freeze({ userId: ticket.userId, ticketId: ticket.id, mode: ticket.mode, since: ticket.createdAt, ...soonest });
+    });
+    return { tickets: null, heldApart };
+  }
+
+  /**
+   * Tells players the queue holds apart from everyone waiting who with, why, and for how long; once per search and opponent.
+   * @param {readonly HeldApart[]} heldApart
+   */
+  #tellHeldApart(heldApart) {
+    for (const { userId, ticketId, mode, since, opponent, nextAt } of heldApart) {
+      const told = `${ticketId}:${opponent}`;
+      if (this.#heldApartTold.get(userId) === told) {
+        continue;
+      }
+      this.#heldApartTold.set(userId, told);
+      const message = this.#ranking.heldApartText(opponent, nextAt);
+      this.#notifier.send(userId, "queue.status", { state: "searching", mode, since, reason: "pair_limit", opponent, nextAt, message });
+    }
   }
 
   /**

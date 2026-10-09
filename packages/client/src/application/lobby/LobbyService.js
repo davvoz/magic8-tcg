@@ -16,7 +16,7 @@ import { fail, ok } from "@magic8/engine/shared/Result.js";
 export const ChallengeMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
 export const PlayerActivity = Object.freeze({ IDLE: "idle", SEARCHING: "searching", PLAYING: "playing" });
 /** Why a challenge closed (the server's challenge.closed). */
-export const ChallengeEnd = Object.freeze({ ACCEPTED: "accepted", DECLINED: "declined", CANCELLED: "cancelled", EXPIRED: "expired", OFFLINE: "offline", BUSY: "busy", MAINTENANCE: "maintenance" });
+export const ChallengeEnd = Object.freeze({ ACCEPTED: "accepted", DECLINED: "declined", CANCELLED: "cancelled", EXPIRED: "expired", OFFLINE: "offline", BUSY: "busy", MAINTENANCE: "maintenance", PAIR_LIMIT: "pair_limit" });
 /** How often a shown list of players is read again. */
 const POLL_MS = 5000;
 
@@ -183,8 +183,8 @@ export class LobbyService {
     const reply = await this.#connection.request("challenge.accept", { challengeId, deckId });
     const failure = this.#failure(reply, "challenge.accepted");
     if (failure !== null) {
-      // A challenge that is gone (lapsed, taken back) leaves the list; a bad deck leaves it open.
-      if (failure.error.code === "NOT_FOUND" || failure.error.code === "CONFLICT") {
+      // A challenge that is gone (lapsed, taken back, past the daily ranked games of the pair) leaves the list; a bad deck leaves it open.
+      if (failure.error.code === "NOT_FOUND" || failure.error.code === "CONFLICT" || failure.error.code === "LIMIT_REACHED") {
         this.#forget(challengeId);
       }
       return failure;

@@ -74,11 +74,12 @@ export class PgMatchmakingRepository {
   }
 
   /**
-   * The two oldest waiting tickets of a mode, locked; tickets another transaction holds are skipped.
+   * The oldest waiting tickets of a mode, oldest first, locked; tickets another transaction holds are skipped.
    * @param {string} mode
+   * @param {number} limit
    */
-  async lockOldestPair(mode) {
-    const rows = await this.#db.rows("SELECT * FROM matchmaking WHERE status = 'WAITING' AND mode = $1 ORDER BY created_at, id LIMIT 2 FOR UPDATE SKIP LOCKED", [mode]);
+  async lockOldest(mode, limit) {
+    const rows = await this.#db.rows("SELECT * FROM matchmaking WHERE status = 'WAITING' AND mode = $1 ORDER BY created_at, id LIMIT $2 FOR UPDATE SKIP LOCKED", [mode, limit]);
     return Object.freeze(rows.map(toTicket));
   }
 

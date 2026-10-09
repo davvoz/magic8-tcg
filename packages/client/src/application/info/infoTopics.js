@@ -228,7 +228,7 @@ function ranked() {
     bullet("Everyone starts at 1500. Win to go up, lose to go down. Beating a stronger player is worth more."),
     bullet("A new player's rating moves fast. While it is still uncertain, you appear in the leaderboard as provisional, without a position."),
     bullet("Every season the ratings start again from scratch. The Leaderboard (in the online lobby) shows the top 100."),
-    bullet("Fair play: after 3 ranked games in a day against the same opponent, further games between you still use an entry but do not change the rating."),
+    bullet("Fair play: you can play at most 3 ranked games against the same opponent in 24 hours, so nobody can farm rating off one player. Past that, the queue pairs you with others and ranked challenges between you are refused; both say when you can play ranked together again. Casual games are not limited."),
 
     heading("The season's jackpot"),
     paragraph("When the season has a jackpot, the main menu shows it: how much it holds, the prize for each place, who is leading and how long is left. It grows with every pack and every ranked entry sold. When the season ends, the top 3 players of the leaderboard share it."),

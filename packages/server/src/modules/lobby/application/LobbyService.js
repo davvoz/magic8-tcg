@@ -14,8 +14,9 @@
  * - Accepting creates the game at once through matchmaking (startDirect),
  *   which takes both players out of any queue; every other challenge of
  *   either player is then called off. Ranked challenges need both players
- *   eligible, and count like queue games: past the daily limit for the same
- *   pair a game is recorded but not rated (T24). When the season charges an
+ *   eligible, and count like queue games: two players who played their
+ *   rated games of the day together (T24) cannot challenge each other to
+ *   ranked until they may again, and are told when. When the season charges an
  *   entry fee, both need the entries, checked when the challenge is sent and
  *   accepted, and taken when the game is created (docs/tcg/22).
  * - Challenges live in memory, like the games they lead to (one process,
@@ -42,6 +43,8 @@ export const ChallengeEnd = Object.freeze({
   /** A player got into a game (this challenge or another accepted, the queue). */
   BUSY: "busy",
   MAINTENANCE: "maintenance",
+  /** Ranked, and the two played their rated games of the day together meanwhile (T24). */
+  PAIR_LIMIT: "pair_limit",
 });
 const ACTIVITY_ORDER = Object.freeze({ [PlayerActivity.IDLE]: 0, [PlayerActivity.SEARCHING]: 1, [PlayerActivity.PLAYING]: 2 });
 
@@ -97,7 +100,7 @@ export class LobbyService {
    *   matchmaking: import("../../matchmaking/index.js").MatchmakingService,
    *   decks: import("../../decks/index.js").DeckService,
    *   games: { activeGameOf: (userId: string) => Promise<string | null>, playingUsers: () => Set<string> },
-   *   ranking: { assertEligible: (userId: string) => Promise<void> },
+   *   ranking: { assertEligible: (userId: string) => Promise<void>, assertPairAllowed: (userId: string, opponent: { userId: string, account: string }) => Promise<void> },
    *   entries?: { assertCanEnter: (userId: string, mode: string) => Promise<void> },
    *   clock: import("../../../kernel/time.js").Clock,
    *   random: import("../../../kernel/random.js").SecureRandom,
@@ -176,6 +179,7 @@ export class LobbyService {
       await this.#ranking.assertEligible(target.id).catch(() => {
         throw new AppError("CONFLICT", `@${target.account} cannot play ranked yet`);
       });
+      await this.#ranking.assertPairAllowed(user.userId, { userId: target.id, account: target.account });
     }
     await this.#assertEntries(mode, user.userId, { userId: target.id, account: target.account });
     const deck = await this.#decks.playableDeckList(user.userId, deckId);
@@ -218,6 +222,13 @@ export class LobbyService {
     // A deck that cannot be played, or entries missing, leave the challenge open: the player may pick another deck, or buy entries.
     const deck = await this.#decks.playableDeckList(user.userId, deckId);
     await this.#assertEntries(challenge.mode, user.userId, challenge.from);
+    if (challenge.mode === ChallengeMode.RANKED) {
+      // They may have played together since it was sent (the queue).
+      await this.#ranking.assertPairAllowed(user.userId, challenge.from).catch((error) => {
+        this.#close(challenge, ChallengeEnd.PAIR_LIMIT, [challenge.from.userId]);
+        throw error;
+      });
+    }
     if (this.#challenges.get(challenge.id) !== challenge) {
       throw new AppError("NOT_FOUND", "this challenge is no longer open");
     }

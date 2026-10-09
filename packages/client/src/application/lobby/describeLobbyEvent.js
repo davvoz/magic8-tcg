@@ -44,6 +44,7 @@ const OUTGOING = Object.freeze({
   [ChallengeEnd.BUSY]: ["@{other} is in another game", "Your challenge was called off.", "bad"],
   [ChallengeEnd.CANCELLED]: ["Challenge to @{other} withdrawn", "", "info"],
   [ChallengeEnd.MAINTENANCE]: ["Challenge called off", "A maintenance is about to start: no new games until it ends.", "bad"],
+  [ChallengeEnd.PAIR_LIMIT]: ["Ranked challenge to @{other} called off", "You have played your ranked games of the day together. Challenge them to a casual game instead.", "bad"],
 });
 
 /** A challenge the player received closed: [title, body, tone]. @type {Readonly<Record<string, readonly [string, string, string]>>} */

@@ -122,7 +122,7 @@ Monitoraggio (fuori da `/api/admin`): `GET /api/health`, `GET /api/ready` e `GET
 | `t` | `d` |
 |---|---|
 | `welcome` | `{ "user", "serverTime", "activeGame": <vista della partita> \| null, "queue": { "state" }, "ackKey": "STM…" \| null }` (risposta a `hello`: chi rientra riceve subito lo stato completo della sua partita) |
-| `queue.status` | `{ "state": "searching"\|"idle", "since", "estimatedWaitMs" }` |
+| `queue.status` | `{ "state": "searching"\|"idle", "since", "estimatedWaitMs" }`; in classificata, a chi la coda non può abbinare con nessuno di quelli in attesa (limite per coppia, doc 09), anche `"reason": "pair_limit", "opponent", "nextAt", "message"` |
 | `match.found` | `{ "gameId", "seat", "opponent": { "account" }, "seedCommit": "<hex64>", "protocol": 1\|2, "entropyDeadline", "authorizeDeadline"? }` (`authorizeDeadline` solo in v2) |
 | `game.joined` | `{ "gameId" }` (risposta a `game.entropy`) |
 | `game.state` | la **vista della partita** (risposta a `game.sync`): `{ "gameId", "seat", "status", "opponent": { "account" }, "seedCommit", "entropyDeadline", "version", "lastSeq", "head", "snapshot": <snapshot per prospettiva> \| null, "clock": { "activeSeat", "deadline", "reserveMs": { "s0", "s1" } } }`; in v2 anche `"authorized": { "s0", "s1" }` (chi ha firmato) e `"authorizeDeadline"` (finché la partita aspetta). Prima dell'avvio arriva a entrambi dopo ogni firma |

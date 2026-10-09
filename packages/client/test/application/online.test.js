@@ -163,6 +163,20 @@ describe("OnlineService", () => {
     assert.deepEqual(online.state.error, { code: "ENTRY_REQUIRED", message: "You left the ranked queue: you have no ranked entries left." });
   });
 
+  it("keeps searching with the server's notice while the ranked queue holds the player apart from those waiting", async () => {
+    const { online, server } = service();
+    online.start();
+    await flush();
+    await online.queue("deck-1", "ranked");
+    const message = "You will not be paired with @bob for 3h 05m: you have played 3 ranked games together in 24 hours, the most two players may. Looking for someone else…";
+    server.push("queue.status", { state: "searching", mode: "ranked", since: 1, reason: "pair_limit", opponent: "bob", nextAt: 2, message });
+    assert.deepEqual([online.state.status, online.state.notice, online.state.error], [OnlineStatus.SEARCHING, message, null]);
+    server.push("queue.status", { state: "searching", mode: "ranked", since: 1 });
+    assert.equal(online.state.notice, message, "a routine status keeps it");
+    await online.leaveQueue();
+    assert.equal(online.state.notice, null, "gone once the search ends");
+  });
+
   it("carries the decision clock from each view, keeping the last one a stale or clock-less update cannot overwrite", async () => {
     const { online, server } = service();
     online.start();

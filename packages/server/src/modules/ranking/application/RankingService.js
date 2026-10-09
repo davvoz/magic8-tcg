@@ -5,10 +5,13 @@
  *   (rating_changes is keyed by game and player, and append-only), from
  *   their ratings before the game, in the season the game ended in.
  * - Fair play (T24): past a few rated games between the same two players
- *   in a day, further games between them change nothing (and are flagged);
- *   repeated quick concessions between the same players are flagged for an
- *   operator. Ratings carry no market value in v1, so flags inform, they do
- *   not punish.
+ *   in a 24-hour window, ranked play between them is refused until the
+ *   oldest of those games leaves the window (the queue does not pair them, a
+ *   challenge is refused, both told when they may again). A game that gets
+ *   through anyway (a race, a game created elsewhere) is recorded but
+ *   changes nothing, and is flagged. Repeated quick concessions between the
+ *   same players are flagged for an operator. Ratings carry no market value
+ *   in v1, so flags inform, they do not punish.
  * - Results arrive from the gameplay module right after a game ends; a
  *   periodic catch-up records any game that was missed (a restart, a failed
  *   write). Recording is idempotent, so both paths can see the same game.
@@ -40,6 +43,16 @@ const scoreOf = (winnerSeat, seat) => {
     return 0.5;
   }
   return winnerSeat === seat ? 1 : 0;
+};
+
+/**
+ * @param {number} milliseconds
+ * @returns {string} "4h 05m", or "12m" under an hour (never less than a minute)
+ */
+const waitText = (milliseconds) => {
+  const minutes = Math.max(1, Math.ceil(milliseconds / 60_000));
+  const hours = Math.floor(minutes / 60);
+  return hours > 0 ? `${hours}h ${String(minutes % 60).padStart(2, "0")}m` : `${minutes}m`;
 };
 
 export class RankingService {
@@ -114,13 +127,56 @@ export class RankingService {
   }
 
   /**
-   * Whether two players may still play a rated game against each other today.
+   * The pairs among these players that played their rated games of the day together (T24), and when each pair may
+   * play a ranked game together again. Ranked play between them is refused until then (queue, challenges).
+   * @param {readonly string[]} userIds
+   * @returns {Promise<readonly Readonly<{ userIds: readonly [string, string], nextAt: number }>[]>}
+   */
+  async pairsAtLimit(userIds) {
+    const limit = this.#settings.fairPlay.maxRatedGamesPerPairPerDay;
+    const pairs = await this.#repository.pairsAtLimit(userIds, this.#clock.now() - DAY_MS, limit);
+    return Object.freeze(pairs.map((pair) => Object.freeze({ userIds: pair.userIds, nextAt: pair.finishedAt + DAY_MS })));
+  }
+
+  /**
+   * When two players may play a ranked game together again, or null when they may now.
    * @param {string} userId
    * @param {string} opponentId
    */
-  async pairAllowed(userId, opponentId) {
-    const played = await this.#repository.countCounted(userId, opponentId, this.#clock.now() - DAY_MS);
-    return played < this.#settings.fairPlay.maxRatedGamesPerPairPerDay;
+  async nextPairGameAt(userId, opponentId) {
+    const [pair] = await this.pairsAtLimit([userId, opponentId]);
+    return pair?.nextAt ?? null;
+  }
+
+  /**
+   * Refuses a ranked game between two players who played their rated games of the day together, saying when they may again.
+   * @param {string} userId
+   * @param {{ userId: string, account: string }} opponent
+   */
+  async assertPairAllowed(userId, opponent) {
+    const nextAt = await this.nextPairGameAt(userId, opponent.userId);
+    if (nextAt !== null) {
+      throw new AppError("LIMIT_REACHED", `You can play ranked with @${opponent.account} again in ${this.#waitUntil(nextAt)}: ${this.#pairLimitReason()}.`, { opponent: opponent.account, nextAt });
+    }
+  }
+
+  /**
+   * What the queue tells a player it will not pair with `opponent` (who, for how long, why), short enough for the lobby's status.
+   * @param {string} opponent the other player's account
+   * @param {number} nextAt
+   */
+  heldApartText(opponent, nextAt) {
+    return `You will not be paired with @${opponent} for ${this.#waitUntil(nextAt)}: ${this.#pairLimitReason()}. Looking for someone else…`;
+  }
+
+  /** @param {number} at */
+  #waitUntil(at) {
+    return waitText(at - this.#clock.now());
+  }
+
+  #pairLimitReason() {
+    const limit = this.#settings.fairPlay.maxRatedGamesPerPairPerDay;
+    return `you have played ${limit} ranked ${limit === 1 ? "game" : "games"} together in 24 hours, the most two players may`;
   }
 
   /**

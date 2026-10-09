@@ -52,10 +52,11 @@ export const OnlineStatus = Object.freeze({
 /**
  * @typedef {Readonly<{ id: string, name: string, mix: readonly import("@magic8/engine/domain/decks/factionMix.js").FactionShare[], totalCards: number, playable: boolean, problem: string | null }>} OnlineDeck id is the server's deck id
  * @typedef {Readonly<{ you: boolean, opponent: boolean }>} Acceptance v2, while the game waits for its players: who has accepted it with Keychain
- * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null, acceptance: Acceptance | null }>} OnlineState
+ * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, notice: string | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null, acceptance: Acceptance | null }>} OnlineState
+ *   `notice`: while searching, why the queue holds the player apart from those waiting (the server's words)
  */
 
-const INITIAL = Object.freeze({ status: OnlineStatus.OFFLINE, error: null, opponent: null, session: null, watching: null, acceptance: null });
+const INITIAL = Object.freeze({ status: OnlineStatus.OFFLINE, error: null, notice: null, opponent: null, session: null, watching: null, acceptance: null });
 
 export class OnlineService {
   #connection;
@@ -159,6 +160,8 @@ export class OnlineService {
    * @param {"casual" | "ranked"} [mode]
    */
   async queue(deckId, mode = "casual") {
+    // Cleared before asking: the server may tell why it holds the player apart before it answers.
+    this.#set({ notice: null });
     const reply = await this.#connection.request("queue.join", { mode, deckId });
     if (!reply.ok || reply.value.t === "error") {
       const error = reply.ok ? reply.value.d : reply.error;
@@ -171,7 +174,7 @@ export class OnlineService {
 
   async leaveQueue() {
     await this.#connection.request("queue.leave", {});
-    this.#set({ status: OnlineStatus.IDLE });
+    this.#set({ status: OnlineStatus.IDLE, notice: null });
   }
 
   /**
@@ -284,11 +287,15 @@ export class OnlineService {
 
   /**
    * Where the player's search stands, as the server says it.
-   * @param {{ state: string, reason?: string }} status
+   * @param {{ state: string, reason?: string, message?: string }} status
    */
   #onQueueStatus(status) {
     if (this.#state.session === null) {
       this.#set({ status: status.state === "searching" ? OnlineStatus.SEARCHING : OnlineStatus.IDLE });
+    }
+    // Still searching, but held apart from everyone waiting: the pair played its ranked games of the day (T24).
+    if (status.state !== "searching" || status.reason === "pair_limit") {
+      this.#set({ notice: status.reason === "pair_limit" ? String(status.message ?? "") : null });
     }
     // Taken out of the ranked queue: the entries a game takes ran out while waiting.
     if (status.reason === "entries") {

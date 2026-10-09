@@ -25,7 +25,7 @@ Prima l'unico modo per giocare online era la coda: due giocatori che volevano sf
 | Si sfida solo chi è online, attivo e non in partita. Chi è in coda si può sfidare: se accetta esce dalla coda. | Una sfida a chi non può rispondere resterebbe appesa. |
 | Il mazzo dello sfidante viene validato (regole e possesso) e **congelato** all'invio, come un biglietto di coda. Chi accetta sceglie il suo mazzo, che viene validato all'accettazione. | Vendere o modificare carte dopo l'invio non cambia la partita. |
 | Classificata solo se **entrambi** possono giocarla (stagione in corso, partite casual minime, 09). Lo sfidante riceve un messaggio diverso se è lui a non poterla giocare o se è l'altro. | Gli stessi requisiti della coda classificata. |
-| Le partite classificate da sfida contano come quelle della coda: oltre `maxRatedGamesPerPairPerDay` partite fra la stessa coppia in 24 ore vengono registrate ma non cambiano il rating (T24). | La sfida diretta rende più facile accordarsi sui risultati: il limite per coppia esiste già per questo. |
+| Le partite classificate da sfida contano come quelle della coda: dopo `maxRatedGamesPerPairPerDay` partite fra la stessa coppia in 24 ore, la sfida classificata viene rifiutata all'invio (`LIMIT_REACHED`, il messaggio dice fra quanto e perché) e all'accettazione (la sfida si chiude con `pair_limit`) (T24). | La sfida diretta rende più facile accordarsi sui risultati: il limite per coppia esiste già per questo. |
 | Una sola sfida in uscita per giocatore: una nuova sostituisce la precedente, e il destinatario della vecchia viene avvisato. | Niente raffiche di sfide. |
 | Al massimo 5 sfide in attesa per destinatario (`LIMIT_REACHED`). | Nessuno viene sommerso. |
 | Dopo un rifiuto, lo stesso sfidante aspetta 30 secondi prima di sfidare di nuovo la stessa persona (`RATE_LIMITED`). | Evita le insistenze. |
@@ -54,7 +54,7 @@ Server → client:
 | `t` | `d` |
 |---|---|
 | `challenge.received` | `<sfida>`, al destinatario |
-| `challenge.closed` | `{ "challengeId", "reason", "gameId"? }` a chi deve saperlo. `reason`: `accepted` (allo sfidante, con `gameId`), `declined`, `cancelled`, `expired`, `offline`, `busy`, `maintenance` |
+| `challenge.closed` | `{ "challengeId", "reason", "gameId"? }` a chi deve saperlo. `reason`: `accepted` (allo sfidante, con `gameId`), `declined`, `cancelled`, `expired`, `offline`, `busy`, `maintenance`, `pair_limit` (allo sfidante: all'accettazione la coppia aveva già raggiunto il limite di partite classificate) |
 
 `<sfida>` = `{ "id", "from", "to", "mode", "expiresAt", "expiresInMs" }`. Il client calcola la scadenza dal proprio orologio con `expiresInMs`, così l'ora del server non conta.
 

@@ -12,6 +12,8 @@ import { buildTestApp, bundledContent, deterministicRandom, listen } from "../he
 import { ApiClient } from "../support/apiClient.js";
 
 const SEASON = "2026-s1";
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 
 /** The app with ranked settings adjusted for a test. */
 async function world(overrides = {}) {
@@ -137,20 +139,58 @@ describe("ranked play", () => {
     assert.deepEqual((await admin.rankingFlags()).length, 2, "operators see them");
   });
 
-  it("pairs two players again past the daily limit, straight away", async () => {
+  it("holds two players apart in the queue once they played their rated games of the day, and tells them for how long and why", async () => {
+    const { setup, player } = await world({ fairPlay: { maxRatedGamesPerPairPerDay: 2 } });
+    const alice = await player("alice");
+    const bob = await player("bob");
+    const carol = await player("carol");
+    await rankedGame(setup, alice, bob, bob);
+    const firstEnded = setup.clock.now();
+    setup.clock.advance(HOUR);
+    await rankedGame(setup, alice, bob, alice);
+    const games = () => alice.inbox.filter((message) => message.t === "match.found").length;
+    const played = games();
+
+    await setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId });
+    setup.clock.advance(1000);
+    await setup.app.matchmaking.join({ user: bob.user, mode: "ranked", deckId: bob.deckId });
+    assert.equal(games(), played, "not paired again");
+    const told = last(alice.inbox, "queue.status");
+    assert.deepEqual([told.state, told.reason, told.opponent, told.nextAt], ["searching", "pair_limit", "bob", firstEnded + DAY], "free again once their older game is a day old");
+    assert.equal(told.message, "You will not be paired with @bob for 23h 00m: you have played 2 ranked games together in 24 hours, the most two players may. Looking for someone else…");
+    assert.equal(last(bob.inbox, "queue.status").opponent, "alice");
+    await setup.app.matchmaking.pair();
+    assert.equal(alice.inbox.filter((message) => message.d?.reason === "pair_limit").length, 1, "told once per search");
+
+    await setup.app.matchmaking.join({ user: carol.user, mode: "ranked", deckId: carol.deckId });
+    assert.equal(last(carol.inbox, "match.found").gameId, last(alice.inbox, "match.found").gameId, "the oldest ticket plays the oldest one it may");
+    assert.deepEqual(await setup.app.matchmaking.status(bob.user.id), { state: "searching", mode: "ranked", since: told.since + 1000 });
+    await playAndConcede(setup, last(alice.inbox, "match.found").gameId, [alice, carol], carol);
+    await setup.app.matchmaking.leave(bob.user.id);
+
+    setup.clock.advance(firstEnded + DAY - setup.clock.now());
+    await setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId });
+    await setup.app.matchmaking.join({ user: bob.user, mode: "ranked", deckId: bob.deckId });
+    assert.equal(last(bob.inbox, "match.found").gameId, last(alice.inbox, "match.found").gameId, "a day after their older game, they play again");
+  });
+
+  it("refuses a ranked challenge between two players who played their rated games of the day, saying for how long and why", async () => {
     const { setup, player } = await world({ fairPlay: { maxRatedGamesPerPairPerDay: 1 } });
     const alice = await player("alice");
     const bob = await player("bob");
+    const asParty = (entrant) => ({ userId: entrant.user.id, account: entrant.user.account });
+    const lobby = setup.app.lobby;
+
+    // Sent while they may, accepted after a queue game between them.
+    const sent = await lobby.challenge({ user: asParty(alice), to: "bob", mode: "ranked", deckId: alice.deckId });
     await rankedGame(setup, alice, bob, bob);
-    await setup.app.matchmaking.join({ user: alice.user, mode: "ranked", deckId: alice.deckId });
-    await setup.app.matchmaking.join({ user: bob.user, mode: "ranked", deckId: bob.deckId });
-    const rematch = last(bob.inbox, "match.found");
-    assert.equal(last(alice.inbox, "match.found").gameId, rematch.gameId);
-    const before = await setup.app.ranking.ratingOf(alice.user.id);
-    await playAndConcede(setup, rematch.gameId, [alice, bob], bob);
-    const [change] = await setup.database.rows("SELECT counted, reason FROM rating_changes WHERE game_id = $1 AND user_id = $2", [rematch.gameId, alice.user.id]);
-    assert.deepEqual([change.counted, change.reason], [false, "repeat_pair"], "played, recorded, but not rated");
-    assert.equal((await setup.app.ranking.ratingOf(alice.user.id)).rating, before.rating);
+    const refused = (error) => error.code === "LIMIT_REACHED" && /^You can play ranked with @\w+ again in 24h 00m: you have played 1 ranked game together in 24 hours, the most two players may\.$/.test(error.message);
+    await assert.rejects(lobby.accept({ user: asParty(bob), challengeId: sent.id, deckId: bob.deckId }), refused);
+    assert.deepEqual(last(alice.inbox, "challenge.closed"), { challengeId: sent.id, reason: "pair_limit" });
+
+    setup.clock.advance(HOUR);
+    await assert.rejects(lobby.challenge({ user: asParty(bob), to: "alice", mode: "ranked", deckId: bob.deckId }), (error) => error.code === "LIMIT_REACHED" && /again in 23h 00m/.test(error.message) && error.details.opponent === "alice");
+    assert.equal((await lobby.challenge({ user: asParty(bob), to: "alice", mode: "casual", deckId: bob.deckId })).mode, "casual", "casual games are not limited");
   });
 
   it("publishes a leaderboard: settled ratings ranked, provisional ones listed after them", async () => {
