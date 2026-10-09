@@ -176,7 +176,7 @@ export class RankingService {
 
   #pairLimitReason() {
     const limit = this.#settings.fairPlay.maxRatedGamesPerPairPerDay;
-    return `you have played ${limit} ranked ${limit === 1 ? "game" : "games"} together in 24 hours, the most two players may`;
+    return `at most ${limit} ranked ${limit === 1 ? "game" : "games"} a day with the same opponent`;
   }
 
   /**

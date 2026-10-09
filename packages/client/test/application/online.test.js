@@ -168,7 +168,7 @@ describe("OnlineService", () => {
     online.start();
     await flush();
     await online.queue("deck-1", "ranked");
-    const message = "You will not be paired with @bob for 3h 05m: you have played 3 ranked games together in 24 hours, the most two players may. Looking for someone else…";
+    const message = "You will not be paired with @bob for 3h 05m: at most 3 ranked games a day with the same opponent. Looking for someone else…";
     server.push("queue.status", { state: "searching", mode: "ranked", since: 1, reason: "pair_limit", opponent: "bob", nextAt: 2, message });
     assert.deepEqual([online.state.status, online.state.notice, online.state.error], [OnlineStatus.SEARCHING, message, null]);
     server.push("queue.status", { state: "searching", mode: "ranked", since: 1 });

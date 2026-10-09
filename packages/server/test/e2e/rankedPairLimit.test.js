@@ -55,7 +55,7 @@ describe("ranked daily limit per pair (two real clients, real server)", () => {
       await player.online.queue(player.deckId, "ranked");
     }
     await until(() => alice.online.state.notice !== null && bob.online.state.notice !== null, "both are told");
-    assert.match(alice.online.state.notice ?? "", /^You will not be paired with @bob for \d+h \d\dm: you have played 1 ranked game together in 24 hours, the most two players may\. Looking for someone else…$/);
+    assert.match(alice.online.state.notice ?? "", /^You will not be paired with @bob for \d+h \d\dm: at most 1 ranked game a day with the same opponent\. Looking for someone else…$/);
     assert.match(bob.online.state.notice ?? "", /^You will not be paired with @alice for /);
     await w.setup.app.matchmaking.pair();
     await settle();
@@ -68,7 +68,7 @@ describe("ranked daily limit per pair (two real clients, real server)", () => {
     // A ranked challenge between them is refused with the same reason; a casual one goes through.
     const refused = await alice.lobby.challenge("bob", "ranked", alice.deckId);
     assert.equal(refused.ok ? null : refused.error.code, "LIMIT_REACHED");
-    assert.match(alice.lobby.state.error?.message ?? "", /^You can play ranked with @bob again in \d+h \d\dm: you have played 1 ranked game together in 24 hours, the most two players may\.$/, "shown to the challenger");
+    assert.match(alice.lobby.state.error?.message ?? "", /^You can play ranked with @bob again in \d+h \d\dm: at most 1 ranked game a day with the same opponent\.$/, "shown to the challenger");
     assert.equal((await alice.lobby.challenge("bob", "casual", alice.deckId)).ok, true);
     await until(() => bob.lobby.state.incoming.length === 1, "bob hears the casual challenge");
     for (const player of [alice, bob]) {

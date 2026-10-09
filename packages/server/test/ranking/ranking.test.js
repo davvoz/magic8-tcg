@@ -157,7 +157,7 @@ describe("ranked play", () => {
     assert.equal(games(), played, "not paired again");
     const told = last(alice.inbox, "queue.status");
     assert.deepEqual([told.state, told.reason, told.opponent, told.nextAt], ["searching", "pair_limit", "bob", firstEnded + DAY], "free again once their older game is a day old");
-    assert.equal(told.message, "You will not be paired with @bob for 23h 00m: you have played 2 ranked games together in 24 hours, the most two players may. Looking for someone else…");
+    assert.equal(told.message, "You will not be paired with @bob for 23h 00m: at most 2 ranked games a day with the same opponent. Looking for someone else…");
     assert.equal(last(bob.inbox, "queue.status").opponent, "alice");
     await setup.app.matchmaking.pair();
     assert.equal(alice.inbox.filter((message) => message.d?.reason === "pair_limit").length, 1, "told once per search");
@@ -184,7 +184,7 @@ describe("ranked play", () => {
     // Sent while they may, accepted after a queue game between them.
     const sent = await lobby.challenge({ user: asParty(alice), to: "bob", mode: "ranked", deckId: alice.deckId });
     await rankedGame(setup, alice, bob, bob);
-    const refused = (error) => error.code === "LIMIT_REACHED" && /^You can play ranked with @\w+ again in 24h 00m: you have played 1 ranked game together in 24 hours, the most two players may\.$/.test(error.message);
+    const refused = (error) => error.code === "LIMIT_REACHED" && /^You can play ranked with @\w+ again in 24h 00m: at most 1 ranked game a day with the same opponent\.$/.test(error.message);
     await assert.rejects(lobby.accept({ user: asParty(bob), challengeId: sent.id, deckId: bob.deckId }), refused);
     assert.deepEqual(last(alice.inbox, "challenge.closed"), { challengeId: sent.id, reason: "pair_limit" });
 
