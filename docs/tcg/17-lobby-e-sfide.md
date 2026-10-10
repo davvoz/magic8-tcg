@@ -18,6 +18,10 @@ Prima l'unico modo per giocare online era la coda: due giocatori che volevano sf
 - L'ordine è: prima i liberi, poi chi è in coda, poi chi gioca; a parità, per nome. Massimo 200 giocatori. Il richiedente non compare nella sua lista.
 - La lista viene costruita al massimo una volta ogni 2 secondi ed è condivisa da tutte le richieste. Il client la rilegge ogni 5 secondi solo mentre la lobby è aperta.
 
+## Classificata automatica
+
+Accanto a *Casual* e *Ranked* la lobby ha una terza modalità, **Auto** (23): il giocatore sceglie un mazzo e uno stile, paga un ingresso ranked ed entra nella lista automatica. L'AI gioca il suo mazzo contro il prossimo che entra, anche ore dopo; il risultato arriva come notifica, con il replay. Non serve nessuno online.
+
 ## Sfide
 
 | Regola | Perché |

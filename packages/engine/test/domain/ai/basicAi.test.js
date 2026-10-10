@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { BasicAiController } from "../../src/application/match/BasicAiController.js";
-import { CommandType } from "@magic8/engine/domain/commands/CommandType.js";
-import { declareAttackers, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
-import { ZoneType } from "@magic8/engine/domain/game/ZoneType.js";
-import { P1, P2 } from "@magic8/engine/testing/fixtures.js";
-import { createScenario } from "@magic8/engine/testing/scenario.js";
+import { AI_STYLES, AiStyle, BasicAi } from "../../../src/domain/ai/BasicAi.js";
+import { CommandType } from "../../../src/domain/commands/CommandType.js";
+import { declareAttackers, endPhase, endTurn } from "../../../src/domain/commands/commandFactories.js";
+import { ZoneType } from "../../../src/domain/game/ZoneType.js";
+import { P1, P2 } from "../engine/fixtures.js";
+import { createScenario } from "../engine/scenario.js";
 
-const ai = new BasicAiController();
+const ai = new BasicAi();
 const HAND = ZoneType.HAND;
 const BF = ZoneType.BATTLEFIELD;
 
-describe("BasicAiController — main phase", () => {
+describe("BasicAi — main phase", () => {
   it("plays the most expensive playable card and targets the enemy creature it can kill", () => {
     const { engine, id } = createScenario({
       p1: { hand: ["ember_bolt", "lava_brute", "ember_imp"], resources: 5 },
@@ -112,7 +112,7 @@ describe("BasicAiController — main phase", () => {
   });
 });
 
-describe("BasicAiController — combat", () => {
+describe("BasicAi — combat", () => {
   it("attacks with creatures that cannot be blocked and killed for free", () => {
     const { engine, id } = createScenario({
       p1: { battlefield: ["ember_imp", "iron_colossus", "bulwark_engine"] },
@@ -158,5 +158,51 @@ describe("BasicAiController — combat", () => {
     lethal.engine.execute(endPhase(P1));
     lethal.engine.execute(declareAttackers(P1, [lethal.id(P1, BF)]));
     assert.deepEqual(ai.decide(lethal.engine.getSnapshot(P2)).blocks, [{ attackerId: lethal.id(P1, BF), blockerId: lethal.id(P2, BF) }], "chump to survive");
+  });
+});
+
+describe("BasicAi — styles", () => {
+  const aggressive = new BasicAi(AiStyle.AGGRESSIVE);
+  const defensive = new BasicAi(AiStyle.DEFENSIVE);
+
+  it("plays the balanced rules by default and refuses an unknown style", () => {
+    assert.equal(ai.style, AiStyle.BALANCED);
+    assert.deepEqual(AI_STYLES, ["aggressive", "balanced", "defensive"]);
+    assert.throws(() => new BasicAi("reckless"), /unknown AI style "reckless"/);
+  });
+
+  it("aggressive: aims damage at the enemy player once they are at 8 life or less", () => {
+    const { engine, id } = createScenario({ p1: { hand: ["ember_bolt"], resources: 2 }, p2: { life: 8, battlefield: ["lava_brute"] } });
+    assert.deepEqual(ai.decide(engine.getSnapshot(P1)).targets, [id(P2, BF)], "balanced kills the brute");
+    assert.deepEqual(aggressive.decide(engine.getSnapshot(P1)).targets, [P2]);
+  });
+
+  it("aggressive: attacks with everything once the enemy is at 5 life or less", () => {
+    const { engine, id } = createScenario({ p1: { battlefield: ["ember_imp"] }, p2: { life: 5, battlefield: ["steel_sentinel"] } });
+    engine.execute(endPhase(P1));
+    assert.deepEqual(ai.decide(engine.getSnapshot(P1)).attackerIds, [], "balanced keeps the imp the sentinel would kill for free");
+    assert.deepEqual(aggressive.decide(engine.getSnapshot(P1)).attackerIds, [id(P1, BF)]);
+  });
+
+  it("aggressive: blocks to kill and survive, never to trade", () => {
+    const { engine, id } = createScenario({ p1: { battlefield: ["lava_brute", "ember_imp"] }, p2: { battlefield: ["iron_colossus", "scrap_golem"] } });
+    engine.execute(endPhase(P1));
+    engine.execute(declareAttackers(P1, [id(P1, BF, 0), id(P1, BF, 1)]));
+    assert.deepEqual(aggressive.decide(engine.getSnapshot(P2)).blocks, [{ attackerId: id(P1, BF, 0), blockerId: id(P2, BF, 0) }], "the golem stays home to attack");
+  });
+
+  it("defensive: attacks only with creatures no untapped blocker can kill", () => {
+    const { engine, id } = createScenario({ p1: { battlefield: ["lava_brute", "iron_colossus"] }, p2: { battlefield: ["clockwork_knight"] } });
+    engine.execute(endPhase(P1));
+    assert.deepEqual(ai.decide(engine.getSnapshot(P1)).attackerIds, [id(P1, BF, 0), id(P1, BF, 1)], "balanced accepts the brute's trade");
+    assert.deepEqual(defensive.decide(engine.getSnapshot(P1)).attackerIds, [id(P1, BF, 1)]);
+  });
+
+  it("defensive: chump-blocks when the hit would leave it at half its life or less", () => {
+    const { engine, id } = createScenario({ p1: { battlefield: ["lava_brute"] }, p2: { life: 12, battlefield: ["scrap_golem"] } });
+    engine.execute(endPhase(P1));
+    engine.execute(declareAttackers(P1, [id(P1, BF)]));
+    assert.deepEqual(ai.decide(engine.getSnapshot(P2)).blocks, [], "balanced takes 4 at 12 life");
+    assert.deepEqual(defensive.decide(engine.getSnapshot(P2)).blocks, [{ attackerId: id(P1, BF), blockerId: id(P2, BF) }]);
   });
 });

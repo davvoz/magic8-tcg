@@ -55,7 +55,8 @@ export const EVENT_KINDS = Object.freeze(Object.values(EventKind));
 export const Seat = Object.freeze({ S0: "s0", S1: "s1" });
 export const SEATS = Object.freeze([Seat.S0, Seat.S1]);
 
-export const GameMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
+/** auto: a ranked game the server plays with the AI for both players (docs/tcg/23-automatica.md). */
+export const GameMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked", AUTO: "auto" });
 
 export const EntropySource = Object.freeze({ CLIENT: "client", SERVER: "server" });
 

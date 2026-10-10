@@ -28,8 +28,8 @@ const TONE_CUES = Object.freeze({ good: SoundCue.NOTIFY_GOOD, bad: SoundCue.NOTI
 const AVATAR_RADIUS = 24;
 
 /**
- * @typedef {Readonly<{ title: string, body: string, tone: "good" | "bad" | "info", account?: string, opens?: string, cue?: string }>} ToastMessage
- *   `account`: the player the toast is about (their portrait is shown); `opens`: where a click leads, for `onOpen`;
+ * @typedef {Readonly<{ title: string, body: string, tone: "good" | "bad" | "info", account?: string, opens?: string, params?: Readonly<Record<string, unknown>>, cue?: string }>} ToastMessage
+ *   `account`: the player the toast is about (their portrait is shown); `opens`: where a click leads, for `onOpen`, and `params` what that screen is told;
  *   `cue`: the sound it arrives with (a SoundCue), when not its tone's
  * @typedef {{ message: ToastMessage, ageMs: number }} Toast
  */

@@ -132,6 +132,24 @@ describe("NotificationsScene", () => {
     scene.exit();
   });
 
+  it("opens the replay of an auto game from its notification", async () => {
+    const h = harness();
+    const played = { id: 9, kind: "auto.finished", data: { gameId: "01j8x3r6h2qkq4w0v7m5a9c1dz", opponent: "bob", result: "win", style: "aggressive", opponentStyle: "balanced", rating: null }, createdAt: NOW - 60 * 1000, read: false };
+    const list = h.api.list;
+    h.api.list = async () => {
+      const page = await list();
+      return ok({ ...page.value, notifications: [played, ...page.value.notifications] });
+    };
+    h.notifications.start();
+    await settle();
+    const scene = new NotificationsScene(h.services, h.app, () => NOW);
+    scene.enter({});
+    await settle();
+    byId(scene, "notifications.entry.9").activate();
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.REPLAY, params: { gameId: "01j8x3r6h2qkq4w0v7m5a9c1dz", from: SceneId.NOTIFICATIONS } });
+    scene.exit();
+  });
+
   it("says so when there is nothing yet", async () => {
     const h = harness();
     h.api.list = async () => ok({ notifications: [], unread: 0, more: false });

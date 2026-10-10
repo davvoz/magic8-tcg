@@ -7,7 +7,7 @@
  */
 
 /** Where a notification leads. */
-export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", ONLINE: "online" });
+export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", ONLINE: "online", REPLAY: "replay" });
 
 /** Kinds after which the player's collection has changed (it should be read again). */
 export const COLLECTION_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "trade.accepted", "trade.declined", "trade.cancelled", "trade.expired", "sale.sold", "sale.bought", "sale.listing_expired"]);
@@ -26,7 +26,8 @@ const PAYMENT_PROBLEMS = Object.freeze({
 
 /**
  * @typedef {Readonly<{ definitionId: string, count?: number, caption?: string, serial?: number }>} NotificationCard
- * @typedef {Readonly<{ title: string, body: string, cards: readonly NotificationCard[], target: string | null, tone: "good" | "bad" | "info", account?: string }>} NotificationText
+ * @typedef {Readonly<{ title: string, body: string, cards: readonly NotificationCard[], target: string | null, tone: "good" | "bad" | "info", account?: string, gameId?: string }>} NotificationText
+ *   `gameId`: the game a REPLAY target opens
  * @typedef {{ data: Readonly<Record<string, any>>, account: string, name: (definitionId: unknown) => string, list: (cards: unknown) => string, single: NotificationCard | null, singleName: string, problem: string }} Facts
  */
 
@@ -68,6 +69,18 @@ const DESCRIBERS = Object.freeze({
     const place = ["1st", "2nd", "3rd"][Number(data.place) - 1] ?? `#${data.place ?? "?"}`;
     return text({ title: `You finished ${place} in ${data.season ?? "the season"}!`, body: `Your share of the jackpot, ${data.amount ?? "?"} ${data.asset ?? ""}, will be sent to your wallet.`, target: null, tone: "good" });
   },
+  "auto.finished": ({ data }) => {
+    const opponent = typeof data.opponent === "string" ? `@${data.opponent}` : "another player";
+    const outcome = AUTO_OUTCOMES[/** @type {keyof typeof AUTO_OUTCOMES} */ (data.result)] ?? AUTO_OUTCOMES.draw;
+    const styles = `Your deck played ${styleName(data.style)}, ${opponent}'s ${styleName(data.opponentStyle)}.`;
+    const rating = Number.isFinite(data.rating?.before) && Number.isFinite(data.rating?.after) ? ` Rating ${data.rating.before} → ${data.rating.after}.` : "";
+    const played = text({ title: `Auto game vs ${opponent}: ${outcome.title}`, body: `${styles}${rating} Watch the game.`, target: NotificationTarget.REPLAY, tone: outcome.tone });
+    return typeof data.gameId === "string" ? Object.freeze({ ...played, gameId: data.gameId }) : played;
+  },
+  "auto.refunded": ({ data }) => {
+    const why = data.reason === "season_ended" ? "The season ended before anyone joined the auto list against you" : "Your auto game could not be played";
+    return text({ title: "Your ranked entry is back", body: `${why}: your ranked entry is back, ready for another game.`, target: NotificationTarget.ONLINE, tone: "info" });
+  },
   "sale.payment_problem": ({ account, single, singleName, problem }) => text({ title: "Payment not accepted", body: `Your transfer to ${account} for ${singleName} pays nothing: ${problem}. Ask ${account} to send it back.`, cards: only(single), target: NotificationTarget.MARKET, tone: "bad" }),
 });
 
@@ -100,6 +113,16 @@ export function describeNotification({ kind, data }, catalog) {
   });
   return typeof data.account === "string" ? Object.freeze({ ...described, account: data.account }) : described;
 }
+
+/** How an auto game went for the player. */
+const AUTO_OUTCOMES = Object.freeze({
+  win: Object.freeze({ title: "you won", tone: /** @type {const} */ ("good") }),
+  loss: Object.freeze({ title: "you lost", tone: /** @type {const} */ ("bad") }),
+  draw: Object.freeze({ title: "a draw", tone: /** @type {const} */ ("info") }),
+});
+
+/** "Aggressive": an AI style as the player chose it. @param {unknown} style */
+const styleName = (style) => (typeof style === "string" && style.length > 0 ? style[0].toUpperCase() + style.slice(1) : "its own way");
 
 /**
  * @param {{ title: string, body: string, cards?: readonly NotificationCard[], target: string | null, tone: "good" | "bad" | "info" }} parts

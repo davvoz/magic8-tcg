@@ -11,6 +11,7 @@ export const SceneId = Object.freeze({
   LEADERBOARD: "leaderboard",
   GAME_HISTORY: "gameHistory",
   LIVE_GAMES: "liveGames",
+  REPLAY: "replay",
   TRADES: "trades",
   MARKET: "market",
   NOTIFICATIONS: "notifications",

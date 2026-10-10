@@ -12,6 +12,9 @@
  * - A session built with an `openingToss` shows it before the first turn:
  *   the match screen plays the toss, then calls `begin()`, so the AI never
  *   moves while the coin is still in the air.
+ * - A session can set its own `pace` for the non-human seats (a replay's,
+ *   whose speed the player picks), and with no human seat a `viewerId`: the
+ *   seat whose side the board shows, though nobody plays it.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { CommandError } from "@magic8/engine/domain/commands/CommandError.js";
@@ -24,6 +27,7 @@ const MAX_CONSECUTIVE_AI_DECISIONS = 200;
 
 /**
  * @typedef {Readonly<{ events: readonly Readonly<Record<string, unknown>>[], version: number, playerId: string | null }>} SessionUpdate
+ * @typedef {{ wait: () => Promise<void> }} MovePace what a non-human seat waits on before each move
  */
 
 export class MatchSession {
@@ -33,6 +37,10 @@ export class MatchSession {
   #scheduler;
   #logger;
   #aiDelayMs;
+  /** @type {MovePace | null} */
+  #pace;
+  /** @type {string | null} */
+  #viewerId;
   /** @type {import("./CoinToss.js").CoinToss | null} */
   #openingToss;
   /** The STEEM account playing each seat that has one. @type {ReadonlyMap<string, string>} */
@@ -45,16 +53,20 @@ export class MatchSession {
   #stopped = false;
 
   /**
-   * @param {{ engine: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, controllers: ReadonlyMap<string, import("./PlayerController.contract.js").PlayerController>, scheduler: import("../ports/Scheduler.contract.js").Scheduler, logger: import("../ports/Logger.contract.js").Logger, aiDelayMs?: number, openingToss?: import("./CoinToss.js").CoinToss | null, accounts?: ReadonlyMap<string, string> }} deps
+   * @param {{ engine: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, controllers: ReadonlyMap<string, import("./PlayerController.contract.js").PlayerController>, scheduler: import("../ports/Scheduler.contract.js").Scheduler, logger: import("../ports/Logger.contract.js").Logger, aiDelayMs?: number, pace?: MovePace | null, viewerId?: string | null, openingToss?: import("./CoinToss.js").CoinToss | null, accounts?: ReadonlyMap<string, string> }} deps
+   *   `pace`: what the non-human seats wait on before each move, instead of `aiDelayMs`;
+   *   `viewerId`: with no human seat, the seat whose side the board shows (null: a spectator's board);
    *   `openingToss`: the toss that seated the engine's first player, to be shown before the match begins;
    *   `accounts`: the STEEM account playing each seat that has one (the signed-in player; never the AI)
    */
-  constructor({ engine, controllers, scheduler, logger, aiDelayMs = 0, openingToss = null, accounts = new Map() }) {
+  constructor({ engine, controllers, scheduler, logger, aiDelayMs = 0, pace = null, viewerId = null, openingToss = null, accounts = new Map() }) {
     this.#engine = engine;
     this.#controllers = new Map(controllers);
     this.#scheduler = scheduler;
     this.#logger = logger;
     this.#aiDelayMs = aiDelayMs;
+    this.#pace = pace;
+    this.#viewerId = viewerId;
     this.#openingToss = openingToss;
     this.#accounts = new Map(accounts);
   }
@@ -80,6 +92,16 @@ export class MatchSession {
   /** No decision clock offline: practice and hot-seat matches are untimed. */
   get clock() {
     return null;
+  }
+
+  /** The pace the non-human seats keep, when the session was given one. */
+  get pace() {
+    return this.#pace;
+  }
+
+  /** With no human seat, the seat whose side the board shows; null for a spectator's board. */
+  get viewerId() {
+    return this.#viewerId;
   }
 
   /** Ids of seats driven by humans, in seating order. */
@@ -185,7 +207,7 @@ export class MatchSession {
         this.#abandonSeat(next.playerId, "too many consecutive decisions");
         return;
       }
-      await this.#scheduler.delay(this.#aiDelayMs);
+      await (this.#pace === null ? this.#scheduler.delay(this.#aiDelayMs) : this.#pace.wait());
       if (this.#stopped) {
         return;
       }

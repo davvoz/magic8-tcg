@@ -77,6 +77,7 @@ export class SeasonCalendar {
       prizePools: initial.prizePools,
       eligibility: initial.eligibility,
       fairPlay: initial.fairPlay,
+      auto: initial.auto,
     });
   }
 

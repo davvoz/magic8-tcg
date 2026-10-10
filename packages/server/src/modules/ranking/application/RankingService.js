@@ -12,6 +12,10 @@
  *   changes nothing, and is flagged. Repeated quick concessions between the
  *   same players are flagged for an operator. Ratings carry no market value
  *   in v1, so flags inform, they do not punish.
+ * - Auto games (docs/tcg/23-automatica.md) count in the same ratings, at
+ *   `auto.ratingWeightPercent` of the Glicko-2 change (rating, deviation and
+ *   volatility alike), and toward a settled rating like any game. The daily
+ *   limit per pair counts auto games and games played by hand apart.
  * - Results arrive from the gameplay module right after a game ends; a
  *   periodic catch-up records any game that was missed (a restart, a failed
  *   write). Recording is idempotent, so both paths can see the same game.
@@ -21,6 +25,9 @@ import { DEFAULT_RATING, rateGame } from "../domain/Glicko2.js";
 import { seasonAt } from "../domain/RankedSettings.js";
 
 export const RANKED = "ranked";
+export const AUTO = "auto";
+/** The modes whose games change ratings. */
+const RATED_MODES = Object.freeze([RANKED, AUTO]);
 const CASUAL = "casual";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CATCH_UP_WINDOW_MS = 2 * DAY_MS;
@@ -130,11 +137,12 @@ export class RankingService {
    * The pairs among these players that played their rated games of the day together (T24), and when each pair may
    * play a ranked game together again. Ranked play between them is refused until then (queue, challenges).
    * @param {readonly string[]} userIds
+   * @param {string} [mode] the games counted: ranked ones played by hand, or auto ones
    * @returns {Promise<readonly Readonly<{ userIds: readonly [string, string], nextAt: number }>[]>}
    */
-  async pairsAtLimit(userIds) {
+  async pairsAtLimit(userIds, mode = RANKED) {
     const limit = this.#settings.fairPlay.maxRatedGamesPerPairPerDay;
-    const pairs = await this.#repository.pairsAtLimit(userIds, this.#clock.now() - DAY_MS, limit);
+    const pairs = await this.#repository.pairsAtLimit(userIds, this.#clock.now() - DAY_MS, limit, mode);
     return Object.freeze(pairs.map((pair) => Object.freeze({ userIds: pair.userIds, nextAt: pair.finishedAt + DAY_MS })));
   }
 
@@ -180,15 +188,17 @@ export class RankingService {
   }
 
   /**
-   * Records a finished game (idempotent). Casual games are ignored.
+   * Records a finished game (idempotent). Casual games are ignored. Joins the caller's unit of work, if any (an
+   * auto game is rated in the one that records it).
    * @param {FinishedGame} game
    * @returns {Promise<boolean>} true when this call recorded it
    */
   async record(game) {
     const season = seasonAt(this.#settings, game.finishedAt);
-    if (game.mode !== RANKED || season === null || game.players.length !== 2) {
+    if (!RATED_MODES.includes(game.mode) || season === null || game.players.length !== 2) {
       return false;
     }
+    const weight = game.mode === AUTO ? this.#settings.auto.ratingWeightPercent / 100 : 1;
     const recorded = await this.#unitOfWork(async () => {
       if (await this.#repository.recorded(game.gameId)) {
         return false;
@@ -200,13 +210,14 @@ export class RankingService {
         before.set(player.userId, await this.#repository.lock({ season: season.id, userId: player.userId, account: player.account, ...DEFAULT_RATING, at: game.finishedAt }));
       }
       const [first, second] = game.players;
-      const counted = await this.#repository.countCounted(first.userId, second.userId, game.finishedAt - DAY_MS) < this.#settings.fairPlay.maxRatedGamesPerPairPerDay;
+      const counted = (await this.#repository.countCounted(first.userId, second.userId, game.finishedAt - DAY_MS, game.mode)) < this.#settings.fairPlay.maxRatedGamesPerPairPerDay;
       const firstScore = scoreOf(game.winnerSeat, first.seat);
       const after = rateGame(before.get(first.userId), before.get(second.userId), firstScore);
       for (const [index, player] of [first, second].entries()) {
         const opponent = index === 0 ? second : first;
         const score = index === 0 ? firstScore : /** @type {0 | 0.5 | 1} */ (1 - firstScore);
-        await this.#write({ game, season: season.id, player, opponent, score, counted, before: before.get(player.userId), after: after[index] });
+        const start = before.get(player.userId);
+        await this.#write({ game, season: season.id, player, opponent, score, counted, weight, before: start, after: weighted(start, after[index], weight) });
       }
       await this.#flag(game, season.id, counted);
       return true;
@@ -218,14 +229,16 @@ export class RankingService {
   }
 
   /**
-   * @param {{ game: FinishedGame, season: string, player: { userId: string }, opponent: { userId: string }, score: 0 | 0.5 | 1, counted: boolean, before: StoredRating, after: import("../domain/Glicko2.js").Rating }} change
+   * @param {{ game: FinishedGame, season: string, player: { userId: string }, opponent: { userId: string }, score: 0 | 0.5 | 1, counted: boolean, weight: number, before: StoredRating, after: import("../domain/Glicko2.js").Rating }} change
    */
-  async #write({ game, season, player, opponent, score, counted, before, after }) {
+  async #write({ game, season, player, opponent, score, counted, weight, before, after }) {
     const result = counted ? after : before;
     await this.#repository.insertChange({
       gameId: game.gameId,
       userId: player.userId,
       season,
+      mode: game.mode,
+      weight,
       opponentId: opponent.userId,
       score,
       counted,
@@ -252,10 +265,12 @@ export class RankingService {
     const [userA, userB] = [first.userId, second.userId].sort();
     const day = new Date(Math.floor(game.finishedAt / DAY_MS) * DAY_MS).toISOString().slice(0, 10);
     if (!counted) {
-      await this.#repository.insertFlag({ season, kind: "repeat_pair", userA, userB, details: { game: game.gameId, day }, fingerprint: `repeat_pair:${season}:${userA}:${userB}:${day}`, at: game.finishedAt });
+      const fingerprint = game.mode === RANKED ? `repeat_pair:${season}:${userA}:${userB}:${day}` : `repeat_pair:${game.mode}:${season}:${userA}:${userB}:${day}`;
+      await this.#repository.insertFlag({ season, kind: "repeat_pair", userA, userB, details: { game: game.gameId, day, mode: game.mode }, fingerprint, at: game.finishedAt });
     }
     const { earlyConcedeTurn, earlyConcedesToFlag, earlyConcedeWindowDays } = this.#settings.fairPlay;
-    if (game.endReason !== "concede" || game.turn > earlyConcedeTurn) {
+    // Nobody concedes an auto game: the AI plays it to the end.
+    if (game.mode !== RANKED || game.endReason !== "concede" || game.turn > earlyConcedeTurn) {
       return;
     }
     const early = await this.#repository.countEarlyConcedes({ userId: first.userId, opponentId: second.userId, since: game.finishedAt - earlyConcedeWindowDays * DAY_MS, turn: earlyConcedeTurn });
@@ -264,13 +279,26 @@ export class RankingService {
     }
   }
 
-  /** Records ranked games of the last two days that were missed. */
+  /** Records rated games of the last two days that were missed. */
   async catchUp() {
     let recorded = 0;
-    for (const game of await this.#games.finishedGames({ mode: RANKED, since: this.#clock.now() - CATCH_UP_WINDOW_MS })) {
-      recorded += (await this.record(game)) ? 1 : 0;
+    for (const mode of RATED_MODES) {
+      for (const game of await this.#games.finishedGames({ mode, since: this.#clock.now() - CATCH_UP_WINDOW_MS })) {
+        recorded += (await this.record(game)) ? 1 : 0;
+      }
     }
     return recorded;
+  }
+
+  /**
+   * What a recorded game did to a player's rating (rounded), or null when the game changed no rating (not rated yet).
+   * @param {string} gameId
+   * @param {string} userId
+   * @returns {Promise<Readonly<{ before: number, after: number, counted: boolean }> | null>}
+   */
+  async changeOf(gameId, userId) {
+    const change = await this.#repository.changeOf(gameId, userId);
+    return change === null ? null : Object.freeze({ before: Math.round(change.before), after: Math.round(change.after), counted: change.counted });
   }
 
   /**
@@ -334,4 +362,19 @@ export class RankingService {
   flags(limit = 100) {
     return this.#repository.openFlags(limit);
   }
+}
+
+/**
+ * Moves a rating only `weight` of the way from where it was to where Glicko-2 puts it.
+ * @param {import("../domain/Glicko2.js").Rating} before
+ * @param {import("../domain/Glicko2.js").Rating} after
+ * @param {number} weight 0 < weight <= 1
+ * @returns {import("../domain/Glicko2.js").Rating}
+ */
+function weighted(before, after, weight) {
+  if (weight === 1) {
+    return after;
+  }
+  const between = (/** @type {number} */ from, /** @type {number} */ to) => from + weight * (to - from);
+  return Object.freeze({ rating: between(before.rating, after.rating), rd: between(before.rd, after.rd), volatility: between(before.volatility, after.volatility) });
 }

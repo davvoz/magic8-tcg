@@ -25,6 +25,8 @@ import { describeLobbyEvent } from "./application/lobby/describeLobbyEvent.js";
 import { RankingService } from "./application/ranking/RankingService.js";
 import { JackpotService } from "./application/jackpot/JackpotService.js";
 import { EntryService } from "./application/entries/EntryService.js";
+import { AutoListService } from "./application/auto/AutoListService.js";
+import { AutoReplayService } from "./application/auto/AutoReplayService.js";
 import { TradingService } from "./application/trading/TradingService.js";
 import { BuyStage, SalesService } from "./application/sales/SalesService.js";
 import { PurchaseStage, ShopService } from "./application/shop/ShopService.js";
@@ -48,6 +50,8 @@ import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
 import { HttpGameHistoryApi } from "./infrastructure/api/HttpGameHistoryApi.js";
+import { HttpAutoApi } from "./infrastructure/api/HttpAutoApi.js";
+import { buildRecordedGameEngine } from "./infrastructure/random/recordedGameEngine.js";
 import { HttpLiveGamesApi } from "./infrastructure/api/HttpLiveGamesApi.js";
 import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
 import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js";
@@ -466,9 +470,11 @@ async function boot() {
   // One realtime connection per signed-in player, shared by online play and notifications.
   const realtime = new WebSocketConnection({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`, createSocket: (url) => new WebSocket(url), timers });
   maintenance.follow(realtime);
+  /** @param {number} bytes */
+  const randomHex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const online = new OnlineService({
     connection: realtime,
-    randomHex: (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    randomHex,
     newCommandId: () => crypto.randomUUID(),
     // The account's decks as the server judged them (ownership included).
     accountDecks: () =>
@@ -490,6 +496,9 @@ async function boot() {
   });
   // Who else is online, and challenges: heard on any screen once signed in.
   const lobby = new LobbyService({ connection: realtime, scheduler: browserScheduler, now: () => Date.now(), logger });
+  // The auto list (docs/tcg/23): the AI plays the player's deck against the next player who joins; its games can be watched again.
+  const autoList = new AutoListService({ connection: realtime, randomHex, logger });
+  const autoReplays = new AutoReplayService({ api: new HttpAutoApi({ fetch: httpFetch }), content: content.value, effects: createCoreEffectRegistry(), buildEngine: buildRecordedGameEngine, scheduler: browserScheduler, logger });
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });
   // The ranked season's jackpot: public, shown signed out too, read again every minute while on screen.
   const jackpot = new JackpotService({ api: new HttpJackpotApi({ fetch: httpFetch }), scheduler: browserScheduler, now: () => Date.now() });
@@ -511,12 +520,14 @@ async function boot() {
     if (state.status === AccountStatus.READY) {
       notifications.start();
       lobby.start();
+      autoList.start();
       // A challenge can be accepted while the player is on another screen: the game must reach them there.
       online.start();
     }
     if (state.account === null) {
       notifications.stop();
       lobby.stop();
+      autoList.stop();
       shop.dismiss();
       online.stop();
       ranking.reset();
@@ -546,6 +557,8 @@ async function boot() {
     activeKeys,
     online,
     lobby,
+    autoList,
+    autoReplays,
     ranking,
     gameHistory: new HttpGameHistoryApi({ fetch: httpFetch }),
     jackpot,
@@ -575,7 +588,7 @@ async function boot() {
   soundSales(sales, audio);
   soundOnline(online, audio);
   // A notification that arrives shows as a toast on any screen; a click opens the feed (or the lobby, for a challenge).
-  const toasts = new ToastLayer({ viewport, onOpen: (message) => sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS), requestRender: () => loop.requestRender(), sound: audio });
+  const toasts = new ToastLayer({ viewport, onOpen: (message) => sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS, message.params ?? {}), requestRender: () => loop.requestRender(), sound: audio });
   sceneManager.setOverlay(toasts);
   // A challenge that arrives has a call of its own: it must be answered within a minute.
   lobby.onEvent((event) => toasts.show({ ...describeLobbyEvent(event), opens: SceneId.ONLINE, ...(event.kind === "received" ? { cue: SoundCue.CHALLENGE } : {}) }));
@@ -588,7 +601,17 @@ async function boot() {
     onlineStatus = state.status;
   });
   notifications.onArrival((notification) => {
-    toasts.show(describeNotification(notification, content.value.catalog));
+    const described = describeNotification(notification, content.value.catalog);
+    // An auto game played: a click watches it, then comes back here (not to a match, which is over by then).
+    const here = sceneManager.currentId === SceneId.MATCH || sceneManager.currentId === SceneId.REPLAY ? SceneId.MAIN_MENU : sceneManager.currentId;
+    toasts.show(described.gameId === undefined ? described : { ...described, opens: SceneId.REPLAY, params: { gameId: described.gameId, from: here } });
+    if (notification.kind === "auto.finished" || notification.kind === "auto.refunded") {
+      void autoList.refresh();
+      ranking.refresh();
+    }
+    if (notification.kind === "auto.refunded") {
+      void entries.refresh();
+    }
     if (COLLECTION_CHANGING_KINDS.includes(notification.kind)) {
       account.refresh();
     }

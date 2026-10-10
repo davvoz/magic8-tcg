@@ -42,12 +42,25 @@ const DAY = 24 * HOUR;
 const TONE_KEYS = Object.freeze({ good: "success", bad: "danger", info: "accent" });
 
 /** Scene a notification's follow-up lives in. */
+/**
+ * What the screen a notification leads to is told: the cards that came (the collection), the game to replay.
+ * @param {string} scene
+ * @param {{ fresh: readonly Readonly<{ definitionId: string, count: number, serial?: number }>[], gameId?: string }} about
+ */
+function paramsFor(scene, { fresh, gameId }) {
+  if (scene === SceneId.COLLECTION) {
+    return { fresh, from: SceneId.NOTIFICATIONS };
+  }
+  return scene === SceneId.REPLAY ? { gameId, from: SceneId.NOTIFICATIONS } : {};
+}
+
 const TARGET_SCENES = Object.freeze({
   [NotificationTarget.COLLECTION]: SceneId.COLLECTION,
   [NotificationTarget.TRADES]: SceneId.TRADES,
   [NotificationTarget.MARKET]: SceneId.MARKET,
   [NotificationTarget.SHOP]: SceneId.SHOP,
   [NotificationTarget.ONLINE]: SceneId.ONLINE,
+  [NotificationTarget.REPLAY]: SceneId.REPLAY,
 });
 
 /**
@@ -245,7 +258,7 @@ export class NotificationsScene extends Scene {
    */
   #open(item, text, scene) {
     const fresh = text.cards.map((card) => Object.freeze({ definitionId: card.definitionId, count: card.count ?? 1, serial: card.serial }));
-    this.services.navigate(scene, scene === SceneId.COLLECTION ? { fresh, from: SceneId.NOTIFICATIONS } : {});
+    this.services.navigate(scene, paramsFor(scene, { fresh, gameId: text.gameId }));
     // After leaving: this screen no longer listens, so it is not rebuilt under the click.
     this.#notifications().markOpened(item.id);
   }

@@ -22,7 +22,15 @@
  * many entries, one payment) instead of a search that would be refused.
  * The entries are drawn as a stack of old tickets with a seal saying how
  * many the player holds (a faded outline when none).
+ *
+ * The third mode, Auto (docs/tcg/23-automatica.md), needs nobody online:
+ * the player chooses a deck and an AI style and joins the auto list, paying
+ * a ranked entry; the AI plays their deck against the next player who
+ * joins, even hours later, and the result arrives as a notification. Once
+ * in, the player stays in: the lobby says since when and offers no way out,
+ * and the dialog before joining says so.
  */
+import { AUTO_STYLES, AutoListStatus, AutoStyle } from "../../application/auto/AutoListService.js";
 import { entriesNoteText, entriesText, rankedFeeText } from "../../application/entries/EntryService.js";
 import { ChallengeMode, PlayerActivity } from "../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
@@ -40,6 +48,7 @@ import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { EntryTickets } from "./entries/EntryTickets.js";
+import { timeAgo } from "./NotificationsScene.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
@@ -65,9 +74,16 @@ const COMPACT_COLUMNS = Object.freeze({ shares: Object.freeze([0.32, 0.34, 0.34]
 /** Between the ranked tickets and what they say. */
 const TICKETS_GAP = 14;
 const DIALOG = Object.freeze({ width: 680, height: 320, avatar: 72, buttonHeight: 52, gap: 14 });
-export const QueueMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked" });
+export const QueueMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked", AUTO: "auto" });
 /** @typedef {typeof QueueMode[keyof typeof QueueMode]} Mode */
-/** @typedef {{ kind: "challenge", account: string } | { kind: "answer", challengeId: string }} Dialog */
+/** @typedef {{ kind: "challenge", account: string } | { kind: "answer", challengeId: string } | { kind: "auto" }} Dialog */
+
+/** The AI styles, as the lobby names and explains them. */
+export const STYLE_TEXT = Object.freeze({
+  [AutoStyle.AGGRESSIVE]: Object.freeze({ name: "Aggressive", hint: "Attacks often, goes for the face once the opponent is low, keeps its creatures for attacking." }),
+  [AutoStyle.BALANCED]: Object.freeze({ name: "Balanced", hint: "Attacks when it is safe, trades evenly, blocks to stay alive." }),
+  [AutoStyle.DEFENSIVE]: Object.freeze({ name: "Defensive", hint: "Attacks only when nothing can stop it, blocks often and gives up creatures to protect its life." }),
+});
 
 /** What the lobby says in each state. */
 const STATUS_TEXT = Object.freeze({
@@ -132,14 +148,21 @@ export class OnlineScene extends Scene {
   #scroll = {};
   /** The online status last seen: a game created or called off changes the player's entries. @type {string | null} */
   #lastStatus = null;
+  /** The AI style chosen for the auto list. @type {string} */
+  #style = AutoStyle.BALANCED;
+  /** The auto list's status last seen: joining took an entry, a ticket that closed gave it back. @type {string | null} */
+  #lastAutoStatus = null;
+  #now;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
    * @param {import("../../application/AppContext.js").AppContext} app
+   * @param {() => number} [now]
    */
-  constructor(services, app) {
+  constructor(services, app, now = () => Date.now()) {
     super(services);
     this.#app = app;
+    this.#now = now;
   }
 
   enter() {
@@ -170,6 +193,23 @@ export class OnlineScene extends Scene {
       lobby.start();
       this.#unsubscribes.push(lobby.watch());
     }
+    const autoList = this.#app.autoList;
+    if (autoList !== undefined) {
+      this.#lastAutoStatus = autoList.state.status;
+      this.#unsubscribes.push(autoList.subscribe((state) => this.#onAutoChange(state)));
+      autoList.start();
+      void autoList.refresh();
+    }
+    this.#rebuild();
+  }
+
+  /** @param {import("../../application/auto/AutoListService.js").AutoListState} state */
+  #onAutoChange(state) {
+    // Joining took a ranked entry; a ticket that closed without a game gave it back.
+    if (state.status !== this.#lastAutoStatus && (state.status === AutoListStatus.WAITING || state.closed !== null)) {
+      void this.#app.entries?.refresh();
+    }
+    this.#lastAutoStatus = state.status;
     this.#rebuild();
   }
 
@@ -338,8 +378,11 @@ export class OnlineScene extends Scene {
     const { titleY, button, statusSize, note } = this.#m;
     const panel = this.root.add(new Panel({ ...this.#screen.panel, x: column.x, y: this.#screen.columns.top, width: column.width, height: this.#screen.columns.height }));
     const width = column.width - 2 * this.#screen.inset;
-    panel.add(new Label({ x: this.#screen.inset, y: titleY, width, height: 36, text: this.#mode === QueueMode.RANKED ? "Ranked game" : "Casual game", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Label({ x: this.#screen.inset, y: titleY, width, height: 36, text: MODE_TITLE[this.#mode], size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     const top = this.#buildModes(panel, width, state);
+    if (this.#mode === QueueMode.AUTO) {
+      return this.#buildAuto(panel, width, top);
+    }
     const buttonY = this.#screen.columns.height - this.#screen.inset - button;
     const error = state.error ?? this.#app.lobby?.state.error ?? null;
     // On a phone the error sits right above the button, the status takes what is left above it.
@@ -399,7 +442,7 @@ export class OnlineScene extends Scene {
       onActivate: () => {
         online.dismissGame();
         this.#app.lobby?.clearError();
-        online.queue(/** @type {string} */ (this.#selectedId), this.#mode);
+        online.queue(/** @type {string} */ (this.#selectedId), /** @type {"casual" | "ranked"} the auto list has its own button */ (this.#mode));
       },
     };
   }
@@ -421,18 +464,36 @@ export class OnlineScene extends Scene {
       this.#mode = QueueMode.CASUAL;
     }
     const idle = state.status !== OnlineStatus.SEARCHING;
-    const half = (width - MODE.gap) / 2;
+    const compact = this.#screen.compact;
+    const modes = this.#app.autoList === undefined ? 2 : 3;
+    const size = (width - (modes - 1) * MODE.gap) / modes;
     /**
      * @param {Mode} mode
-     * @param {number} x
+     * @param {number} index
      * @param {string} text
      * @param {boolean} enabled
      */
-    const choice = (mode, x, text, enabled) =>
-      panel.add(new Button({ id: `online.mode.${mode}`, x, y: MODE.y, width: half, height: MODE.height, text, variant: this.#mode === mode ? "primary" : "secondary", enabled: enabled && idle, onActivate: () => this.#choose(mode) }));
-    choice(QueueMode.CASUAL, this.#screen.inset, "Casual", true);
-    choice(QueueMode.RANKED, this.#screen.inset + half + MODE.gap, withFee("Ranked", this.#rankedFee()), eligible);
-    const compact = this.#screen.compact;
+    const choice = (mode, index, text, enabled) =>
+      panel.add(
+        new Button({
+          id: `online.mode.${mode}`,
+          x: this.#screen.inset + index * (size + MODE.gap),
+          y: MODE.y,
+          width: size,
+          height: MODE.height,
+          text,
+          textSize: modes === 3 ? "small" : "body",
+          variant: this.#mode === mode ? "primary" : "secondary",
+          enabled: enabled && idle,
+          onActivate: () => this.#choose(mode),
+        }),
+      );
+    choice(QueueMode.CASUAL, 0, "Casual", true);
+    // Three in a row on a phone leave no room for the price: the main button says it.
+    choice(QueueMode.RANKED, 1, compact && modes === 3 ? "Ranked" : withFee("Ranked", this.#rankedFee()), eligible);
+    if (modes === 3) {
+      choice(QueueMode.AUTO, 2, "Auto", eligible);
+    }
     const line = compact ? 22 : 26;
     const standingY = MODE.y + MODE.height + (compact ? 4 : 10);
     panel.add(new TextBlock({ id: "online.standing", x: this.#screen.inset, y: standingY, width, height: 2 * line, text: standingText(ranking.state), size: "small", colorKey: "textMuted" }));
@@ -508,6 +569,9 @@ export class OnlineScene extends Scene {
       const challenge = lobby.state.incoming.find((open) => open.id === dialog.challengeId);
       return challenge === undefined ? null : this.#answerModal(challenge);
     }
+    if (dialog.kind === "auto") {
+      return this.#autoModal();
+    }
     const player = lobby.state.players.find((candidate) => candidate.account === dialog.account);
     return player === undefined || player.status === PlayerActivity.PLAYING || !this.#free() ? null : this.#challengeModal(player.account);
   }
@@ -581,16 +645,136 @@ export class OnlineScene extends Scene {
   }
 
   /**
-   * A challenge dialog: the other player's portrait, a title, a message and a row of buttons.
-   * @param {{ account: string, title: string, message: string, buttons: readonly { id: string, text: string, variant: import("../ui/Button.js").ButtonVariant, enabled: boolean, onActivate: () => void }[] }} content
+   * Before joining the auto list: what will happen, what it costs, and that there is no way out.
+   * @returns {Modal | null}
+   */
+  #autoModal() {
+    const autoList = this.#app.autoList;
+    const deck = this.#selectedDeck();
+    if (autoList === undefined || deck === null || autoList.state.status !== AutoListStatus.IDLE) {
+      return null;
+    }
+    const style = styleText(this.#style).name;
+    const fee = this.#rankedFee() ?? "a ranked entry";
+    const join = () => {
+      this.#dialog = null;
+      void autoList.join(deck.id, this.#style).then(() => this.#app.entries?.refresh());
+      this.#rebuild();
+    };
+    return this.#dialogFrame({
+      account: this.#app.account?.state.account ?? null,
+      title: "Join the auto list",
+      message: `The AI plays “${deck.name}” ${style.toLowerCase()} against the next player who joins, even hours from now. It costs ${fee}. Once you join you stay in the list until someone plays you.`,
+      buttons: [
+        { id: "auto.close", text: "Cancel", variant: "secondary", enabled: true, onActivate: () => this.#closeDialog() },
+        { id: "auto.join", text: `Join · ${style}`, variant: "primary", enabled: true, onActivate: join },
+      ],
+    });
+  }
+
+  /**
+   * The auto list in the game column: where the player's ticket stands, the style, and the button to join; returns the main action.
+   * @param {Panel} panel
+   * @param {number} width
+   * @param {number} top where the status text starts
+   */
+  #buildAuto(panel, width, top) {
+    const autoList = /** @type {import("../../application/auto/AutoListService.js").AutoListService} */ (this.#app.autoList);
+    const auto = autoList.state;
+    const { button, statusSize, mode: MODE } = this.#m;
+    const compact = this.#screen.compact;
+    const line = compact ? 22 : 26;
+    const buttonY = this.#screen.columns.height - this.#screen.inset - button;
+    const hintY = buttonY - 10 - 2 * line;
+    const stylesY = hintY - 6 - MODE.height;
+    const errorHeight = auto.error === null ? 0 : 2 * line;
+    panel.add(new TextBlock({ id: "online.auto.status", x: this.#screen.inset, y: top, width, height: Math.max(0, stylesY - 8 - errorHeight - top), text: this.#autoStatusText(auto), size: statusSize, colorKey: "text" }));
+    if (auto.error !== null) {
+      panel.add(new TextBlock({ id: "online.error", x: this.#screen.inset, y: stylesY - 8 - errorHeight, width, height: errorHeight, text: auto.error.message, size: "small", colorKey: "danger" }));
+    }
+    const inList = auto.status === AutoListStatus.WAITING || auto.status === AutoListStatus.JOINING;
+    // In the list, the style is the ticket's: frozen with it.
+    const shown = inList && auto.ticket !== null ? auto.ticket.style : this.#style;
+    const size = (width - 2 * MODE.gap) / 3;
+    AUTO_STYLES.forEach((style, index) =>
+      panel.add(
+        new Button({
+          id: `online.style.${style}`,
+          x: this.#screen.inset + index * (size + MODE.gap),
+          y: stylesY,
+          width: size,
+          height: MODE.height,
+          text: styleText(style).name,
+          textSize: "small",
+          variant: style === shown ? "primary" : "secondary",
+          enabled: !inList,
+          onActivate: () => {
+            this.#style = style;
+            this.#rebuild();
+          },
+        }),
+      ),
+    );
+    panel.add(new TextBlock({ id: "online.style.hint", x: this.#screen.inset, y: hintY, width, height: 2 * line, text: styleText(shown).hint, size: "small", colorKey: "textMuted" }));
+    return panel.add(new Button({ keepPlate: true, ...this.#autoAction(auto), x: this.#screen.inset, y: buttonY, width, height: button }));
+  }
+
+  /**
+   * The big button of the auto list: join it, get the entries it takes, or say the player is in.
+   * @param {import("../../application/auto/AutoListService.js").AutoListState} auto
+   * @returns {{ id: string, text: string, variant?: import("../ui/Button.js").ButtonVariant, enabled?: boolean, onActivate: () => void }}
+   */
+  #autoAction(auto) {
+    const none = () => undefined;
+    if (auto.status === AutoListStatus.WAITING) {
+      return { id: "online.auto.waiting", text: "In the auto list · waiting for an opponent", enabled: false, onActivate: none };
+    }
+    if (auto.status === AutoListStatus.JOINING) {
+      return { id: "online.auto.joining", text: "Joining the auto list…", enabled: false, onActivate: none };
+    }
+    if (!this.#hasEntries() && this.services.hasScene(SceneId.SHOP)) {
+      return { id: "online.getEntries", text: "Get ranked entries", variant: "primary", onActivate: () => this.#getEntries() };
+    }
+    const connected = this.#online().state.status !== OnlineStatus.OFFLINE && this.#online().state.status !== OnlineStatus.CONNECTING;
+    return {
+      id: "online.auto.join",
+      text: withFee("Join the auto list", this.#rankedFee()),
+      variant: "primary",
+      enabled: auto.status === AutoListStatus.IDLE && connected && this.#selectedDeck() !== null,
+      onActivate: () => this.#openDialog({ kind: "auto" }),
+    };
+  }
+
+  /**
+   * What the auto list says: where the player's ticket stands, what became of the last one, how many wait.
+   * @param {import("../../application/auto/AutoListService.js").AutoListState} auto
+   */
+  #autoStatusText(auto) {
+    const count = auto.waiting === 1 ? "1 player is in the auto list." : `${auto.waiting} players are in the auto list.`;
+    if (auto.status === AutoListStatus.JOINING) {
+      return "Joining the auto list…";
+    }
+    if (auto.status === AutoListStatus.WAITING && auto.ticket !== null) {
+      const deck = this.#online().decks().find((candidate) => candidate.id === auto.ticket?.deckId)?.name ?? "your deck";
+      return `You joined ${timeAgo(auto.ticket.since, this.#now())} with “${deck}”, ${styleText(auto.ticket.style).name.toLowerCase()}. The AI plays it against the next player who joins: a notification will tell you the result. ${count}`;
+    }
+    const intro = "Choose a deck and a style: the AI plays it against the next player who joins, even hours from now. It counts for the season, at a fifth of a game played by hand.";
+    return [lastTicketText(auto), intro, auto.waiting > 0 ? count : ""].filter((part) => part !== "").join(" ");
+  }
+
+  /**
+   * A dialog: a player's portrait (none for nobody), a title, a message and a row of buttons.
+   * @param {{ account: string | null, title: string, message: string, buttons: readonly { id: string, text: string, variant: import("../ui/Button.js").ButtonVariant, enabled: boolean, onActivate: () => void }[] }} content
    */
   #dialogFrame({ account, title, message, buttons }) {
     const { viewport } = this.services;
     const modal = new Modal({ id: "challenge", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: DIALOG.width, panelHeight: DIALOG.height, onDismiss: () => this.#closeDialog() });
     const { panel } = modal;
     const inner = DIALOG.width - 2 * this.#screen.inset;
-    panel.add(new AvatarNode({ x: this.#screen.inset, y: this.#screen.inset, size: DIALOG.avatar, account }));
-    const textX = this.#screen.inset + DIALOG.avatar + 20;
+    if (account !== null) {
+      panel.add(new AvatarNode({ x: this.#screen.inset, y: this.#screen.inset, size: DIALOG.avatar, account }));
+    }
+    const textX = account === null ? this.#screen.inset : this.#screen.inset + DIALOG.avatar + 20;
     const textWidth = DIALOG.width - this.#screen.inset - textX;
     panel.add(new Label({ id: "challenge.title", x: textX, y: this.#screen.inset + 4, width: textWidth, height: 40, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     panel.add(new TextBlock({ id: "challenge.message", x: textX, y: this.#screen.inset + 52, width: textWidth, height: 4 * 26, text: message, size: "small", colorKey: "textMuted" }));
@@ -677,6 +861,26 @@ export class OnlineScene extends Scene {
  */
 function withFee(text, fee) {
   return fee === null ? text : `${text} · ${fee}`;
+}
+
+/** The title of the game column, by mode. */
+const MODE_TITLE = Object.freeze({ [QueueMode.CASUAL]: "Casual game", [QueueMode.RANKED]: "Ranked game", [QueueMode.AUTO]: "Auto ranked" });
+
+/** @param {string} style */
+const styleText = (style) => STYLE_TEXT[/** @type {keyof typeof STYLE_TEXT} */ (style)] ?? STYLE_TEXT[AutoStyle.BALANCED];
+
+/**
+ * What became of the player's last auto ticket, when the lobby knows ("" otherwise).
+ * @param {import("../../application/auto/AutoListService.js").AutoListState} auto
+ */
+function lastTicketText(auto) {
+  if (auto.closed === "season_ended") {
+    return "The season ended before an opponent came: your ranked entry is back.";
+  }
+  if (auto.closed === "failed") {
+    return "Your last auto game could not be played: your ranked entry is back.";
+  }
+  return auto.lastGame === null ? "" : "Your auto game has been played: watch it from your notifications or your games.";
 }
 
 /** @param {string} mode */

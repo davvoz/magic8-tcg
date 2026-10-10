@@ -22,6 +22,10 @@ export const EntryReason = Object.freeze({
   GAME: "game",
   /** A game called off before it started gave its fee back (ref: the game). */
   REFUND: "refund",
+  /** A player joined the auto list: their ticket took the fee of the game it will be (ref: the ticket). */
+  AUTO_TICKET: "auto_ticket",
+  /** An auto ticket that never became a game gave its fee back (ref: the ticket). */
+  AUTO_REFUND: "auto_refund",
 });
 
 /**

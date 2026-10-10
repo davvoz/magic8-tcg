@@ -42,6 +42,10 @@ const TRACKER_INTERVAL_MS = 6000;
 const RC_INTERVAL_MS = 60 * 1000;
 const SHUTDOWN_GRACE_MS = 10_000;
 const NOTIFICATION_PURGE_INTERVAL_MS = 60 * 60 * 1000;
+/** The auto list: pairs again (a daily pair limit ran out), closes tickets of a season that ended, forgets unused ones. */
+const AUTO_PAIRING_INTERVAL_MS = 30_000;
+const AUTO_SEASON_CLOSE_INTERVAL_MS = 60_000;
+const AUTO_PREPARED_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../..");
 
 async function main() {
@@ -132,6 +136,9 @@ async function main() {
     every(MATCHMAKING_INTERVAL_MS, "matchmaking", () => app.matchmaking.pair(), logger),
     every(ORDER_EXPIRY_INTERVAL_MS, "queue expiry", () => app.matchmaking.expireStale(), logger),
     every(CHALLENGE_EXPIRY_INTERVAL_MS, "challenge expiry", async () => app.lobby.expireDue(), logger),
+    every(AUTO_PAIRING_INTERVAL_MS, "auto pairing", () => app.auto.pair(), logger),
+    every(AUTO_SEASON_CLOSE_INTERVAL_MS, "auto season close", () => app.auto.closeEnded(), logger),
+    every(AUTO_PREPARED_PURGE_INTERVAL_MS, "auto ticket purge", () => app.auto.purgePrepared(), logger),
   ];
   const chainModule = app.chain;
   if (chainModule !== null) {

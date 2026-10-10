@@ -88,6 +88,20 @@ describe("game history texts", () => {
 });
 
 describe("GameHistoryScene", () => {
+  it("opens the replay of an auto game, and says so on its line", async () => {
+    const auto = game("d2", { mode: "auto", opponent: "dave" });
+    const navigated = [];
+    const scene = new GameHistoryScene(services({ navigate: (id, params) => navigated.push({ id, params }) }), { identity: signedIn("alice"), gameHistory: fakeApi({ "": { games: [auto, FIRST], next: null } }) }, () => NOW);
+    scene.enter({});
+    await flush();
+    const row = scene.root.findById(`history.game.${auto.gameId}`);
+    assert.equal(row.subtitle, "auto · 7 turns · life depleted · 2 h ago · click to watch");
+    row.activate();
+    assert.deepEqual(navigated, [{ id: SceneId.REPLAY, params: { gameId: auto.gameId, from: SceneId.GAME_HISTORY } }]);
+    scene.root.findById(`history.game.${FIRST.gameId}`).activate();
+    assert.equal(navigated.length, 1, "a game played by hand has no replay");
+  });
+
   it("lists the signed-in player's games and loads older ones", async () => {
     const api = fakeApi();
     const navigated = [];

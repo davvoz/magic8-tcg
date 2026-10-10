@@ -26,6 +26,10 @@ export const NotificationKind = Object.freeze({
   SALE_PAYMENT_PROBLEM: "sale.payment_problem",
   /** To a winner: they finished in a paying place of a season with a jackpot. */
   SEASON_PRIZE: "season.prize",
+  /** To both players: their auto game was played (docs/tcg/23-automatica.md). */
+  AUTO_FINISHED: "auto.finished",
+  /** To a player: the season ended before their auto ticket found an opponent; the entry went back. */
+  AUTO_REFUNDED: "auto.refunded",
 });
 
 /** @type {ReadonlySet<string>} */

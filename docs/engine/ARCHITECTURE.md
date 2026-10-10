@@ -278,7 +278,7 @@ magic8/
 │   │   │   ├── MatchSession.js       owns engine + controllers; submit(command); events
 │   │   │   ├── PlayerController.contract.js
 │   │   │   ├── HumanController.js
-│   │   │   └── BasicAiController.js
+│   │   │   └── BasicAiController.js  seat controller around the engine's BasicAi (domain/ai)
 │   │   └── decks/
 │   │       ├── DeckBuildingService.js  add/remove/rename/validate/save/load (no rendering)
 │   │       └── DeckSelectionService.js precon + saved decks as read-models
@@ -1200,3 +1200,17 @@ Cards (5, none in a precon deck yet): Village Militia (neutral, 2, 2/2, common),
 - Client: `DeckBuildingService.startNew(name)` takes no faction, `setFaction` and the majority re-theming are gone, and `mix()` gives the draft's mix. `OptionRow` takes `stripe`: bands `{ color, weight }`, painted top to bottom in proportion. The stripe is now 12 px wide so a small share still shows. Deck rows (library, deck selection, online lobby, shop) are striped with the mix. Their subtitles read "30 cards · notes · iron 26 · neutral 4", with the mix last so a narrow row shortens the mix, never "not playable" or the price. The editor's meta line reads "N / 30–40 cards · saved · mix", and the catalog heading is just "Cards". `tools/simulate.js` prints each deck's mix.
 
 **Starter offer:** one deck per faction, no neutral one (only 10 neutral cards). The choice was measured with `npm run simulate 500` over all ten precons (45,000 games). Among the 32 sets of one precon per faction, **Ember Vanguard, Iron Foundry, Shadow Pact, Verdant Grove, Spire Bastion** has the smallest spread of win rates against the other four: 48.4–51.0%. Its worst head-to-head is Iron Foundry vs Shadow Pact at 66.1%. The set with the mildest worst head-to-head (64.5%) spreads 44.5–56.8% overall. The starter screen became a list on the left (striped rows) and the selected deck on the right, because five columns of card strips do not fit in 1600 px. The preview harness gained `?scene=starter`.
+
+### AI in the engine, with styles (2026-10-10)
+
+**Request:** the auto ranked mode (docs/tcg/23-automatica.md) has the server play both seats, each with the style its player chose. The server cannot import the client, so the AI moved.
+
+**Change:** the rules of `BasicAiController` moved to the engine as `BasicAi` (`domain/ai/BasicAi.js`), with no change to what it decides. The client's `BasicAiController` is now a thin seat controller around it, so every caller (deck selection, tutorial fallback, preview, tests) is unchanged.
+
+- `new BasicAi(style)` takes one of `AiStyle` (`aggressive`, `balanced`, `defensive`; `balanced` by default, an unknown style throws). A style is a row of `STYLE_RULES`: when to attack with everything, which attackers are safe, which blocks to make, when to chump, when damage goes to the face. Card choice and targeting of removal, healing and buffs are the same for every style. `balanced` is the old AI.
+- `AI_VERSION` (1) names the decision rules: auto games record it, so a replay can be checked against the rules that played it.
+- `tools/simulate.js --styles` plays every pairing of decks, mirrors included, under every pair of styles, and prints style win rates, the style matrix and each deck with each style. `playGame` takes the two decks as one argument.
+
+**Balance**, 22,500 games: aggressive 47.9%, balanced 51.4%, defensive 50.7% against the other styles; the widest style matchup is balanced over aggressive at 53.3%. Full tables in docs/tcg/23.
+
+**Tests:** `test/domain/ai/basicAi.test.js` (moved from the client) gained the styles: aggressive burns the face at 8 life, goes all in at 5 and never trade-blocks; defensive attacks only with creatures no blocker can kill and chumps at half life; an unknown style is refused.

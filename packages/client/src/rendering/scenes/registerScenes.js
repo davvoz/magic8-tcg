@@ -18,6 +18,7 @@ import { MainMenuScene } from "./MainMenuScene.js";
 import { MatchScene } from "./MatchScene.js";
 import { NotificationsScene } from "./NotificationsScene.js";
 import { OnlineScene } from "./OnlineScene.js";
+import { ReplayScene } from "./ReplayScene.js";
 import { SceneId } from "./sceneIds.js";
 import { ShopScene } from "./ShopScene.js";
 import { StarterScene } from "./StarterScene.js";
@@ -41,12 +42,7 @@ export function registerScenes(sceneManager, app) {
       .register(SceneId.STARTER, (services) => new StarterScene(services, app))
       .register(SceneId.COLLECTION, (services) => new CollectionScene(services, app));
   }
-  if (app.online !== undefined) {
-    sceneManager.register(SceneId.ONLINE, (services) => new OnlineScene(services, app));
-  }
-  if (app.online?.canWatch === true) {
-    sceneManager.register(SceneId.LIVE_GAMES, (services) => new LiveGamesScene(services, app));
-  }
+  registerOnlineScenes(sceneManager, app);
   if (app.ranking !== undefined) {
     sceneManager.register(SceneId.LEADERBOARD, (services) => new LeaderboardScene(services, app));
   }
@@ -64,5 +60,22 @@ export function registerScenes(sceneManager, app) {
   }
   if (app.notifications !== undefined) {
     sceneManager.register(SceneId.NOTIFICATIONS, (services) => new NotificationsScene(services, app));
+  }
+}
+
+/**
+ * The screens of online play: the lobby, the games to watch, the replays of auto games.
+ * @param {import("./SceneManager.js").SceneManager} sceneManager
+ * @param {import("../../application/AppContext.js").AppContext} app
+ */
+function registerOnlineScenes(sceneManager, app) {
+  if (app.online !== undefined) {
+    sceneManager.register(SceneId.ONLINE, (services) => new OnlineScene(services, app));
+  }
+  if (app.online?.canWatch === true) {
+    sceneManager.register(SceneId.LIVE_GAMES, (services) => new LiveGamesScene(services, app));
+  }
+  if (app.autoReplays !== undefined) {
+    sceneManager.register(SceneId.REPLAY, (services) => new ReplayScene(services, app));
   }
 }

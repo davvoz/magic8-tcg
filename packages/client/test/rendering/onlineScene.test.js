@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { ok } from "@magic8/engine/shared/Result.js";
+import { AutoListService } from "../../src/application/auto/AutoListService.js";
 import { EntryService } from "../../src/application/entries/EntryService.js";
 import { LobbyService } from "../../src/application/lobby/LobbyService.js";
 import { RankingService } from "../../src/application/ranking/RankingService.js";
@@ -30,10 +31,10 @@ const GAME = "01j8x3r6h2qkq4w0v7m5a9c1dz";
 const ELIGIBLE = Object.freeze({ season: { id: "season-1", name: "Season 1" }, rating: 1500, deviation: 350, provisional: true, rank: null, games: 0, wins: 0, losses: 0, draws: 0, eligible: true, casualGamesNeeded: 0 });
 
 /**
- * @param {{ lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, shop?: boolean }} [options] `lobbyReplies`: the scripted server's answers to the lobby's requests;
+ * @param {{ lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, shop?: boolean, auto?: boolean }} [options] `lobbyReplies`: the scripted server's answers to the lobby's requests;
  *   `ranked`: the player holds these entries (and may play ranked unless `eligible` is false); `shop`: the shop's listing (with ranked entries at 1 STEEM) can be read
  */
-async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop = false } = {}) {
+async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop = false, auto = false } = {}) {
   const listeners = new Set();
   const statusListeners = new Set();
   const requests = [];
@@ -73,7 +74,9 @@ async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop =
   const unused = async () => ok(null);
   const shop = withShop ? new ShopService({ api: { listing: async () => ok(LISTING_WITH_ENTRIES), createOrder: unused, getOrder: unused, listOrders: unused, cancelOrder: unused, paymentHint: unused }, wallet: { name: "Steem Keychain" }, account: { state: { account: "alice" }, refresh: async () => undefined }, scheduler: { delay: async () => undefined }, newKey: () => "key" }) : undefined;
   const entries = ranked === undefined ? undefined : new EntryService({ api: { entries: async () => ok([{ kind: "ranked", ...ranked, season: "season-1" }]) } });
-  const scene = new OnlineScene(services, { content, online, lobby, ranking, entries, shop });
+  const autoList = auto ? new AutoListService({ connection, randomHex: (bytes) => "cd".repeat(bytes), logger: new MemoryLogger() }) : undefined;
+  const account = { state: { account: "alice" } };
+  const scene = new OnlineScene(services, /** @type {any} */ ({ content, online, lobby, ranking, entries, shop, autoList, account }), () => 3_600_000);
   scene.enter({});
   await flush();
   return { scene, online, lobby, requests, navigated, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
@@ -265,5 +268,50 @@ describe("OnlineScene: players online and challenges", () => {
     await flush();
     assert.deepEqual(requests.at(-1), { t: "challenge.decline", d: { challengeId: "c3" } });
     assert.equal(scene.modal, null);
+  });
+});
+
+describe("OnlineScene with the auto list", () => {
+  /** The scripted server of the auto list: joining puts the player in it, waiting since the start of time. */
+  const AUTO_REPLIES = Object.freeze({
+    "auto.status": () => ({ t: "auto.status", d: { state: "idle", waiting: 2 } }),
+    "auto.prepare": () => ({ t: "auto.prepared", d: { ticket: "33333333-3333-4333-8333-333333333333", commit: "c".repeat(64) } }),
+    "auto.join": (d) => ({ t: "auto.status", d: { state: "waiting", waiting: 3, ticket: d.ticket, since: 0, deckId: d.deckId, style: d.style, entries: 1 } }),
+    "lobby.list": () => ({ t: "lobby.players", d: { players: [], challenges: { incoming: [], outgoing: null } } }),
+  });
+
+  it("offers a third mode where the player picks a style and joins, warned there is no way out", async () => {
+    const { scene, requests } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 1, perGame: 1 }, shop: true, auto: true });
+    assert.equal(byId(scene, "online.mode.ranked").text, "Ranked · 1.000 STEEM");
+    byId(scene, "online.mode.auto").activate();
+    assert.match(said(scene), /Auto ranked/);
+    assert.match(byId(scene, "online.auto.status").text, /next player who joins, even hours from now.*2 players are in the auto list/);
+    assert.equal(byId(scene, "online.style.balanced").variant, "primary", "balanced until another is chosen");
+    byId(scene, "online.style.defensive").activate();
+    assert.equal(byId(scene, "online.style.defensive").variant, "primary");
+    assert.match(byId(scene, "online.style.hint").text, /blocks often/);
+    const join = byId(scene, "online.auto.join");
+    assert.equal(join.text, "Join the auto list · 1.000 STEEM");
+    join.activate();
+    assert.notEqual(scene.modal, null);
+    assert.match(scene.modal.findById("challenge.message").text, /“Iron Foundry” defensive.*costs 1.000 STEEM. Once you join you stay in the list until someone plays you./);
+    assert.equal(requests.some((request) => request.t === "auto.prepare"), false, "nothing happens before the player confirms");
+    scene.modal.findById("auto.join").activate();
+    await flush();
+    assert.deepEqual(requests.find((request) => request.t === "auto.join").d, { ticket: "33333333-3333-4333-8333-333333333333", deckId: "11111111-1111-4111-8111-111111111111", style: "defensive", entropy: "cd".repeat(16) });
+    const waiting = byId(scene, "online.auto.waiting");
+    assert.equal(waiting.enabled, false, "no way out of the list");
+    assert.equal(byId(scene, "online.style.aggressive").enabled, false, "the style is the ticket's");
+    assert.match(byId(scene, "online.auto.status").text, /You joined 1 h ago with “Iron Foundry”, defensive..*3 players are in the auto list/);
+  });
+
+  it("sends a player without entries to get them, and keeps the mode for those who may play ranked", async () => {
+    const { scene } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 0, perGame: 1 }, shop: true, auto: true });
+    byId(scene, "online.mode.auto").activate();
+    assert.equal(byId(scene, "online.auto.join"), null);
+    assert.equal(byId(scene, "online.getEntries").text, "Get ranked entries");
+
+    const { scene: newcomer } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 1, perGame: 1 }, auto: true, eligible: false });
+    assert.equal(byId(newcomer, "online.mode.auto").enabled, false, "the same players as ranked");
   });
 });

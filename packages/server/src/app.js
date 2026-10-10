@@ -26,6 +26,7 @@ import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, regi
 import { GameService, PgGameRepository, registerGameMessages, registerGameRoutes } from "./modules/gameplay/index.js";
 import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } from "./modules/matchmaking/index.js";
 import { LobbyService, registerLobbyMessages } from "./modules/lobby/index.js";
+import { AutoService, PgAutoRepository, registerAutoMessages, registerAutoRoutes } from "./modules/auto/index.js";
 import { PgRankingRepository, PgSeasonRepository, RankingService, SeasonCalendar, registerRankingRoutes, registerSeasonRoutes, validateRankedSettings } from "./modules/ranking/index.js";
 import { JackpotService, PgJackpotRepository, PrizePayoutWatcher, registerJackpotRoutes, validatePrizePools } from "./modules/jackpot/index.js";
 import { ENTRY_KINDS, EntryService, PgEntryRepository, registerEntryRoutes } from "./modules/entries/index.js";
@@ -172,6 +173,8 @@ export async function createServerApp(deps) {
     gate: maintenance,
     policy: lobbyPolicy,
   });
+  // The auto list: each player's deck played by the AI in their style, against whoever joins next (docs/tcg/23).
+  const auto = new AutoService({ repository: new PgAutoRepository(database), decks, games, ranking, entries, notifications, notifier: hub, secrets, clock, random, unitOfWork, logger, gate: maintenance });
   maintenance.onClose(() => matchmaking.closeQueue());
   maintenance.onClose(async () => lobby.closeAll());
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, notifications, formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)), clock, unitOfWork, logger });
@@ -191,6 +194,7 @@ export async function createServerApp(deps) {
   registerRankingRoutes({ router, ranking });
   registerEntryRoutes({ router, entries });
   registerGameRoutes({ router, games });
+  registerAutoRoutes({ router, auto });
   const readModel = new PgOperationsReadModel(database);
   const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
   const monitor = new Monitor({ readModel, runtime, clock, logger, policy: alarmPolicy });
@@ -226,6 +230,7 @@ export async function createServerApp(deps) {
   registerLobbyMessages({ router: messages, lobby });
   registerGameMessages({ router: messages, games });
   registerQueueMessages({ router: messages, matchmaking });
+  registerAutoMessages({ router: messages, auto });
   const realtime = new WebSocketGateway({
     hub,
     router: messages,
@@ -243,7 +248,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, realtime });
 }
 
 /**

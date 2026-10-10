@@ -9,7 +9,9 @@
  * season may name a prize pool (`prizePool`), an entry of `prizePools`: the
  * jackpot module validates those and pays them. A season may charge an entry
  * fee (`entryFee`): the entries each player spends on a ranked game, bought in
- * the shop (the entries module); without it ranked play is free.
+ * the shop (the entries module); without it ranked play is free. Auto games
+ * (docs/tcg/23-automatica.md) move ratings by `auto.ratingWeightPercent` of
+ * what a game played by hand would (20 when left out).
  *
  * The seasons of the file are only the first calendar: the server copies them
  * into the database once, then operators change the calendar from the admin
@@ -20,7 +22,9 @@
 import { Issues, allDefined, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
-const TOP_KEYS = Object.freeze(["v", "seasons", "prizePools", "eligibility", "fairPlay"]);
+const TOP_KEYS = Object.freeze(["v", "seasons", "prizePools", "eligibility", "fairPlay", "auto"]);
+/** The share of a Glicko-2 change an auto game applies when ranked.json does not say. */
+export const DEFAULT_AUTO_RATING_WEIGHT_PERCENT = 20;
 const SEASON_KEYS = Object.freeze(["id", "name", "startsAt", "endsAt", "prizePool", "entryFee"]);
 /** Most entries one ranked game may cost. */
 export const MAX_ENTRY_FEE = 100;
@@ -41,6 +45,7 @@ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
  *   prizePools: unknown,
  *   eligibility: Readonly<{ minFinishedCasualGames: number }>,
  *   fairPlay: Readonly<{ maxRatedGamesPerPairPerDay: number, earlyConcedeTurn: number, earlyConcedesToFlag: number, earlyConcedeWindowDays: number }>,
+ *   auto: Readonly<{ ratingWeightPercent: number }>,
  * }>} RankedSettings
  */
 
@@ -75,10 +80,26 @@ export function validateRankedSettings(raw) {
   checkCalendar(issues, seasons ?? [], "ranked.seasons");
   const eligibility = integers(issues, top.eligibility, "ranked.eligibility", ["minFinishedCasualGames"]);
   const fairPlay = integers(issues, top.fairPlay, "ranked.fairPlay", ["maxRatedGamesPerPairPerDay", "earlyConcedeTurn", "earlyConcedesToFlag", "earlyConcedeWindowDays"]);
-  if (!issues.isEmpty || seasons === undefined || eligibility === undefined || fairPlay === undefined) {
+  const auto = checkAuto(issues, top.auto);
+  if (!issues.isEmpty || seasons === undefined || eligibility === undefined || fairPlay === undefined || auto === undefined) {
     return fail("VALIDATION", issues.list()[0], { problems: issues.list() });
   }
-  return ok(Object.freeze({ seasons: Object.freeze(seasons), prizePools: top.prizePools ?? null, eligibility: Object.freeze(eligibility), fairPlay: Object.freeze(fairPlay) }));
+  return ok(Object.freeze({ seasons: Object.freeze(seasons), prizePools: top.prizePools ?? null, eligibility: Object.freeze(eligibility), fairPlay: Object.freeze(fairPlay), auto }));
+}
+
+/**
+ * The auto-game settings; left out, the defaults.
+ * @param {Issues} issues
+ * @param {unknown} value
+ * @returns {Readonly<{ ratingWeightPercent: number }> | undefined}
+ */
+function checkAuto(issues, value) {
+  if (value === undefined) {
+    return Object.freeze({ ratingWeightPercent: DEFAULT_AUTO_RATING_WEIGHT_PERCENT });
+  }
+  const auto = checkObject(issues, value, "ranked.auto", ["ratingWeightPercent"]);
+  const ratingWeightPercent = auto === undefined ? undefined : checkInteger(issues, auto.ratingWeightPercent, "ranked.auto.ratingWeightPercent", { min: 1, max: 100 });
+  return ratingWeightPercent === undefined ? undefined : Object.freeze({ ratingWeightPercent });
 }
 
 /**

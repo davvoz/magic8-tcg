@@ -37,6 +37,7 @@ export {
 export { ProtocolError } from "./game/ProtocolError.js";
 export { EventChain, genesisHead, nextHead } from "./game/EventChain.js";
 export {
+  autoGameSecret,
   canonicalDeck,
   deckCommitment,
   deriveEngineSeed,

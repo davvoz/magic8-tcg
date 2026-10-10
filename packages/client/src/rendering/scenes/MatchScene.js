@@ -11,7 +11,12 @@
  *
  * A session with no human player is a spectator's: the first seat sits at
  * the bottom, no hand is shown (the server never sends one), and nothing
- * can be played.
+ * can be played. A session with no human player but a seat to view from
+ * (the replay of a player's own auto game) is watched from that seat: the
+ * board is the one the player sees when they play — their hand, "Your
+ * turn", the help — but nothing can be played on it. A replay's side panel
+ * picks how fast it plays (ReplayPace), and the board tells the pace when
+ * it is still showing a move.
  *
  * A session that offers an opening toss has it played first (CoinFlip,
  * drawn by CoinTossNode over the board): until the coin has landed and the
@@ -70,6 +75,7 @@
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
+import { REPLAY_SPEEDS, ReplayPace, ReplaySpeed } from "../../application/auto/ReplayPace.js";
 import { helpFor } from "../../application/help/matchHelp.js";
 import { TutorialCoach } from "../../application/tutorial/TutorialCoach.js";
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
@@ -134,6 +140,8 @@ const COMPACT_INSPECT = Object.freeze({ width: 420, height: 376, card: Object.fr
 const INVITING = new Set([Highlight.PLAYABLE, Highlight.TARGETABLE]);
 /** How far the help's headline keeps from the help button and the clock either side of it. */
 const HELP_GAP = 6;
+/** A replay's speeds, as its side panel names them. */
+const SPEED_TEXT = Object.freeze({ [ReplaySpeed.NORMAL]: "Normal", [ReplaySpeed.FAST]: "Fast", [ReplaySpeed.VERY_FAST]: "Very fast" });
 
 /**
  * @typedef {ReturnType<import("../../application/match/MatchSession.js").MatchSession["snapshotFor"]>} Snapshot
@@ -154,6 +162,10 @@ export class MatchScene extends Scene {
   #unsubscribe = null;
   #playerId = "";
   #spectating = false;
+  /** Watched from a seat nobody plays here: the player's own replay. */
+  #watching = false;
+  /** How fast a replay plays, when the match is one. @type {ReplayPace | null} */
+  #pace = null;
   /** @type {MatchInteraction | null} */
   #interaction = null;
   #presenter;
@@ -227,8 +239,7 @@ export class MatchScene extends Scene {
     this.#session = session;
     this.#coach = params.coach instanceof TutorialCoach ? params.coach : null;
     this.#builtLesson = false;
-    this.#playerId = session.humanPlayerIds[0] ?? "";
-    this.#spectating = session.humanPlayerIds.length === 0;
+    this.#seatAt(session);
     this.#gameOverShown = false;
     this.#ending = null;
     this.#backlog = [];
@@ -257,7 +268,20 @@ export class MatchScene extends Scene {
     }
   }
 
+  /**
+   * Whose side the board shows: the human's, else the seat the session is watched from, else nobody's (a spectator's).
+   * @param {import("../../application/match/MatchSession.js").MatchSession | import("../../application/online/RemoteMatchSession.js").RemoteMatchSession} session
+   */
+  #seatAt(session) {
+    this.#playerId = session.humanPlayerIds[0] ?? viewerIdOf(session) ?? "";
+    this.#spectating = this.#playerId === "";
+    this.#watching = session.humanPlayerIds.length === 0 && !this.#spectating;
+    this.#pace = paceOf(session);
+    this.#pace?.follow(() => this.isBusy);
+  }
+
   exit() {
+    this.#pace?.follow(null);
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     this.#unsubscribeAudio?.();
@@ -416,7 +440,7 @@ export class MatchScene extends Scene {
    * @returns {boolean} whether the key was the board's
    */
   #onShortcut(key) {
-    if (isKey(key, KeyMap.END_TURN) && !this.isBusy && this.#snapshot?.legalMoves?.canEndTurn === true && this.#coachAllows("endTurn")) {
+    if (isKey(key, KeyMap.END_TURN) && !this.isBusy && !this.#watching && this.#snapshot?.legalMoves?.canEndTurn === true && this.#coachAllows("endTurn")) {
       this.#soundscape?.endedTurn();
       this.#submit(endTurn(this.#playerId));
       return true;
@@ -582,6 +606,9 @@ export class MatchScene extends Scene {
    * @param {Readonly<Record<string, unknown>>} command
    */
   #submit(command) {
+    if (this.#watching) {
+      return;
+    }
     const result = this.#session?.submit(command);
     if (result instanceof Promise) {
       this.#submitting = true;
@@ -608,7 +635,7 @@ export class MatchScene extends Scene {
 
   /** @param {string} id card instance or player id */
   #tap(id) {
-    if (this.isBusy || this.#coach?.allowsTap(id) === false) {
+    if (this.isBusy || this.#watching || this.#coach?.allowsTap(id) === false) {
       return;
     }
     const command = this.#interaction?.tap(id) ?? null;
@@ -810,8 +837,9 @@ export class MatchScene extends Scene {
     if (this.isTossing) {
       return "Tossing a coin for the first turn…";
     }
-    if (this.#spectating) {
-      return `Watching ${snapshot.players.map((player) => nameOf(snapshot, player.id)).join(" vs ")}`;
+    if (this.#spectating || this.#watching) {
+      const players = snapshot.players.map((player) => nameOf(snapshot, player.id)).join(" vs ");
+      return this.#pace === null ? `Watching ${players}` : `Replay of ${players}: the AI plays both decks. How fast:`;
     }
     const coach = this.#coach;
     if ((coach?.lesson ?? null) !== null) {
@@ -1084,8 +1112,8 @@ export class MatchScene extends Scene {
     const busy = interaction.mode === InteractionMode.TARGETING;
     const confirmLabel = interaction.confirmLabel;
     const playing = !snapshot.isOver && !this.#spectating;
-    if (this.#spectating) {
-      return [{ id: "leave", text: "Leave", visible: true, enabled: true, plays: false, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
+    if (this.#spectating || this.#watching) {
+      return [...this.#speedButtons(), { id: "leave", text: "Leave", visible: true, enabled: true, plays: false, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
     }
     return [
       { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: this.#coachAllowsConfirm(interaction), plays: true, variant: "primary", onActivate: () => this.#confirm() },
@@ -1094,6 +1122,26 @@ export class MatchScene extends Scene {
       { id: "endTurn", text: this.#keyHints() ? "End turn (E)" : "End turn", visible: playing, enabled: moves?.canEndTurn === true && !busy && this.#coachAllows("endTurn"), plays: true, variant: "primary", cue: SoundCue.TURN_END, onActivate: () => this.#submit(endTurn(this.#playerId)) },
       this.#leaveButton(snapshot),
     ];
+  }
+
+  /** A replay's speeds, the one it plays at lit; none for a game that is not a replay. */
+  #speedButtons() {
+    const pace = this.#pace;
+    if (pace === null) {
+      return [];
+    }
+    return REPLAY_SPEEDS.map((speed) => ({
+      id: `speed.${speed}`,
+      text: SPEED_TEXT[speed],
+      visible: true,
+      enabled: true,
+      plays: false,
+      variant: /** @type {import("../ui/Button.js").ButtonVariant} */ (speed === pace.speed ? "primary" : "secondary"),
+      onActivate: () => {
+        pace.setSpeed(speed);
+        this.#rebuild();
+      },
+    }));
   }
 
   /**
@@ -1237,7 +1285,7 @@ export class MatchScene extends Scene {
       panel.add(new Label({ x: PANEL_INSET, y: duelBottom, width, height: size.line, text: line, size: "body", weight: "bold", colorKey: "success", fit: true }));
     }
     const third = (width - 2 * size.buttonGap) / 3;
-    const again = this.#spectating ? "Watch another" : "Play again";
+    const again = this.#spectating || this.#watching ? "Watch another" : "Play again";
     panel.add(new Button({ id: "gameOver.again", x: PANEL_INSET, y: buttonsY, width: third, height: size.buttonHeight, text: tutorial ? "Practice vs AI" : again, variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
     panel.add(new Button({ id: "gameOver.menu", x: PANEL_INSET + third + size.buttonGap, y: buttonsY, width: third, height: size.buttonHeight, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
     panel.add(new Button({ id: "gameOver.board", x: PANEL_INSET + 2 * (third + size.buttonGap), y: buttonsY, width: third, height: size.buttonHeight, text: "View board", onActivate: () => this.closeModal() }));
@@ -1423,6 +1471,22 @@ function activeSeatFor(snapshot) {
 }
 
 /** @typedef {Readonly<{ playerId: string, spectating: boolean }>} Viewer */
+
+/**
+ * The seat a session with no human player is watched from, if it has one (a replay of the viewer's own game).
+ * @param {import("../../application/match/MatchSession.js").MatchSession | import("../../application/online/RemoteMatchSession.js").RemoteMatchSession} session
+ */
+function viewerIdOf(session) {
+  return "viewerId" in session ? session.viewerId : null;
+}
+
+/**
+ * How fast the session plays, when it is a replay.
+ * @param {import("../../application/match/MatchSession.js").MatchSession | import("../../application/online/RemoteMatchSession.js").RemoteMatchSession} session
+ */
+function paceOf(session) {
+  return "pace" in session && session.pace instanceof ReplayPace ? session.pace : null;
+}
 
 /**
  * @param {Snapshot} snapshot

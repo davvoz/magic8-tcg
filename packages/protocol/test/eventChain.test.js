@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  autoGameSecret,
   EventChain,
   EventKind,
   GameProtocol,
@@ -111,6 +112,18 @@ describe("commitments", () => {
     assert.match(seed, /^[0-9a-f]{64}$/);
     assert.ok([Seat.S0, Seat.S1].includes(firstSeatFor(seed)));
     assert.notEqual(stateSalt(secret), seedCommitment(secret));
+  });
+
+  it("derive an auto game's secret from both tickets' secrets, in seat order", () => {
+    const tickets = [testHex("ticket:0"), testHex("ticket:1")];
+    const derived = autoGameSecret(tickets);
+    assert.match(derived, /^[0-9a-f]{64}$/);
+    assert.equal(autoGameSecret(tickets), derived);
+    assert.notEqual(autoGameSecret([tickets[1], tickets[0]]), derived);
+    assert.notEqual(autoGameSecret([tickets[0], testHex("other")]), derived);
+    assert.notEqual(derived, seedCommitment(tickets[0]));
+    assert.throws(() => autoGameSecret([tickets[0]]), /2 ticket secrets/);
+    assert.throws(() => autoGameSecret([tickets[0], "zz"]), /32 bytes/);
   });
 
   it("make the engine seed depend on the secret, each entropy, their order and the game", () => {

@@ -51,32 +51,50 @@ export class PgRankingRepository {
   }
 
   /**
-   * Rated (counted) games between two players since a time.
+   * Rated (counted) games of a mode between two players since a time.
    * @param {string} userId
    * @param {string} opponentId
    * @param {number} since
+   * @param {string} mode
    */
-  async countCounted(userId, opponentId, since) {
-    const row = await this.#db.maybeOne("SELECT count(*)::integer AS n FROM rating_changes WHERE user_id = $1 AND opponent_id = $2 AND counted AND finished_at > $3", [userId, opponentId, toTimestamp(since)]);
+  async countCounted(userId, opponentId, since, mode) {
+    const row = await this.#db.maybeOne("SELECT count(*)::integer AS n FROM rating_changes WHERE user_id = $1 AND opponent_id = $2 AND counted AND finished_at > $3 AND mode = $4", [
+      userId,
+      opponentId,
+      toTimestamp(since),
+      mode,
+    ]);
     return row?.n ?? 0;
   }
 
   /**
-   * The pairs among these players with at least `limit` rated games since a time, each with the `limit`-th most
-   * recent of them: once that game is older than the window, the pair is under the limit again.
+   * What a game did to a player's rating.
+   * @param {string} gameId
+   * @param {string} userId
+   * @returns {Promise<Readonly<{ before: number, after: number, counted: boolean }> | null>}
+   */
+  async changeOf(gameId, userId) {
+    const row = await this.#db.maybeOne("SELECT rating_before, rating_after, counted FROM rating_changes WHERE game_id = $1 AND user_id = $2", [gameId, userId]);
+    return row === null ? null : Object.freeze({ before: row.rating_before, after: row.rating_after, counted: row.counted });
+  }
+
+  /**
+   * The pairs among these players with at least `limit` rated games of a mode since a time, each with the
+   * `limit`-th most recent of them: once that game is older than the window, the pair is under the limit again.
    * @param {readonly string[]} userIds
    * @param {number} since
    * @param {number} limit
+   * @param {string} mode
    * @returns {Promise<readonly Readonly<{ userIds: readonly [string, string], finishedAt: number }>[]>}
    */
-  async pairsAtLimit(userIds, since, limit) {
+  async pairsAtLimit(userIds, since, limit, mode) {
     const rows = await this.#db.rows(
       `SELECT user_id, opponent_id, finished_at FROM (
          SELECT user_id, opponent_id, finished_at, row_number() OVER (PARTITION BY user_id, opponent_id ORDER BY finished_at DESC) AS recent
          FROM rating_changes
-         WHERE counted AND user_id = ANY($1::uuid[]) AND opponent_id = ANY($1::uuid[]) AND user_id < opponent_id AND finished_at > $2
+         WHERE counted AND user_id = ANY($1::uuid[]) AND opponent_id = ANY($1::uuid[]) AND user_id < opponent_id AND finished_at > $2 AND mode = $4
        ) AS rated WHERE recent = $3`,
-      [userIds, toTimestamp(since), limit],
+      [userIds, toTimestamp(since), limit, mode],
     );
     return Object.freeze(rows.map((row) => Object.freeze({ userIds: /** @type {readonly [string, string]} */ (Object.freeze([row.user_id, row.opponent_id])), finishedAt: fromTimestamp(row.finished_at) })));
   }
@@ -94,13 +112,13 @@ export class PgRankingRepository {
   }
 
   /**
-   * @param {{ gameId: string, userId: string, season: string, opponentId: string, score: number, counted: boolean, reason: string | null, before: { rating: number, rd: number }, after: { rating: number, rd: number }, endReason: string, endTurn: number, finishedAt: number }} change
+   * @param {{ gameId: string, userId: string, season: string, mode: string, weight: number, opponentId: string, score: number, counted: boolean, reason: string | null, before: { rating: number, rd: number }, after: { rating: number, rd: number }, endReason: string, endTurn: number, finishedAt: number }} change
    */
-  async insertChange({ gameId, userId, season, opponentId, score, counted, reason, before, after, endReason, endTurn, finishedAt }) {
+  async insertChange({ gameId, userId, season, mode, weight, opponentId, score, counted, reason, before, after, endReason, endTurn, finishedAt }) {
     await this.#db.query(
-      `INSERT INTO rating_changes (game_id, user_id, season, opponent_id, score, counted, reason, rating_before, rating_after, rd_before, rd_after, end_reason, end_turn, finished_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [gameId, userId, season, opponentId, score, counted, reason, before.rating, after.rating, before.rd, after.rd, endReason, endTurn, toTimestamp(finishedAt)],
+      `INSERT INTO rating_changes (game_id, user_id, season, opponent_id, score, counted, reason, rating_before, rating_after, rd_before, rd_after, end_reason, end_turn, finished_at, mode, weight)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      [gameId, userId, season, opponentId, score, counted, reason, before.rating, after.rating, before.rd, after.rd, endReason, endTurn, toTimestamp(finishedAt), mode, weight],
     );
   }
 

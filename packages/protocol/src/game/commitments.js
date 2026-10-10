@@ -12,6 +12,13 @@
  *   salt     = H("state-salt", S)
  *   sc       = H("state", salt ‖ utf8(canonical(digest)))
  *   deck_c_k = H("deck", H("deck-salt", S ‖ byte(k)) ‖ utf8(canonical(deck_k)))
+ *
+ * An auto game (docs/tcg/23-automatica.md) is played as soon as its second
+ * ticket arrives, from entropy its players gave with their tickets. Each
+ * ticket has a secret of its own, committed to its player (seed_c of it)
+ * before they gave their entropy, and the game secret derives from both:
+ *
+ *   S        = H("auto-secret", T_0 ‖ T_1)      T_k = the secret of seat k's ticket
  */
 import { canonicalize } from "../canonical/CanonicalJson.js";
 import { HashTag, bytesToHex, hexToBytes, isHexOfLength, taggedHash, taggedHashHex, utf8 } from "../crypto/hash.js";
@@ -35,6 +42,18 @@ function secretBytes(secret) {
  */
 export function seedCommitment(secret) {
   return taggedHashHex(HashTag.SEED_COMMIT, secretBytes(secret));
+}
+
+/**
+ * The secret of an auto game, from the secrets of its two tickets (seat order).
+ * @param {readonly string[]} ticketSecrets
+ * @returns {string} 64 lowercase hex characters
+ */
+export function autoGameSecret(ticketSecrets) {
+  if (!Array.isArray(ticketSecrets) || ticketSecrets.length !== SEATS.length) {
+    throw new ProtocolError(`an auto game needs ${SEATS.length} ticket secrets`);
+  }
+  return taggedHashHex(HashTag.AUTO_SECRET, ...ticketSecrets.map(secretBytes));
 }
 
 /**

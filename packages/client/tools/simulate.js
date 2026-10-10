@@ -6,13 +6,19 @@
  * ids only those decks play. The pairwise matrix shows each deck's win rate
  * against each other deck, both seats combined.
  *
- *   node tools/simulate.js [gamesPerPairing=25] [deckId,deckId,...]
+ * With --styles every pairing (mirrors included) is played once per pair of
+ * AI styles (docs/tcg/23-automatica.md): it prints each style's win rate
+ * against the other styles, the style-against-style matrix, and each deck's
+ * win rate with each style.
+ *
+ *   node tools/simulate.js [gamesPerPairing=25] [deckId,deckId,...] [--styles]
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { loadContent } from "../src/application/content/ContentService.js";
 import { deckMix } from "../src/application/decks/deckMix.js";
+import { AI_STYLES, AiStyle } from "@magic8/engine/domain/ai/BasicAi.js";
 import { BasicAiController } from "../src/application/match/BasicAiController.js";
 import { MatchSetupService } from "../src/application/match/MatchSetupService.js";
 import { ContentResource } from "../src/application/ports/ContentSource.contract.js";
@@ -48,14 +54,14 @@ async function loadBundled(effects) {
 }
 
 /**
- * One AI-vs-AI game; seat "a" plays `first`.
+ * One AI-vs-AI game; seat "a" plays `first` with the first style.
  * @returns {Promise<{ winner: "a" | "b" | null, turns: number }>}
  */
-async function playGame(setup, first, second, seed) {
+async function playGame(setup, [first, second], seed, styles = [AiStyle.BALANCED, AiStyle.BALANCED]) {
   const created = setup.createMatch({
     seats: [
-      { id: "a", name: first.name, deckList: first, controller: new BasicAiController() },
-      { id: "b", name: second.name, deckList: second, controller: new BasicAiController() },
+      { id: "a", name: first.name, deckList: first, controller: new BasicAiController(styles[0]) },
+      { id: "b", name: second.name, deckList: second, controller: new BasicAiController(styles[1]) },
     ],
     seed,
   });
@@ -148,20 +154,121 @@ class Standings {
   }
 }
 
+/** Wins and games under a key. */
+class Tally {
+  /** @type {Map<string, { wins: number, games: number }>} */
+  #rows = new Map();
+
+  /** @param {string} key @param {boolean} won */
+  add(key, won) {
+    const row = this.#rows.get(key) ?? { wins: 0, games: 0 };
+    row.wins += won ? 1 : 0;
+    row.games += 1;
+    this.#rows.set(key, row);
+  }
+
+  /** @param {string} key */
+  rate(key) {
+    const row = this.#rows.get(key) ?? { wins: 0, games: 0 };
+    return { ...row, text: percent(row.wins, Math.max(1, row.games)) };
+  }
+}
+
+/** @param {string} text */
+const cell = (text) => text.padStart(CELL + 4);
+
+/** @param {string} label @param {readonly string[]} columns */
+const tableHeader = (label, columns) => `\n${label.padEnd(20)}${columns.map(cell).join("")}`;
+
+/**
+ * Every pairing of decks (mirrors included) under every pair of styles.
+ * @returns {{ decks: [any, any], styles: [string, string] }[]}
+ */
+function styledPairings(decks) {
+  const stylePairs = AI_STYLES.flatMap((first) => AI_STYLES.map((second) => [first, second]));
+  return decks.flatMap((first) => decks.flatMap((second) => stylePairs.map((styles) => ({ decks: [first, second], styles }))));
+}
+
+/** Win rates by style, style against style, and deck with style. A draw is a game nobody won. */
+class StyleStandings {
+  byStyle = new Tally();
+  styleVsStyle = new Tally();
+  byDeckStyle = new Tally();
+
+  /**
+   * @param {{ decks: [any, any], styles: [string, string] }} pairing
+   * @param {"a" | "b" | null} winner
+   */
+  add({ decks: [first, second], styles: [firstStyle, secondStyle] }, winner) {
+    const seats = [
+      { seat: "a", deck: first, style: firstStyle, against: secondStyle },
+      { seat: "b", deck: second, style: secondStyle, against: firstStyle },
+    ];
+    for (const { seat, deck, style, against } of seats) {
+      const won = winner === seat;
+      if (style !== against) {
+        this.byStyle.add(style, won);
+        this.styleVsStyle.add(`${style}>${against}`, won);
+      }
+      if (first.id !== second.id) {
+        this.byDeckStyle.add(`${deck.id}:${style}`, won);
+      }
+    }
+  }
+
+  /** @param {readonly any[]} decks */
+  print(decks) {
+    const versus = (row, column) => (row === column ? "-" : this.styleVsStyle.rate(`${row}>${column}`).text);
+    console.log(tableHeader("style vs others", ["win rate"]));
+    for (const style of AI_STYLES) {
+      console.log(style.padEnd(20) + cell(this.byStyle.rate(style).text));
+    }
+    console.log(tableHeader("vs", AI_STYLES));
+    for (const row of AI_STYLES) {
+      console.log(row.padEnd(20) + AI_STYLES.map((column) => cell(versus(row, column))).join(""));
+    }
+    console.log(tableHeader("deck vs other decks", AI_STYLES));
+    for (const deck of decks) {
+      console.log(deck.name.padEnd(20) + AI_STYLES.map((style) => cell(this.byDeckStyle.rate(`${deck.id}:${style}`).text)).join(""));
+    }
+  }
+}
+
+async function simulateStyles(setup, decks, games) {
+  const standings = new StyleStandings();
+  const started = performance.now();
+  let played = 0;
+  for (const pairing of styledPairings(decks)) {
+    for (let seed = 1; seed <= games; seed += 1) {
+      played += 1;
+      const { winner } = await playGame(setup, pairing.decks, seed * 7919 + played, pairing.styles);
+      standings.add(pairing, winner);
+    }
+  }
+  console.log(`${played} games, ${((performance.now() - started) / played).toFixed(1)} ms/game`);
+  standings.print(decks);
+}
+
 async function main() {
-  const games = Math.min(MAX_GAMES, Math.max(1, Number.parseInt(process.argv[2] ?? "25", 10) || 25));
+  const flags = process.argv.slice(2).filter((arg) => arg.startsWith("--"));
+  const [gamesArg, decksArg] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
+  const games = Math.min(MAX_GAMES, Math.max(1, Number.parseInt(gamesArg ?? "25", 10) || 25));
   const effects = createCoreEffectRegistry();
   const content = await loadBundled(effects);
   const logger = new MemoryLogger();
   const setup = new MatchSetupService({ content, effects, scheduler: immediateScheduler, logger });
-  const decks = selectDecks(content.preconDecks, process.argv[3]);
+  const decks = selectDecks(content.preconDecks, decksArg);
+  if (flags.includes("--styles")) {
+    await simulateStyles(setup, decks, games);
+    return;
+  }
   const standings = new Standings(decks);
   const { totals, record, matchups } = standings;
   const started = performance.now();
 
   for (const [first, second] of pairings(decks)) {
     for (let seed = 1; seed <= games; seed += 1) {
-      const result = await playGame(setup, first, second, seed * 1000 + totals.games);
+      const result = await playGame(setup, [first, second], seed * 1000 + totals.games);
       standings.add(first, second, result);
     }
   }

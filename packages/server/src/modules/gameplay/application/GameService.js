@@ -16,12 +16,17 @@
  *
  * Anyone signed in may watch one live game at a time (docs/tcg/10); the
  * watch ends when they stop, disconnect, or the game ends.
+ *
+ * An auto game (docs/tcg/23-automatica.md) has no actor: the AI plays both
+ * seats to the end inside the unit of work that creates it, and the game is
+ * stored finished. Its result goes on chain like any other.
  */
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
-import { GameMode, GameProtocol, GameRecorder, LATEST_GAME_PROTOCOL, ackMessage, bytesToHex, canonicalDeck, deckCommitment, hexToBytes, seedCommitment } from "@magic8/protocol";
+import { EntropySource, GameMode, GameProtocol, GameRecorder, LATEST_GAME_PROTOCOL, SEATS, ackMessage, bytesToHex, canonicalDeck, createGameEngine, deckCommitment, gameResultRecord, hexToBytes, seedCommitment } from "@magic8/protocol";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { ulid } from "../../../kernel/ulid.js";
 import { DEFAULT_TIME_POLICY } from "../domain/TurnClock.js";
+import { playAutoGame } from "./AutoGame.js";
 import { GameActor, GameError, GameStatus } from "./GameActor.js";
 import { GAME_REPOSITORY_METHODS } from "./ports.js";
 
@@ -217,6 +222,133 @@ export class GameService {
     await this.#repository.insertGame(game, created);
     await this.#audit.record({ actorKind: "system", action: "gameplay.game_created", targetKind: "game", targetId: id, details: { mode, seats: entrants.map((entrant) => entrant.account), content: hash } });
     return Object.freeze({ game, recorder });
+  }
+
+  /**
+   * Plays an auto game to its end and stores it finished, inside the caller's unit of work (the one that matches its
+   * tickets). The players gave their entropy with their tickets, and the secret derives from the tickets' secrets
+   * (autoGameSecret): nobody chose the seed. Nothing is announced: call announceFinished once the unit of work has
+   * committed.
+   * @param {{ entrants: readonly Entrant[], styles: readonly string[], secret: string, entropies: readonly string[] }} request seat order
+   * @returns {Promise<import("./ports.js").FinishedGame>}
+   */
+  async playAutoGame({ entrants, styles, secret, entropies }) {
+    const { hash, engineVersion, content } = this.#currentContent();
+    const id = ulid(this.#clock, this.#random);
+    const decks = entrants.map((entrant) => canonicalDeck(entrant.deck.map((entry) => [entry.cardId, entry.count])));
+    const recorder = new GameRecorder({ gameId: id, secret, decks, version: GameProtocol.V1 });
+    const now = this.#clock.now();
+    const accounts = entrants.map((entrant) => entrant.account);
+    const created = recorder.created({ mode: GameMode.AUTO, network: this.#network, engineVersion, contentHash: hash, accounts, ms: 0 });
+    const players = Object.freeze(
+      entrants.map((entrant, index) =>
+        Object.freeze({ seat: seatAt(index), userId: entrant.userId, account: entrant.account, deckId: entrant.deckId, deck: decks[index], deckCommit: deckCommitment(secret, index, decks[index]), entropy: null, entropySource: null }),
+      ),
+    );
+    /** @type {import("./ports.js").StoredGame} */
+    const game = Object.freeze({
+      id,
+      mode: GameMode.AUTO,
+      status: GameStatus.CREATED,
+      network: this.#network,
+      protocolVersion: GameProtocol.V1,
+      engineVersion,
+      contentHash: hash,
+      sealedSecret: this.#secrets.seal(hexToBytes(secret), secretContext(id)),
+      seedCommit: seedCommitment(secret),
+      firstSeat: null,
+      winnerSeat: null,
+      endReason: null,
+      version: 0,
+      lastEventSeq: created.event.i,
+      chainHead: created.head,
+      createdAt: now,
+      startedAt: null,
+      finishedAt: null,
+      players,
+    });
+    await this.#repository.insertGame(game, created);
+    const opening = SEATS.map((seat, index) => recorder.joined({ seat, entropy: entropies[index], source: EntropySource.CLIENT, ms: 0 }));
+    opening.push(recorder.started({ ms: 0 }));
+    const engine = createGameEngine({
+      content: { rules: content.gameRules, catalog: content.catalog, effects: this.#effects, createCommands: createCoreCommandRegistry },
+      accounts,
+      decks,
+      firstSeat: recorder.firstSeat,
+      engineSeed: recorder.engineSeed,
+    });
+    if (!engine.ok) {
+      throw new Error(`auto game ${id}: the engine could not be built (${engine.error.message})`);
+    }
+    const started = engine.value.start();
+    if (!started.ok) {
+      throw new Error(`auto game ${id}: the engine did not start (${started.error.message})`);
+    }
+    const played = playAutoGame({ engine: engine.value, recorder, styles });
+    const chained = [...opening, ...played.chained];
+    const changes = { status: GameStatus.FINISHED, version: played.version, firstSeat: recorder.firstSeat, winnerSeat: played.winner, endReason: played.reason, startedAt: now, finishedAt: now };
+    if (!(await this.#repository.appendEvents(id, created.event.i, chained, changes))) {
+      throw new Error(`auto game ${id}: another writer appended events`);
+    }
+    for (const [index, seat] of SEATS.entries()) {
+      await this.#repository.setEntropy(id, seat, entropies[index], EntropySource.CLIENT);
+    }
+    for (const { event } of chained.filter(({ event: candidate }) => candidate.k === "STATE_CHECKPOINT")) {
+      await this.#repository.insertSnapshot(id, /** @type {number} */ (event.d.ver), /** @type {string} */ (event.d.sc));
+    }
+    await this.#repository.setResults(id, Object.fromEntries(SEATS.map((seat) => [seat, resultOf(seat, played.winner)])));
+    const last = chained[chained.length - 1];
+    if (this.#results !== null) {
+      const payload = gameResultRecord({ gameId: id, mode: GameMode.AUTO, accounts, seq: last.event.i, head: last.head, winner: played.winner, reason: played.reason });
+      await this.#results.enqueueResult({ network: this.#network, gameId: id, payload });
+    }
+    await this.#audit.record({ actorKind: "system", action: "gameplay.auto_game_played", targetKind: "game", targetId: id, details: { seats: accounts, styles: [...styles], winner: played.winner, turns: played.turn, content: hash } });
+    if (played.fallbacks > 0) {
+      this.#logger.warn("the AI had no move the engine accepted; the smallest move was made instead", { game: id, moves: played.fallbacks });
+    }
+    return Object.freeze({
+      gameId: id,
+      mode: GameMode.AUTO,
+      finishedAt: now,
+      winnerSeat: played.winner,
+      endReason: played.reason,
+      turn: played.turn,
+      players: Object.freeze(players.map(({ seat, userId, account }) => Object.freeze({ seat, userId, account }))),
+    });
+  }
+
+  /**
+   * Tells the finished-game listeners about a game that ended outside an actor (an auto game), once committed.
+   * @param {import("./ports.js").FinishedGame} summary
+   */
+  announceFinished(summary) {
+    for (const listener of this.#finishedListeners) {
+      listener(summary).catch((error) => this.#logger.error("a finished-game listener failed", { game: summary.gameId, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  /**
+   * A finished game as anyone may replay it: its players and every event (the last one reveals the secret and the
+   * decks, so the whole game can be rebuilt with the engine). Null for a game that is not finished.
+   * @param {string} gameId
+   */
+  async finishedGame(gameId) {
+    const game = await this.#repository.findGame(gameId);
+    if (game === null || game.status !== GameStatus.FINISHED) {
+      return null;
+    }
+    return Object.freeze({
+      gameId: game.id,
+      mode: game.mode,
+      protocol: game.protocolVersion,
+      engineVersion: game.engineVersion,
+      contentHash: game.contentHash,
+      winnerSeat: game.winnerSeat,
+      endReason: game.endReason,
+      finishedAt: game.finishedAt,
+      players: Object.freeze(game.players.map(({ seat, account }) => Object.freeze({ seat, account }))),
+      events: await this.#repository.listEvents(gameId),
+    });
   }
 
   /**
@@ -524,6 +656,17 @@ export class GameService {
 
 /** @param {number} index */
 const seatAt = (index) => (index === 0 ? "s0" : "s1");
+
+/**
+ * @param {string} seat
+ * @param {string | null} winner null for a draw
+ */
+const resultOf = (seat, winner) => {
+  if (winner === null) {
+    return "draw";
+  }
+  return seat === winner ? "win" : "loss";
+};
 
 /** @param {string} gameId */
 const secretContext = (gameId) => `game:${gameId}`;

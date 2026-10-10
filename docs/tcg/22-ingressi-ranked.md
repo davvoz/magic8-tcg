@@ -54,6 +54,10 @@ Ogni ingresso è disegnato come un **biglietto di carta invecchiata** (`renderin
 
 Il prezzo di un ingresso sta nel prodotto (`ranked_entry.json`, `prices`), come ogni prezzo dello shop. Si possono aggiungere confezioni, per esempio *10 ingressi* come prodotto con `{ "type": "entry", "ref": "ranked", "count": 10 }`: lo scaffale Ranked le mostra da solo. Un nuovo tipo di ingresso (un torneo) è un nuovo valore in `EntryKind` e una modalità di gioco con lo stesso nome.
 
+## Classificata automatica
+
+Un biglietto della lista automatica (23) costa lo stesso ingresso ranked di una partita a mano, ma lo toglie quando il giocatore entra in lista (`auto_ticket`, riferimento il biglietto), non quando la partita viene creata: dalla lista non si esce. Se la stagione finisce prima che arrivi un avversario, o la partita non si può giocare, l'ingresso torna indietro (`auto_refund`).
+
 ## Rischi e limiti
 
 - La banca è anche un giocatore (@verdu.green): i suoi acquisti di ingressi sono trasferimenti a sé stessa. Il server li accetta come ogni pagamento, ma il saldo della banca, e quindi il jackpot, non cambia.

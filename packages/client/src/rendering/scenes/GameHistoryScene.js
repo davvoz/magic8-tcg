@@ -2,7 +2,7 @@
  * The games a player has played, newest first: who they faced, how it went,
  * the mode, how long it lasted and when. The signed-in player's own by
  * default; a leaderboard line opens that player's. Older games load a page
- * at a time from the last line.
+ * at a time from the last line. An auto game (docs/tcg/23) opens its replay.
  */
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -17,6 +17,8 @@ import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
 
 const RESULT_TEXT = Object.freeze({ win: "Won", loss: "Lost", draw: "Draw" });
+/** The mode of the games the AI played for both players: they can be watched again. */
+const AUTO_MODE = "auto";
 const END_TEXT = Object.freeze({ life_depleted: "life depleted", concede: "conceded", draw: "draw" });
 
 /**
@@ -174,7 +176,9 @@ export class GameHistoryScene extends Scene {
       return;
     }
     const now = this.#now();
+    const replays = this.services.hasScene(SceneId.REPLAY);
     this.#games.forEach((game, index) => {
+      const replayable = replays && game.mode === AUTO_MODE;
       list.add(
         new OptionRow({
           id: `history.game.${game.gameId}`,
@@ -183,9 +187,9 @@ export class GameHistoryScene extends Scene {
           width: list.rowWidth,
           height: row,
           text: playedGameTitle(game),
-          subtitle: playedGameSubtitle(game, now),
+          subtitle: replayable ? `${playedGameSubtitle(game, now)} · click to watch` : playedGameSubtitle(game, now),
           avatar: game.opponent,
-          onActivate: () => undefined,
+          onActivate: replayable ? () => this.services.navigate(SceneId.REPLAY, { gameId: game.gameId, from: SceneId.GAME_HISTORY }) : () => undefined,
         }),
       );
     });

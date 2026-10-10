@@ -193,6 +193,18 @@ describe("describeNotification", () => {
     assert.deepEqual(describe_("shop.mystery", {}).target, null, "an unknown kind still says something");
     assert.ok(COLLECTION_CHANGING_KINDS.includes("sale.bought") && !COLLECTION_CHANGING_KINDS.includes("trade.offered"));
   });
+
+  it("words auto games: the result, both styles, the rating, and the game to watch", () => {
+    const gameId = "01j8x3r6h2qkq4w0v7m5a9c1dz";
+    const won = describe_("auto.finished", { gameId, opponent: "bob", result: "win", style: "aggressive", opponentStyle: "defensive", rating: { before: 1500, after: 1503 } });
+    assert.deepEqual([won.title, won.body, won.target, won.tone, won.gameId], ["Auto game vs @bob: you won", "Your deck played Aggressive, @bob's Defensive. Rating 1500 → 1503. Watch the game.", NotificationTarget.REPLAY, "good", gameId]);
+    const lost = describe_("auto.finished", { gameId, opponent: "bob", result: "loss", style: "balanced", opponentStyle: "balanced", rating: null });
+    assert.deepEqual([lost.title, lost.body, lost.tone], ["Auto game vs @bob: you lost", "Your deck played Balanced, @bob's Balanced. Watch the game.", "bad"]);
+    const back = describe_("auto.refunded", { ticket: "t", entries: 1, reason: "season_ended" });
+    assert.deepEqual([back.title, back.target], ["Your ranked entry is back", NotificationTarget.ONLINE]);
+    assert.match(back.body, /The season ended before anyone joined the auto list against you/);
+    assert.match(describe_("auto.refunded", { reason: "failed" }).body, /could not be played/);
+  });
 });
 
 describe("CardRarities", () => {

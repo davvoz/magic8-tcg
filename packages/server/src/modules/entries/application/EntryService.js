@@ -11,6 +11,9 @@
  *   ran out leaves the queue instead of blocking it.
  * - A game called off before it started gives the fee back (`refundGame`),
  *   in the unit of work that calls it off.
+ * - An auto ticket (docs/tcg/23-automatica.md) pays the fee of the game it
+ *   will become when its player joins the auto list (`chargeTicket`), and
+ *   gets it back if no game comes of it (`refundTicket`).
  * - Every change is a row of an append-only ledger keyed by its reason and
  *   reference (order, game): retries and concurrent workers apply it once,
  *   and a balance never goes below zero.
@@ -121,6 +124,42 @@ export class EntryService {
         }
       }
       return fee.count;
+    });
+  }
+
+  /**
+   * Takes from a player the fee of a game of `mode`, for an auto ticket that will become one. Joins the caller's unit
+   * of work (the one that writes the ticket); a player without enough entries fails it whole.
+   * @param {{ ticketId: string, userId: string, mode: string }} ticket `mode`: the kind of entry it pays with
+   * @returns {Promise<Readonly<{ count: number, season: string | null }>>} the entries taken (0: free)
+   */
+  chargeTicket({ ticketId, userId, mode }) {
+    const fee = this.feeOf(mode);
+    if (fee === null) {
+      return Promise.resolve(Object.freeze({ count: 0, season: null }));
+    }
+    return this.#unitOfWork(async () => {
+      const outcome = await this.#repository.apply({ userId, kind: mode, reason: EntryReason.AUTO_TICKET, ref: ticketId, delta: -fee.count, season: fee.season, at: this.#clock.now() });
+      if (outcome === "insufficient") {
+        throw entryRequired(mode, fee.count);
+      }
+      return Object.freeze({ count: fee.count, season: fee.season });
+    });
+  }
+
+  /**
+   * Gives back what an auto ticket took (no game came of it). Idempotent.
+   * @param {string} ticketId
+   * @returns {Promise<number>} entries given back by this call
+   */
+  refundTicket(ticketId) {
+    return this.#unitOfWork(async () => {
+      let refunded = 0;
+      for (const charge of await this.#repository.entriesFor(EntryReason.AUTO_TICKET, ticketId)) {
+        const outcome = await this.#repository.apply({ userId: charge.userId, kind: charge.kind, reason: EntryReason.AUTO_REFUND, ref: ticketId, delta: -charge.delta, season: charge.season, at: this.#clock.now() });
+        refunded += outcome === "applied" ? -charge.delta : 0;
+      }
+      return refunded;
     });
   }
 
