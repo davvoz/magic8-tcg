@@ -12,6 +12,9 @@
  * - A session built with an `openingToss` shows it before the first turn:
  *   the match screen plays the toss, then calls `begin()`, so the AI never
  *   moves while the coin is still in the air.
+ * - A session built with a `setup` (the seed and the decks it was dealt
+ *   from) keeps every move it accepts, from any seat, so the whole game can
+ *   be played again from its `transcript` (a practice game the server counts).
  * - A session can set its own `pace` for the non-human seats (a replay's,
  *   whose speed the player picks), and with no human seat a `viewerId`: the
  *   seat whose side the board shows, though nobody plays it.
@@ -28,6 +31,9 @@ const MAX_CONSECUTIVE_AI_DECISIONS = 200;
 /**
  * @typedef {Readonly<{ events: readonly Readonly<Record<string, unknown>>[], version: number, playerId: string | null }>} SessionUpdate
  * @typedef {{ wait: () => Promise<void> }} MovePace what a non-human seat waits on before each move
+ * @typedef {Readonly<{ seed: string, players: readonly Readonly<{ id: string, deck: readonly Readonly<{ cardId: string, count: number }>[] }>[] }>} MatchDealing
+ *   what a game is dealt from: its seed, and each seat's deck in seating order (the first player first), cards in list order
+ * @typedef {MatchDealing & Readonly<{ moves: readonly Readonly<Record<string, unknown>>[] }>} MatchTranscript a game as it can be played again
  */
 
 export class MatchSession {
@@ -45,6 +51,10 @@ export class MatchSession {
   #openingToss;
   /** The STEEM account playing each seat that has one. @type {ReadonlyMap<string, string>} */
   #accounts;
+  /** @type {MatchDealing | null} */
+  #setup;
+  /** Every move the engine accepted, in order. @type {Readonly<Record<string, unknown>>[]} */
+  #moves = [];
   #started = false;
   /** @type {Set<(update: SessionUpdate) => void>} */
   #listeners = new Set();
@@ -53,13 +63,14 @@ export class MatchSession {
   #stopped = false;
 
   /**
-   * @param {{ engine: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, controllers: ReadonlyMap<string, import("./PlayerController.contract.js").PlayerController>, scheduler: import("../ports/Scheduler.contract.js").Scheduler, logger: import("../ports/Logger.contract.js").Logger, aiDelayMs?: number, pace?: MovePace | null, viewerId?: string | null, openingToss?: import("./CoinToss.js").CoinToss | null, accounts?: ReadonlyMap<string, string> }} deps
+   * @param {{ engine: import("@magic8/engine/domain/game/GameEngine.js").GameEngine, controllers: ReadonlyMap<string, import("./PlayerController.contract.js").PlayerController>, scheduler: import("../ports/Scheduler.contract.js").Scheduler, logger: import("../ports/Logger.contract.js").Logger, aiDelayMs?: number, pace?: MovePace | null, viewerId?: string | null, openingToss?: import("./CoinToss.js").CoinToss | null, accounts?: ReadonlyMap<string, string>, setup?: MatchDealing | null }} deps
    *   `pace`: what the non-human seats wait on before each move, instead of `aiDelayMs`;
    *   `viewerId`: with no human seat, the seat whose side the board shows (null: a spectator's board);
    *   `openingToss`: the toss that seated the engine's first player, to be shown before the match begins;
-   *   `accounts`: the STEEM account playing each seat that has one (the signed-in player; never the AI)
+   *   `accounts`: the STEEM account playing each seat that has one (the signed-in player; never the AI);
+   *   `setup`: what the engine was dealt from, for a game that may be played again (see `transcript`)
    */
-  constructor({ engine, controllers, scheduler, logger, aiDelayMs = 0, pace = null, viewerId = null, openingToss = null, accounts = new Map() }) {
+  constructor({ engine, controllers, scheduler, logger, aiDelayMs = 0, pace = null, viewerId = null, openingToss = null, accounts = new Map(), setup = null }) {
     this.#engine = engine;
     this.#controllers = new Map(controllers);
     this.#scheduler = scheduler;
@@ -69,6 +80,7 @@ export class MatchSession {
     this.#viewerId = viewerId;
     this.#openingToss = openingToss;
     this.#accounts = new Map(accounts);
+    this.#setup = setup;
   }
 
   get isOver() {
@@ -155,10 +167,31 @@ export class MatchSession {
       return fail(CommandError.GAME_OVER, "the match was abandoned");
     }
     const playerId = typeof command === "object" && command !== null ? /** @type {Record<string, unknown>} */ (command).playerId : null;
-    const result = this.#engine.execute(command);
+    const result = this.#execute(command);
     if (result.ok) {
       this.#publish(result.value.events, result.value.version, typeof playerId === "string" ? playerId : null);
       this.#scheduleDrive();
+    }
+    return result;
+  }
+
+  /**
+   * The game so far as it can be played again: what it was dealt from and every move made. Null for a session
+   * built without its `setup`.
+   * @returns {MatchTranscript | null}
+   */
+  get transcript() {
+    return this.#setup === null ? null : Object.freeze({ ...this.#setup, moves: Object.freeze([...this.#moves]) });
+  }
+
+  /**
+   * Runs a command on the engine, keeping it when the engine accepts it.
+   * @param {unknown} command
+   */
+  #execute(command) {
+    const result = this.#engine.execute(command);
+    if (result.ok) {
+      this.#moves.push(/** @type {Readonly<Record<string, unknown>>} */ (command));
     }
     return result;
   }
@@ -242,7 +275,7 @@ export class MatchSession {
       this.#abandonSeat(playerId, "controller returned no command");
       return;
     }
-    const result = this.#engine.execute(command);
+    const result = this.#execute(command);
     if (!result.ok) {
       this.#logger.error("controller produced an illegal command", { playerId, command, error: result.error });
       this.#abandonSeat(playerId, result.error.message);
@@ -259,7 +292,7 @@ export class MatchSession {
    */
   #abandonSeat(playerId, reason) {
     this.#logger.warn("seat abandoned; conceding", { playerId, reason });
-    const result = this.#engine.execute(concede(playerId));
+    const result = this.#execute(concede(playerId));
     if (result.ok) {
       this.#publish(result.value.events, result.value.version, playerId);
     }

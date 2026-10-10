@@ -12,7 +12,8 @@ const PARAM_VALUE_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * `body` is sent as JSON; `raw` is sent byte for byte as application/json
- * (for payloads whose exact bytes matter, e.g. hashed content).
+ * (for payloads whose exact bytes matter, e.g. hashed content). A route's
+ * `maxBodyBytes` is the largest request body it reads, when not the app's.
  * @typedef {Readonly<{ status: number, body?: unknown, raw?: string, headers?: Readonly<Record<string, string>>, cookies?: readonly string[] }>} RouteResponse
  * @typedef {Readonly<{
  *   method: string,
@@ -33,6 +34,7 @@ const PARAM_VALUE_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
  *   auth?: string,
  *   csrf?: boolean,
  *   rateLimit?: import("./RateLimiter.js").BucketPolicy & { by?: "ip" | "user" },
+ *   maxBodyBytes?: number,
  *   handler: (context: RouteContext) => Promise<RouteResponse>,
  * }>} RouteDefinition
  */

@@ -60,6 +60,12 @@ export class EntryTickets extends UiNode {
     return Math.ceil(ticket * TICKET.aspect * (1 + STACK.max * STACK.dx));
   }
 
+  /** The height of a stack of tickets `width` wide, the tickets behind included: the inverse of `widthFor`. @param {number} width */
+  static heightFor(width) {
+    const ticket = width / (TICKET.aspect * (1 + STACK.max * STACK.dx));
+    return Math.floor(ticket * (1 + STACK.max * STACK.dy));
+  }
+
   /**
    * @param {CanvasRenderingContext2D} context
    * @param {import("../../theme/Theme.js").Theme} theme

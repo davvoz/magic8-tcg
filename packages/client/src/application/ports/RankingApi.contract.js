@@ -5,8 +5,8 @@
  * @typedef {Readonly<{ id: string, name: string }>} Season
  * @typedef {Readonly<{
  *   season: Season | null, rating: number, deviation: number, provisional: boolean, rank: number | null,
- *   games: number, wins: number, losses: number, draws: number, eligible: boolean, casualGamesNeeded: number,
- * }>} Standing
+ *   games: number, wins: number, losses: number, draws: number, eligible: boolean, casualGamesNeeded: number, practiceGamesNeeded: number,
+ * }>} Standing not `eligible` yet: ranked opens after `casualGamesNeeded` more casual games, or `practiceGamesNeeded` more practice games against the AI
  * @typedef {Readonly<{ rank: number | null, provisional: boolean, account: string, rating: number, games: number, wins: number, losses: number, draws: number }>} LeaderboardEntry
  * @typedef {Readonly<{ season: Season | null, entries: readonly LeaderboardEntry[] }>} Leaderboard
  *

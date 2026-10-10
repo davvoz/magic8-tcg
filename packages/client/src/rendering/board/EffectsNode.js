@@ -30,7 +30,6 @@ const CAST_RUNE = Object.freeze({ from: 0.5, to: 1.35, rays: 8, blur: 18 });
 /** The turning card: its halo, and the gleam along the edge while it is side-on. */
 const CAST_CARD = Object.freeze({ haloBlur: 36, haloAlpha: 0.55, gleamUntil: 0.35, gleamWidth: 3, gleamBlur: 24 });
 const CAST_CAPTION = Object.freeze({ font: 22, gap: 12, height: 30, spread: 70 });
-/** The beam to each target, the rune that marks it and the name under it. */
 /**
  * A random discard's crosshair: its ring, the ticks that cross it (from
  * `tickFrom` to `tickTo` times the radius), how fast it turns while it
@@ -44,6 +43,7 @@ const CROSSHAIR = Object.freeze({ radius: 24, lockedRadius: 30, tickFrom: 0.45, 
  * the beam strikes along it.
  */
 const BREAKTHROUGH = Object.freeze({ from: 2.6, lockedGap: 10, aimAlpha: 0.45, dash: [8, 10], beamWidth: 5, beamBlur: 20 });
+/** The beam to each target, the rune that marks it (and where it leaves from) and the name under it. */
 const CAST_TARGET = Object.freeze({ beamWidth: 3, beamBlur: 16, markRadius: 26, markRays: 8, markFrom: 0.55, nameFont: 15, nameGap: 8, nameHeight: 20, nameSpread: 80 });
 /** An ability going off: its rune (in px, spreading from `from` to `to` times `radius`) and the card's name over it. */
 const FLARE = Object.freeze({ radius: 34, from: 0.8, to: 2.2, rays: 8, blur: 18, nameFont: 17, nameGap: 10, nameHeight: 24, nameSpread: 110 });
@@ -161,12 +161,13 @@ export class EffectsNode extends UiNode {
     const centre = { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 };
     this.#paintCastLight(context, theme, tones, { frame, centre });
     paintCastRune(context, tones, { frame, centre });
+    paintCastCard(context, theme, card, { frame, centre, tones });
     paintCastBeams(context, tones, { frame, origin, targets });
     const { roulette } = reveal;
     if (roulette !== null) {
       paintCrosshair(context, theme, tones, { frame, origin, roulette, elapsedMs: frame.seek * roulette.durationMs });
     }
-    paintCastCard(context, theme, card, { frame, centre, tones });
+    paintCastSource(context, tones, { frame, origin, aimed: targets.length > 0 || roulette !== null });
     paintCastCaption(context, theme, caption, frame);
     paintCastMarks(context, theme, tones, { frame, targets });
   }
@@ -319,10 +320,32 @@ function paintCastRune(context, tones, { frame, centre }) {
 }
 
 /**
+ * Where the beams of an aimed spell leave from: the spell's rune, small, on
+ * the card — the same mark that lands on each target. It kindles as the
+ * rune spreading from under the card fades, and stays put while the card
+ * sinks away.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").FactionTones} tones
+ * @param {{ frame: import("./CastReveal.js").RevealFrame, origin: { x: number, y: number }, aimed: boolean }} at `aimed`: whether the spell has anything to beam at
+ */
+function paintCastSource(context, tones, { frame, origin, aimed }) {
+  const fade = frame.alpha * frame.glow * frame.ring;
+  if (!aimed || fade <= 0) {
+    return;
+  }
+  context.save();
+  context.globalAlpha = fade;
+  context.shadowColor = withAlpha(tones.light, 0.9);
+  context.shadowBlur = CAST_TARGET.beamBlur;
+  paintRuneCircle(context, origin, CAST_TARGET.markRadius, { rays: CAST_TARGET.markRays, color: tones.light });
+  context.restore();
+}
+
+/**
  * A beam of the spell's light reaching out to each thing it was aimed at.
  * It leaves from where the card is held rather than from the card itself,
  * so it stays put instead of sweeping the table as the card sinks away.
- * Drawn under the card, so it seems to come from behind it.
+ * Drawn over the card, so it is seen leaving from it.
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").FactionTones} tones
  * @param {{ frame: Pick<import("./CastReveal.js").RevealFrame, "alpha" | "glow" | "strike">, origin: { x: number, y: number }, targets: readonly import("./CastReveal.js").CastTarget[] }} at

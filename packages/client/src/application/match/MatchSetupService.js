@@ -62,12 +62,13 @@ export class MatchSetupService {
       return fail(MatchSetupError.INVALID_SEED, "the coin seed must be a 32-byte key (hex or bytes) or a safe integer");
     }
     const openingToss = coinSeed === undefined ? null : tossBetween(seats, coinSeed);
+    const seated = firstPlayerAhead(seats, openingToss);
     const engine = GameEngine.create({
       rules,
       catalog: this.#content.catalog,
       effects: this.#effects,
       commands: createCoreCommandRegistry(),
-      players: firstPlayerAhead(seats, openingToss).map((seat) => ({ id: seat.id, name: seat.name, deckList: seat.deckList })),
+      players: seated.map((seat) => ({ id: seat.id, name: seat.name, deckList: seat.deckList })),
       seed,
       shuffle,
     });
@@ -76,7 +77,21 @@ export class MatchSetupService {
     }
     const controllers = new Map(seats.map((seat) => [seat.id, seat.controller]));
     const accounts = new Map(seats.flatMap((seat) => (typeof seat.account === "string" ? [[seat.id, seat.account]] : [])));
-    return ok(new MatchSession({ engine: engine.value, controllers, scheduler: this.#scheduler, logger: this.#logger, aiDelayMs, openingToss, accounts }));
+    const setup = this.#dealingFor({ seed, seated, shuffle, rules });
+    return ok(new MatchSession({ engine: engine.value, controllers, scheduler: this.#scheduler, logger: this.#logger, aiDelayMs, openingToss, accounts, setup }));
+  }
+
+  /**
+   * What the engine was dealt from, for a game that can be played again elsewhere (the server counts practice
+   * games): one by the game's own rules, shuffled from a real seed. Null for any other.
+   * @param {{ seed: string | number, seated: readonly SeatSetup[], shuffle: boolean, rules: import("@magic8/engine/domain/game/GameRules.js").GameRules }} match `seated` in engine order
+   * @returns {import("./MatchSession.js").MatchDealing | null}
+   */
+  #dealingFor({ seed, seated, shuffle, rules }) {
+    if (!shuffle || rules !== this.#content.gameRules || typeof seed !== "string") {
+      return null;
+    }
+    return Object.freeze({ seed, players: Object.freeze(seated.map((seat) => Object.freeze({ id: seat.id, deck: seat.deckList.entries }))) });
   }
 }
 

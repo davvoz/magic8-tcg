@@ -21,6 +21,7 @@
  * @property {import("./auto/AutoListService.js").AutoListService} [autoList] the auto list of ranked play (the AI plays the player's deck); absent with `identity`
  * @property {import("./auto/AutoReplayService.js").AutoReplayService} [autoReplays] replays of played auto games; absent with `identity`
  * @property {import("./ranking/RankingService.js").RankingService} [ranking] ranked standing and leaderboard; absent with `identity`
+ * @property {import("./practice/PracticeReportService.js").PracticeReportService} [practice] sends a signed-in player's finished practice games, which count toward ranked play; absent with `identity`
  * @property {import("./ports/GameHistoryApi.contract.js").GameHistoryApi} [gameHistory] the games a player has played (public, by account); absent with `identity`
  * @property {import("./jackpot/JackpotService.js").JackpotService} [jackpot] the ranked season's jackpot (public); absent with `identity`
  * @property {import("./entries/EntryService.js").EntryService} [entries] the player's ranked entries, and what a ranked game costs; absent with `identity`

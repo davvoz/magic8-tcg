@@ -18,7 +18,7 @@ Vale per la **stessa stagione, la stessa classifica e lo stesso jackpot** della 
 
 | Regola | Perché |
 |---|---|
-| Stessi requisiti della classificata: stagione in corso, `minFinishedCasualGames` partite casual finite (09). | Frena gli account creati solo per farmare. |
+| Stessi requisiti della classificata: stagione in corso, `minFinishedCasualGames` partite casual finite oppure `minFinishedPracticeGames` partite contro l'AI (09). | Frena gli account creati solo per farmare. |
 | Costa **un ingresso ranked** a giocatore, gli stessi biglietti dello shop (22). Si toglie **quando ci si mette in lista**. | Il prezzo si paga una volta, al momento della scelta. |
 | **Una volta dentro, sei dentro:** dalla lista non si esce. Il biglietto aspetta finché arriva un avversario. | Nessuno entra e esce per scegliersi l'avversario. |
 | **Un biglietto automatico per giocatore.** È indipendente dalla coda live e dalle sfide: si può stare in lista automatica e intanto giocare a mano. | Semplice da capire, e non toglie niente al PvP. |

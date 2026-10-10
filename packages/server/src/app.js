@@ -28,6 +28,7 @@ import { MatchmakingService, PgMatchmakingRepository, registerQueueMessages } fr
 import { LobbyService, registerLobbyMessages } from "./modules/lobby/index.js";
 import { AutoService, PgAutoRepository, registerAutoMessages, registerAutoRoutes } from "./modules/auto/index.js";
 import { PgRankingRepository, PgSeasonRepository, RankingService, SeasonCalendar, registerRankingRoutes, registerSeasonRoutes, validateRankedSettings } from "./modules/ranking/index.js";
+import { PgPracticeRepository, PracticeService, registerPracticeRoutes } from "./modules/practice/index.js";
 import { JackpotService, PgJackpotRepository, PrizePayoutWatcher, registerJackpotRoutes, validatePrizePools } from "./modules/jackpot/index.js";
 import { ENTRY_KINDS, EntryService, PgEntryRepository, registerEntryRoutes } from "./modules/entries/index.js";
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
@@ -146,7 +147,9 @@ export async function createServerApp(deps) {
   }
   // The seasons live in the database (the data file's are the first calendar); operators change them from the admin page.
   const { seasons, pools } = await buildSeasons({ initial: rankedSettings.value, database, publish, listen, audit, clock, unitOfWork, logger });
-  const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: seasons.settings, games, clock, unitOfWork, logger });
+  // Practice games against the AI, played in the browser: counted toward ranked play once the server has played them again.
+  const practice = new PracticeService({ repository: new PgPracticeRepository(database), currentContent, effects: createCoreEffectRegistry(), clock, logger });
+  const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: seasons.settings, games, practice, clock, unitOfWork, logger });
   games.onGameFinished((summary) => ranking.record(summary).then(() => undefined));
   // Ranked entries: bought in the shop (paid to the bank, so they feed the jackpot), taken by each ranked game of a season with an entry fee.
   const entries = new EntryService({ repository: new PgEntryRepository(database), fees: { feeOf: (mode) => ranking.entryFeeOf(mode) }, clock, unitOfWork, logger, kinds: ENTRY_KINDS });
@@ -192,6 +195,7 @@ export async function createServerApp(deps) {
   registerStarterRoutes({ router, starters });
   registerMarketplaceRoutes({ router, marketplace, epochs, settlement });
   registerRankingRoutes({ router, ranking });
+  registerPracticeRoutes({ router, practice });
   registerEntryRoutes({ router, entries });
   registerGameRoutes({ router, games });
   registerAutoRoutes({ router, auto });
@@ -248,7 +252,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, practice, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, realtime });
 }
 
 /**

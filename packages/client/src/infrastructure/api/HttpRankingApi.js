@@ -42,8 +42,13 @@ function standing(value) {
   if (!counts || parsedSeason === undefined || !Number.isSafeInteger(value.rating) || typeof value.provisional !== "boolean" || typeof value.eligible !== "boolean" || !(value.rank === null || isCount(value.rank))) {
     return null;
   }
+  // An older server opens ranked play with casual games only, and does not say how many practice games would do.
+  const practiceGamesNeeded = value.practiceGamesNeeded ?? 0;
+  if (!isCount(practiceGamesNeeded)) {
+    return null;
+  }
   const { rating, deviation, provisional, rank, games, wins, losses, draws, eligible, casualGamesNeeded } = value;
-  return Object.freeze({ season: parsedSeason, rating, deviation, provisional, rank, games, wins, losses, draws, eligible, casualGamesNeeded });
+  return Object.freeze({ season: parsedSeason, rating, deviation, provisional, rank, games, wins, losses, draws, eligible, casualGamesNeeded, practiceGamesNeeded });
 }
 
 /**

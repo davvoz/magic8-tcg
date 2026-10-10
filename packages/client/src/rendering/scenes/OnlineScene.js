@@ -583,7 +583,7 @@ export class OnlineScene extends Scene {
   #challengeModal(account) {
     const deck = this.#selectedDeck();
     const message = deck === null ? "Choose one of your playable decks first: it is the deck you will play with." : `You play with “${deck.name}”. @${account} has a minute to accept, with a deck of their own.`;
-    const ranked = this.#rankedAllowed() ? this.#entriesNote() : " Ranked opens once you have played enough casual games.";
+    const ranked = this.#rankedAllowed() ? this.#entriesNote() : " Ranked opens once you have played enough casual games, or enough practice games against the AI.";
     const send = (/** @type {string} */ mode) => {
       this.#dialog = null;
       void this.#app.lobby?.challenge(account, mode, /** @type {{ id: string }} */ (deck).id);
@@ -917,7 +917,8 @@ export function standingText(state) {
     return "No ranked season is running.";
   }
   if (!standing.eligible) {
-    return `Ranked opens after ${standing.casualGamesNeeded} more casual game(s).`;
+    const practice = standing.practiceGamesNeeded > 0 ? `, or ${standing.practiceGamesNeeded} more practice game(s) vs AI` : "";
+    return `Ranked opens after ${standing.casualGamesNeeded} more casual game(s)${practice}.`;
   }
   const draws = standing.draws > 0 ? `–${standing.draws}` : "";
   const record = `${standing.wins}–${standing.losses}${draws}`;

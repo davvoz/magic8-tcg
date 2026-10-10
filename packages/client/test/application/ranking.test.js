@@ -21,7 +21,7 @@ const theme = loadTheme();
 const content = await loadBundledContent();
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const SEASON = Object.freeze({ id: "2026-s1", name: "Season 1" });
-const STANDING = Object.freeze({ season: SEASON, rating: 1612, deviation: 90, provisional: false, rank: 4, games: 12, wins: 8, losses: 4, draws: 0, eligible: true, casualGamesNeeded: 0 });
+const STANDING = Object.freeze({ season: SEASON, rating: 1612, deviation: 90, provisional: false, rank: 4, games: 12, wins: 8, losses: 4, draws: 0, eligible: true, casualGamesNeeded: 0, practiceGamesNeeded: 0 });
 const BOARD = Object.freeze({
   season: SEASON,
   entries: [
@@ -39,6 +39,10 @@ describe("HttpRankingApi", () => {
     const api = new HttpRankingApi({ fetch: async (url) => json(200, answers[new URL(url, "http://x").pathname]) });
     assert.deepEqual((await api.standing()).value, STANDING);
     assert.deepEqual((await api.leaderboard()).value, BOARD);
+    answers["/api/ranking/me"] = { ...STANDING, practiceGamesNeeded: undefined };
+    assert.equal((await api.standing()).value.practiceGamesNeeded, 0, "an older server opens ranked play with casual games only");
+    answers["/api/ranking/me"] = { ...STANDING, practiceGamesNeeded: -1 };
+    assert.equal((await api.standing()).error.code, "BAD_RESPONSE");
     answers["/api/ranking/me"] = { ...STANDING, rating: "1612" };
     answers["/api/ranking/leaderboard"] = { season: SEASON, entries: [{ ...BOARD.entries[0], account: "<script>" }] };
     assert.equal((await api.standing()).error.code, "BAD_RESPONSE");
@@ -86,7 +90,8 @@ describe("RankingService (client)", () => {
     const base = { loading: false, leaderboard: null, error: null };
     assert.equal(standingText({ ...base, standing: STANDING }), "Season 1: rating 1612 (#4), 8–4 in 12 game(s).");
     assert.equal(standingText({ ...base, standing: { ...STANDING, provisional: true, rank: null, draws: 2 } }), "Season 1: rating 1612 (provisional), 8–4–2 in 12 game(s).");
-    assert.equal(standingText({ ...base, standing: { ...STANDING, eligible: false, casualGamesNeeded: 2 } }), "Ranked opens after 2 more casual game(s).");
+    assert.equal(standingText({ ...base, standing: { ...STANDING, eligible: false, casualGamesNeeded: 2, practiceGamesNeeded: 1 } }), "Ranked opens after 2 more casual game(s), or 1 more practice game(s) vs AI.");
+    assert.equal(standingText({ ...base, standing: { ...STANDING, eligible: false, casualGamesNeeded: 2 } }), "Ranked opens after 2 more casual game(s).", "an older server counts casual games only");
     assert.equal(standingText({ ...base, standing: { ...STANDING, season: null } }), "No ranked season is running.");
     assert.equal(standingText({ ...base, standing: null }), "Loading your ranked standing…");
     assert.equal(standingText({ ...base, standing: null, error: "offline" }), "Ranked standing unavailable: offline");
@@ -127,13 +132,13 @@ describe("ranked screens", () => {
     scene.root.findById("online.leaderboard").activate();
     assert.equal(navigated.at(-1), SceneId.LEADERBOARD);
 
-    const newcomer = new RankingService({ api: fakeApi({ ...STANDING, eligible: false, casualGamesNeeded: 3 }) });
+    const newcomer = new RankingService({ api: fakeApi({ ...STANDING, eligible: false, casualGamesNeeded: 3, practiceGamesNeeded: 3 }) });
     const other = screens(newcomer);
     const lobby = new OnlineScene(other.services, other.app);
     lobby.enter({});
     await flush();
     assert.equal(lobby.root.findById("online.mode.ranked").enabled, false);
-    assert.equal(lobby.root.findById("online.standing").text, "Ranked opens after 3 more casual game(s).");
+    assert.equal(lobby.root.findById("online.standing").text, "Ranked opens after 3 more casual game(s), or 3 more practice game(s) vs AI.");
   });
 
   it("shows the leaderboard with the player's own line selected", async () => {

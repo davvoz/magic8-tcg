@@ -23,6 +23,7 @@ import { OnlineService, OnlineStatus } from "./application/online/OnlineService.
 import { LobbyService } from "./application/lobby/LobbyService.js";
 import { describeLobbyEvent } from "./application/lobby/describeLobbyEvent.js";
 import { RankingService } from "./application/ranking/RankingService.js";
+import { PracticeReportService } from "./application/practice/PracticeReportService.js";
 import { JackpotService } from "./application/jackpot/JackpotService.js";
 import { EntryService } from "./application/entries/EntryService.js";
 import { AutoListService } from "./application/auto/AutoListService.js";
@@ -56,6 +57,7 @@ import { HttpLiveGamesApi } from "./infrastructure/api/HttpLiveGamesApi.js";
 import { verifySignedAck } from "./infrastructure/crypto/ackVerifier.js";
 import { WebCryptoSessionKeys } from "./infrastructure/crypto/webSessionKeys.js";
 import { HttpRankingApi } from "./infrastructure/api/HttpRankingApi.js";
+import { HttpPracticeApi } from "./infrastructure/api/HttpPracticeApi.js";
 import { HttpJackpotApi } from "./infrastructure/api/HttpJackpotApi.js";
 import { HttpEntriesApi } from "./infrastructure/api/HttpEntriesApi.js";
 import { HttpTradingApi } from "./infrastructure/api/HttpTradingApi.js";
@@ -500,6 +502,8 @@ async function boot() {
   const autoList = new AutoListService({ connection: realtime, randomHex, logger });
   const autoReplays = new AutoReplayService({ api: new HttpAutoApi({ fetch: httpFetch }), content: content.value, effects: createCoreEffectRegistry(), buildEngine: buildRecordedGameEngine, scheduler: browserScheduler, logger });
   const ranking = new RankingService({ api: new HttpRankingApi({ fetch: httpFetch }) });
+  // A signed-in player's practice games against the AI go to the server, which counts them toward ranked play.
+  const practice = new PracticeReportService({ api: new HttpPracticeApi({ fetch: httpFetch }), logger });
   // The ranked season's jackpot: public, shown signed out too, read again every minute while on screen.
   const jackpot = new JackpotService({ api: new HttpJackpotApi({ fetch: httpFetch }), scheduler: browserScheduler, now: () => Date.now() });
   // Ranked entries, bought in the shop: read again once a purchase of them is done, and by the lobby.
@@ -560,6 +564,7 @@ async function boot() {
     autoList,
     autoReplays,
     ranking,
+    practice,
     gameHistory: new HttpGameHistoryApi({ fetch: httpFetch }),
     jackpot,
     entries,

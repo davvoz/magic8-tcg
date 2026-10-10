@@ -1145,8 +1145,9 @@ export class ShopScene extends Scene {
   }
 
   /**
-   * One product in the cart: its cards fanned out with the quantity, ✕ to
-   * remove it; its name, price each, − quantity + and its amount.
+   * One product in the cart: its cards fanned out with the quantity (ranked
+   * entries: their tickets), ✕ to remove it; its name, price each,
+   * − quantity + and its amount.
    * @param {ScrollList} list
    * @param {import("../../application/shop/shopCatalog.js").CartSummaryLine} line
    * @param {{ x: number, y: number, width: number }} tile
@@ -1157,7 +1158,7 @@ export class ShopScene extends Scene {
     const { cart: CART } = this.#m;
     const inner = width - 2 * 10;
     list.add(new Panel({ id: `cart.line.${productId}`, x, y, width, height: CART.tile }));
-    list.add(new CardFan({ id: `cart.visual.${productId}`, x: x + 10, y: y + 10, width: inner, height: CART.fan, ...this.#fanOf(product, productId), badge: `×${quantity}` }));
+    this.#buildCartVisual(list, line, { x: x + 10, y: y + 10, width: inner, height: CART.fan });
     list.add(new Button({ id: `cart.remove.${productId}`, x: x + width - 8 - CART.remove, y: y + 8, width: CART.remove, height: CART.remove, text: "×", variant: "danger", onActivate: () => shop.removeFromCart(productId) }));
     const nameY = y + CART.fan + (this.#screen.compact ? 10 : 16);
     list.add(new Label({ id: `cart.name.${productId}`, x: x + 10, y: nameY, width: inner, height: 26, text: product?.name ?? productId, weight: "bold", colorKey: product === null ? "danger" : "text", fit: true }));
@@ -1172,6 +1173,39 @@ export class ShopScene extends Scene {
     const amountX = x + 10 + 3 * step.width + 8;
     const amount = line.amount === null ? "—" : `${line.amount} ${priceOf(/** @type {Product} */ (product)).asset}`;
     list.add(new Label({ id: `cart.amount.${productId}`, x: amountX, y: controlsY, width: x + width - 10 - amountX, height: step.height, text: amount, size: this.#screen.compact ? "small" : "body", weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
+  }
+
+  /**
+   * What a cart tile shows above its name: the tickets of ranked entries,
+   * the product's cards fanned out with the quantity otherwise.
+   * @param {ScrollList} list
+   * @param {import("../../application/shop/shopCatalog.js").CartSummaryLine} line
+   * @param {{ x: number, y: number, width: number, height: number }} area
+   */
+  #buildCartVisual(list, { productId, product, quantity }, area) {
+    if (product !== null && product.cards === 0 && rankedEntriesOf(product) > 0) {
+      this.#buildCartTickets(list, product, quantity, area);
+      return;
+    }
+    list.add(new CardFan({ id: `cart.visual.${productId}`, ...area, ...this.#fanOf(product, productId), badge: `×${quantity}` }));
+  }
+
+  /**
+   * Ranked entries in the cart: their tickets, centred clear of ✕, the seal
+   * counting the entries this line adds.
+   * @param {ScrollList} list
+   * @param {Product} product
+   * @param {number} quantity
+   * @param {{ x: number, y: number, width: number, height: number }} area
+   */
+  #buildCartTickets(list, product, quantity, area) {
+    const room = area.width - 2 * (this.#m.cart.remove + 8);
+    const height = Math.min(area.height, EntryTickets.heightFor(room));
+    const width = EntryTickets.widthFor(height);
+    const price = priceOf(product);
+    const face = rankedEntriesOf(product) === 1 && price !== undefined ? `${price.amount} ${price.asset}` : null;
+    const at = { x: area.x + (area.width - width) / 2, y: area.y + (area.height - height) / 2, width, height };
+    list.add(new EntryTickets({ id: `cart.visual.${product.id}`, ...at, count: rankedEntriesOf(product) * quantity, title: "Ranked", face, seed: `cart:${product.id}` }));
   }
 
   /**

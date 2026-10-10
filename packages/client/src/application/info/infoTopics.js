@@ -211,7 +211,7 @@ function ranked() {
     ]),
 
     heading("Who can play ranked"),
-    bullet("Finish 3 casual games first. Until then, Ranked stays locked and the lobby tells you how many games are left."),
+    bullet("Finish 3 casual games, or 3 practice games against the AI while signed in, first. Until then, Ranked stays locked and the lobby tells you how many games are left. A practice game you concede does not count."),
     bullet("Have at least one ranked entry."),
 
     heading("Ranked entries: buy them in advance"),

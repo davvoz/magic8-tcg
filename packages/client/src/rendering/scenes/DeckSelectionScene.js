@@ -5,7 +5,8 @@
  * shows it and starts the match once the coin has landed.
  * Signed in, "your decks" are the account's (the starter you took and the
  * decks you built), and the player sits at the table as that account (its
- * name and profile picture); offline, the preconstructed decks too. Each deck is a
+ * name and profile picture), and the finished game is sent to the server,
+ * where it counts toward ranked play; offline, the preconstructed decks too. Each deck is a
  * banner row striped with its faction mix; decks that break the rules are shown
  * disabled with the first problem so the player knows to fix them.
  * On a compact screen the panel fills it and the footer is one row.
@@ -208,9 +209,10 @@ export class DeckSelectionScene extends Scene {
     const coinSeed = this.#app.createSeed();
     const others = this.#app.deckSelection.listRivalDecks().filter((option) => option.deck.id !== selected.deck.id);
     const rival = others.length === 0 ? selected : others[seedIndex(seed, others.length)];
+    const human = this.#humanSeat();
     const created = this.#app.matchSetup.createMatch({
       seats: [
-        { ...this.#humanSeat(), deckList: selected.deck, controller: humanController },
+        { ...human, deckList: selected.deck, controller: humanController },
         { ...AI_SEAT, deckList: rival.deck, controller: new BasicAiController() },
       ],
       seed,
@@ -222,6 +224,9 @@ export class DeckSelectionScene extends Scene {
       return;
     }
     this.#app.logger.info("match created", { deck: selected.deck.id, rival: rival.deck.id, seed, coinSeed, first: created.value.openingToss?.firstPlayerId ?? null });
+    if ("account" in human) {
+      this.#app.practice?.track(created.value, HUMAN_SEAT.id);
+    }
     this.services.navigate(SceneId.MATCH, { session: created.value });
   }
 

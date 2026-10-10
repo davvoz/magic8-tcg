@@ -28,7 +28,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const GAME = "01j8x3r6h2qkq4w0v7m5a9c1dz";
 
 /** A player who may play ranked, in a running season. */
-const ELIGIBLE = Object.freeze({ season: { id: "season-1", name: "Season 1" }, rating: 1500, deviation: 350, provisional: true, rank: null, games: 0, wins: 0, losses: 0, draws: 0, eligible: true, casualGamesNeeded: 0 });
+const ELIGIBLE = Object.freeze({ season: { id: "season-1", name: "Season 1" }, rating: 1500, deviation: 350, provisional: true, rank: null, games: 0, wins: 0, losses: 0, draws: 0, eligible: true, casualGamesNeeded: 0, practiceGamesNeeded: 0 });
 
 /**
  * @param {{ lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, shop?: boolean, auto?: boolean }} [options] `lobbyReplies`: the scripted server's answers to the lobby's requests;
@@ -69,7 +69,7 @@ async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop =
   const navigated = [];
   const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, params) => navigated.push({ id, params }), hasScene: () => true };
   const lobby = lobbyReplies === undefined ? undefined : new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => 0, logger: new MemoryLogger() });
-  const standing = eligible ? ELIGIBLE : { ...ELIGIBLE, eligible: false, casualGamesNeeded: 2 };
+  const standing = eligible ? ELIGIBLE : { ...ELIGIBLE, eligible: false, casualGamesNeeded: 2, practiceGamesNeeded: 2 };
   const ranking = ranked === undefined ? undefined : new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season: ELIGIBLE.season, entries: [] }) } });
   const unused = async () => ok(null);
   const shop = withShop ? new ShopService({ api: { listing: async () => ok(LISTING_WITH_ENTRIES), createOrder: unused, getOrder: unused, listOrders: unused, cancelOrder: unused, paymentHint: unused }, wallet: { name: "Steem Keychain" }, account: { state: { account: "alice" }, refresh: async () => undefined }, scheduler: { delay: async () => undefined }, newKey: () => "key" }) : undefined;

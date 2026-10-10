@@ -187,7 +187,7 @@ export class HttpApp {
         return typeof value === "string" ? value : null;
       },
       readJson: async () => {
-        body ??= readJsonBody(request, this.#config.maxBodyBytes);
+        body ??= readJsonBody(request, route.maxBodyBytes ?? this.#config.maxBodyBytes);
         return body;
       },
     });

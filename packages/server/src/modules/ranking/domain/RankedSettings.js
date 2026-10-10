@@ -1,7 +1,8 @@
 /**
  * Ranked settings from data/ranked/ranked.json, validated when the server
- * starts: seasons (ratings start over with each one), who may play ranked,
- * and the fair-play limits.
+ * starts: seasons (ratings start over with each one), who may play ranked
+ * (a player who finished enough casual games, or enough practice games
+ * against the AI), and the fair-play limits.
  *
  * A season runs from `startsAt` until its `endsAt`, or else until the next
  * season starts (the last one without `endsAt` never ends). Between a season
@@ -43,7 +44,7 @@ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
  * @typedef {Readonly<{
  *   seasons: readonly Season[],
  *   prizePools: unknown,
- *   eligibility: Readonly<{ minFinishedCasualGames: number }>,
+ *   eligibility: Readonly<{ minFinishedCasualGames: number, minFinishedPracticeGames: number }>,
  *   fairPlay: Readonly<{ maxRatedGamesPerPairPerDay: number, earlyConcedeTurn: number, earlyConcedesToFlag: number, earlyConcedeWindowDays: number }>,
  *   auto: Readonly<{ ratingWeightPercent: number }>,
  * }>} RankedSettings
@@ -78,7 +79,7 @@ export function validateRankedSettings(raw) {
   checkInteger(issues, top.v, "ranked.v", { min: 1, max: 1 });
   const seasons = checkArrayOf(issues, top.seasons, "ranked.seasons", { minLength: 1, maxLength: MAX_SEASONS, item: (item, path) => checkSeason(issues, item, path) });
   checkCalendar(issues, seasons ?? [], "ranked.seasons");
-  const eligibility = integers(issues, top.eligibility, "ranked.eligibility", ["minFinishedCasualGames"]);
+  const eligibility = integers(issues, top.eligibility, "ranked.eligibility", ["minFinishedCasualGames", "minFinishedPracticeGames"]);
   const fairPlay = integers(issues, top.fairPlay, "ranked.fairPlay", ["maxRatedGamesPerPairPerDay", "earlyConcedeTurn", "earlyConcedesToFlag", "earlyConcedeWindowDays"]);
   const auto = checkAuto(issues, top.auto);
   if (!issues.isEmpty || seasons === undefined || eligibility === undefined || fairPlay === undefined || auto === undefined) {

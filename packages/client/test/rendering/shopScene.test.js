@@ -14,6 +14,7 @@ import { EntryService } from "../../src/application/entries/EntryService.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
+import { EntryTickets } from "../../src/rendering/scenes/entries/EntryTickets.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
 import { LISTING, LISTING_WITH_ENTRIES, fakeMarketApi } from "../application/fakeMarketApi.js";
@@ -245,6 +246,18 @@ describe("ShopScene", () => {
     assert.equal(byId(scene, "shop.status").text, "Done: 5 ranked entries are yours, and in the season's jackpot.");
     click(byId(scene, "shop.back"));
     assert.equal(navigated.at(-1).id, SceneId.ONLINE, "back to the lobby that sent the player here");
+  });
+
+  it("shows ranked entries in the cart as their tickets, not card backs", async () => {
+    const { scene } = await harness({ listing: LISTING_WITH_ENTRIES, params: { category: "ranked" } });
+    click(byId(scene, "shop.more"));
+    click(byId(scene, "shop.more"));
+    click(byId(scene, "shop.addToCart"));
+    click(byId(scene, "shop.cart"));
+    const tickets = scene.modal.findById("cart.visual.ranked_entry");
+    assert.ok(tickets instanceof EntryTickets, "a ticket, not a fan of card backs");
+    assert.deepEqual([tickets.count, tickets.face], [3, "1.000 STEEM"], "the seal counts the entries in the cart");
+    assert.ok(tickets.x + tickets.width <= scene.modal.findById("cart.remove.ranked_entry").x, "clear of ✕");
   });
 
   it("leaves the Ranked shelf out when nothing is on it", async () => {

@@ -66,6 +66,7 @@ export class RankingService {
   #repository;
   #settings;
   #games;
+  #practice;
   #clock;
   #unitOfWork;
   #logger;
@@ -75,15 +76,17 @@ export class RankingService {
    *   repository: import("../infrastructure/PgRankingRepository.js").PgRankingRepository,
    *   settings: import("../domain/RankedSettings.js").RankedSettings,
    *   games: { finishedGames: (query: { mode: string, since: number }) => Promise<readonly FinishedGame[]>, countFinished: (userId: string, mode: string) => Promise<number> },
+   *   practice: { countOf: (userId: string) => Promise<number> },
    *   clock: import("../../../kernel/time.js").Clock,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   logger: import("../../../kernel/logger.js").Logger,
-   * }} deps
+   * }} deps `practice`: the practice games against the AI counted for a player (modules/practice)
    */
-  constructor({ repository, settings, games, clock, unitOfWork, logger }) {
+  constructor({ repository, settings, games, practice, clock, unitOfWork, logger }) {
     this.#repository = repository;
     this.#settings = settings;
     this.#games = games;
+    this.#practice = practice;
     this.#clock = clock;
     this.#unitOfWork = unitOfWork;
     this.#logger = logger;
@@ -119,18 +122,32 @@ export class RankingService {
   }
 
   /**
-   * Refuses ranked play before a season starts, or to a player who has not finished enough casual games (T24: fresh accounts farming ratings).
+   * Refuses ranked play before a season starts, or to a player who has finished neither enough casual games nor
+   * enough practice games against the AI (T24: fresh accounts farming ratings).
    * @param {string} userId
    */
   async assertEligible(userId) {
     if (this.currentSeason() === null) {
       throw new AppError("CONFLICT", "no ranked season is running");
     }
-    const required = this.#settings.eligibility.minFinishedCasualGames;
-    const finished = await this.#games.countFinished(userId, CASUAL);
-    if (finished < required) {
-      throw new AppError("FORBIDDEN", `finish ${required - finished} more casual game(s) to play ranked`);
+    const { casualGamesNeeded, practiceGamesNeeded } = await this.#gamesNeeded(userId);
+    if (casualGamesNeeded > 0 && practiceGamesNeeded > 0) {
+      throw new AppError("FORBIDDEN", `finish ${casualGamesNeeded} more casual game(s), or ${practiceGamesNeeded} more practice game(s) against the AI, to play ranked`);
     }
+  }
+
+  /**
+   * What a player still has to finish to play ranked: either that many casual games, or that many practice games
+   * (none of either once one of the two is done).
+   * @param {string} userId
+   */
+  async #gamesNeeded(userId) {
+    const { minFinishedCasualGames, minFinishedPracticeGames } = this.#settings.eligibility;
+    const [casual, practice] = await Promise.all([this.#games.countFinished(userId, CASUAL), this.#practice.countOf(userId)]);
+    const casualGamesNeeded = Math.max(0, minFinishedCasualGames - casual);
+    const practiceGamesNeeded = Math.max(0, minFinishedPracticeGames - practice);
+    const done = casualGamesNeeded === 0 || practiceGamesNeeded === 0;
+    return Object.freeze({ casualGamesNeeded: done ? 0 : casualGamesNeeded, practiceGamesNeeded: done ? 0 : practiceGamesNeeded });
   }
 
   /**
@@ -330,7 +347,7 @@ export class RankingService {
     const rating = await this.ratingOf(userId);
     const provisional = rating.games < SETTLED_GAMES;
     const rank = provisional || rating.season === null ? null : (await this.#repository.countAbove({ season: rating.season, minGames: SETTLED_GAMES, rating: rating.rating })) + 1;
-    const casualGames = await this.#games.countFinished(userId, CASUAL);
+    const { casualGamesNeeded, practiceGamesNeeded } = await this.#gamesNeeded(userId);
     const season = this.currentSeason();
     return Object.freeze({
       season: season === null ? null : Object.freeze({ id: season.id, name: season.name }),
@@ -342,8 +359,9 @@ export class RankingService {
       wins: rating.wins,
       losses: rating.losses,
       draws: rating.draws,
-      eligible: season !== null && casualGames >= this.#settings.eligibility.minFinishedCasualGames,
-      casualGamesNeeded: Math.max(0, this.#settings.eligibility.minFinishedCasualGames - casualGames),
+      eligible: season !== null && casualGamesNeeded === 0 && practiceGamesNeeded === 0,
+      casualGamesNeeded,
+      practiceGamesNeeded,
     });
   }
 

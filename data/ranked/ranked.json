@@ -13,7 +13,7 @@
       "settleAfterMinutes": 30
     }
   },
-  "eligibility": { "minFinishedCasualGames": 3 },
+  "eligibility": { "minFinishedCasualGames": 3, "minFinishedPracticeGames": 3 },
   "fairPlay": { "maxRatedGamesPerPairPerDay": 3, "earlyConcedeTurn": 2, "earlyConcedesToFlag": 2, "earlyConcedeWindowDays": 7 },
   "auto": { "ratingWeightPercent": 20 }
 }

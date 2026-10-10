@@ -289,6 +289,29 @@ describe("decorative nodes", () => {
 });
 
 describe("cast reveal", () => {
+  /**
+   * The rune spreads from behind the held card; the beam and the mark it
+   * leaves from are drawn over its face, not hidden behind it.
+   * @returns {{ rune: boolean, beam: boolean }} which of them this frame drew
+   */
+  function assertOverCard(context, frame, { name, origin }) {
+    const face = context.calls.findLastIndex((call) => call.method === "fillText" && call.args[0] === name);
+    const spreading = frame.ring > 0 && frame.ring < 1 && frame.alpha > 0;
+    const beaming = frame.strike > 0 && frame.alpha > 0;
+    if (spreading) {
+      const runeRadius = frame.width * (0.5 + 0.85 * frame.ring) * 0.9;
+      const rune = context.calls.findIndex((call) => call.method === "arc" && Math.abs(call.args[2] - runeRadius) < 1e-6);
+      assert.ok(rune !== -1 && rune < face, "the rune spreads from behind the card");
+    }
+    if (beaming) {
+      const at = (call) => call.args[0] === origin.x && call.args[1] === origin.y;
+      const beam = context.calls.findIndex((call) => call.method === "moveTo" && at(call));
+      const source = context.calls.findIndex((call) => call.method === "arc" && at(call) && call.args[2] < 0.5 * frame.width);
+      assert.ok(face !== -1 && beam > face && source > face, "the beam and the mark it leaves from are drawn over the card");
+    }
+    return { rune: spreading, beam: beaming };
+  }
+
   /** The opponent's cast drawn all the way through, including the instant the card is edge-on. */
   it("turns the card over and marks its target without leaking context state or drawing degenerate geometry", () => {
     const spell = content.catalog.all().find((definition) => definition.isSpell);
@@ -306,7 +329,8 @@ describe("cast reveal", () => {
     const layout = { width: 1600, height: 900, cards: {} };
     const node = new EffectsNode({ presenter: fakePresenter(reveal), layout, blocks: [] });
     const step = theme.animation.mediumMs / 2;
-    const seen = { backs: 0, faces: 0, marks: 0 };
+    const origin = { x: 695 + 210 / 2, y: 300 + 294 / 2 };
+    const seen = { backs: 0, faces: 0, marks: 0, runes: 0, beams: 0 };
     for (let frames = 0; frames < 200 && !reveal.isDone; frames += 1) {
       const context = new FakeContext2D();
       node.draw(context, theme);
@@ -315,10 +339,15 @@ describe("cast reveal", () => {
       seen.backs += reveal.frame.turn < 0.5 ? 1 : 0;
       seen.faces += reveal.frame.turn >= 0.5 ? 1 : 0;
       seen.marks += context.texts.includes("Cinder Hound") ? 1 : 0;
+      const over = assertOverCard(context, reveal.frame, { name: spell.name, origin });
+      seen.runes += over.rune ? 1 : 0;
+      seen.beams += over.beam ? 1 : 0;
       reveal.update(step);
     }
+    assert.ok(seen.beams > 0, "it beams at its target");
     assert.ok(seen.backs > 0, "drawn face-down on the way up");
     assert.ok(seen.faces > 0, "and face-up once it has turned");
+    assert.ok(seen.runes > 0, "its rune spreads from it");
     assert.ok(seen.marks > 0, "the target is named once the beam reaches it");
     assert.equal(reveal.isDone, true, "the cast finishes");
     const after = new FakeContext2D();
