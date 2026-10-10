@@ -142,7 +142,7 @@ describe("auto list", () => {
 
     const replay = await auto.replay(gameId);
     assert.equal(replay.mode, "auto");
-    assert.equal(replay.aiVersion, 1);
+    assert.equal(replay.aiVersion, 2);
     assert.deepEqual(replay.tickets.map((ticket) => [ticket.seat, ticket.account, ticket.style, ticket.commit, ticket.entropy]), [
       ["s0", "alice", "defensive", first.commit, "0f".repeat(16)],
       ["s1", "bob", "aggressive", second.commit, "f0".repeat(16)],

@@ -97,6 +97,19 @@ describe("BasicAi — main phase", () => {
     assert.deepEqual(ai.decide(bargain.engine.getSnapshot(P1)).targets, [bargain.id(P1, BF, 1)]);
   });
 
+  it("plays a haste creature first when its attack makes the unblocked damage lethal", () => {
+    const { engine, id } = createScenario({ p1: { hand: ["lava_brute", "flame_scout"], battlefield: ["ember_imp"], resources: 6 }, p2: { life: 4 } });
+    assert.equal(ai.decide(engine.getSnapshot(P1)).cardId, id(P1, HAND, 1), "the 2/2 haste scout and the imp hit for 4 this turn");
+  });
+
+  it("prefers a haste creature on equal cost before combat, not after", () => {
+    const { engine, id } = createScenario({ p1: { hand: ["rivet_hound", "flame_scout"], resources: 2 } });
+    assert.equal(ai.decide(engine.getSnapshot(P1)).cardId, id(P1, HAND, 1), "the scout can attack this turn");
+    engine.execute(endPhase(P1));
+    engine.execute(declareAttackers(P1, []));
+    assert.equal(ai.decide(engine.getSnapshot(P1)).cardId, id(P1, HAND, 0), "after combat haste is worth nothing");
+  });
+
   it("ends the phase in MAIN_1 and the turn in MAIN_2 when nothing is playable", () => {
     const { engine } = createScenario({ p1: { hand: ["blazing_titan"], resources: 1 } });
     assert.deepEqual(ai.decide(engine.getSnapshot(P1)), endPhase(P1));
@@ -158,6 +171,30 @@ describe("BasicAi — combat", () => {
     lethal.engine.execute(endPhase(P1));
     lethal.engine.execute(declareAttackers(P1, [lethal.id(P1, BF)]));
     assert.deepEqual(ai.decide(lethal.engine.getSnapshot(P2)).blocks, [{ attackerId: lethal.id(P1, BF), blockerId: lethal.id(P2, BF) }], "chump to survive");
+  });
+
+  it("chumps a trampler with the blocker that soaks enough of its damage", () => {
+    const { engine, id } = createScenario({ p1: { battlefield: ["thunderhoof_mammoth"] }, p2: { life: 3, battlefield: ["scrap_golem", "steel_sentinel"] } });
+    engine.execute(endPhase(P1));
+    engine.execute(declareAttackers(P1, [id(P1, BF)]));
+    const decision = ai.decide(engine.getSnapshot(P2));
+    assert.deepEqual(decision.blocks, [{ attackerId: id(P1, BF), blockerId: id(P2, BF, 1) }], "the 1/2 golem lets 4 trample over; the 1/4 sentinel only 2");
+    assert.equal(engine.execute(decision).ok, true);
+  });
+
+  it("keeps attackers without vigilance home when the enemy's next attack would otherwise be lethal", () => {
+    const enemy = { battlefield: ["cinder_hound", "ember_imp", "ember_imp"] };
+    const vigilant = createScenario({ p1: { life: 4, battlefield: ["lava_brute", "rune_warden"] }, p2: enemy });
+    vigilant.engine.execute(endPhase(P1));
+    assert.deepEqual(ai.decide(vigilant.engine.getSnapshot(P1)).attackerIds, [vigilant.id(P1, BF, 1)], "the warden still blocks after attacking; the brute guards");
+
+    const plain = createScenario({ p1: { life: 4, battlefield: ["lava_brute", "thornback_bear"] }, p2: enemy });
+    plain.engine.execute(endPhase(P1));
+    assert.deepEqual(ai.decide(plain.engine.getSnapshot(P1)).attackerIds, [], "both are needed to block 7 damage");
+
+    const doomed = createScenario({ p1: { life: 2, battlefield: ["lava_brute", "thornback_bear"] }, p2: enemy });
+    doomed.engine.execute(endPhase(P1));
+    assert.deepEqual(ai.decide(doomed.engine.getSnapshot(P1)).attackerIds, [doomed.id(P1, BF, 0), doomed.id(P1, BF, 1)], "guarding cannot save it: attack");
   });
 });
 

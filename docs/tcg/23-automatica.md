@@ -49,37 +49,45 @@ Vale per la **stessa stagione, la stessa classifica e lo stesso jackpot** della 
 
 Balanced è l'AI che c'era prima: le partite contro il computer non cambiano.
 
+**Keyword** (versione 2 dell'AI, 2026-10-10). Valgono per tutti e tre gli stili:
+
+- **Haste**: prima del combattimento, una creatura con haste che rende letale il danno non bloccato si gioca per prima; a parità di costo una creatura con haste passa davanti alle altre. Dopo il combattimento haste non conta.
+- **Vigilance**: chi attacca senza vigilance resta stancato e al turno dopo non può bloccare. Se l'attacco di ritorno dell'avversario, con tutte le sue creature, sarebbe letale, le creature senza vigilance restano a casa a cominciare da quelle con meno attacco. Se nemmeno tenendole tutte a casa ci si salva, attaccano lo stesso.
+- **Trample**: un trampler bloccato colpisce comunque per l'attacco oltre la vita del bloccante. Il calcolo dell'attacco di ritorno ne tiene conto, e per bloccare un trampler sacrificando una creatura si sceglie quella che ferma più danni, non la più economica.
+
+Contro la versione 1, con 2.700 partite per stile su tutte le coppie di mazzi: Aggressive 50,3%, Balanced 50,7%, Defensive 51,0%. Le keyword sono in pochi mazzi, quindi il guadagno medio è piccolo. Una prima prova che faceva bloccare sacrificando solo le creature necessarie, e dopo i blocchi buoni, perdeva il 45-48%: sacrificava creature più costose e restava con meno vita. È stata scartata.
+
 **Bilanciamento.** `npm run simulate -- 25 --styles` fa giocare ogni coppia di mazzi precostruiti (mirror compresi) con ogni coppia di stili, 25 partite ciascuna: 22.500 partite. Obiettivi e risultati:
 
 | Obiettivo | Risultato | |
 |---|---|---|
-| ogni stile vince fra il 45% e il 55% contro gli altri stili | Aggressive 47,9% · Balanced 51,4% · Defensive 50,7% | ✓ |
-| nessuno scontro fra stili supera il 60% | il peggiore: Balanced contro Aggressive, 53,3% | ✓ |
-| nessun mazzo supera il 60% di media contro gli altri | il migliore: Grave Harvest, 57,9% di media sui tre stili | ✓ |
+| ogni stile vince fra il 45% e il 55% contro gli altri stili | Aggressive 48,7% · Balanced 50,9% · Defensive 50,4% | ✓ |
+| nessuno scontro fra stili supera il 60% | il peggiore: Balanced contro Aggressive, 52,7% | ✓ |
+| nessun mazzo supera il 60% di media contro gli altri | il migliore: Grave Harvest, 58,8% di media sui tre stili | ✓ |
 
 | | Aggressive | Balanced | Defensive |
 |---|---|---|---|
-| **Aggressive** | — | 46,7% | 49,1% |
-| **Balanced** | 53,3% | — | 49,4% |
-| **Defensive** | 50,9% | 50,6% | — |
+| **Aggressive** | — | 47,3% | 50,1% |
+| **Balanced** | 52,7% | — | 49,2% |
+| **Defensive** | 49,9% | 50,8% | — |
 
 Ogni mazzo contro gli altri nove, per stile:
 
 | Mazzo | Aggressive | Balanced | Defensive |
 |---|---|---|---|
-| Arcane Conclave | 51,3% | 53,0% | 57,7% |
-| Spire Bastion | 40,4% | 42,3% | 47,9% |
-| Ember Vanguard | **55,0%** | 51,3% | 44,1% |
-| Iron Foundry | 40,8% | 44,8% | 49,6% |
-| Grave Harvest | 50,8% | 58,5% | **64,3%** |
-| Iron Legion | 47,5% | 50,0% | 53,2% |
-| Shadow Pact | 49,4% | 53,8% | 52,0% |
-| Verdant Grove | 43,9% | 45,0% | 43,2% |
-| Ember Wildfire | 59,9% | **60,1%** | 49,6% |
-| Wild Hunt | 48,1% | 49,7% | 42,9% |
+| Arcane Conclave | 50,4% | 52,4% | 55,9% |
+| Spire Bastion | 41,5% | 42,4% | 47,4% |
+| Ember Vanguard | **56,4%** | 51,5% | 44,5% |
+| Iron Foundry | 41,3% | 46,1% | 50,2% |
+| Grave Harvest | 53,3% | 59,0% | **64,2%** |
+| Iron Legion | 47,4% | 50,1% | 52,4% |
+| Shadow Pact | 52,1% | 54,4% | 51,8% |
+| Verdant Grove | 41,9% | 42,4% | 42,4% |
+| Ember Wildfire | **61,1%** | 59,6% | 49,8% |
+| Wild Hunt | 47,5% | 48,1% | 42,4% |
 
 - **Lo stile giusto dipende dal mazzo.** Ember Vanguard rende di più in Aggressive, Arcane Conclave e Grave Harvest in Defensive. La scelta dello stile conta: è la decisione che il giocatore prende oltre al mazzo.
-- **Il problema sta nei mazzi, non negli stili.** Due combinazioni superano il 60%: Grave Harvest in Defensive (64,3%) ed Ember Wildfire in Balanced (60,1%). Erano già i due mazzi più forti con l'AI di prima (56,7% e 58,1%). Sono contenuti da riequilibrare, con `npm run simulate`, prima del lancio della classificata automatica.
+- **Il problema sta nei mazzi, non negli stili.** Due combinazioni superano il 60%: Grave Harvest in Defensive (64,2%) ed Ember Wildfire in Aggressive (61,1%). Erano già i due mazzi più forti con l'AI di prima (56,7% e 58,1%). Sono contenuti da riequilibrare, con `npm run simulate`, prima del lancio della classificata automatica.
 - **Il primo giocatore vince il 68%**, come nelle partite normali (06, problemi aperti). Chi comincia si sorteggia, quindi in media è equo.
 - La prima versione provata (Aggressive che attacca con tutto sotto i 10 punti vita e non blocca mai per fare muro) vinceva solo il 44%: per questo Aggressive ha le soglie a 5 e a 8 e continua a fare muro.
 

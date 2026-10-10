@@ -7,22 +7,29 @@
  *
  * Heuristics (deliberately simple; a search-based AI would replace this
  * class without touching its callers):
- * - Main phases: play a card that wins on the spot if there is one, else the
- *   most expensive playable card, then move on. Damage goes to the face when
+ * - Main phases: play a card that wins on the spot if there is one (a burn
+ *   spell, or before combat a haste creature whose attack makes the
+ *   unblocked damage lethal), else the most expensive playable card (haste
+ *   first on ties before combat), then move on. Damage goes to the face when
  *   that is lethal, else where it kills, removal (destroy, bounce) on the
  *   strongest enemy creature, buffs on the strongest ally. Healing spells
  *   stay in hand while nothing of its own is hurt, harmful spells while
  *   they could only hit its own side, sacrifice cards while the cheapest
  *   victim is worth more than half of what the card brings.
  * - Attack with creatures that cannot be blocked and killed for free; attack
- *   with everything when unblocked damage would be lethal.
+ *   with everything when unblocked damage would be lethal. Attackers without
+ *   vigilance cannot block the enemy's next attack, so they stay home while
+ *   that attack would otherwise be lethal.
  * - Block to kill an attacker and survive, to trade evenly, or to chump when
- *   the incoming damage would be lethal.
+ *   the incoming damage would be lethal. A blocked trampler still hits for
+ *   its attack beyond the blocker's health, so chumping it takes the blocker
+ *   that stops the most.
  *
  * A style shifts those rules (STYLE_RULES); BALANCED is the rules above.
  */
 import { CardType } from "../cards/CardType.js";
 import { declareAttackers, declareBlockers, endPhase, endTurn, playCard } from "../commands/commandFactories.js";
+import { Keyword } from "../effects/Keyword.js";
 import { TargetKind, TargetOwner } from "../effects/TargetSpec.js";
 import { TriggerType } from "../effects/TriggerType.js";
 import { GamePhase } from "../game/GamePhase.js";
@@ -40,7 +47,7 @@ import { GamePhase } from "../game/GamePhase.js";
  * situation is a new version: auto games record the version that played
  * them, so a replay can be checked against the rules of that version.
  */
-export const AI_VERSION = 1;
+export const AI_VERSION = 2;
 
 export const AiStyle = Object.freeze({ AGGRESSIVE: "aggressive", BALANCED: "balanced", DEFENSIVE: "defensive" });
 export const AI_STYLES = Object.freeze(Object.values(AiStyle));
@@ -127,7 +134,7 @@ export class BasicAi {
 function mainPhase(snapshot, board) {
   const { legalMoves } = snapshot;
   const playable = board.me.hand.filter((card) => legalMoves.playableCardIds.includes(card.instanceId));
-  const card = chooseCard(playable, legalMoves, board);
+  const card = chooseCard(playable, legalMoves, board, snapshot.phase === GamePhase.MAIN_1);
   if (card !== undefined) {
     const targets = legalMoves.targetOptions[card.instanceId].flatMap((options, index) => chooseTargets(card, index, options, board));
     return playCard(board.me.id, card.instanceId, targets);
@@ -164,13 +171,26 @@ function boardFor(snapshot, me, rules) {
  * @param {readonly CardView[]} playable
  * @param {import("../game/LegalMoves.js").LegalMoves} legalMoves
  * @param {Board} board
+ * @param {boolean} beforeCombat a haste creature played now attacks this turn
  * @returns {CardView | undefined}
  */
-function chooseCard(playable, legalMoves, board) {
+function chooseCard(playable, legalMoves, board, beforeCombat) {
+  const strikesNow = (card) => beforeCombat && card.type === CardType.CREATURE && hasKeyword(card, Keyword.HASTE);
   const byCost = [...playable]
     .filter((card) => !isWasted(card, legalMoves.targetOptions[card.instanceId], board))
-    .sort((a, b) => b.cost - a.cost);
-  return byCost.find((card) => faceDamage(card, legalMoves.targetOptions[card.instanceId], board) >= board.enemy.life) ?? byCost[0];
+    .sort((a, b) => b.cost - a.cost || Number(strikesNow(b)) - Number(strikesNow(a)));
+  const readyAttack = board.me.battlefield.filter((creature) => !creature.exhausted && !creature.summoningSick).reduce((sum, creature) => sum + creature.attack, 0);
+  const wins = (card) =>
+    faceDamage(card, legalMoves.targetOptions[card.instanceId], board) >= board.enemy.life || (strikesNow(card) && readyAttack + card.attack >= board.enemy.life);
+  return byCost.find(wins) ?? byCost[0];
+}
+
+/**
+ * @param {CardView} card
+ * @param {string} keyword one of Keyword
+ */
+function hasKeyword(card, keyword) {
+  return card.keywords.includes(keyword);
 }
 
 /**
@@ -442,7 +462,61 @@ function chooseAttackers(snapshot, board) {
   }
   const untouchable = board.rules.attackOnly === "untouchable";
   const safe = candidates.filter((attacker) => !blockers.some((blocker) => blocker.attack >= attacker.health && (untouchable || blocker.health > attacker.attack)));
-  return safe.map((creature) => creature.instanceId);
+  return keepGuard(safe, board).map((creature) => creature.instanceId);
+}
+
+/**
+ * Attacking exhausts a creature without vigilance until the AI's next turn,
+ * so it cannot block the enemy's next attack. Keeps such attackers home, the
+ * least dangerous first, while the enemy attacking with everything it has
+ * would be lethal; when even keeping all of them home would not stop that,
+ * guarding is pointless and they all attack.
+ * @param {readonly CardView[]} attackers
+ * @param {Board} board
+ * @returns {CardView[]}
+ */
+function keepGuard(attackers, board) {
+  const threats = board.enemy.battlefield.filter((creature) => creature.attack > 0);
+  /** @param {readonly CardView[]} attacking */
+  const lethalWith = (attacking) => {
+    const home = board.me.battlefield.filter((creature) => !creature.exhausted && (!attacking.includes(creature) || hasKeyword(creature, Keyword.VIGILANCE)));
+    return crackBack(threats, home) >= board.me.life;
+  };
+  const guards = attackers.filter((creature) => !hasKeyword(creature, Keyword.VIGILANCE)).sort((a, b) => a.attack - b.attack || b.health - a.health);
+  if (!lethalWith(attackers) || lethalWith(attackers.filter((creature) => !guards.includes(creature)))) {
+    return [...attackers];
+  }
+  const attacking = [...attackers];
+  for (const guard of guards) {
+    if (!lethalWith(attacking)) {
+      break;
+    }
+    attacking.splice(attacking.indexOf(guard), 1);
+  }
+  return attacking;
+}
+
+/**
+ * Rough damage that gets through when every attacker swings and each blocker
+ * stops one, the toughest blockers on the biggest attackers: a blocked
+ * attacker deals nothing to the player unless it tramples over its blocker.
+ * @param {readonly CardView[]} attackers
+ * @param {readonly CardView[]} blockers
+ */
+function crackBack(attackers, blockers) {
+  const walls = [...blockers].sort((a, b) => b.health - a.health);
+  return [...attackers]
+    .sort((a, b) => b.attack - a.attack)
+    .reduce((sum, attacker, index) => sum + (index < walls.length ? trampleOver(attacker, walls[index]) : attacker.attack), 0);
+}
+
+/**
+ * Damage a blocked attacker still deals to the defending player.
+ * @param {CardView} attacker
+ * @param {CardView} blocker
+ */
+function trampleOver(attacker, blocker) {
+  return hasKeyword(attacker, Keyword.TRAMPLE) ? Math.max(0, attacker.attack - Math.max(0, blocker.health)) : 0;
 }
 
 /**
@@ -472,7 +546,7 @@ function chooseBlocks(snapshot, board) {
 /**
  * @param {CardView} attacker
  * @param {CardView[]} available
- * @param {boolean} chump block with the cheapest creature when nothing better blocks
+ * @param {boolean} chump block with a creature that dies for nothing when nothing better blocks
  * @param {StyleRules} rules
  * @returns {CardView | undefined}
  */
@@ -491,5 +565,18 @@ function pickBlocker(attacker, available, chump, rules) {
   if (wall !== undefined) {
     return wall;
   }
-  return chump ? [...available].sort((a, b) => a.cost - b.cost)[0] : undefined;
+  return chump ? chumpBlocker(attacker, available) : undefined;
+}
+
+/**
+ * The cheapest creature; against a trampler, which still hits for its attack
+ * beyond the blocker's health, the one that stops the most damage (the
+ * cheapest on ties).
+ * @param {CardView} attacker
+ * @param {readonly CardView[]} available
+ * @returns {CardView | undefined}
+ */
+function chumpBlocker(attacker, available) {
+  const stopped = (/** @type {CardView} */ blocker) => attacker.attack - trampleOver(attacker, blocker);
+  return [...available].sort((a, b) => stopped(b) - stopped(a) || a.cost - b.cost)[0];
 }
