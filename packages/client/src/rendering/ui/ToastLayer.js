@@ -2,7 +2,9 @@
  * Toasts: short messages stacked in the top-right corner above whatever
  * scene is showing (a notification that just arrived). Each fades in,
  * stays a few seconds and fades out; at most a few are shown, the oldest
- * leave first. A toast about another player (a challenge) shows their
+ * leave first. A sticky toast (something still waiting for the player)
+ * stays until it is clicked or dismissed by its key, and is the last to
+ * make room; a toast with the key of one on screen replaces it. A toast about another player (a challenge) shows their
  * portrait. A click on a toast calls `onOpen` and dismisses it; clicks
  * elsewhere reach the scene. The SceneManager draws it after the scene.
  * On a compact screen (a phone in landscape) toasts keep clear of a notch,
@@ -28,9 +30,9 @@ const TONE_CUES = Object.freeze({ good: SoundCue.NOTIFY_GOOD, bad: SoundCue.NOTI
 const AVATAR_RADIUS = 24;
 
 /**
- * @typedef {Readonly<{ title: string, body: string, tone: "good" | "bad" | "info", account?: string, opens?: string, params?: Readonly<Record<string, unknown>>, cue?: string }>} ToastMessage
+ * @typedef {Readonly<{ title: string, body: string, tone: "good" | "bad" | "info", account?: string, opens?: string, params?: Readonly<Record<string, unknown>>, cue?: string, key?: string, sticky?: boolean }>} ToastMessage
  *   `account`: the player the toast is about (their portrait is shown); `opens`: where a click leads, for `onOpen`, and `params` what that screen is told;
- *   `cue`: the sound it arrives with (a SoundCue), when not its tone's
+ *   `cue`: the sound it arrives with (a SoundCue), when not its tone's; `key`: names it, for `dismiss` and to replace it; `sticky`: it does not leave by itself
  * @typedef {{ message: ToastMessage, ageMs: number }} Toast
  */
 
@@ -60,10 +62,28 @@ export class ToastLayer {
 
   /** @param {ToastMessage} message */
   show(message) {
+    if (message.key !== undefined) {
+      this.#toasts = this.#toasts.filter((toast) => toast.message.key !== message.key);
+    }
     this.#toasts.unshift({ message, ageMs: 0 });
-    this.#toasts.length = Math.min(this.#toasts.length, MAX_TOASTS);
+    while (this.#toasts.length > MAX_TOASTS) {
+      const oldest = this.#toasts.findLastIndex((toast) => toast.message.sticky !== true);
+      this.#toasts.splice(oldest < 0 ? this.#toasts.length - 1 : oldest, 1);
+    }
     this.#sound?.play(message.cue ?? TONE_CUES[message.tone] ?? SoundCue.NOTIFY_INFO);
     this.#requestRender();
+  }
+
+  /**
+   * Takes down the toasts with this key (what they were about is done).
+   * @param {string} key
+   */
+  dismiss(key) {
+    const before = this.#toasts.length;
+    this.#toasts = this.#toasts.filter((toast) => toast.message.key !== key);
+    if (this.#toasts.length !== before) {
+      this.#requestRender();
+    }
   }
 
   /**
@@ -76,7 +96,8 @@ export class ToastLayer {
     }
     const before = this.#toasts.length;
     for (const toast of this.#toasts) {
-      toast.ageMs += dtMs;
+      // A sticky toast ages only through its fade-in: it never reaches its fade-out.
+      toast.ageMs = toast.message.sticky === true ? Math.min(FADE_MS, toast.ageMs + dtMs) : toast.ageMs + dtMs;
     }
     this.#toasts = this.#toasts.filter((toast) => toast.ageMs < LIFE_MS);
     return this.#toasts.length !== before || this.#toasts.some((toast) => toast.ageMs < FADE_MS || toast.ageMs > LIFE_MS - FADE_MS);

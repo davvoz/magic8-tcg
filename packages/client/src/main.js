@@ -88,6 +88,7 @@ import { TextField } from "./rendering/ui/TextField.js";
 import { ErrorScene } from "./rendering/scenes/ErrorScene.js";
 import { SceneManager } from "./rendering/scenes/SceneManager.js";
 import { registerScenes } from "./rendering/scenes/registerScenes.js";
+import { GAME_TOAST_KEY, returnToGame } from "./rendering/scenes/returnToGame.js";
 import { SceneId } from "./rendering/scenes/sceneIds.js";
 import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
 import { CoinArt } from "./rendering/board/CoinArt.js";
@@ -601,7 +602,12 @@ async function boot() {
   soundSales(sales, audio);
   soundOnline(online, audio);
   // A notification that arrives shows as a toast on any screen; a click opens the feed (or the lobby, for a challenge).
-  const toasts = new ToastLayer({ viewport, onOpen: (message) => sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS, message.params ?? {}), requestRender: () => loop.requestRender(), sound: audio });
+  const toasts = new ToastLayer({
+    viewport,
+    onOpen: (message) => (message.key === GAME_TOAST_KEY ? gameReturn.open() : sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS, message.params ?? {})),
+    requestRender: () => loop.requestRender(),
+    sound: audio,
+  });
   sceneManager.setOverlay(toasts);
   // A challenge that arrives has a call of its own: it must be answered within a minute.
   lobby.onEvent((event) => toasts.show({ ...describeLobbyEvent(event), opens: SceneId.ONLINE, ...(event.kind === "received" ? { cue: SoundCue.CHALLENGE } : {}) }));
@@ -636,6 +642,8 @@ async function boot() {
       void entries.refresh();
     }
   });
+  // A game in progress the player is not looking at (the page was reopened mid-game): back into it, or a toast until they are.
+  const gameReturn = returnToGame({ online, scenes: sceneManager, toasts });
   sceneManager.navigate(SceneId.MAIN_MENU);
   preloadArt({ illustrations, coinArt });
   // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.

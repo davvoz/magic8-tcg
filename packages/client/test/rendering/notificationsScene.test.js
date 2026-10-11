@@ -203,6 +203,35 @@ describe("ToastLayer", () => {
     assert.deepEqual(toasts.messages, []);
   });
 
+  it("keeps a sticky toast until it is clicked or dismissed, makes it the last to give way, and replaces a toast by its key", () => {
+    const opened = [];
+    const toasts = new ToastLayer({ viewport: { bounds: { x: 0, y: 0, width: 1600, height: 900 } }, onOpen: (message) => opened.push(message.title), requestRender: () => undefined });
+    toasts.show({ title: "game", body: "Your game is on.", tone: "info", key: "game", sticky: true });
+    for (const title of ["one", "two", "three"]) {
+      toasts.show({ title, body: "News.", tone: "good" });
+    }
+    assert.deepEqual(toasts.messages.map((message) => message.title), ["three", "two", "game"], "the oldest plain toast gave way, not the sticky one");
+    toasts.update(3000);
+    toasts.update(3000);
+    assert.deepEqual(toasts.messages.map((message) => message.title), ["game"], "the others left, the sticky one stays");
+    assert.equal(toasts.update(60_000), false, "a resting sticky toast needs no redraw");
+    const context = new FakeContext2D();
+    toasts.render(context, theme);
+    assert.ok(context.texts.includes("game"));
+
+    toasts.show({ title: "game again", body: "Still on.", tone: "info", key: "game", sticky: true });
+    assert.deepEqual(toasts.messages.map((message) => message.title), ["game again"], "same key: replaced, not stacked");
+    toasts.dismiss("other");
+    assert.equal(toasts.messages.length, 1);
+    toasts.dismiss("game");
+    assert.deepEqual(toasts.messages, []);
+
+    toasts.show({ title: "game", body: "Your game is on.", tone: "info", key: "game", sticky: true });
+    toasts.onPointer({ type: "up", x: 1500, y: 40 });
+    assert.deepEqual(opened, ["game"]);
+    assert.deepEqual(toasts.messages, [], "a click takes it down");
+  });
+
   it("is drawn above every scene and sees clicks first", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     const seen = [];

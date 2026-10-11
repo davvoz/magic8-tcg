@@ -227,6 +227,11 @@ export class MatchScene extends Scene {
     this.#presenter = new MatchPresenter(services.theme.animation);
   }
 
+  /** The match on screen (null before the scene is entered). */
+  get session() {
+    return this.#session;
+  }
+
   /** @param {Readonly<Record<string, unknown>>} params `{ session: MatchSession | RemoteMatchSession, againScene?: string, coach?: TutorialCoach }`: with a coach, the match is the tutorial */
   enter(params) {
     this.#againScene = typeof params.againScene === "string" ? params.againScene : SceneId.DECK_SELECTION;
