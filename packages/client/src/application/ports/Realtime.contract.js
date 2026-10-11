@@ -10,6 +10,7 @@
  * @property {() => void} connect idempotent: several services share one connection
  * @property {ConnectionStatus} [status] where it stands now (a listener added late missed "open")
  * @property {() => void} close for good (no reconnection)
+ * @property {() => void} [reconnect] drops the current connection and makes a new one (the server stopped answering on it)
  * @property {(type: string, data: unknown) => Promise<import("@magic8/engine/shared/Result.js").Ok<ServerMessage> | import("@magic8/engine/shared/Result.js").Fail>} request
  * @property {(listener: (message: ServerMessage) => void) => () => void} subscribe messages that are not replies
  * @property {(listener: (status: ConnectionStatus, detail: { code: number | null }) => void) => () => void} onStatus

@@ -470,7 +470,15 @@ async function boot() {
   const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID() });
   const timers = { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (handle) => globalThis.clearTimeout(handle) };
   // One realtime connection per signed-in player, shared by online play and notifications.
-  const realtime = new WebSocketConnection({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`, createSocket: (url) => new WebSocket(url), timers });
+  const realtime = new WebSocketConnection({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`, createSocket: (url) => new WebSocket(url), timers, logger });
+  // Back online, or back on screen: a lost connection is retried now rather than at its next delay, an open one is checked.
+  window.addEventListener("online", () => realtime.wake());
+  window.addEventListener("focus", () => realtime.wake());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      realtime.wake();
+    }
+  });
   maintenance.follow(realtime);
   /** @param {number} bytes */
   const randomHex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");

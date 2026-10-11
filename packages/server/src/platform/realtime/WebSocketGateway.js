@@ -9,7 +9,8 @@
  * closed); messages of at most 4 KiB; a token bucket per connection (20/s,
  * burst 40), repeated abuse closes with 4008 (T13); ping every 20 s, no
  * pong for 45 s closes; the session is re-checked every minute, so a
- * revoked or expired session ends its socket too.
+ * revoked or expired session ends its socket too (a check that fails to
+ * read the session does not: the client would not reconnect after 4001).
  *
  * Messages are envelopes { t, id?, d }; replies carry `re` = the id.
  */
@@ -158,13 +159,22 @@ export class WebSocketGateway {
     const presence = (connected) => this.#onPresence(userId, connected).catch((error) => this.#logger.warn("presence update failed", { user: userId, error: error instanceof Error ? error.message : String(error) }));
     const heartbeat = setInterval(() => {
       live.heartbeat(async () => {
-        const current = await this.#authenticate(token).catch(() => null);
-        return current !== null && current.user.id === userId;
+        try {
+          const current = await this.#authenticate(token);
+          return current !== null && current.user.id === userId;
+        } catch (error) {
+          // The session could not be read (database busy): that is not an ended session. Checked again next time.
+          this.#logger.warn("websocket session check failed", { user: userId, error: error instanceof Error ? error.message : String(error) });
+          return true;
+        }
       });
     }, this.#policy.pingIntervalMs);
     heartbeat.unref?.();
     live.onMessage((envelope) => this.#dispatch(live, { principal, ip }, envelope));
-    socket.on("close", () => {
+    const openedAt = this.#clock.now();
+    socket.on("close", (code) => {
+      // Why a player lost the connection: 1000/1001 they left, 1006 the network or the heartbeat, 4xxx the server.
+      this.#logger.info("websocket closed", { user: userId, code, seconds: Math.round((this.#clock.now() - openedAt) / 1000) });
       this.#sockets.delete(socket);
       clearInterval(heartbeat);
       if (this.#hub.detach(userId, live.connection)) {

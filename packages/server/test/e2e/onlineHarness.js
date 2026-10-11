@@ -110,9 +110,10 @@ class ManualKeychain {
 
 /**
  * The server, and a way to bring players in (each signed in, with a deck, their client online).
- * @param {{ content?: object }} [options] `content`: the server's data, when a test changes it (e.g. a ranked season with an entry fee)
+ * @param {{ content?: object, clientTimeScale?: number }} [options] `content`: the server's data, when a test changes it (e.g. a ranked season with an entry fee);
+ *   `clientTimeScale`: how much faster than real time the clients' connection timers run (heartbeat, timeouts, reconnection delays)
  */
-export async function onlineWorld({ content } = {}) {
+export async function onlineWorld({ content, clientTimeScale = 1 } = {}) {
   const setup = await buildTestApp({ signedMoves: true, ...(content === undefined ? {} : { content }) });
   const server = await listen(setup.app);
   // What the server's jobs do while a client waits for an order: the chain makes payments final, they are settled and fulfilled.
@@ -141,7 +142,14 @@ export async function onlineWorld({ content } = {}) {
       setup.clock.advance(2000); // the gateway allows one upgrade per 2 s per address
       return new WebSocket(`${server.base.replace("http", "ws")}/ws`, { headers: { Cookie: /** @type {string} */ (api.cookie), Origin: ORIGIN } });
     };
-    const connection = new WebSocketConnection({ url: "unused", createSocket: connect, timers: { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (handle) => clearTimeout(handle) } });
+    /** The sockets this tab opened, the current one last. @type {WebSocket[]} */
+    const sockets = [];
+    const createSocket = () => {
+      const socket = connect();
+      sockets.push(socket);
+      return socket;
+    };
+    const connection = new WebSocketConnection({ url: "unused", createSocket, timers: { setTimeout: (fn, ms) => setTimeout(fn, ms / clientTimeScale), clearTimeout: (handle) => clearTimeout(handle) }, logger });
     const request = connection.request.bind(connection);
     connection.request = (t, d) => {
       sent.push(t);
@@ -166,6 +174,7 @@ export async function onlineWorld({ content } = {}) {
       lobby,
       /** The tab's realtime connection and its signed-in HTTP client, for what else the page runs on them. */
       connection,
+      sockets,
       api,
       keychain,
       shop,

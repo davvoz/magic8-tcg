@@ -262,6 +262,11 @@ export class OnlineService {
       return;
     }
     const hello = await this.#connection.request("hello", { resume: null });
+    if (!hello.ok && this.#connection.reconnect !== undefined) {
+      // No answer (or the connection fell meanwhile): a new connection says hello again, the game is not left hanging.
+      this.#connection.reconnect();
+      return;
+    }
     if (!hello.ok || hello.value.t !== "welcome") {
       this.#set({ status: OnlineStatus.OFFLINE, error: { code: "HELLO_FAILED", message: "the game server did not welcome us" } });
       return;

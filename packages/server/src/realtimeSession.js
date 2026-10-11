@@ -1,6 +1,6 @@
 /**
  * The session-level WebSocket messages, which span modules: `hello` (who
- * am I, which game am I in, am I queued) and presence (a connection that
+ * am I, which game am I in, am I queued), `ping` (is the connection alive) and presence (a connection that
  * comes or goes: the queue and the challenges of a player who left close). A reconnecting client gets its game's full state in the
  * welcome and resumes from there (docs/tcg/02-protocollo-multiplayer.md §3.6).
  */
@@ -15,6 +15,11 @@ import { validated } from "./platform/http/validateBody.js";
  * }} deps
  */
 export function registerSessionMessages({ router, games, matchmaking, clock }) {
+  // The client's own heartbeat: protocol pings are invisible to a browser page, this answer is not.
+  router.on("ping", async (_, data) => {
+    validated(data, [], () => undefined);
+    return { t: "pong", d: {} };
+  });
   router.on("hello", async ({ principal }, data) => {
     validated(data, ["resume"], () => undefined);
     const { user } = principal;

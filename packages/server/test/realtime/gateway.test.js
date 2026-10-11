@@ -7,7 +7,13 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 
+import { createServer } from "node:http";
 import { WebSocket } from "ws";
+import { MemoryLogger } from "../../src/kernel/logger.js";
+import { RateLimiter } from "../../src/platform/http/RateLimiter.js";
+import { ConnectionHub } from "../../src/platform/realtime/ConnectionHub.js";
+import { MessageRouter } from "../../src/platform/realtime/MessageRouter.js";
+import { WebSocketGateway } from "../../src/platform/realtime/WebSocketGateway.js";
 import { ACK_KEYS, ORIGIN, buildTestApp, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
 
@@ -128,6 +134,13 @@ describe("WebSocket gateway", () => {
     assert.equal(welcome.d.activeGame, null);
     assert.deepEqual(welcome.d.queue, { state: "idle" });
     assert.equal(welcome.d.ackKey, ACK_KEYS.publicKey, "the key every ack is signed with");
+    await peer.close();
+  });
+
+  it("answers the client's own heartbeat", async () => {
+    const peer = await connect("alice");
+    peer.socket.send(JSON.stringify({ t: "ping", d: {} }));
+    assert.deepEqual(await peer.waitFor("pong"), {});
     await peer.close();
   });
 
@@ -263,5 +276,50 @@ describe("WebSocket gateway", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.equal((await setup.app.matchmaking.status(userId)).state, "idle");
+  });
+});
+
+describe("WebSocket gateway session checks", () => {
+  it("keeps a connection whose session could not be read, and ends one whose session ended", async () => {
+    /** @type {"valid" | "unreadable" | "ended"} */
+    let session = "valid";
+    const logger = new MemoryLogger();
+    const gateway = new WebSocketGateway({
+      hub: new ConnectionHub({ logger }),
+      router: new MessageRouter(),
+      authenticate: async (token) => {
+        if (session === "unreadable") {
+          throw new Error("connection terminated unexpectedly");
+        }
+        return session === "valid" && token === "t" ? { user: { id: "u1" } } : null;
+      },
+      onPresence: async () => undefined,
+      clock: { now: () => Date.now() },
+      logger,
+      config: { allowedOrigins: [ORIGIN], sessionCookieName: "s", trustProxy: false },
+      rateLimiter: new RateLimiter({ now: () => Date.now() }),
+      policy: { pingIntervalMs: 10, sessionCheckMs: 0 },
+    });
+    const http = createServer();
+    gateway.attach(http);
+    await new Promise((resolve) => http.listen(0, "127.0.0.1", () => resolve(undefined)));
+    const address = /** @type {import("node:net").AddressInfo} */ (http.address());
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`, { headers: { Cookie: "s=t", Origin: ORIGIN } });
+    const closed = new Promise((resolve) => socket.on("close", (code) => resolve(code)));
+    await new Promise((resolve) => socket.on("open", resolve));
+    try {
+      session = "unreadable";
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      assert.equal(socket.readyState, WebSocket.OPEN, "a failed lookup is not an ended session: the client would never reconnect");
+      assert.ok(logger.entries.some((entry) => entry.message === "websocket session check failed"));
+      session = "ended";
+      assert.equal(await closed, 4001);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.ok(logger.entries.some((entry) => entry.message === "websocket closed" && entry.fields.code === 4001), "why it closed is logged");
+    } finally {
+      socket.terminate();
+      gateway.close();
+      await new Promise((resolve) => http.close(resolve));
+    }
   });
 });

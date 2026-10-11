@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { ok } from "@magic8/engine/shared/Result.js";
+import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { OnlineService, OnlineStatus } from "../../src/application/online/OnlineService.js";
 import { WebSocketConnection } from "../../src/infrastructure/realtime/WebSocketConnection.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
@@ -26,6 +26,12 @@ function manualTimers() {
       }
     },
     runAll: () => pending.splice(0).forEach((timer) => timer.fn()),
+    /** Runs the timers set for `ms`, leaving the others pending. */
+    run: (ms) => {
+      const due = pending.filter((timer) => timer.ms === ms);
+      due.forEach((timer) => pending.splice(pending.indexOf(timer), 1, { fn: () => undefined, ms: -1 }));
+      due.forEach((timer) => timer.fn());
+    },
   };
 }
 
@@ -90,6 +96,98 @@ describe("WebSocketConnection", () => {
     assert.equal(sockets.length, 2, "replaced by another tab: stays closed");
     connection.close();
   });
+
+  it("gives up an attempt to connect that hangs, and tries again", () => {
+    const { sockets, create } = fakeSockets();
+    const timers = manualTimers();
+    const statuses = [];
+    const connection = new WebSocketConnection({ url: "ws://game/ws", createSocket: create, timers });
+    connection.onStatus((status) => statuses.push(status));
+    connection.connect();
+    timers.run(10_000);
+    assert.equal(sockets[0].closed, true, "the hanging attempt is abandoned");
+    assert.deepEqual(statuses, ["connecting", "closed"]);
+    timers.run(500);
+    assert.equal(sockets.length, 2, "a new attempt");
+    sockets[1].open();
+    timers.run(10_000);
+    assert.equal(sockets[1].closed, false, "an open socket is not given up for being slow to open");
+    sockets[0].drop(1006);
+    assert.equal(connection.status, "open", "the abandoned socket closing late changes nothing");
+    connection.close();
+  });
+
+  it("pings an open connection and reconnects when the server stops answering", () => {
+    const { sockets, create } = fakeSockets();
+    const timers = manualTimers();
+    const statuses = [];
+    const pushed = [];
+    const logger = new MemoryLogger();
+    const connection = new WebSocketConnection({ url: "ws://game/ws", createSocket: create, timers, logger });
+    connection.onStatus((status) => statuses.push(status));
+    connection.subscribe((message) => pushed.push(message));
+    connection.connect();
+    sockets[0].open();
+
+    timers.run(15_000);
+    assert.deepEqual(sockets[0].sent, [{ t: "ping", d: {} }]);
+    sockets[0].receive({ t: "pong", d: {} });
+    timers.run(10_000);
+    assert.equal(sockets[0].closed, false, "answered: alive");
+    assert.deepEqual(pushed, [], "pongs are the connection's own business");
+
+    timers.run(15_000);
+    timers.run(15_000);
+    assert.equal(sockets[0].sent.length, 2, "one ping waits for its answer at a time");
+    timers.run(10_000);
+    assert.equal(sockets[0].closed, true, "no answer: dropped though the browser saw nothing");
+    assert.deepEqual(statuses, ["connecting", "open", "closed"]);
+    assert.ok(logger.entries.some((entry) => /stopped answering/.test(entry.message)));
+    timers.run(500);
+    assert.equal(sockets.length, 2, "and connected again");
+    connection.close();
+  });
+
+  it("wakes: retries a lost connection at once, checks an open one, leaves a replaced one alone", () => {
+    const { sockets, create } = fakeSockets();
+    const timers = manualTimers();
+    const connection = new WebSocketConnection({ url: "ws://game/ws", createSocket: create, timers });
+    connection.wake();
+    assert.equal(sockets.length, 0, "not wanted yet");
+    connection.connect();
+    sockets[0].open();
+    connection.wake();
+    assert.deepEqual(sockets[0].sent, [{ t: "ping", d: {} }], "an open connection is checked");
+
+    sockets[0].drop(1006);
+    timers.run(500);
+    sockets[1].drop(1006);
+    timers.run(1000);
+    sockets[2].drop(1006);
+    assert.equal(sockets.length, 3);
+    connection.wake();
+    assert.equal(sockets.length, 4, "no waiting for the 2 s delay");
+    timers.run(2000);
+    assert.equal(sockets.length, 4, "the cancelled retry does not open another");
+
+    sockets[3].open();
+    sockets[3].drop(4000);
+    connection.wake();
+    assert.equal(sockets.length, 4, "replaced by another tab: stays closed");
+  });
+
+  it("reconnects on demand", () => {
+    const { sockets, create } = fakeSockets();
+    const timers = manualTimers();
+    const connection = new WebSocketConnection({ url: "ws://game/ws", createSocket: create, timers });
+    connection.connect();
+    sockets[0].open();
+    connection.reconnect();
+    assert.equal(sockets[0].closed, true);
+    timers.run(500);
+    assert.equal(sockets.length, 2);
+    connection.close();
+  });
 });
 
 /** A fake connection standing in for the server. */
@@ -130,6 +228,26 @@ function service(options) {
 }
 
 describe("OnlineService", () => {
+  it("does not stay stuck when its hello goes unanswered: it reconnects and says hello again", async () => {
+    const { online, server } = service({ welcome: { activeGame: VIEW(), queue: { state: "idle" } } });
+    let reconnects = 0;
+    let silent = true;
+    const answer = server.connection.request;
+    server.connection.request = async (t, d) => (t === "hello" && silent ? fail("TIMEOUT", "the game server did not answer") : answer(t, d));
+    server.connection.reconnect = () => {
+      reconnects += 1;
+    };
+    online.start();
+    await flush();
+    assert.equal(reconnects, 1);
+    assert.notEqual(online.state.error?.code, "HELLO_FAILED");
+    silent = false;
+    server.reconnect();
+    await flush();
+    assert.equal(online.state.status, OnlineStatus.PLAYING, "the game is back");
+    assert.equal(reconnects, 1);
+  });
+
   it("connects, queues, and sends entropy only after the match (and its commitment) is announced", async () => {
     const { online, server } = service();
     online.start();
