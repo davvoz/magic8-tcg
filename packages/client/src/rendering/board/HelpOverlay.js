@@ -175,6 +175,38 @@ export class HelpPointers extends UiNode {
 }
 
 /**
+ * The pointers on a row of cards laid out left to right, which overlap when
+ * there are too many to fit (a full hand): a card half under the next is
+ * ringed only where it shows, and a run of overlapping cards with the same
+ * label gets one ring, one arrow and one label round all of them, so the
+ * rings and labels do not pile up on the cards over them.
+ * @param {readonly Readonly<{ area: Rect, label: string | null }>[]} row each card's slot, and its label (null: not pointed at)
+ * @param {Side} from
+ * @returns {Pointer[]}
+ */
+export function rowPointers(row, from) {
+  /** @type {{ area: Rect, label: string, covered: boolean }[]} */
+  const runs = [];
+  /** @type {{ area: Rect, label: string, covered: boolean } | null} */
+  let run = null;
+  row.forEach(({ area, label }, index) => {
+    const next = row[index + 1]?.area;
+    const covered = next !== undefined && next.x < area.x + area.width;
+    const shown = covered ? { ...area, width: next.x - area.x } : area;
+    if (label === null) {
+      run = null;
+    } else if (run !== null && run.covered && run.label === label) {
+      run.area = { ...run.area, width: shown.x + shown.width - run.area.x };
+      run.covered = covered;
+    } else {
+      run = { area: shown, label, covered };
+      runs.push(run);
+    }
+  });
+  return runs.map(({ area, label }) => Object.freeze({ area, label, from }));
+}
+
+/**
  * The middle of the side of `area` that faces `direction`.
  * @param {Rect} area
  * @param {{ x: number, y: number }} direction

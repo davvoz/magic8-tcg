@@ -90,7 +90,7 @@ import { CoinFlip } from "../board/CoinFlip.js";
 import { CoinTossNode } from "../board/CoinTossNode.js";
 import { EffectsNode } from "../board/EffectsNode.js";
 import { GameOverNode } from "../board/GameOverNode.js";
-import { HelpHeadline, HelpPointers } from "../board/HelpOverlay.js";
+import { HelpHeadline, HelpPointers, rowPointers } from "../board/HelpOverlay.js";
 import { GameOverMood, GameOverSequence } from "../board/GameOverSequence.js";
 import { computeBoardLayout } from "../board/BoardLayout.js";
 import { MatchPresenter } from "../board/MatchPresenter.js";
@@ -1001,7 +1001,6 @@ export class MatchScene extends Scene {
       }
       return highlight === Highlight.TARGETABLE ? marks.targetable : null;
     };
-    const mine = new Set(snapshot.players.find((player) => player.id === layout.me.id)?.battlefield.map((card) => card.instanceId) ?? []);
     const pointers = [];
     for (const seat of [layout.opponent, layout.me]) {
       const label = labelFor(seat.id);
@@ -1009,11 +1008,13 @@ export class MatchScene extends Scene {
         pointers.push({ area: seat.hud, label, from: /** @type {const} */ ("right") });
       }
     }
-    for (const [id, area] of Object.entries(layout.cards)) {
-      const label = labelFor(id);
-      if (label !== null) {
-        pointers.push({ area, label, from: mine.has(id) ? /** @type {const} */ ("below") : /** @type {const} */ ("above") });
-      }
+    const me = snapshot.players.find((player) => player.id === layout.me.id);
+    const opponent = snapshot.players.find((player) => player.id === layout.opponent.id);
+    // Each row of cards on its own: a full one overlaps, and its pointers merge.
+    const rows = /** @type {const} */ ([[opponent?.battlefield, "above"], [me?.battlefield, "below"], [me?.hand, "above"]]);
+    for (const [cards, from] of rows) {
+      const row = (cards ?? []).flatMap(({ instanceId }) => (layout.cards[instanceId] === undefined ? [] : [{ area: layout.cards[instanceId], label: labelFor(instanceId) }]));
+      pointers.push(...rowPointers(row, from));
     }
     return pointers;
   }

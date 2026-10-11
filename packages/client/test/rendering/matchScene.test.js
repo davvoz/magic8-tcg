@@ -353,6 +353,36 @@ describe("MatchInteraction", () => {
     assert.equal(declare.type, CommandType.DECLARE_BLOCKERS);
     assert.deepEqual(declare.blocks, [{ attackerId: theirBrute, blockerId: mySentinel }]);
   });
+
+  it("refuses a second blocker on an attacker the rules let only one block", () => {
+    const snapshot = { isOver: false, awaitingPlayerId: P1, phase: GamePhase.COMBAT_BLOCKERS, combat: { attackerIds: ["brute", "imp"], blocks: [] }, legalMoves: { blockerIds: ["golem", "sentinel"], maxBlockersPerAttacker: 1 } };
+    const blockers = new MatchInteraction(P1);
+    blockers.sync(snapshot);
+    blockers.tap("golem");
+    blockers.tap("brute");
+    blockers.tap("sentinel");
+    assert.equal(blockers.highlightFor("brute"), Highlight.ATTACKING, "a fully blocked attacker is not offered");
+    assert.equal(blockers.highlightFor("imp"), Highlight.TARGETABLE);
+    blockers.tap("brute");
+    assert.deepEqual(blockers.pendingBlocks, [{ attackerId: "brute", blockerId: "golem" }]);
+    assert.equal(blockers.pendingBlockerId, "sentinel", "the blocker stays picked");
+    assert.match(blockers.prompt, /already blocked/i);
+    blockers.tap("golem");
+    assert.doesNotMatch(blockers.prompt, /already blocked/i, "the next tap clears the notice");
+    blockers.tap("sentinel");
+    blockers.tap("brute");
+    assert.deepEqual(blockers.pendingBlocks, [{ attackerId: "brute", blockerId: "sentinel" }], "freeing the first blocker lets another take its place");
+  });
+
+  it("lets several blockers share an attacker when the rules allow it", () => {
+    const snapshot = { isOver: false, awaitingPlayerId: P1, phase: GamePhase.COMBAT_BLOCKERS, combat: { attackerIds: ["brute"], blocks: [] }, legalMoves: { blockerIds: ["golem", "sentinel"], maxBlockersPerAttacker: 2 } };
+    const blockers = new MatchInteraction(P1);
+    blockers.sync(snapshot);
+    for (const id of ["golem", "brute", "sentinel", "brute"]) {
+      blockers.tap(id);
+    }
+    assert.equal(blockers.pendingBlocks.length, 2);
+  });
 });
 
 describe("CardRenderer", () => {

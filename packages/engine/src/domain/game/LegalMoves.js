@@ -17,6 +17,7 @@ import { playabilityProblem, targetOptionsFor } from "./Playability.js";
  *   targetOptions: Readonly<Record<string, readonly (readonly string[])[]>>,
  *   attackerIds: readonly string[],
  *   blockerIds: readonly string[],
+ *   maxBlockersPerAttacker: number,
  * }>} LegalMoves
  */
 
@@ -29,6 +30,7 @@ export const NO_MOVES = Object.freeze({
   targetOptions: Object.freeze({}),
   attackerIds: Object.freeze([]),
   blockerIds: Object.freeze([]),
+  maxBlockersPerAttacker: 0,
 });
 
 /**
@@ -52,6 +54,7 @@ export function computeLegalMoves(state, playerId, rules) {
     targetOptions: Object.freeze(Object.fromEntries(playable.map((card) => [card.instanceId, targetOptionsFor(state, card)]))),
     attackerIds: Object.freeze(allows.includes(CommandType.DECLARE_ATTACKERS) ? legalAttackers(player).map((card) => card.instanceId) : []),
     blockerIds: Object.freeze(allows.includes(CommandType.DECLARE_BLOCKERS) ? legalBlockers(player).map((card) => card.instanceId) : []),
+    maxBlockersPerAttacker: rules.combat.maxBlockersPerAttacker,
   });
 }
 

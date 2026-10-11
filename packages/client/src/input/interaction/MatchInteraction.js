@@ -12,6 +12,8 @@
  *         tapping it again puts it back, tapping another picks that one
  *   COMBAT_ATTACKERS awaiting me ──▶ ATTACKERS: toggle legal attackers, confirm ──▶ DECLARE_ATTACKERS
  *   COMBAT_BLOCKERS awaiting me  ──▶ BLOCKERS: pick a legal blocker, then the attacker it blocks; confirm ──▶ DECLARE_BLOCKERS
+ *         an attacker already holding as many blockers as the rules allow
+ *         cannot be picked again: its blocker must be tapped to free it first
  */
 import { declareAttackers, declareBlockers, playCard } from "@magic8/engine/domain/commands/commandFactories.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
@@ -51,6 +53,8 @@ export class MatchInteraction {
   #blocks = [];
   /** @type {string | null} */
   #pendingBlockerId = null;
+  /** The pending blocker was aimed at an attacker already fully blocked (BLOCKERS mode), until the next tap. */
+  #attackerFull = false;
   /** The hand card picked to be played, waiting for the confirm (`confirmPlays`). @type {string | null} */
   #pickedId = null;
   /** Whether a hand card is picked first and played on confirm, rather than played on the tap. */
@@ -83,6 +87,11 @@ export class MatchInteraction {
     return this.#pendingBlockerId;
   }
 
+  /** Whether the last tap aimed the pending blocker at an attacker that can take no more blockers. */
+  get attackerFull() {
+    return this.#attackerFull;
+  }
+
   /** The hand card picked and waiting for the confirm to be played (IDLE with `confirmPlays`), or null. */
   get pickedCardId() {
     return this.#pickedId;
@@ -95,6 +104,7 @@ export class MatchInteraction {
     this.#attackers = [];
     this.#blocks = [];
     this.#pendingBlockerId = null;
+    this.#attackerFull = false;
     this.#pickedId = null;
     this.#mode = modeFor(snapshot, this.#playerId);
   }
@@ -187,6 +197,7 @@ export class MatchInteraction {
     this.#attackers = [];
     this.#blocks = [];
     this.#pendingBlockerId = null;
+    this.#attackerFull = false;
     this.#pickedId = null;
   }
 
@@ -284,11 +295,13 @@ export class MatchInteraction {
 
   /**
    * First tap picks one of my legal blockers (tapping an assigned blocker
-   * unassigns it); the next tap on an attacker assigns the pending blocker.
+   * unassigns it); the next tap on an attacker assigns the pending blocker,
+   * unless that attacker already holds as many blockers as the rules allow.
    * @param {Snapshot} snapshot
    * @param {string} id
    */
   #tapBlockers(snapshot, id) {
+    this.#attackerFull = false;
     const legalBlockers = snapshot.legalMoves?.blockerIds ?? [];
     if (legalBlockers.includes(id)) {
       const assigned = this.#blocks.some((block) => block.blockerId === id);
@@ -297,9 +310,22 @@ export class MatchInteraction {
       return;
     }
     if (this.#pendingBlockerId !== null && snapshot.combat.attackerIds.includes(id)) {
+      if (this.#isFullyBlocked(snapshot, id)) {
+        this.#attackerFull = true;
+        return;
+      }
       this.#blocks = [...this.#blocks, { attackerId: id, blockerId: this.#pendingBlockerId }];
       this.#pendingBlockerId = null;
     }
+  }
+
+  /**
+   * @param {Snapshot} snapshot
+   * @param {string} attackerId
+   */
+  #isFullyBlocked(snapshot, attackerId) {
+    const limit = snapshot.legalMoves?.maxBlockersPerAttacker ?? 1;
+    return this.#blocks.filter((block) => block.attackerId === attackerId).length >= limit;
   }
 
   /** @param {string} id */
@@ -338,7 +364,7 @@ export class MatchInteraction {
       return Highlight.BLOCKING;
     }
     if (snapshot.combat.attackerIds.includes(id)) {
-      return this.#pendingBlockerId === null ? Highlight.ATTACKING : Highlight.TARGETABLE;
+      return this.#pendingBlockerId === null || this.#isFullyBlocked(snapshot, id) ? Highlight.ATTACKING : Highlight.TARGETABLE;
     }
     return (snapshot.legalMoves?.blockerIds ?? []).includes(id) ? Highlight.PLAYABLE : null;
   }
@@ -371,6 +397,9 @@ const PROMPTS = Object.freeze({
   },
   [InteractionMode.ATTACKERS]: (interaction) => (interaction.selectedAttackerIds.length === 0 ? "Tap creatures to attack with." : "Tap more creatures or confirm."),
   [InteractionMode.BLOCKERS]: (interaction) => {
+    if (interaction.attackerFull) {
+      return "Already blocked: pick another attacker, or tap its blocker to free it.";
+    }
     if (interaction.pendingBlockerId !== null) {
       return "Now tap the attacker it blocks.";
     }

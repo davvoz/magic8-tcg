@@ -21,7 +21,7 @@ import { StoredHelpPreferences } from "../../src/infrastructure/persistence/Stor
 import { immediateScheduler } from "../../src/infrastructure/time/ImmediateScheduler.js";
 import { computeBoardLayout } from "../../src/rendering/board/BoardLayout.js";
 import { CardNode } from "../../src/rendering/board/CardNode.js";
-import { HelpHeadline, HelpPointers } from "../../src/rendering/board/HelpOverlay.js";
+import { HelpHeadline, HelpPointers, rowPointers } from "../../src/rendering/board/HelpOverlay.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { MatchScene } from "../../src/rendering/scenes/MatchScene.js";
 import { P1, P2 } from "@magic8/engine/testing/fixtures.js";
@@ -173,6 +173,21 @@ describe("The match help on the board", () => {
     assert.equal(headline(scene), "PICK A TARGET!");
   });
 
+  it("on a full hand rings the cards only where they show, one ring and one label for a run of them", async () => {
+    // Imps can be paid for, the Titan cannot: it splits the playable cards in two runs.
+    const hand = ["ember_imp", "ember_imp", "ember_imp", "blazing_titan", "ember_imp", "ember_imp", "ember_imp", "ember_imp", "ember_imp"];
+    const { scene, session } = await boardWith({ p1: { hand, resources: 2 } }, { size: SMALL_PHONE });
+    const { viewport } = scene.services;
+    const layout = computeBoardLayout(session.snapshotFor(P1), P1, viewport.safeBounds, { compact: viewport.compact });
+    const slots = session.snapshotFor(P1).players.find((player) => player.id === P1).hand.map((card) => layout.cards[card.instanceId]);
+    assert.ok(slots[1].x < slots[0].x + slots[0].width, "the hand overlaps");
+    const plays = byId(scene, "help.pointers").pointers.filter((pointer) => pointer.label === "PLAY");
+    assert.deepEqual(plays.map((pointer) => pointer.area), [
+      { ...slots[0], width: slots[3].x - slots[0].x },
+      { ...slots[4], width: slots[8].x + slots[8].width - slots[4].x },
+    ], "the first run stops where the Titan covers it; the last card shows whole");
+  });
+
   it("is not offered without the setting, in the tutorial, or to a spectator", async () => {
     const { engine } = createScenario({ p1: {} });
     const session = new MatchSession({ engine, controllers: new Map([[P1, humanController], [P2, new BasicAiController()]]), scheduler: immediateScheduler, logger: new MemoryLogger() });
@@ -195,6 +210,30 @@ describe("The match help on the board", () => {
     const spectator = new MatchScene(services(DESKTOP), { help });
     spectator.enter({ session: watched });
     assert.equal(byId(spectator, "help"), null, "a spectator has nothing to play");
+  });
+});
+
+describe("The help's pointers on a row of cards", () => {
+  const card = (x) => ({ x, y: 0, width: 100, height: 140 });
+
+  it("points at each card of a row with room between them on its own", () => {
+    const row = [{ area: card(0), label: "PLAY" }, { area: card(110), label: "PLAY" }];
+    assert.deepEqual(rowPointers(row, "above"), [{ area: card(0), label: "PLAY", from: "above" }, { area: card(110), label: "PLAY", from: "above" }]);
+  });
+
+  it("merges overlapping cards with the same label, and keeps off the cards over them that are not pointed at", () => {
+    const row = [
+      { area: card(0), label: "PLAY" },
+      { area: card(40), label: "PLAY" },
+      { area: card(80), label: null },
+      { area: card(120), label: "PLAY" },
+      { area: card(160), label: "TARGET" },
+    ];
+    assert.deepEqual(rowPointers(row, "below"), [
+      { area: { ...card(0), width: 80 }, label: "PLAY", from: "below" },
+      { area: { ...card(120), width: 40 }, label: "PLAY", from: "below" },
+      { area: card(160), label: "TARGET", from: "below" },
+    ]);
   });
 });
 
