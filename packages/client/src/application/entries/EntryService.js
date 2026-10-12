@@ -92,17 +92,15 @@ export function rankedFeeText(ranked, price = null) {
 }
 
 /**
- * What the lobby says about ranked entries, or null when ranked play is free (or not known yet).
+ * How many ranked entries the player holds, as the lobby's ranked panel says it (its pictures say what they cost and
+ * where they go); null when ranked play is free (or not known yet).
  * @param {Entries | null} ranked
- * @param {Readonly<{ asset: string, amount: string }> | null} [price] what one ranked entry costs in the shop
  */
-export function entriesText(ranked, price = null) {
-  const fee = rankedFeeText(ranked, price);
-  if (ranked === null || fee === null) {
+export function heldEntriesText(ranked) {
+  if (ranked === null || ranked.perGame === 0) {
     return null;
   }
-  const held = ranked.balance === 0 ? "you have no ranked entries yet" : `you have ${rankedEntriesText(ranked.balance)}`;
-  return `A ranked game costs ${fee}, and every entry goes into the season's jackpot: ${held}.`;
+  return ranked.balance === 0 ? "You have no ranked entries yet." : `You have ${rankedEntriesText(ranked.balance)}.`;
 }
 
 /**

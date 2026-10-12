@@ -402,7 +402,7 @@ export class ShopScene extends Scene {
     );
     this.#buildOrdersButton(unpaid, buttons);
     if (market) {
-      this.root.add(new Button({ keepPlate: true, id: "shop.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Player market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
+      this.root.add(new Button({ keepPlate: true, id: "shop.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
     }
     return this.root.add(new Button({ keepPlate: true, id: "shop.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(this.#from) }));
   }

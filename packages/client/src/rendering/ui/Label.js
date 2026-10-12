@@ -1,9 +1,9 @@
 import { drawAvatar } from "./avatar.js";
 import { drawOutlinedText, drawTextInRect } from "./drawing.js";
 import { UiNode } from "./UiNode.js";
-import { ellipsize } from "../text/textUtils.js";
+import { fitText } from "../text/textUtils.js";
 import { withAlpha } from "../theme/color.js";
-import { fontFor } from "../theme/Theme.js";
+import { fontFor, scalableFont } from "../theme/Theme.js";
 
 const GLOW_BLUR = 18;
 /** Space between a portrait and the text after it. */
@@ -62,12 +62,12 @@ export class Label extends UiNode {
       const { x, y, height } = this.bounds;
       drawAvatar(context, theme, { account: this.avatar, center: { x: x + height / 2, y: y + height / 2 }, radius: height / 2 - 1 });
     }
-    const text = this.fit ? this.#fitted(context, font, area.width) : this.text;
+    const { text, font: set } = this.fit ? this.#fitted(context, theme, area.width) : { text: this.text, font };
     if (this.glow) {
-      drawOutlinedText(context, text, area, { font, color, outline: withAlpha(theme.colors.letterbox, 0.85), outlineWidth: 4, glow: withAlpha(color, 0.75), glowBlur: GLOW_BLUR, align: this.align, padding: this.padding });
+      drawOutlinedText(context, text, area, { font: set, color, outline: withAlpha(theme.colors.letterbox, 0.85), outlineWidth: 4, glow: withAlpha(color, 0.75), glowBlur: GLOW_BLUR, align: this.align, padding: this.padding });
       return;
     }
-    drawTextInRect(context, text, area, { font, color, align: this.align, padding: this.padding });
+    drawTextInRect(context, text, area, { font: set, color, align: this.align, padding: this.padding });
   }
 
   /** Where the text goes: the whole label, or what the portrait leaves of it. */
@@ -81,12 +81,12 @@ export class Label extends UiNode {
   }
 
   /**
+   * The text fitted to the label's width: smaller where the theme allows it (a phone), then cut.
    * @param {CanvasRenderingContext2D} context
-   * @param {string} font
+   * @param {import("../theme/Theme.js").Theme} theme
    * @param {number} width
    */
-  #fitted(context, font, width) {
-    context.font = font;
-    return ellipsize((text) => context.measureText(text).width, this.text, Math.max(0, width - 2 * this.padding));
+  #fitted(context, theme, width) {
+    return fitText(context, { text: this.text, font: scalableFont(theme, this.size, this.weight), size: theme.fonts.sizes[this.size], width: Math.max(0, width - 2 * this.padding), minScale: theme.textFit?.minScale ?? 1 });
   }
 }

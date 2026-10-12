@@ -61,12 +61,15 @@ const MAX_FACTIONS = 16;
  *   uiArt?: import("../images/UiArt.js").UiArtSource,
  *   avatars?: import("../images/Avatars.js").AvatarSource,
  *   ambience?: readonly import("../ui/backdropLight.js").BackdropLight[],
+ *   textFit?: Readonly<{ minScale: number }>,
  * }>} Theme `illustrations`, `coinArt`, `tableArt`, `uiArt`, `avatars` and `ambience` are not read from theme.json: the
  *   composition root attaches the painted card art, the painted coin, the painted table
  *   (mat, card back, panel stone), the painted menus (backdrop, panel corners, divider,
  *   button plates), the players' profile pictures and the lights living in the menu backdrop
  *   (its storm, its gold's glimmer), and without them all of these are drawn procedurally (a
- *   player as their initial; no lights)
+ *   player as their initial; no lights). `textFit` is set while the screen is compact (a phone, see
+ *   `compactTheme`): a label too long for its room shrinks down to `minScale` of its size before it
+ *   is cut with an ellipsis; without it, it is cut at once
  */
 
 /**
@@ -192,6 +195,37 @@ const DISPLAY_SIZES = Object.freeze(["title", "heading"]);
 export function fontFor(theme, size, weight = "normal") {
   const family = DISPLAY_SIZES.includes(size) ? theme.fonts.displayFamily : theme.fonts.family;
   return `${weight} ${theme.fonts.sizes[size]}px ${family}`;
+}
+
+/** How small a label may shrink on a phone before it is cut with an ellipsis: a share of its size. */
+const COMPACT_TEXT_FIT = Object.freeze({ minScale: 0.75 });
+/** @type {WeakMap<Theme, Theme>} */
+const compactThemes = new WeakMap();
+
+/**
+ * The theme a compact screen paints with: the same, with labels that shrink to fit before they are cut.
+ * @param {Theme} theme
+ * @returns {Theme}
+ */
+export function compactTheme(theme) {
+  let compact = compactThemes.get(theme);
+  if (compact === undefined) {
+    compact = Object.freeze({ ...theme, textFit: COMPACT_TEXT_FIT });
+    compactThemes.set(theme, compact);
+  }
+  return compact;
+}
+
+/**
+ * The font of a theme size at any pixel size, in the same face and weight: `fontFor` scaled.
+ * @param {Theme} theme
+ * @param {FontSize} size
+ * @param {"normal" | "bold"} [weight]
+ * @returns {(pixels: number) => string}
+ */
+export function scalableFont(theme, size, weight = "normal") {
+  const family = DISPLAY_SIZES.includes(size) ? theme.fonts.displayFamily : theme.fonts.family;
+  return (pixels) => `${weight} ${Math.max(1, Math.round(pixels))}px ${family}`;
 }
 
 /**

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { fail, ok } from "@magic8/engine/shared/Result.js";
-import { EntryService, entriesText, rankedFeeText } from "../../src/application/entries/EntryService.js";
+import { EntryService, heldEntriesText, rankedFeeText } from "../../src/application/entries/EntryService.js";
 import { describeNotification } from "../../src/application/notifications/describeNotification.js";
 import { rankedEntryPrice, shelvesOf } from "../../src/application/shop/shopCatalog.js";
 import { HttpEntriesApi } from "../../src/infrastructure/api/HttpEntriesApi.js";
@@ -48,14 +48,16 @@ describe("EntryService", () => {
     assert.equal(entries.ranked, null);
   });
 
-  it("tells the lobby what a ranked game costs, in STEEM once the shop's price is known, where it goes and what the player has", () => {
+  it("tells the lobby what a ranked game costs, in STEEM once the shop's price is known, and what the player has", () => {
     const price = { asset: "STEEM", amount: "1.000" };
-    assert.equal(entriesText(RANKED, price), "A ranked game costs 1.000 STEEM, and every entry goes into the season's jackpot: you have 3 ranked entries.");
-    assert.equal(entriesText({ ...RANKED, balance: 1, perGame: 2 }, price), "A ranked game costs 2.000 STEEM, and every entry goes into the season's jackpot: you have 1 ranked entry.");
-    assert.equal(entriesText({ ...RANKED, balance: 0 }), "A ranked game costs 1 ranked entry, and every entry goes into the season's jackpot: you have no ranked entries yet.");
+    assert.equal(heldEntriesText(RANKED), "You have 3 ranked entries.");
+    assert.equal(heldEntriesText({ ...RANKED, balance: 1 }), "You have 1 ranked entry.");
+    assert.equal(heldEntriesText({ ...RANKED, balance: 0 }), "You have no ranked entries yet.");
     assert.equal(rankedFeeText(RANKED, price), "1.000 STEEM");
+    assert.equal(rankedFeeText({ ...RANKED, perGame: 2 }, price), "2.000 STEEM");
     assert.equal(rankedFeeText({ ...RANKED, perGame: 2 }), "2 ranked entries");
-    assert.equal(entriesText({ ...RANKED, perGame: 0 }, price), null, "free: nothing to say");
+    assert.equal(heldEntriesText({ ...RANKED, perGame: 0 }), null, "free: nothing to say");
+    assert.equal(heldEntriesText(null), null);
     assert.equal(rankedFeeText(null, price), null);
   });
 });

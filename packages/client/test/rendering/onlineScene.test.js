@@ -17,7 +17,7 @@ import { LISTING_WITH_ENTRIES } from "../application/fakeMarketApi.js";
 import { OnlineService } from "../../src/application/online/OnlineService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { OnlineScene, matchedText } from "../../src/rendering/scenes/OnlineScene.js";
+import { OnlineScene, matchedText, rankedSteps } from "../../src/rendering/scenes/OnlineScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
@@ -28,13 +28,30 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const GAME = "01j8x3r6h2qkq4w0v7m5a9c1dz";
 
 /** A player who may play ranked, in a running season. */
+/** The season's jackpot, three places paid. */
+const JACKPOT = Object.freeze({
+  season: { id: "season-1", name: "Season 1", startsAt: 0, endsAt: 86_400_000, status: "running" },
+  bank: "verdu.green",
+  asset: "STEEM",
+  share: { numerator: 2, denominator: 3 },
+  jackpot: "866.666",
+  opening: "666.666",
+  readAt: 0,
+  places: [
+    { place: 1, percent: 65, amount: "563.332", account: "alice", rating: 1700, paid: null },
+    { place: 2, percent: 25, amount: "216.666", account: "bob", rating: 1600, paid: null },
+    { place: 3, percent: 10, amount: "86.668", account: null, rating: null, paid: null },
+  ],
+});
+
 const ELIGIBLE = Object.freeze({ season: { id: "season-1", name: "Season 1" }, rating: 1500, deviation: 350, provisional: true, rank: null, games: 0, wins: 0, losses: 0, draws: 0, eligible: true, casualGamesNeeded: 0, practiceGamesNeeded: 0 });
 
 /**
- * @param {{ lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, shop?: boolean, auto?: boolean }} [options] `lobbyReplies`: the scripted server's answers to the lobby's requests;
- *   `ranked`: the player holds these entries (and may play ranked unless `eligible` is false); `shop`: the shop's listing (with ranked entries at 1 STEEM) can be read
+ * @param {{ lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, shop?: boolean, auto?: boolean, jackpot?: object }} [options] `lobbyReplies`: the scripted server's answers to the lobby's requests;
+ *   `ranked`: the player holds these entries (and may play ranked unless `eligible` is false); `shop`: the shop's listing (with ranked entries at 1 STEEM) can be read;
+ *   `jackpot`: the season's jackpot, as its service has read it
  */
-async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop = false, auto = false } = {}) {
+async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop = false, auto = false, jackpot: pot } = {}) {
   const listeners = new Set();
   const statusListeners = new Set();
   const requests = [];
@@ -76,7 +93,8 @@ async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop =
   const entries = ranked === undefined ? undefined : new EntryService({ api: { entries: async () => ok([{ kind: "ranked", ...ranked, season: "season-1" }]) } });
   const autoList = auto ? new AutoListService({ connection, randomHex: (bytes) => "cd".repeat(bytes), logger: new MemoryLogger() }) : undefined;
   const account = { state: { account: "alice" } };
-  const scene = new OnlineScene(services, /** @type {any} */ ({ content, online, lobby, ranking, entries, shop, autoList, account }), () => 3_600_000);
+  const jackpot = pot === undefined ? undefined : { state: { loading: false, loaded: true, jackpot: pot, error: null }, subscribe: () => () => undefined, watch: () => () => undefined, now: () => 0 };
+  const scene = new OnlineScene(services, /** @type {any} */ ({ content, online, lobby, ranking, entries, shop, autoList, account, jackpot }), () => 3_600_000);
   scene.enter({});
   await flush();
   return { scene, online, lobby, requests, navigated, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
@@ -119,29 +137,57 @@ describe("OnlineScene", () => {
   });
 });
 
-describe("OnlineScene with ranked entries", () => {
-  it("shows from the start what a ranked game costs in STEEM, that it goes into the jackpot, and how many entries the player has", async () => {
+describe("OnlineScene: the Casual and Ranked tabs", () => {
+  it("opens on Casual, free, with the Ranked tab saying what a game costs", async () => {
+    const { scene } = await harness({ ranked: { balance: 3, perGame: 1 }, shop: true });
+    const casual = byId(scene, "online.mode.casual");
+    const ranked = byId(scene, "online.mode.ranked");
+    assert.equal(casual.selected, true);
+    assert.equal(ranked.selected, false);
+    assert.equal(ranked.subtitle, "1.000 STEEM a game · jackpot");
+    assert.equal(ranked.locked, false);
+    assert.equal(byId(scene, "online.find").text, "Find a match", "casual is free");
+    assert.equal(byId(scene, "online.entries"), null, "entries belong to the Ranked tab");
+    assert.match(said(scene), /No rating at stake/);
+  });
+
+  it("shows in the Ranked tab how ranked works, with the tickets the player holds, and queues ranked", async () => {
     const { scene, requests } = await harness({ ranked: { balance: 3, perGame: 1 }, shop: true });
-    assert.equal(byId(scene, "online.entries").text, "A ranked game costs 1.000 STEEM, and every entry goes into the season's jackpot: you have 3 ranked entries.");
-    const tickets = byId(scene, "online.tickets");
+    byId(scene, "online.mode.ranked").activate();
+    assert.equal(byId(scene, "online.mode.ranked").selected, true);
+    assert.equal(byId(scene, "online.season").text, "Season 1");
+    assert.equal(byId(scene, "online.crest").place, "NEW", "a provisional rating has no place yet");
+    const tickets = byId(scene, "online.guide.tickets");
     assert.equal(tickets.count, 3, "the tickets held, as a stack");
     assert.equal(tickets.face, "1.000 STEEM", "printed with what an entry costs");
     assert.ok(rendered(scene).includes("×3"), "sealed with the count");
-    assert.equal(byId(scene, "online.mode.ranked").text, "Ranked · 1.000 STEEM");
-    assert.equal(byId(scene, "online.find").text, "Find a match", "casual is free");
-    byId(scene, "online.mode.ranked").activate();
+    assert.equal(byId(scene, "online.guide.text.1").text, "1.000 STEEM each. Buy many with one payment.");
+    assert.match(byId(scene, "online.guide.text.2").text, /^A game takes 1 entry, given back if it is called off/);
+    assert.match(byId(scene, "online.guide.text.3").text, /^Every entry goes into it\./);
+    assert.equal(byId(scene, "online.entries").text, "You have 3 ranked entries.");
+    assert.ok(byId(scene, "online.moreEntries"), "more can be bought");
     assert.equal(byId(scene, "online.find").text, "Find a match · 1.000 STEEM");
     byId(scene, "online.find").activate();
     await flush();
     assert.deepEqual(requests.find((request) => request.t === "queue.join").d.mode, "ranked");
+    assert.equal(byId(scene, "online.mode.casual").enabled, false, "no switching while in the queue");
+  });
+
+  it("puts the season's jackpot on the trophy, and says how many places share it", async () => {
+    const { scene } = await harness({ ranked: { balance: 3, perGame: 1 }, shop: true, jackpot: JACKPOT });
+    byId(scene, "online.mode.ranked").activate();
+    assert.equal(byId(scene, "online.guide.jackpot").text, "866.666 STEEM");
+    assert.equal(byId(scene, "online.guide.text.3").text, "Every entry goes into it. When the season ends, the top 3 share it.");
   });
 
   it("offers to get ranked entries in the shop instead of a search the server would refuse", async () => {
     const { scene, navigated, requests } = await harness({ ranked: { balance: 0, perGame: 1 } });
-    assert.match(byId(scene, "online.entries").text, /you have no ranked entries yet\.$/);
-    assert.equal(byId(scene, "online.tickets").count, 0, "a faded ticket sealed at 0");
     assert.ok(byId(scene, "online.find"), "casual needs no entries");
     byId(scene, "online.mode.ranked").activate();
+    assert.equal(byId(scene, "online.entries").text, "You have no ranked entries yet.");
+    assert.equal(byId(scene, "online.entries").colorKey, "danger");
+    assert.equal(byId(scene, "online.guide.tickets").count, 0, "a faded ticket sealed at 0");
+    assert.equal(byId(scene, "online.moreEntries"), null, "the main button offers them");
     assert.equal(byId(scene, "online.find"), null);
     const get = byId(scene, "online.getEntries");
     assert.equal(get.text, "Get ranked entries");
@@ -150,18 +196,48 @@ describe("OnlineScene with ranked entries", () => {
     assert.equal(requests.some((request) => request.t === "queue.join"), false);
   });
 
-  it("says what ranked costs even before the player may play it", async () => {
+  it("opens Ranked before the player may play it: what is missing, how it works, and back to casual", async () => {
     const { scene } = await harness({ ranked: { balance: 0, perGame: 1 }, eligible: false, shop: true });
-    assert.match(byId(scene, "online.entries").text, /^A ranked game costs 1\.000 STEEM/);
-    assert.equal(byId(scene, "online.mode.ranked").text, "Ranked · 1.000 STEEM");
+    const tab = byId(scene, "online.mode.ranked");
+    assert.equal(tab.locked, true);
+    assert.equal(tab.subtitle, "2 games to unlock");
+    assert.equal(byId(scene, "online.unlockHint").text, "Every casual game brings Ranked closer: 2 more to go.");
+    tab.activate();
+    assert.equal(byId(scene, "online.standing").text, "Ranked opens after 2 more casual game(s), or 2 more practice game(s) vs AI.");
+    assert.equal(byId(scene, "online.guide.text.1").text, "1.000 STEEM each. Buy many with one payment.", "how it works, all the same");
+    assert.equal(byId(scene, "online.crest"), null, "no rating yet");
+    assert.equal(byId(scene, "online.find"), null);
+    byId(scene, "online.unlock").activate();
+    assert.equal(byId(scene, "online.mode.casual").selected, true);
   });
 
   it("says nothing of entries while ranked play is free", async () => {
     const { scene } = await harness({ ranked: { balance: 0, perGame: 0 } });
-    assert.equal(byId(scene, "online.entries"), null);
-    assert.equal(byId(scene, "online.tickets"), null);
+    assert.equal(byId(scene, "online.mode.ranked").subtitle, "Rating · leaderboard · jackpot");
     byId(scene, "online.mode.ranked").activate();
+    assert.equal(byId(scene, "online.entries"), null);
+    assert.equal(byId(scene, "online.guide.tickets").count, null, "a plain ticket, no seal");
+    assert.equal(byId(scene, "online.guide.text.1").text, "Free this season: no entry needed.");
     assert.ok(byId(scene, "online.find"));
+  });
+
+  it("has no tabs without ranked play", async () => {
+    const { scene } = await harness();
+    assert.equal(byId(scene, "online.mode.ranked"), null);
+    assert.equal(byId(scene, "online.guide"), null);
+    assert.ok(byId(scene, "online.find"));
+  });
+});
+
+describe("rankedSteps", () => {
+  it("words the three steps from what is known", () => {
+    const [buy, play, win] = rankedSteps({ price: "1.000 STEEM", perGame: 2, places: 3 });
+    assert.deepEqual([buy.title, play.title, win.title], ["Get entries", "Play ranked", "Win the jackpot"]);
+    assert.equal(play.text, "A game takes 2 entries, given back if it is called off before it starts.");
+    assert.equal(win.text, "Every entry goes into it. When the season ends, the top 3 share it.");
+    const unknown = rankedSteps({ price: null, perGame: null, places: null });
+    assert.equal(unknown[0].text, "From the shop: buy many with one payment.");
+    assert.equal(unknown[2].text, "Every entry goes into it. When the season ends, the best of the season share it.");
   });
 });
 
@@ -282,9 +358,11 @@ describe("OnlineScene with the auto list", () => {
 
   it("offers a third mode where the player picks a style and joins, warned there is no way out", async () => {
     const { scene, requests } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 1, perGame: 1 }, shop: true, auto: true });
-    assert.equal(byId(scene, "online.mode.ranked").text, "Ranked · 1.000 STEEM");
+    assert.equal(byId(scene, "online.mode.auto"), null, "a way to play ranked: in the Ranked tab");
+    byId(scene, "online.mode.ranked").activate();
+    assert.equal(byId(scene, "online.mode.live").variant, "primary", "live until auto is chosen");
     byId(scene, "online.mode.auto").activate();
-    assert.match(said(scene), /Auto ranked/);
+    assert.equal(byId(scene, "online.mode.auto").variant, "primary");
     assert.match(byId(scene, "online.auto.status").text, /next player who joins, even hours from now.*2 players are in the auto list/);
     assert.equal(byId(scene, "online.style.balanced").variant, "primary", "balanced until another is chosen");
     byId(scene, "online.style.defensive").activate();
@@ -307,11 +385,14 @@ describe("OnlineScene with the auto list", () => {
 
   it("sends a player without entries to get them, and keeps the mode for those who may play ranked", async () => {
     const { scene } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 0, perGame: 1 }, shop: true, auto: true });
+    byId(scene, "online.mode.ranked").activate();
     byId(scene, "online.mode.auto").activate();
     assert.equal(byId(scene, "online.auto.join"), null);
     assert.equal(byId(scene, "online.getEntries").text, "Get ranked entries");
 
     const { scene: newcomer } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 1, perGame: 1 }, auto: true, eligible: false });
+    byId(newcomer, "online.mode.ranked").activate();
     assert.equal(byId(newcomer, "online.mode.auto").enabled, false, "the same players as ranked");
+    assert.equal(byId(newcomer, "online.auto.join"), null, "locked: back to casual instead");
   });
 });

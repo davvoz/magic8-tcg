@@ -206,7 +206,7 @@ function ranked() {
       "Sign in, and take your free starter deck from the main menu.",
       "Click \"Play online\".",
       "Pick one of your decks on the left.",
-      "Choose \"Casual\" or \"Ranked\", then click \"Find a match\". Or click a player in the list of players online to challenge them.",
+      "Open the \"Casual\" or the \"Ranked\" tab, then click \"Find a match\". Or click a player in the list of players online to challenge them.",
       "When a match is found, both players confirm it (Keychain asks you to sign; with a posting key it happens on its own), and the game starts.",
     ]),
 
@@ -215,7 +215,7 @@ function ranked() {
     bullet("Have at least one ranked entry."),
 
     heading("Ranked entries: buy them in advance"),
-    paragraph("Each ranked game costs one ranked entry. The price is shown on the Ranked button (1 STEEM today). Instead of paying before every game, you buy entries in advance: as many as you like, up to 50 in one order, with a single transfer. Then each ranked game uses one."),
+    paragraph("Each ranked game costs one ranked entry. The price is shown on the Ranked tab (1 STEEM today), which also shows how ranked play works. Instead of paying before every game, you buy entries in advance: as many as you like, up to 50 in one order, with a single transfer. Then each ranked game uses one."),
     bullet("Buy them in the Shop, on the Ranked shelf. In the lobby, when you have none, the \"Get ranked entries\" button takes you there."),
     bullet("The lobby shows how many entries you have left."),
     bullet("An entry is used when the game is created: when the queue finds your opponent, or when a ranked challenge is accepted."),
@@ -258,7 +258,7 @@ function shop() {
     bullet("See \"Purchases\" for how paying works."),
 
     heading("The Market"),
-    paragraph("Open it from your Collection, or with \"Player market\" in the Shop. It is a public board of cards that players sell for STEEM, at the price they choose."),
+    paragraph("Open it from your Collection, or with \"Market\" in the Shop. It is a public board of cards that players sell for STEEM, at the price they choose."),
     bullet("To buy: pick a card on the board and click \"Buy for…\". It is reserved for you for 15 minutes: pay the seller with the transfer the game shows you. The card is yours as soon as the payment is final."),
     bullet("To sell: click \"Sell a card\", pick the copy and set your price. While it is on sale (up to 30 days) the card is locked: you cannot use it in a deck or trade it."),
     bullet("The seller gets the full price: the game takes no fee."),

@@ -9,8 +9,11 @@ import { describe, it } from "node:test";
 
 import { ok } from "@magic8/engine/shared/Result.js";
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
+import { AutoListService } from "../../src/application/auto/AutoListService.js";
+import { EntryService } from "../../src/application/entries/EntryService.js";
 import { NotificationService } from "../../src/application/notifications/NotificationService.js";
 import { OnlineService } from "../../src/application/online/OnlineService.js";
+import { RankingService } from "../../src/application/ranking/RankingService.js";
 import { ShopService } from "../../src/application/shop/ShopService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
@@ -172,6 +175,22 @@ function withUnpaidOrders(app) {
 }
 const BEFORE_DUE = () => -10 * 60_000;
 
+/**
+ * Ranked play in a running season: the player's standing, three ranked entries, and (with `auto`) the auto list.
+ * @param {any} app
+ * @param {{ eligible?: boolean, auto?: boolean }} [options]
+ */
+function withRankedPlay(app, { eligible = true, auto = false } = {}) {
+  const season = { id: "season-1", name: "Season 1" };
+  const standing = { season, rating: 1612, deviation: 80, provisional: false, rank: 4, games: 12, wins: 8, losses: 4, draws: 0, eligible, casualGamesNeeded: eligible ? 0 : 3, practiceGamesNeeded: eligible ? 0 : 3 };
+  const ranking = new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season, entries: [] }) } });
+  const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 3, perGame: 1, season: season.id }]) } });
+  const connection = { connect: () => undefined, close: () => undefined, status: "open", request: async () => ok({ t: "auto.status", d: { state: "idle", waiting: 2 } }), subscribe: () => () => undefined, onStatus: () => () => undefined };
+  Object.assign(app, { ranking, entries, autoList: auto ? new AutoListService({ connection, randomHex: (bytes) => "cd".repeat(bytes), logger: new MemoryLogger() }) : undefined });
+}
+/** @param {any} scene */
+const openRanked = (scene) => scene.root.findById("online.mode.ranked")?.activate();
+
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
   { name: "main menu", make: (s, app) => new MainMenuScene(s, app) },
@@ -187,6 +206,12 @@ const SCREENS = Object.freeze([
   { name: "starter", make: (s, app) => new StarterScene(s, app), starter: false },
   { name: "notifications", make: (s, app) => new NotificationsScene(s, app) },
   { name: "online lobby", make: (s, app) => new OnlineScene(s, app) },
+  { name: "online lobby, casual tab", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => assert.equal(scene.root.findById("online.mode.casual")?.selected, true) },
+  { name: "online lobby, ranked tab", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => (openRanked(scene), assert.ok(scene.root.findById("online.tickets"))) },
+  { name: "online lobby, ranked locked", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => (openRanked(scene), assert.ok(scene.root.findById("online.unlock"))) },
+  { name: "online lobby, ranked live", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => (openRanked(scene), assert.ok(scene.root.findById("online.mode.live"))) },
+  { name: "online lobby, auto list", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => (openRanked(scene), scene.root.findById("online.mode.auto")?.activate(), assert.ok(scene.root.findById("online.style.balanced"))) },
+  { name: "online lobby, how ranked works", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => (openRanked(scene), scene.root.findById("online.guide.open")?.activate(), assert.ok(scene.modal?.findById("online.guide"))) },
   { name: "sign in", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: true, signIn: async () => ok(null) } }) },
   { name: "sign in with a posting key", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }) },
   { name: "shop asking for the active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, false), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.key")) },

@@ -16,7 +16,7 @@ import { rarityColor, rarityLabel } from "../theme/rarity.js";
 import { displayFont, factionTones, fontFor } from "../theme/Theme.js";
 import { drawTextInRect, fillRoundedRect, glowRoundedRect, roundedRectPath, verticalGradient } from "../ui/drawing.js";
 import { drawCheckIcon } from "../ui/shapes.js";
-import { capitalize, ellipsize } from "../text/textUtils.js";
+import { capitalize, fitText } from "../text/textUtils.js";
 import { drawRuns, keywordRuns } from "../text/keywordText.js";
 import { UiNode } from "../ui/UiNode.js";
 import { drawCostGem, drawStatGem } from "./statGem.js";
@@ -235,10 +235,8 @@ export class CardStrip extends UiNode {
   #paintName(context, theme, { x, right, statsInText, badgeInText }) {
     const area = this.bounds;
     const width = Math.max(0, right - x);
-    const nameFont = displayFont(theme, NAME_SIZE);
-    context.font = nameFont;
-    const name = ellipsize((text) => context.measureText(text).width, this.card.name, width);
-    drawTextInRect(context, name, { x, y: area.y, width, height: area.height * 0.58 }, { font: nameFont, color: this.broken ? theme.colors.danger : theme.colors.accentLight, align: "left" });
+    const name = fitText(context, { text: this.card.name, font: (pixels) => displayFont(theme, pixels), size: NAME_SIZE, width, minScale: theme.textFit?.minScale ?? 1 });
+    drawTextInRect(context, name.text, { x, y: area.y, width, height: area.height * 0.58 }, { font: name.font, color: this.broken ? theme.colors.danger : theme.colors.accentLight, align: "left" });
     const keywords = this.card.keywords ?? [];
     const lead = [...(badgeInText ? [this.badgeText] : []), ...(statsInText ? [`${this.card.attack}/${this.card.health}`] : [])];
     const subtitle = [...lead, capitalize(this.card.type), ...keywords.map(capitalize)].join(" · ");

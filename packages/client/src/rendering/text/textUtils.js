@@ -64,6 +64,28 @@ export function capitalize(text) {
 }
 
 /**
+ * A label set to fit a width: at its size when it fits; else smaller, down to
+ * `minScale` of its size; and only then, if still too long, cut with an ellipsis.
+ * With `minScale` 1 it never shrinks (cut at once, as `ellipsize`).
+ * @param {{ font: string, measureText: (text: string) => { width: number } }} context
+ * @param {{ text: string, font: (pixels: number) => string, size: number, width: number, minScale?: number }} fit
+ *   `font`: the font at a pixel size; `size`: the label's own size in pixels
+ * @returns {{ text: string, font: string }} what to draw, and in what font
+ */
+export function fitText(context, { text, font, size, width, minScale = 1 }) {
+  const full = font(size);
+  context.font = full;
+  const measured = context.measureText(text).width;
+  if (measured <= width || measured === 0) {
+    return { text, font: full };
+  }
+  // Whole pixels, rounded down: a size rounded up would not fit after all.
+  const shrunk = font(Math.max(Math.ceil(size * minScale), Math.floor((size * width) / measured)));
+  context.font = shrunk;
+  return { text: ellipsize((candidate) => context.measureText(candidate).width, text, width), font: shrunk };
+}
+
+/**
  * Truncates with an ellipsis when the text does not fit.
  * @param {(text: string) => number} measure
  * @param {string} text

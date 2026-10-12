@@ -5,7 +5,7 @@ import { CanvasHost } from "../../src/rendering/canvas/CanvasHost.js";
 import { GameLoop } from "../../src/rendering/canvas/GameLoop.js";
 import { COMPACT, LayoutProfile, Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { validateTheme } from "../../src/rendering/theme/Theme.js";
-import { ellipsize, wrapText } from "../../src/rendering/text/textUtils.js";
+import { ellipsize, fitText, wrapText } from "../../src/rendering/text/textUtils.js";
 import { FakeCanvas, FakeFrames, FakeWindow, themeRaw } from "./fakes.js";
 
 describe("Viewport", () => {
@@ -239,5 +239,17 @@ describe("textUtils", () => {
   it("ellipsizes only when needed", () => {
     assert.equal(ellipsize(measure, "short", 100), "short");
     assert.equal(ellipsize(measure, "a very long label", 60), "a ver…");
+  });
+
+  it("fits a label by shrinking it first, down to its least size, and only then cuts it", () => {
+    // Half the font size per character.
+    const context = { font: "", measureText: (text) => ({ width: text.length * Number(/(\d+)px/.exec(context.font)[1]) * 0.5 }) };
+    const font = (pixels) => `${Math.round(pixels)}px x`;
+    assert.deepEqual(fitText(context, { text: "Leaderboard", font, size: 20, width: 120, minScale: 0.75 }), { text: "Leaderboard", font: "20px x" }, "fits: as it is");
+    assert.deepEqual(fitText(context, { text: "Leaderboard", font, size: 20, width: 100, minScale: 0.75 }), { text: "Leaderboard", font: "18px x" }, "a little long: smaller, whole");
+    const cut = fitText(context, { text: "A very long leaderboard title", font, size: 20, width: 100, minScale: 0.75 });
+    assert.equal(cut.font, "15px x", "no smaller than three quarters");
+    assert.ok(cut.text.endsWith("…"), cut.text);
+    assert.ok(fitText(context, { text: "Leaderboard", font, size: 20, width: 100 }).text.endsWith("…"), "no shrinking allowed: cut at once");
   });
 });

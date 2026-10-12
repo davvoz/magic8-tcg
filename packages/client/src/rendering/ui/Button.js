@@ -2,9 +2,9 @@ import { SoundCue } from "../../application/audio/SoundCue.js";
 import { bevelRoundedRect, drawTextInRect, fillRoundedRect, glowRoundedRect, radialGradient, roundedRectPath, verticalGradient } from "./drawing.js";
 import { UiNode } from "./UiNode.js";
 import { inPixels, UiPiece } from "../images/UiArt.js";
-import { ellipsize } from "../text/textUtils.js";
+import { fitText } from "../text/textUtils.js";
 import { shade, withAlpha } from "../theme/color.js";
-import { fontFor } from "../theme/Theme.js";
+import { fontFor, scalableFont } from "../theme/Theme.js";
 
 const TEXT_PADDING = Object.freeze({ body: 14, small: 8 });
 const GLOW_BLUR = 16;
@@ -302,15 +302,15 @@ export class Button extends UiNode {
 
   #paintText(context, theme, color, padding) {
     const budget = Math.max(0, this.width - 2 * padding);
-    let font = fontFor(theme, this.textSize, "bold");
-    context.font = font;
-    if (this.textSize === "body" && context.measureText(this.text).width > budget) {
+    let size = this.textSize;
+    context.font = fontFor(theme, size, "bold");
+    if (size === "body" && context.measureText(this.text).width > budget) {
       // Too long for the body size (a narrow button on a phone): the small size before an ellipsis.
-      font = fontFor(theme, "small", "bold");
-      context.font = font;
+      size = "small";
     }
-    const text = ellipsize((candidate) => context.measureText(candidate).width, this.text, budget);
-    drawTextInRect(context, text, this.bounds, { font, color, align: this.align, padding });
+    // Still too long: smaller yet where the theme allows it (a phone), then cut.
+    const fitted = fitText(context, { text: this.text, font: scalableFont(theme, size, "bold"), size: theme.fonts.sizes[size], width: budget, minScale: theme.textFit?.minScale ?? 1 });
+    drawTextInRect(context, fitted.text, this.bounds, { font: fitted.font, color, align: this.align, padding });
   }
 
   /**

@@ -3,7 +3,7 @@
 **Stato:** M7.6, 2026-09-26.
 - **Server:** modulo `sales` (`SalesService`: annunci, prenotazioni, bacheca; `SaleSettlement`: osserva la catena e consegna la carta). Escrow nel modulo collection, come per gli scambi.
 - **Protocollo:** record `m8tcg_sale` in `@magic8/protocol` (`saleRecord`, `parseSaleRecord`).
-- **Client:** schermata "Market", raggiungibile dal negozio ("Player market") e dalla collezione ("Market").
+- **Client:** schermata "Market", raggiungibile dal negozio ("Market") e dalla collezione ("Market").
 
 ## L'idea
 

@@ -18,9 +18,24 @@ Prima l'unico modo per giocare online era la coda: due giocatori che volevano sf
 - L'ordine è: prima i liberi, poi chi è in coda, poi chi gioca; a parità, per nome. Massimo 200 giocatori. Il richiedente non compare nella sua lista.
 - La lista viene costruita al massimo una volta ogni 2 secondi ed è condivisa da tutte le richieste. Il client la rilegge ogni 5 secondi solo mentre la lobby è aperta.
 
+## Le schede Casual e Ranked
+
+**Stato:** 2026-10-13. La colonna di gioco della lobby (a destra di mazzi e giocatori online) ha due **schede**, *Casual* e *Ranked*, ognuna con il suo pannello, per separare il gioco libero da quello classificato e far capire come funzionano gli ingressi.
+
+| Scheda | Cosa mostra |
+|---|---|
+| **Casual** (blu, ventaglio di carte) | *Free · no rating at stake*. Il titolo, tre pillole (*Free to play*, *No rating at stake*, *Challenge anyone*), lo stato, la nota sul fair play e *Find a match*. Finché la classificata è chiusa, in fondo: *Every casual game brings Ranked closer: 2 more to go.* |
+| **Ranked** (oro, coppa, pannello illuminato) | Sulla scheda il prezzo (*1.000 STEEM a game · jackpot*) o, se chiusa, un lucchetto e *2 games to unlock*. Nel pannello: il nome della stagione e il rating (uno **stemma** d'oro con il rating e il posto, *NEW* se provvisorio); **How ranked works**, tre figure unite da frecce: i **biglietti** del giocatore (1 · *Get entries*: il prezzo, molti con un solo pagamento), le spade (2 · *Play ranked*: una partita prende un ingresso, restituito se annullata prima di cominciare), la coppa sui mucchi di monete con l'importo del jackpot (3 · *Win the jackpot*: ogni ingresso ci finisce, alla fine della stagione i primi 3 se lo dividono); quanti ingressi ha (*You have 3 ranked entries.*, in rosso se nessuno) con *Buy more entries*; *Live match* / *Auto · the AI plays*; lo stato, le regole (resa e abbandono contano, massimo 3 partite in 24 ore con lo stesso avversario) e il pulsante principale. |
+
+- La scheda Ranked si apre **anche prima** che il giocatore possa giocarla: spiega cosa manca, mostra come funziona e il pulsante principale diventa **Play casual to unlock**, che torna alla scheda Casual. Prima la modalità Ranked era semplicemente disattivata.
+- Mentre il giocatore è in coda le schede non cambiano.
+- Senza classificata (nessun `RankingService`) non ci sono schede: solo il pannello casual.
+- **Telefono:** le schede sono più basse (*Free*, il prezzo); nel pannello Ranked i biglietti e il rating in breve, poi *Live* · *Auto* · **?**. Il **?** apre *How ranked works* in un dialogo, con le stesse tre figure. In Auto gli stili prendono il posto di biglietti e rating.
+- Disegni: `rendering/scenes/online/` (`ModeTab`, `RankedGuide`, `RatingCrest`, `Perks`, `lobbyIcons`); i testi dei tre passi vengono da `rankedSteps` in `OnlineScene`. Anteprima: `/tools/preview/?scene=online&tab=ranked` (opzioni in `tools/preview/onlineWorld.js`).
+
 ## Classificata automatica
 
-Accanto a *Casual* e *Ranked* la lobby ha una terza modalità, **Auto** (23): il giocatore sceglie un mazzo e uno stile, paga un ingresso ranked ed entra nella lista automatica. L'AI gioca il suo mazzo contro il prossimo che entra, anche ore dopo; il risultato arriva come notifica, con il replay. Non serve nessuno online.
+Nella scheda *Ranked*, accanto a *Live match*, la lobby ha **Auto** (23): il giocatore sceglie un mazzo e uno stile, paga un ingresso ranked ed entra nella lista automatica. L'AI gioca il suo mazzo contro il prossimo che entra, anche ore dopo; il risultato arriva come notifica, con il replay. Non serve nessuno online.
 
 ## Sfide
 

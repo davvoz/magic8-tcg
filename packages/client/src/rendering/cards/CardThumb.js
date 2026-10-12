@@ -6,10 +6,10 @@
  * details): then it can be clicked and focused like a button.
  */
 import { CARD_SIZE } from "../board/BoardLayout.js";
-import { fontFor } from "../theme/Theme.js";
+import { scalableFont } from "../theme/Theme.js";
 import { withAlpha } from "../theme/color.js";
 import { drawTextInRect, glowRoundedRect } from "../ui/drawing.js";
-import { ellipsize } from "../text/textUtils.js";
+import { fitText } from "../text/textUtils.js";
 import { UiNode } from "../ui/UiNode.js";
 import { drawCard } from "./CardRenderer.js";
 
@@ -67,10 +67,8 @@ export class CardThumb extends UiNode {
     }
     drawCard(context, theme, this.card, { ...cardArea, alpha: context.globalAlpha, rarity: this.rarity });
     if (this.caption.length > 0) {
-      const font = fontFor(theme, "tiny");
-      context.font = font;
-      const text = ellipsize((value) => context.measureText(value).width, this.caption, area.width);
-      drawTextInRect(context, text, { x: area.x, y: area.y + cardHeight + 2, width: area.width, height: CAPTION_HEIGHT - 2 }, { font, color: theme.colors.textMuted });
+      const caption = fitText(context, { text: this.caption, font: scalableFont(theme, "tiny"), size: theme.fonts.sizes.tiny, width: area.width, minScale: theme.textFit?.minScale ?? 1 });
+      drawTextInRect(context, caption.text, { x: area.x, y: area.y + cardHeight + 2, width: area.width, height: CAPTION_HEIGHT - 2 }, { font: caption.font, color: theme.colors.textMuted });
     }
   }
 }

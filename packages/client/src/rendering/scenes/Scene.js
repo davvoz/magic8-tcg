@@ -17,6 +17,7 @@
  * domain entities.
  */
 import { KeyMap, isKey } from "../../input/KeyMap.js";
+import { compactTheme } from "../theme/Theme.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { UiNode } from "../ui/UiNode.js";
 
@@ -178,8 +179,10 @@ export class Scene {
 
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
-    this.root.draw(context, this.services.theme);
-    this.#overlay?.draw(context, this.services.theme);
+    // On a phone, labels too long for their room shrink a little before they are cut.
+    const theme = this.services.viewport.compact === true ? compactTheme(this.services.theme) : this.services.theme;
+    this.root.draw(context, theme);
+    this.#overlay?.draw(context, theme);
   }
 
   /** @param {import("../../input/InputManager.js").PointerInput | import("../../input/InputManager.js").WheelInput} input */

@@ -16,6 +16,7 @@
  *   /tools/preview/?scene=match&help=0       with the match help off (it is on, as for a new player)
  *   /tools/preview/?scene=info&topic=ranked  the Info screen on a topic (default: how to play)
  *   /tools/preview/?scene=tutorial&next=5    the tutorial, after N clicks as the coach asks (Next, or what it points at)
+ *   /tools/preview/?scene=online&tab=ranked  the online lobby against a scripted server (onlineWorld.js lists its options)
  *   ...&art=procedural                       every card and the table with procedural art, ignoring data/art/
  *
  * Illustrations are all loaded before the first frame, so a screenshot never
@@ -38,6 +39,7 @@ import { declareAttackers, declareBlockers, endTurn, playCard } from "@magic8/en
 import { CommandType } from "@magic8/engine/domain/commands/CommandType.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
+import { onlineServices } from "./onlineWorld.js";
 import { FetchContentSource } from "../../src/infrastructure/config/FetchContentSource.js";
 import { ConsoleLogger } from "../../src/infrastructure/logging/ConsoleLogger.js";
 import { loadBrowserImage } from "../../src/infrastructure/images/loadBrowserImage.js";
@@ -48,6 +50,8 @@ import { InputManager } from "../../src/input/InputManager.js";
 import { CardNode } from "../../src/rendering/board/CardNode.js";
 import { CardIllustrations } from "../../src/rendering/cards/CardIllustrations.js";
 import { TableArt, TablePiece } from "../../src/rendering/images/TableArt.js";
+import { UiArt } from "../../src/rendering/images/UiArt.js";
+import { UI_ART } from "../../src/rendering/images/uiArtFiles.js";
 import { CanvasHost } from "../../src/rendering/canvas/CanvasHost.js";
 import { GameLoop } from "../../src/rendering/canvas/GameLoop.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
@@ -136,6 +140,7 @@ function buildPresentation(theme) {
     now: () => performance.now(),
   });
   const sceneManager = new SceneManager({ theme, viewport, logger, requestRender: () => loop.requestRender() });
+  redraw = () => loop.requestRender();
   const host = new CanvasHost({
     canvas,
     viewport,
@@ -288,6 +293,29 @@ async function show(sceneManager, app, { scene, turns, inspect, deckId, topic })
   }
 }
 
+/** @typedef {{ tab: string | null, way: string | null, guide: boolean, entries: number, eligible: boolean }} OnlineRequest */
+
+/**
+ * The online lobby, on the tab (and the way to play ranked) asked for, with the phone's guide open if asked.
+ * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
+ * @param {OnlineRequest} request
+ */
+async function showOnline(sceneManager, { tab, way, guide }) {
+  sceneManager.navigate(SceneId.ONLINE);
+  // The standing and the entries come from the scripted server first: ranked opens once they have.
+  await new Promise((resolve) => window.setTimeout(resolve, 100));
+  const press = (/** @type {string} */ id) => sceneManager.current?.root.findById(id)?.activate();
+  if (tab === "ranked") {
+    press("online.mode.ranked");
+  }
+  if (way === "auto") {
+    press("online.mode.auto");
+  }
+  if (guide) {
+    press("online.guide.open");
+  }
+}
+
 /**
  * A whole number from the query string, `fallback` when absent or not one.
  * @param {URLSearchParams} query
@@ -348,6 +376,24 @@ function coachTarget(sceneManager, coach) {
   return token === undefined ? null : scene.root.findById(token.slice(token.indexOf(":") + 1));
 }
 
+/**
+ * The app the screen asked for needs: a signed-in account still owed its starter, the online lobby's services, or neither.
+ * @param {{ scene: string, help: boolean, online: OnlineRequest }} request
+ * @param {import("../../src/application/content/ContentService.js").GameContent} content
+ * @returns {Promise<import("../../src/application/AppContext.js").AppContext>}
+ */
+async function appFor(request, content) {
+  const app = buildApp(content, request.help);
+  if (request.scene === "starter") {
+    return Object.freeze({ ...app, account: /** @type {any} */ (await starterAccount(content)) });
+  }
+  if (request.scene === "online") {
+    // The lobby's services stand in for a server: casting them is the harness's business.
+    return Object.freeze({ ...app, .../** @type {any} */ (onlineServices(content, request.online, logger)) });
+  }
+  return app;
+}
+
 async function boot() {
   const query = new URL(window.location.href).searchParams;
   const request = {
@@ -359,6 +405,7 @@ async function boot() {
     next: countParam(query, "next", 0),
     procedural: query.get("art") === "procedural",
     help: query.get("help") !== "0",
+    online: { tab: query.get("tab"), way: query.get("way"), guide: query.get("guide") === "1", entries: countParam(query, "entries", 3), eligible: query.get("eligible") !== "0" },
   };
   const source = new FetchContentSource(MANIFEST, (url, init) => fetch(url, init));
   const [rawTheme, content, rawIllustrations] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("illustrations")]);
@@ -369,14 +416,21 @@ async function boot() {
   if (!theme.ok) {
     throw new Error(theme.error.message);
   }
-  const app = request.scene === "starter" ? Object.freeze({ ...buildApp(content.value, request.help), account: /** @type {any} */ (await starterAccount(content.value)) }) : buildApp(content.value, request.help);
+  const app = await appFor(request, content.value);
   const illustrations = await loadIllustrations(request.procedural || !rawIllustrations.ok ? null : rawIllustrations.value, content.value.catalog);
   const tableArt = request.procedural ? undefined : await loadTableArt();
+  const uiArt = paintedMenus();
   // The title face too, so the menu's name is never caught in the fallback one.
   await document.fonts.load(`900 72px ${theme.value.fonts.titleFamily}`);
-  const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations, tableArt }));
+  const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations, tableArt, uiArt }));
   registerScenes(sceneManager, app);
-  await (request.scene === "tutorial" ? showTutorial(sceneManager, app, request.next) : show(sceneManager, app, request));
+  if (request.scene === "tutorial") {
+    await showTutorial(sceneManager, app, request.next);
+  } else if (request.scene === "online") {
+    await showOnline(sceneManager, request.online);
+  } else {
+    await show(sceneManager, app, request);
+  }
   document.title = `KIJAM preview: ${request.scene}`;
 }
 
@@ -409,6 +463,20 @@ async function loadTableArt() {
   });
   await tableArt.preload();
   return tableArt;
+}
+
+/** Draws the screen again: set once the presentation is built (painted art that arrives later asks for it). */
+let redraw = () => undefined;
+
+/**
+ * The painted menus (backdrop, panel corners, button plates), as the game draws them: procedural until each image
+ * arrives, the screen drawn again then.
+ */
+function paintedMenus() {
+  const urls = Object.fromEntries(Object.entries(UI_ART.files).map(([piece, file]) => [piece, `/data/art/${file}`]));
+  const uiArt = new UiArt({ urls, layout: UI_ART.layout, loadImage: loadBrowserImage, onLoaded: () => redraw(), logger });
+  void uiArt.preload();
+  return uiArt;
 }
 
 boot().catch((error) => {

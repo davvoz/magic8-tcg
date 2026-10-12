@@ -233,6 +233,27 @@ describe("Modal", () => {
 });
 
 describe("Label fit and CardDetail", () => {
+  it("shrinks a label a little on a phone rather than cutting it; on a wide screen it is cut", () => {
+    /** Measures as a browser roughly would: half the font size per character. */
+    class Sized extends FakeContext2D {
+      measureText(text) {
+        return { width: text.length * Number(/(\d+)px/.exec(this.font)?.[1] ?? 16) * 0.5 };
+      }
+    }
+    const drawnOn = (cssWidth, cssHeight) => {
+      const viewport = new Viewport(theme.layout);
+      viewport.resize({ cssWidth, cssHeight });
+      const scene = new Scene({ ...services(), viewport });
+      // 11 characters of the body size: 110 units, in 100.
+      scene.root.add(new Label({ width: 100, height: 30, text: "Leaderboard", fit: true }));
+      const context = new Sized();
+      scene.render(context);
+      return context.texts;
+    };
+    assert.ok(drawnOn(667, 375).includes("Leaderboard"), "a phone: whole, a little smaller");
+    assert.ok(drawnOn(1600, 900).some((text) => text.startsWith("Leader") && text.endsWith("…")), "a wide screen: cut as before");
+  });
+
   it("ellipsizes labels that do not fit their width", () => {
     const context = new FakeContext2D();
     new Label({ width: 100, height: 20, text: "a".repeat(40), fit: true }).draw(context, theme);

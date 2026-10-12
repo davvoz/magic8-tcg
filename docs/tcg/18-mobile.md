@@ -30,6 +30,7 @@ Le scene si ridispongono (`Scene.relayout`) solo quando cambia lo spazio di prog
 - **Filtri delle carte**: su compact un solo bottone "Filter: …" che apre la barra completa in un dialogo; la scelta si applica con **Done**.
 - **Righe di carte** (`CardStrip`): se il nome non ha spazio, attacco/vita e numero di copie passano nel sottotitolo. Dove non c'è posto per "Info"/"View", è la striscia stessa (`Hotspot`) ad aprire la carta.
 - **Bottoni**: un'etichetta che non entra nelle placche decorate usa il bottone disegnato; poi il font piccolo; solo dopo i puntini.
+- **Scritte che non entrano** (2026-10-13): sul telefono un testo troppo lungo per il suo spazio si **rimpicciolisce** fino a tre quarti della sua misura prima di essere tagliato con i puntini: etichette (`Label` con `fit`), righe delle liste (titolo e sottotitolo di `OptionRow`), bottoni, nomi delle carte nelle liste (`CardStrip`) e didascalie delle miniature (`CardThumb`). Solo un testo ancora troppo lungo anche così viene tagliato. Lo decide il tema: `Scene.render` disegna con `compactTheme(theme)`, che aggiunge `textFit: { minScale: 0.75 }`; il calcolo è `fitText` in `text/textUtils.js`. Su desktop non cambia niente: il testo viene tagliato subito, come prima.
 - **Modali** (ispezione, info carta, carrello, rivelazione dei pacchetti, filtri, conferme) dimensionati per stare in 400 unità.
 - **Toast**: nell'area sicura, al massimo metà larghezza, i due più recenti.
 

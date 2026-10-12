@@ -3,9 +3,9 @@ import { drawAvatar } from "./avatar.js";
 import { Button } from "./Button.js";
 import { bevelRoundedRect, drawTextInRect, fillRoundedRect, glowRoundedRect, roundedRectPath, verticalGradient } from "./drawing.js";
 import { drawCheckIcon } from "./shapes.js";
-import { ellipsize } from "../text/textUtils.js";
+import { fitText } from "../text/textUtils.js";
 import { shade, withAlpha } from "../theme/color.js";
-import { displayFont, fontFor } from "../theme/Theme.js";
+import { displayFont, scalableFont } from "../theme/Theme.js";
 
 const PADDING = 16;
 const STRIPE_WIDTH = 12;
@@ -172,16 +172,13 @@ export class OptionRow extends Button {
     const width = area.width - (left - area.x) - PADDING - (this.selected ? CHECK_SIZE + PADDING : 0);
     const hasSubtitle = this.subtitle.length > 0;
     const titleHeight = hasSubtitle ? area.height * 0.55 : area.height;
-    const titleFont = displayFont(theme, TITLE_SIZE);
-    context.font = titleFont;
-    const title = ellipsize((candidate) => context.measureText(candidate).width, this.text, width);
-    drawTextInRect(context, title, { x: left, y: area.y, width, height: titleHeight }, { font: titleFont, color: this.#titleColor(theme, enabled), align: "left" });
+    const minScale = theme.textFit?.minScale ?? 1;
+    const title = fitText(context, { text: this.text, font: (pixels) => displayFont(theme, pixels), size: TITLE_SIZE, width, minScale });
+    drawTextInRect(context, title.text, { x: left, y: area.y, width, height: titleHeight }, { font: title.font, color: this.#titleColor(theme, enabled), align: "left" });
     if (!hasSubtitle) {
       return;
     }
-    const subtitleFont = fontFor(theme, "small");
-    context.font = subtitleFont;
-    const subtitle = ellipsize((candidate) => context.measureText(candidate).width, this.subtitle, width);
-    drawTextInRect(context, subtitle, { x: left, y: area.y + titleHeight - 4, width, height: area.height - titleHeight }, { font: subtitleFont, color: enabled ? colors.textMuted : colors.disabledText, align: "left" });
+    const subtitle = fitText(context, { text: this.subtitle, font: scalableFont(theme, "small"), size: theme.fonts.sizes.small, width, minScale });
+    drawTextInRect(context, subtitle.text, { x: left, y: area.y + titleHeight - 4, width, height: area.height - titleHeight }, { font: subtitle.font, color: enabled ? colors.textMuted : colors.disabledText, align: "left" });
   }
 }

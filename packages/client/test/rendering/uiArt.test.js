@@ -173,9 +173,9 @@ describe("painting the menus", () => {
     assert.ok(narrow.texts.includes("+"));
     assertBalanced(narrow);
     // 13 characters of 8px: 104px of label in 150px; each end then clears it by 60% of its width: (150 - 104) / 2 / 0.6 ≈ 38 ≥ 20.
-    const long = keep({ width: 150, text: "Player market" });
+    const long = keep({ width: 150, text: "Notifications" });
     assert.equal(drawn(long).length, 3);
-    assert.ok(long.texts.includes("Player market"), long.texts.join("|"));
+    assert.ok(long.texts.includes("Notifications"), long.texts.join("|"));
   });
 
   it("small-text buttons, buttons too narrow for the plate's ends and buttons without art keep the drawn slab", () => {

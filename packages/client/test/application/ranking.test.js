@@ -117,15 +117,15 @@ function screens(ranking, requests = []) {
 }
 
 describe("ranked screens", () => {
-  it("offers ranked in the lobby only to eligible players, and queues in the chosen mode", async () => {
+  it("lets eligible players queue ranked from its tab, and shows newcomers what is missing", async () => {
     const eligible = new RankingService({ api: fakeApi() });
     const { services, app, requests, navigated } = screens(eligible);
     const scene = new OnlineScene(services, app);
     scene.enter({});
     await flush();
-    assert.equal(scene.root.findById("online.mode.ranked").enabled, true);
+    assert.equal(scene.root.findById("online.mode.ranked").locked, false);
     scene.root.findById("online.mode.ranked").activate();
-    assert.equal(scene.root.findById("online.mode.ranked").variant, "primary");
+    assert.equal(scene.root.findById("online.mode.ranked").selected, true);
     scene.root.findById("online.find").activate();
     await flush();
     assert.deepEqual(requests.at(-1).d, { mode: "ranked", deckId: "11111111-1111-4111-8111-111111111111" });
@@ -137,7 +137,9 @@ describe("ranked screens", () => {
     const lobby = new OnlineScene(other.services, other.app);
     lobby.enter({});
     await flush();
-    assert.equal(lobby.root.findById("online.mode.ranked").enabled, false);
+    assert.equal(lobby.root.findById("online.mode.ranked").locked, true);
+    lobby.root.findById("online.mode.ranked").activate();
+    assert.equal(lobby.root.findById("online.find"), null, "no ranked search before it opens");
     assert.equal(lobby.root.findById("online.standing").text, "Ranked opens after 3 more casual game(s), or 3 more practice game(s) vs AI.");
   });
 
