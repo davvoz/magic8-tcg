@@ -11,27 +11,22 @@
  *   The game is an online game the server plays the character in; the
  *   screen hands over to the match as soon as it starts, and the match comes
  *   back here when it ends ("Play again"). A lost challenge is fought again.
- * - All three beaten: the pack won is shown once, card by card, and stays
- *   in reach for the rest of the day.
+ * - All three beaten: the pack won is in the collection, its cards marked
+ *   first, as for a pack bought in the shop; the button stays for the day.
  *
  * The opponent's last words (the one the player just played) and the boss's
  * entrance line are told in the status line. On a compact screen (a phone in
  * landscape) the three cards are narrower and keep only what matters.
  */
 import { lineFor } from "../../application/daily/characters.js";
+import { InfoTopicId } from "../../application/info/infoTopics.js";
 import { DailyBusy } from "../../application/daily/DailyService.js";
 import { packName } from "../../application/notifications/describeNotification.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
-import { SoundCue } from "../../application/audio/SoundCue.js";
-import { CardStrip } from "../cards/CardStrip.js";
-import { rarityOf } from "../cards/cardInfo.js";
-import { unknownCard } from "../cards/unknownCard.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
 import { Label } from "../ui/Label.js";
-import { Modal } from "../ui/Modal.js";
-import { ScrollList } from "../ui/ScrollList.js";
 import { COMPACT_CARD, OpponentCard, WIDE_CARD } from "./daily/OpponentCard.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
@@ -42,7 +37,7 @@ import { SceneId } from "./sceneIds.js";
  * @typedef {Readonly<{
  *   side: number, title: { y: number, height: number }, subtitle: { y: number, height: number }, cards: { top: number, height: number, gap: number },
  *   info: { y: number, height: number }, row: { y: number, height: number, gap: number },
- *   footer: { y: number, height: number }, back: number, card: import("./daily/OpponentCard.js").OpponentCardMetrics, reveal: { width: number, height: number, row: number, serial: number },
+ *   footer: { y: number, height: number }, back: number, card: import("./daily/OpponentCard.js").OpponentCardMetrics,
  * }>} DailyLayout
  */
 
@@ -57,7 +52,6 @@ const WIDE = Object.freeze({
   footer: Object.freeze({ y: 812, height: 56 }),
   back: 220,
   card: WIDE_CARD,
-  reveal: Object.freeze({ width: 900, height: 640, row: 44, serial: 120 }),
 });
 /** @type {DailyLayout} */
 const COMPACT = Object.freeze({
@@ -70,10 +64,9 @@ const COMPACT = Object.freeze({
   footer: Object.freeze({ y: 342, height: 46 }),
   back: 110,
   card: COMPACT_CARD,
-  reveal: Object.freeze({ width: 0, height: 0, row: 40, serial: 80 }),
 });
-/** How far a compact dialog keeps from the screen's edges. */
-const COMPACT_DIALOG_MARGIN = 10;
+/** The room between the footer's status line and its buttons. */
+const FOOTER_GAP = 16;
 const MINUTE = 60_000;
 
 export class DailyScene extends Scene {
@@ -85,10 +78,10 @@ export class DailyScene extends Scene {
   #deckId = null;
   /** The game this screen started and waits to hand over to the match. @type {string | null} */
   #awaiting = null;
-  /** The day whose pack was last shown: it is shown by itself once. @type {string | null} */
-  #revealedDay = null;
   /** The minute the countdown last showed (it is redrawn when it changes). */
   #minute = -1;
+  /** The time the opponents' portraits are drawn at, in ms: while they are on screen, every frame moves them. */
+  #animationMs = 0;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -135,7 +128,9 @@ export class DailyScene extends Scene {
     if (minute !== this.#minute && this.#daily().state.day !== null) {
       this.#rebuild();
     }
-    return super.update(dtMs);
+    this.#animationMs += dtMs;
+    const animated = this.#daily().state.day !== null;
+    return super.update(dtMs) || animated;
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -177,10 +172,7 @@ export class DailyScene extends Scene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
-    const modalId = this.modal?.id ?? null;
-    if (modalId !== "daily.reveal") {
-      this.closeModal();
-    }
+    this.closeModal();
     this.root.clear();
     this.#minute = Math.floor(this.#now() / MINUTE);
     const { viewport } = this.services;
@@ -194,15 +186,12 @@ export class DailyScene extends Scene {
     }
     const primary = this.#buildActions(day);
     const back = this.#buildFooter(day);
-    if (modalId !== "daily.reveal") {
-      this.focus(this.root.findById(focusedId) ?? primary ?? back);
-    }
-    this.#revealOnce(day);
+    this.focus(this.root.findById(focusedId) ?? primary ?? back);
     this.services.requestRender();
   }
 
   /**
-   * The status line, and the way back to the menu.
+   * The status line, how the challenges work (the Info screen's topic), and the way back to the menu.
    * @param {DailyDay | null} day
    * @returns {Button} the way back
    */
@@ -211,7 +200,9 @@ export class DailyScene extends Scene {
     const m = this.#m;
     const width = viewport.logicalWidth;
     const status = this.#status(day);
-    this.root.add(new Label({ id: "daily.status", x: m.side, y: m.footer.y, width: width - 2 * m.side - m.back - 16, height: m.footer.height, text: status.text, size: viewport.compact ? "tiny" : "small", colorKey: status.colorKey, align: "left", fit: true }));
+    const helpX = width - m.side - 2 * m.back - FOOTER_GAP;
+    this.root.add(new Label({ id: "daily.status", x: m.side, y: m.footer.y, width: helpX - m.side - FOOTER_GAP, height: m.footer.height, text: status.text, size: viewport.compact ? "tiny" : "small", colorKey: status.colorKey, align: "left", fit: true }));
+    this.root.add(new Button({ id: "daily.help", x: helpX, y: m.footer.y, width: m.back, height: m.footer.height, text: viewport.compact ? "Help" : "How it works", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO, { topic: InfoTopicId.CHALLENGES, back: SceneId.DAILY }) }));
     return this.root.add(new Button({ id: "daily.back", x: width - m.side - m.back, y: m.footer.y, width: m.back, height: m.footer.height, text: viewport.compact ? "Menu" : "Back to menu", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
   }
 
@@ -233,8 +224,10 @@ export class DailyScene extends Scene {
     const count = day.opponents.length;
     const width = (viewport.logicalWidth - 2 * m.side - (count - 1) * m.cards.gap) / count;
     day.opponents.forEach((opponent, stage) => {
-      const quote = opponent.state === "beaten" ? null : lineFor(opponent.lines.intro, `${day.day}|${opponent.id}`);
-      this.root.add(new OpponentCard({ id: `daily.opponent.${stage}`, x: m.side + stage * (width + m.cards.gap), y: m.cards.top, width, height: m.cards.height, opponent, stage, quote, metrics: m.card, compact: viewport.compact }));
+      // Before the fight they taunt; once beaten, they concede.
+      const lines = opponent.state === "beaten" ? opponent.lines.lose : opponent.lines.intro;
+      const quote = lineFor(lines, `${day.day}|${opponent.id}|${opponent.state}`);
+      this.root.add(new OpponentCard({ id: `daily.opponent.${stage}`, x: m.side + stage * (width + m.cards.gap), y: m.cards.top, width, height: m.cards.height, opponent, stage, quote, metrics: m.card, compact: viewport.compact, clock: () => this.#animationMs }));
     });
   }
 
@@ -344,7 +337,7 @@ export class DailyScene extends Scene {
   }
 
   /**
-   * All three beaten: the pack won, and the collection.
+   * All three beaten: the pack won, seen in the collection with its cards first.
    * @param {DailyDay} day
    */
   #buildReward(day) {
@@ -352,10 +345,20 @@ export class DailyScene extends Scene {
     const { viewport } = this.services;
     const reward = day.run?.reward ?? null;
     this.#info(`All three beaten: your ${packName(reward?.pack)} is in your collection. New challenges tomorrow.`);
-    const half = (viewport.logicalWidth - 2 * m.side - m.row.gap) / 2;
-    const see = this.root.add(new Button({ id: "daily.pack", x: m.side, y: m.row.y, width: half, height: m.row.height, text: "See the cards you won", variant: "primary", enabled: reward !== null, onActivate: () => this.#showReveal(day) }));
-    this.root.add(new Button({ id: "daily.collection", x: m.side + half + m.row.gap, y: m.row.y, width: half, height: m.row.height, text: "Collection", enabled: this.services.hasScene(SceneId.COLLECTION), onActivate: () => this.services.navigate(SceneId.COLLECTION, { from: SceneId.DAILY }) }));
-    return see;
+    const width = (viewport.logicalWidth - 2 * m.side - m.row.gap) / 2;
+    return this.root.add(new Button({ id: "daily.pack", x: (viewport.logicalWidth - width) / 2, y: m.row.y, width, height: m.row.height, text: "See the cards you won", variant: "primary", enabled: reward !== null && this.services.hasScene(SceneId.COLLECTION), onActivate: () => this.#showWon(reward) }));
+  }
+
+  /**
+   * The collection, the cards just won marked at its top (as when a pack bought in the shop arrives).
+   * @param {DailyDay["run"] extends infer R ? (R extends { reward: infer W } ? W : never) : never} reward
+   */
+  #showWon(reward) {
+    if (reward === null) {
+      return;
+    }
+    const fresh = reward.cards.map((card) => Object.freeze({ definitionId: card.definitionId, count: 1, serial: card.serial }));
+    this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.DAILY });
   }
 
   /** @param {string} text the line above the actions */
@@ -431,70 +434,6 @@ export class DailyScene extends Scene {
       return { text: "Build a playable deck in your collection to fight.", colorKey: "danger" };
     }
     return lastWords(day) ?? bossEntrance(day) ?? { text: "", colorKey: "textMuted" };
-  }
-
-  /**
-   * Shows the pack won by itself, once a day (the first time the screen sees it won).
-   * @param {DailyDay | null} day
-   */
-  #revealOnce(day) {
-    if (day?.run?.reward === null || day?.run?.reward === undefined || this.#revealedDay === day.day || this.modal !== null) {
-      return;
-    }
-    this.#showReveal(day);
-  }
-
-  /** @param {DailyDay} day */
-  #showReveal(day) {
-    const reward = day.run?.reward;
-    if (reward === null || reward === undefined) {
-      return;
-    }
-    const first = this.#revealedDay !== day.day;
-    this.#revealedDay = day.day;
-    const { viewport } = this.services;
-    const R = this.#m.reveal;
-    const width = R.width || viewport.logicalWidth - 2 * COMPACT_DIALOG_MARGIN;
-    const height = R.height || viewport.logicalHeight - 2 * COMPACT_DIALOG_MARGIN;
-    const inset = viewport.compact ? 12 : 30;
-    const buttonHeight = viewport.compact ? 46 : 56;
-    const close = () => this.closeModal();
-    const modal = new Modal({ id: "daily.reveal", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: width, panelHeight: height, onDismiss: close });
-    const { panel } = modal;
-    const inner = width - 2 * inset;
-    panel.add(new Label({ x: inset, y: inset / 2, width: inner, height: 44, text: `Your ${packName(reward.pack)}`, size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
-    const list = panel.add(new ScrollList({ id: "daily.reveal.cards", x: inset, y: inset / 2 + 52, width: inner, height: height - inset / 2 - 52 - buttonHeight - inset }));
-    reward.cards.forEach((card, index) => {
-      const definition = this.#app.content.catalog.get(card.definitionId);
-      const y = index * (R.row + 6);
-      list.add(new CardStrip({ x: 0, y, width: list.rowWidth - R.serial - 10, height: R.row, card: definition ?? unknownCard(card.definitionId), broken: definition === undefined, rarity: rarityOf(this.#app, card.definitionId) }));
-      list.add(new Label({ x: list.rowWidth - R.serial, y, width: R.serial, height: R.row, text: `#${card.serial}`, size: "small", align: "left", colorKey: "textMuted" }));
-    });
-    list.contentHeight = Math.max(0, reward.cards.length * (R.row + 6) - 6);
-    const half = (inner - 12) / 2;
-    const view = panel.add(
-      new Button({
-        id: "daily.reveal.collection",
-        x: inset,
-        y: height - inset - buttonHeight,
-        width: half,
-        height: buttonHeight,
-        text: "View collection",
-        variant: "primary",
-        enabled: this.services.hasScene(SceneId.COLLECTION),
-        onActivate: () => {
-          close();
-          const fresh = reward.cards.map((card) => Object.freeze({ definitionId: card.definitionId, count: 1, serial: card.serial }));
-          this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.DAILY });
-        },
-      }),
-    );
-    panel.add(new Button({ id: "daily.reveal.close", x: inset + half + 12, y: height - inset - buttonHeight, width: half, height: buttonHeight, text: "Close", onActivate: close }));
-    this.openModal(modal);
-    this.focus(view);
-    if (first) {
-      this.services.sound?.play(SoundCue.PURCHASE_COMPLETE);
-    }
   }
 }
 

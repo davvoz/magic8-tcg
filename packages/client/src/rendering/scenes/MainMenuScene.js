@@ -15,13 +15,14 @@
  * banner under the title on a compact screen), its countdown ticking; signed
  * in, a click on it opens the leaderboard.
  *
- * Signed in, the day's challenges sit under online play, with how far the
- * player got today. The tutorial (a guided first match) is offered under the play buttons.
+ * Signed in, the day's challenges sit under online play: a gold button
+ * while today's are still to win, a plain one once they are won. The tutorial (a guided first match) is offered under the play buttons.
  * The Deck Builder has a button of its own only while there is no
  * collection to open (signed out, or offline); signed in, it is opened from
  * the collection, beside the cards it builds with.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
+import { SoundCue } from "../../application/audio/SoundCue.js";
 import { IdentityStatus, SignInMethod } from "../../application/identity/IdentityService.js";
 import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -183,6 +184,7 @@ export class MainMenuScene extends Scene {
             text: entry.text,
             textSize: row.length > 1 ? "small" : "body",
             variant: /** @type {import("../ui/Button.js").ButtonVariant} */ (entry.variant),
+            cue: entry.cue,
             onActivate: entry.onActivate ?? (() => navigate(/** @type {string} entries without onActivate have a scene */ (entry.scene))),
           }),
         );
@@ -420,16 +422,15 @@ export class MainMenuScene extends Scene {
     return ready ? [{ id: "online", text: "Play online", scene: SceneId.ONLINE, variant: "primary" }] : [];
   }
 
-  /** The daily challenges, once signed in and the account is loaded, with today's progress. */
+  /** The daily challenges, once signed in and the account is loaded: gold while today's are to win, plain once won; always the plain click. */
   #dailyEntries() {
     const daily = this.#app.daily;
     const ready = daily !== undefined && this.#app.online !== undefined && this.#app.account?.state.status === AccountStatus.READY;
     if (!ready) {
       return [];
     }
-    const run = daily.state.day?.run ?? null;
-    const done = run?.rewarded === true;
-    return [{ id: "daily", text: `Challenges${dailyProgress(run)}`, scene: SceneId.DAILY, variant: done ? "secondary" : "primary" }];
+    const done = daily.state.day?.run?.rewarded === true;
+    return [{ id: "daily", text: "Challenges", scene: SceneId.DAILY, variant: done ? "secondary" : "primary", cue: SoundCue.UI_CLICK }];
   }
 
   /** The free starter deck until it is taken, the collection afterwards. */
@@ -501,7 +502,7 @@ export class MainMenuScene extends Scene {
 
 /**
  * The menu's buttons in rows: one a row, unless the column (a phone's, `room` > 0) would overflow; then its last
- * secondary entries go two a row, from the bottom up, until it fits.
+ * entries other than the primary ones go two a row, from the bottom up, until it fits.
  * @template {{ variant: string }} T
  * @param {readonly T[]} entries in order
  * @param {{ height: number, gap: number, room: number }} column
@@ -512,7 +513,7 @@ function rowsFor(entries, { height, gap, room }) {
   const fits = () => room === 0 || rows.length * (height + gap) - gap <= room;
   for (let index = rows.length - 1; index > 0 && !fits(); index -= 1) {
     const [above, below] = [rows[index - 1], rows[index]];
-    if (above.length === 1 && below.length === 1 && above[0].variant === "secondary" && below[0].variant === "secondary") {
+    if (above.length === 1 && below.length === 1 && above[0].variant !== "primary" && below[0].variant !== "primary") {
       rows.splice(index - 1, 2, [above[0], below[0]]);
       index -= 1;
     }
@@ -528,17 +529,6 @@ function rowsFor(entries, { height, gap, room }) {
 function signedInWith(method, network) {
   const how = method === SignInMethod.KEYS ? "with your posting key" : "with Steem Keychain";
   return `Signed in on ${network} ${how}`;
-}
-
-/**
- * How far the player got in today's challenges, after their name: nothing before the track is chosen.
- * @param {import("../../application/ports/DailyApi.contract.js").DailyRun | null} run
- */
-function dailyProgress(run) {
-  if (run === null) {
-    return "";
-  }
-  return run.rewarded ? " (done)" : ` (${run.stage}/3)`;
 }
 
 /** @param {import("../../application/audio/AudioSettings.js").AudioSettings} settings */

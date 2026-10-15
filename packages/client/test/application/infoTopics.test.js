@@ -8,9 +8,9 @@ const content = await loadBundledContent();
 const textOf = (topic) => topic.blocks.map((block) => block.text).join("\n");
 
 describe("infoTopics", () => {
-  it("covers how to play, purchases, sign-in, ranked and the shop, in that order", () => {
+  it("covers how to play, purchases, sign-in, ranked, the challenges and the shop, in that order", () => {
     const topics = infoTopics(content);
-    assert.deepEqual(topics.map((topic) => topic.id), [InfoTopicId.MECHANICS, InfoTopicId.PURCHASES, InfoTopicId.ACCOUNT, InfoTopicId.RANKED, InfoTopicId.SHOP]);
+    assert.deepEqual(topics.map((topic) => topic.id), [InfoTopicId.MECHANICS, InfoTopicId.PURCHASES, InfoTopicId.ACCOUNT, InfoTopicId.RANKED, InfoTopicId.CHALLENGES, InfoTopicId.SHOP]);
     for (const topic of topics) {
       assert.ok(topic.title.length > 0 && topic.shortTitle.length > 0, `${topic.id} is named`);
       assert.equal(topic.blocks[0].kind, "heading", `${topic.id} opens with a heading`);
@@ -61,5 +61,15 @@ describe("infoTopics", () => {
     assert.ok(text.includes("buy entries in advance"));
     assert.ok(text.includes("get their entry back"));
     assert.ok(text.includes("Every entry goes into the season's jackpot."));
+  });
+
+  it("explains the challenges: the day's three opponents, the two prizes, retries, the boss's rule and a prize that is the player's", () => {
+    const text = textOf(infoTopics(content).find((topic) => topic.id === InfoTopicId.CHALLENGES));
+    for (const part of ["two challengers, then a boss", "Core Mini Booster (3 cards)", "Core Booster (5 cards)", "as many times as you like", "special rule", "sell them on the Market"]) {
+      assert.ok(text.includes(part), part);
+    }
+    for (const word of ["AI", "level", "style"]) {
+      assert.ok(!new RegExp(`\b${word}\b`).test(text), `speaks to players, not of how the game is made: ${word}`);
+    }
   });
 });

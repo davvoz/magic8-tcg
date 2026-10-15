@@ -1,9 +1,10 @@
 /**
- * Which cards have a painted illustration (data/art/illustrations.json).
- * Art is not a game rule, so like rarity it lives beside GameContent rather
- * than in it. A card missing from the file keeps its procedural art; a
- * missing or malformed file leaves every card procedural instead of
- * stopping the game.
+ * Which cards have a painted illustration (data/art/illustrations.json), and
+ * which challenge characters a painted portrait (data/art/characters.json,
+ * the same format under `characters`). Art is not a game rule, so like rarity
+ * it lives beside GameContent rather than in it. A card missing from the file
+ * keeps its procedural art; a missing or malformed file leaves every card
+ * procedural instead of stopping the game.
  *
  * File names are bare names (no directories) with an image extension, so
  * the manifest can only point inside the art directory.
@@ -13,7 +14,7 @@
  * @typedef {readonly [number, number]} Focus the point of the image (0..1 on each axis) kept in view when it is cropped
  * @typedef {Readonly<{ file: string, focus: Focus }>} IllustrationEntry
  * @typedef {Readonly<{ entries: ReadonlyMap<string, IllustrationEntry>, unknownCards: readonly string[] }>} IllustrationManifest
- *   `unknownCards`: ids in the file the catalog does not know (typos, retired cards), left out of `entries`
+ *   `unknownCards`: ids in the file the catalog does not know (typos, retired cards or characters), left out of `entries`
  */
 
 const SCHEMA_VERSION = 1;
@@ -24,19 +25,23 @@ const CENTER = Object.freeze([0.5, 0.5]);
 /** @type {IllustrationManifest} */
 export const NO_ILLUSTRATIONS = Object.freeze({ entries: new Map(), unknownCards: Object.freeze([]) });
 
+/** Any id: the challenge characters come from the server day by day, so the client cannot tell a typo from a newcomer. */
+export const ANY_ID = Object.freeze({ has: () => true });
+
 /**
  * @param {unknown} raw the parsed illustrations file
- * @param {{ has: (cardId: string) => boolean }} catalog cards the game knows
+ * @param {{ has: (id: string) => boolean }} catalog the ids the game knows (cards, or ANY_ID)
+ * @param {string} [section] the key the entries are under: "cards", or "characters"
  * @returns {{ ok: true, value: IllustrationManifest } | { ok: false, message: string }}
  */
-export function buildIllustrationManifest(raw, catalog) {
+export function buildIllustrationManifest(raw, catalog, section = "cards") {
   const file = /** @type {any} */ (raw);
   if (file?.schemaVersion !== SCHEMA_VERSION) {
     return { ok: false, message: `schemaVersion: expected ${SCHEMA_VERSION}` };
   }
-  const cards = file.cards;
+  const cards = file[section];
   if (cards === null || typeof cards !== "object" || Array.isArray(cards)) {
-    return { ok: false, message: "cards: an object from card id to { file, focus? }" };
+    return { ok: false, message: `${section}: an object from id to { file, focus? }` };
   }
   /** @type {Map<string, IllustrationEntry>} */
   const entries = new Map();
@@ -44,7 +49,7 @@ export function buildIllustrationManifest(raw, catalog) {
   for (const [cardId, value] of Object.entries(cards)) {
     const entry = parseEntry(value);
     if (typeof entry === "string") {
-      return { ok: false, message: `cards.${cardId}: ${entry}` };
+      return { ok: false, message: `${section}.${cardId}: ${entry}` };
     }
     if (catalog.has(cardId)) {
       entries.set(cardId, entry);

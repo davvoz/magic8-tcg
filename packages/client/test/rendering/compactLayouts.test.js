@@ -234,7 +234,7 @@ const SCREENS = Object.freeze([
   { name: "shop unlocking the saved active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, true), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.forget")) },
   { name: "daily challenges, track choice", make: (s, app) => new DailyScene(s, app) },
   { name: "daily challenges, next fight", make: (s, app) => new DailyScene(s, app), before: withDailyRun(RUN), after: (scene) => assert.ok(scene.root.findById("daily.fight")) },
-  { name: "daily challenges, pack won", make: (s, app) => new DailyScene(s, app), before: withDailyRun(WON), after: (scene) => assert.equal(scene.modal?.id, "daily.reveal") },
+  { name: "daily challenges, pack won", make: (s, app) => new DailyScene(s, app), before: withDailyRun(WON), after: (scene) => assert.ok(scene.root.findById("daily.pack")) },
   { name: "info", make: (s, app) => new InfoScene(s, app) },
   { name: "info on signing in", make: (s, app) => new InfoScene({ ...s, openLink: () => undefined }, app), params: { topic: "account" }, after: (scene) => assert.ok(scene.root.findById("info.link")) },
   { name: "error", make: (s) => new ErrorScene(s), params: { title: "Something went wrong", message: "A long explanation of what went wrong." }, controls: false },

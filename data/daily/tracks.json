@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "tracks": {
-    "normal": { "name": "Normal", "levels": [2, 3, 5], "reward": "core_mini_booster" },
+    "normal": { "name": "Normal", "levels": [2, 3, 3], "reward": "core_mini_booster" },
     "hard": { "name": "Hard", "levels": [6, 7, 10], "reward": "core_booster" }
   }
 }

@@ -4,7 +4,7 @@
     {
       "id": "kael",
       "name": "Kael",
-      "title": "Ember Vanguard",
+      "title": "First into the Fire",
       "faction": "ember",
       "style": "aggressive",
       "deck": "precon_ember",
@@ -18,7 +18,7 @@
     {
       "id": "sira",
       "name": "Sira",
-      "title": "Wildfire",
+      "title": "The Spark Dancer",
       "faction": "ember",
       "style": "aggressive",
       "deck": "precon_wildfire",
@@ -32,7 +32,7 @@
     {
       "id": "brunn",
       "name": "Master Brunn",
-      "title": "Iron Foundry",
+      "title": "Master of the Forge",
       "faction": "iron",
       "style": "balanced",
       "deck": "precon_foundry",
@@ -46,7 +46,7 @@
     {
       "id": "varek",
       "name": "Captain Varek",
-      "title": "Iron Legion",
+      "title": "Keeper of the Line",
       "faction": "iron",
       "style": "defensive",
       "deck": "precon_iron",
@@ -74,7 +74,7 @@
     {
       "id": "notary",
       "name": "The Notary",
-      "title": "Shadow Pact",
+      "title": "Keeper of Contracts",
       "faction": "shadow",
       "style": "balanced",
       "deck": "precon_shadow",
@@ -102,7 +102,7 @@
     {
       "id": "rook",
       "name": "Rook",
-      "title": "The Wild Hunt",
+      "title": "Tracker of the Deep Woods",
       "faction": "verdant",
       "style": "aggressive",
       "deck": "precon_wildhunt",
@@ -116,7 +116,7 @@
     {
       "id": "ilyra",
       "name": "Magistra Ilyra",
-      "title": "Arcane Conclave",
+      "title": "First Chair of the Conclave",
       "faction": "arcane",
       "style": "defensive",
       "deck": "precon_arcane",
@@ -166,7 +166,7 @@
       "faction": "iron",
       "style": "defensive",
       "deck": { "base": "precon_iron", "add": [{ "cardId": "iron_colossus", "count": 1 }, { "cardId": "rampart_automaton", "count": 2 }] },
-      "conditions": [{"name": "Fortress", "text": "The Colossus's creatures enter the battlefield with +0/+2.", "scope": "opponent", "rule": {"kind": "enter_stats", "attack": 0, "health": 2}}],
+      "conditions": [{"name": "Fortress", "text": "All creatures enter the battlefield with +0/+2.", "scope": "everyone", "rule": {"kind": "enter_stats", "attack": 0, "health": 2}}],
       "lines": {
         "unlock": ["Deep in the foundry, an engine older than the city starts to turn."],
         "intro": ["INTRUDER DETECTED. ASSESSING.", "PROTOCOL: DEFEND. PROTOCOL: DESTROY."],
@@ -181,8 +181,8 @@
       "title": "King Beneath",
       "faction": "shadow",
       "style": "balanced",
-      "deck": { "base": "precon_shadow", "add": [{ "cardId": "gravelord", "count": 2 }, { "cardId": "dread_wraith", "count": 1 }] },
-      "conditions": [{"name": "Curse of the Grave", "text": "Your spells cost 1 more.", "scope": "challenger", "rule": {"kind": "cost", "filter": {"type": "spell"}, "amount": 1}}],
+      "deck": { "base": "precon_shadow", "add": [{ "cardId": "gravelord", "count": 1 }] },
+      "conditions": [{"name": "Curse of the Grave", "text": "Spells cost 1 more for everyone.", "scope": "everyone", "rule": {"kind": "cost", "filter": {"type": "spell"}, "amount": 1}}],
       "lines": {
         "unlock": ["The graves are restless tonight. Their king is listening."],
         "intro": ["Kneel, and I may let you serve me after.", "Every throne needs a floor. You will do."],
@@ -197,7 +197,7 @@
       "title": "Oldest of the Forest",
       "faction": "verdant",
       "style": "defensive",
-      "deck": { "base": "precon_verdant", "add": [{ "cardId": "worldroot_colossus", "count": 2 }, { "cardId": "thunderhoof_mammoth", "count": 1 }] },
+      "deck": { "base": "precon_verdant", "add": [{ "cardId": "worldroot_colossus", "count": 1 }, { "cardId": "thunderhoof_mammoth", "count": 1 }] },
       "conditions": [{"name": "Ancient Forest", "text": "Creatures cost 1 less for everyone.", "scope": "everyone", "rule": {"kind": "cost", "filter": {"type": "creature"}, "amount": -1}}],
       "lines": {
         "unlock": ["The whole forest has gone quiet. Something ancient is paying attention."],
@@ -213,7 +213,7 @@
       "title": "Master of the Spire",
       "faction": "arcane",
       "style": "balanced",
-      "deck": { "base": "precon_arcane", "add": [{ "cardId": "archmage_of_the_spire", "count": 2 }, { "cardId": "void_conjurer", "count": 1 }] },
+      "deck": { "base": "precon_arcane", "add": [{ "cardId": "archmage_of_the_spire", "count": 1 }] },
       "conditions": [{"name": "Forbidden Library", "text": "Everyone draws an extra card at the start of each turn.", "scope": "everyone", "rule": {"kind": "extra_draw", "amount": 1}}],
       "lines": {
         "unlock": ["At the top of the Spire, a light that has not shone for years is burning."],

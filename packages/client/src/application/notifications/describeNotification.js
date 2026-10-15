@@ -7,7 +7,7 @@
  */
 
 /** Where a notification leads. */
-export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", ONLINE: "online", REPLAY: "replay", DAILY: "daily" });
+export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", ONLINE: "online", REPLAY: "replay" });
 
 /** Kinds after which the player's collection has changed (it should be read again). */
 export const COLLECTION_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "daily.reward", "trade.accepted", "trade.declined", "trade.cancelled", "trade.expired", "sale.sold", "sale.bought", "sale.listing_expired"]);
@@ -84,7 +84,7 @@ const DESCRIBERS = Object.freeze({
   "daily.reward": ({ data }) => {
     const cards = cardsOf(data.cards);
     const total = cards.reduce((sum, card) => sum + (card.count ?? 1), 0);
-    return text({ title: "Challenges won", body: `You beat today's three opponents: your ${packName(data.pack)} is open, ${plural(total, "card")} added to your collection.`, cards, target: NotificationTarget.DAILY, tone: "good" });
+    return text({ title: "Challenges won", body: `You beat today's three opponents: your ${packName(data.pack)} is open, ${plural(total, "card")} added to your collection.`, cards, target: NotificationTarget.COLLECTION, tone: "good" });
   },
   "sale.payment_problem": ({ account, single, singleName, problem }) => text({ title: "Payment not accepted", body: `Your transfer to ${account} for ${singleName} pays nothing: ${problem}. Ask ${account} to send it back.`, cards: only(single), target: NotificationTarget.MARKET, tone: "bad" }),
 });

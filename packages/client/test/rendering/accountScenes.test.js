@@ -3,6 +3,7 @@
  * and the in-memory game server: the main menu's account entries, taking
  * the starter deck, and browsing the collection.
  */
+import { SoundCue } from "../../src/application/audio/SoundCue.js";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -109,10 +110,12 @@ describe("MainMenuScene — account", () => {
     world.identity.become(ALICE);
     await settle();
     assert.equal(byId(menu, "daily").text, "Challenges");
+    assert.equal(byId(menu, "daily").variant, "primary", "to win: gold");
+    assert.equal(byId(menu, "daily").activationCue, SoundCue.UI_CLICK, "with the plain click of the other entries");
     daily.progress({ stage: 2, rewarded: false });
-    assert.equal(byId(menu, "daily").text, "Challenges (2/3)");
+    assert.deepEqual([byId(menu, "daily").text, byId(menu, "daily").variant], ["Challenges", "primary"], "the name never changes");
     daily.progress({ stage: 3, rewarded: true });
-    assert.equal(byId(menu, "daily").text, "Challenges (done)");
+    assert.deepEqual([byId(menu, "daily").text, byId(menu, "daily").variant], ["Challenges", "secondary"], "all won: plain like the others");
     click(byId(menu, "daily"));
     assert.equal(world.navigated.at(-1).id, SceneId.DAILY);
     menu.exit();

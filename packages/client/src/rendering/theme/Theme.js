@@ -56,14 +56,15 @@ const MAX_FACTIONS = 16;
  *   spacing: Readonly<{ unit: number, radius: number }>,
  *   animation: Readonly<Record<string, number>>,
  *   illustrations?: import("../cards/CardIllustrations.js").IllustrationSource,
+ *   characterArt?: import("../cards/CardIllustrations.js").IllustrationSource,
  *   coinArt?: import("../board/CoinArt.js").CoinArtSource,
  *   tableArt?: import("../images/TableArt.js").TableArtSource,
  *   uiArt?: import("../images/UiArt.js").UiArtSource,
  *   avatars?: import("../images/Avatars.js").AvatarSource,
  *   ambience?: readonly import("../ui/backdropLight.js").BackdropLight[],
  *   textFit?: Readonly<{ minScale: number }>,
- * }>} Theme `illustrations`, `coinArt`, `tableArt`, `uiArt`, `avatars` and `ambience` are not read from theme.json: the
- *   composition root attaches the painted card art, the painted coin, the painted table
+ * }>} Theme `illustrations`, `characterArt`, `coinArt`, `tableArt`, `uiArt`, `avatars` and `ambience` are not read from theme.json: the
+ *   composition root attaches the painted card art, the challenge characters' portraits, the painted coin, the painted table
  *   (mat, card back, panel stone), the painted menus (backdrop, panel corners, divider,
  *   button plates), the players' profile pictures and the lights living in the menu backdrop
  *   (its storm, its gold's glimmer), and without them all of these are drawn procedurally (a

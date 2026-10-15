@@ -34,7 +34,7 @@ export function registerScenes(sceneManager, app) {
     .register(SceneId.MAIN_MENU, (services) => new MainMenuScene(services, app))
     .register(SceneId.DECK_SELECTION, (services) => new DeckSelectionScene(services, app))
     .register(SceneId.DECK_BUILDER, (services) => new DeckBuilderScene(services, app))
-    .register(SceneId.MATCH, (services) => new MatchScene(services, { rarityOf: (cardId) => app.rarities?.of(cardId) ?? null, audio: app.audio, help: app.help, characterName: (account) => app.daily?.characterOf(account)?.name ?? null }))
+    .register(SceneId.MATCH, (services) => new MatchScene(services, { rarityOf: (cardId) => app.rarities?.of(cardId) ?? null, audio: app.audio, help: app.help, characterName: (account) => app.daily?.characterOf(account)?.name ?? null, voice: app.voice }))
     .register(SceneId.LOGIN, (services) => new LoginScene(services, app))
     .register(SceneId.INFO, (services) => new InfoScene(services, app))
     .register(SceneId.ERROR, (services) => new ErrorScene(services));

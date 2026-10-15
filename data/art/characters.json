@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "characters": {
+    "kael": { "file": "character_kael.jpg", "focus": [0.52, 0.36] },
+    "sira": { "file": "character_sira.jpg", "focus": [0.44, 0.3] },
+    "archmage": { "file": "character_archmage.jpg", "focus": [0.5, 0.18] },
+    "worldroot": { "file": "character_worldroot.jpg", "focus": [0.5, 0.33] },
+    "iron_colossus": { "file": "character_iron_colossus.jpg", "focus": [0.5, 0.2] },
+    "gravelord": { "file": "character_gravelord.jpg", "focus": [0.49, 0.25] },
+    "volcanic_wyrm": { "file": "character_volcanic_wyrm.jpg", "focus": [0.5, 0.37] },
+    "thessaly": { "file": "character_thessaly.jpg", "focus": [0.47, 0.27] },
+    "ilyra": { "file": "character_ilyra.jpg", "focus": [0.5, 0.27] },
+    "rook": { "file": "character_rook.jpg", "focus": [0.5, 0.3] },
+    "elda": { "file": "character_elda.jpg", "focus": [0.5, 0.32] },
+    "notary": { "file": "character_notary.jpg", "focus": [0.48, 0.3] },
+    "morwen": { "file": "character_morwen.jpg", "focus": [0.48, 0.25] },
+    "varek": { "file": "character_varek.jpg", "focus": [0.48, 0.2] },
+    "brunn": { "file": "character_brunn.jpg", "focus": [0.5, 0.22] }
+  }
+}

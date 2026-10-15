@@ -14,7 +14,7 @@ import { AccountService, AccountStatus } from "./application/account/AccountServ
 import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
 import { buildCardRarities } from "./application/content/CardRarities.js";
-import { NO_ILLUSTRATIONS, buildIllustrationManifest } from "./application/content/IllustrationManifest.js";
+import { ANY_ID, NO_ILLUSTRATIONS, buildIllustrationManifest } from "./application/content/IllustrationManifest.js";
 import { COLLECTION_CHANGING_KINDS, describeNotification } from "./application/notifications/describeNotification.js";
 import { NotificationService } from "./application/notifications/NotificationService.js";
 import { AccountDeckRepository, DeckStorage } from "./application/decks/AccountDeckRepository.js";
@@ -40,6 +40,7 @@ import { DeckSelectionService } from "./application/decks/DeckSelectionService.j
 import { IdentityService } from "./application/identity/IdentityService.js";
 import { CoinFace } from "./application/match/CoinToss.js";
 import { AiOpponentFactory } from "./application/match/AiOpponents.js";
+import { CharacterVoice } from "./application/daily/CharacterVoice.js";
 import { DailyCompanion } from "./application/daily/DailyCompanion.js";
 import { DailyService } from "./application/daily/DailyService.js";
 import { HttpDailyApi } from "./infrastructure/api/HttpDailyApi.js";
@@ -136,13 +137,12 @@ const CONTENT_MANIFEST = Object.freeze({
   theme: "data/ui/theme.json",
   rarities: "data/economy/rarities.json",
   illustrations: "data/art/illustrations.json",
+  characterArt: "data/art/characters.json",
 });
-/** Where the illustration files named in data/art/illustrations.json live. */
+/** Where the illustration files named in data/art/illustrations.json (and the portraits in characters.json) live. */
 const ART_DIRECTORY = "data/art/";
 /** Notifications after which the player's wallet holds a different amount. */
 const WALLET_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "sale.sold", "sale.bought"]);
-/** How a daily challenge's character's words are toned: its win is the player's loss. */
-const SPEECH_TONES = Object.freeze({ intro: "info", low: "info", win: "bad", lose: "good" });
 /**
  * On a phone, card illustrations are kept this wide (enough for the largest
  * card it shows, at twice its pixel density), and fetched as cards are shown
@@ -413,7 +413,7 @@ async function boot() {
   const firstScreenArt = Promise.all([loading.track(uiArt.preload()), loading.track(tableArt.preload())]);
   loading.say("Shuffling the decks…");
   const track = loading.track.bind(loading);
-  const [rawTheme, content, rawRarities, rawIllustrations] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(identity.restore())]);
+  const [rawTheme, content, rawRarities, rawIllustrations, rawCharacterArt] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(source.load("characterArt")), track(identity.restore())]);
   loading.say("Gilding the table…");
   if (!content.ok) {
     showFatal("Content failed to load", content.error.message);
@@ -434,6 +434,8 @@ async function boot() {
 
   // Painted card art: cards without it (or whose image fails) keep their procedural art.
   const illustrations = buildIllustrations(rawIllustrations, content.value.catalog);
+  // The challenge characters' portraits: one without keeps its drawn medallion.
+  const characterArt = buildCharacterArt(rawCharacterArt);
 
   if (!storageAvailable) {
     logger.warn("local storage unavailable; decks will not persist");
@@ -510,6 +512,8 @@ async function boot() {
   // A purchase, a connection and a standing belong to the account that started them.
   // The daily challenges (docs/tcg/24): today's opponents and the player's day, read at sign-in; the games come as online games.
   const daily = new DailyService({ api: new HttpDailyApi({ fetch: httpFetch }) });
+  // What the characters say during their games: the match shows it by their seat.
+  const voice = new CharacterVoice({ now: () => Date.now() });
   // What happened to the player's orders, trades and sales: read at sign-in, pushed while here.
   const notifications = new NotificationService({ api: new HttpNotificationsApi({ fetch: httpFetch }), connection: realtime, logger });
   account.subscribe((state) => {
@@ -557,6 +561,7 @@ async function boot() {
     activeKeys,
     online,
     daily,
+    voice,
     lobby,
     autoList,
     autoReplays,
@@ -580,7 +585,7 @@ async function boot() {
     new Glimmer({ figures: GLIMMER_FIGURES, seed: createSeed() }),
     new Storm({ cells: STORM_CELLS, figures: STORM_FIGURES, seed: createSeed() }),
   ]);
-  const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, coinArt, tableArt, uiArt, avatars, ambience }), audio);
+  const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, characterArt, coinArt, tableArt, uiArt, avatars, ambience }), audio);
   registerScenes(sceneManager, app);
   redrawWithTitleFont(theme.value.fonts.titleFamily, () => loop.requestRender());
   // The menus have their music, a match its own; what the services do is heard on any screen.
@@ -640,12 +645,8 @@ async function boot() {
       void daily.refresh();
     }
   });
-  // The character of a daily challenge speaks as the game starts, when it is nearly beaten, and when it ends.
-  new DailyCompanion({
-    online,
-    daily,
-    say: ({ opponent, kind, line }) => toasts.show({ key: `daily.${kind}`, title: opponent.name, body: `“${line}”`, tone: SPEECH_TONES[kind] ?? "info", account: opponent.account }),
-  }).start();
+  // The character of a daily challenge speaks as the game starts, when it is nearly beaten, and when it ends: a bubble by its seat.
+  new DailyCompanion({ online, daily, say: (speech) => voice.say(speech) }).start();
   sceneManager.navigate(SceneId.MAIN_MENU);
   preloadArt({ illustrations, coinArt });
   // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.
@@ -781,6 +782,24 @@ function buildIllustrations(raw, catalog) {
     loadImage: isTouchFirst() ? scaledImageLoader(PHONE_ILLUSTRATION_WIDTH) : loadBrowserImage,
     onLoaded: () => presentation?.loop.requestRender(),
     logger,
+  });
+}
+
+/**
+ * @param {import("@magic8/engine/shared/Result.js").Ok<unknown> | import("@magic8/engine/shared/Result.js").Fail} raw the character portraits file
+ */
+function buildCharacterArt(raw) {
+  const built = raw.ok ? buildIllustrationManifest(raw.value, ANY_ID, "characters") : { ok: /** @type {const} */ (false), message: raw.error.message };
+  if (!built.ok) {
+    logger.warn("character portraits unavailable", built.message);
+  }
+  return new CardIllustrations({
+    manifest: built.ok ? built.value : NO_ILLUSTRATIONS,
+    urlFor: (file) => `${ART_DIRECTORY}${file}`,
+    loadImage: isTouchFirst() ? scaledImageLoader(PHONE_ILLUSTRATION_WIDTH) : loadBrowserImage,
+    onLoaded: () => presentation?.loop.requestRender(),
+    logger,
+    subject: "character portrait",
   });
 }
 

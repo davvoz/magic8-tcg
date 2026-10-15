@@ -99,6 +99,7 @@ import { MatchResultNode, Standing } from "../board/MatchResultNode.js";
 import { MatchSoundscape } from "../board/MatchSoundscape.js";
 import { PickedCardNode } from "../board/PickedCardNode.js";
 import { PlayerNode, lifeCrystalCentre, resourceRects } from "../board/PlayerNode.js";
+import { SpeechBubble } from "../board/SpeechBubble.js";
 import { boardFaceProfile } from "../cards/CardRenderer.js";
 import { cardFaceLayout } from "../cards/CardFace.js";
 import { splitIntoBeats } from "../board/StepBeats.js";
@@ -219,16 +220,24 @@ export class MatchScene extends Scene {
   #characterName;
   /** @type {(() => void) | null} */
   #unsubscribeHelp = null;
+  /** What a daily challenge's character says, when the game has characters. @type {Pick<import("../../application/daily/CharacterVoice.js").CharacterVoice, "subscribe" | "justSaidIn"> | undefined} */
+  #voice;
+  /** @type {(() => void) | null} */
+  #unsubscribeVoice = null;
+  /** The character's line showing by its seat. */
+  #speech = new SpeechBubble();
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
    * @param {import("./Scene.js").SceneServices} services
-   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"], help?: import("../../application/help/HelpSettings.js").HelpSettings, characterName?: (account: string) => string | null }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
-   *   `audio`: the sound settings (AudioService), opened from the battle log; `help`: whether the match help is on; `characterName`: a daily challenge's character's name, from its seat
+   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"], help?: import("../../application/help/HelpSettings.js").HelpSettings, characterName?: (account: string) => string | null, voice?: MatchScene["voice"] }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
+   *   `audio`: the sound settings (AudioService), opened from the battle log; `help`: whether the match help is on; `characterName`: a daily challenge's character's name, from its seat;
+   *   `voice`: what the character says, shown as a bubble by its seat
    */
-  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio, help, characterName = () => null } = {}) {
+  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio, help, characterName = () => null, voice } = {}) {
     super(services);
     this.#characterName = characterName;
+    this.#voice = voice;
     this.#rarityOf = rarityOf;
     this.#now = now;
     this.#audio = audio;
@@ -275,6 +284,7 @@ export class MatchScene extends Scene {
       this.services.requestRender();
     }) ?? null;
     this.#unsubscribeHelp = this.#help?.subscribe(() => this.#rebuild()) ?? null;
+    this.#listenToCharacter(session);
     this.#taken = session.snapshotFor(this.#playerId);
     this.#show({ snapshot: this.#taken, events: [], chained: false }, false);
     if (this.#coinFlip === null) {
@@ -302,7 +312,39 @@ export class MatchScene extends Scene {
     this.#unsubscribeAudio = null;
     this.#unsubscribeHelp?.();
     this.#unsubscribeHelp = null;
+    this.#unsubscribeVoice?.();
+    this.#unsubscribeVoice = null;
     this.#coinFlip = null;
+  }
+
+  /** What a daily challenge's character says, if the scene shows its lines. */
+  get voice() {
+    return this.#voice;
+  }
+
+  /**
+   * Hears the character of this game: the line just said as the board opened, then each new one.
+   * @param {object} session the match: an online one has a game id
+   */
+  #listenToCharacter(session) {
+    this.#speech = new SpeechBubble();
+    const voice = this.#voice;
+    const gameId = "gameId" in session && typeof session.gameId === "string" ? session.gameId : undefined;
+    if (voice === undefined || gameId === undefined) {
+      return;
+    }
+    /** @param {import("../../application/daily/DailyCompanion.js").Speech} speech */
+    const hear = (speech) => {
+      if (speech.gameId === gameId) {
+        this.#speech.say({ name: speech.opponent.name, line: speech.line });
+        this.services.requestRender();
+      }
+    };
+    const said = voice.justSaidIn(gameId);
+    if (said !== null) {
+      hear(said);
+    }
+    this.#unsubscribeVoice = voice.subscribe(hear);
   }
 
   /** The sound settings this board opens, if the game has sound. */
@@ -318,16 +360,27 @@ export class MatchScene extends Scene {
     // Heard before the next beat is shown: a spell strikes, then what it did lands.
     this.#soundscape?.follow({ presenter: this.#presenter, toss: this.#coinFlip, ending: this.#ending });
     const caughtUp = this.#showNextStep();
-    const ending = this.#ending?.update(dtMs) ?? false;
+    const overlays = this.#advanceOverlays(dtMs);
     this.#elapsedMs += dtMs;
     const pulsing = ["coach.focus", "help.headline", "help.pointers", "gameOver.duel"].some((id) => this.root.findById(id) !== null);
-    const changed = presented || caughtUp || ending || inputChanged || tossChanged || pulsing || this.#tickClock();
+    const changed = presented || caughtUp || overlays || inputChanged || tossChanged || pulsing || this.#tickClock();
     this.#maybeShowGameOver();
     if (this.isBusy !== this.#builtBusy || this.#showsLesson !== this.#builtLesson) {
       this.#rebuild();
       return true;
     }
     return changed;
+  }
+
+  /**
+   * What plays over the board: the end of the match, and the character's line.
+   * @param {number} dtMs
+   * @returns {boolean} whether either needs drawing again
+   */
+  #advanceOverlays(dtMs) {
+    const ending = this.#ending?.update(dtMs) ?? false;
+    const speaking = this.#speech.update(dtMs, this.isTossing);
+    return ending || speaking;
   }
 
   /** True while moves are held back: the toss, the board playing out what happened, or a move awaiting the server. */
@@ -430,12 +483,26 @@ export class MatchScene extends Scene {
     const shake = this.#ending?.shake ?? { x: 0, y: 0 };
     if (shake.x === 0 && shake.y === 0) {
       super.render(context);
+    } else {
+      context.save();
+      context.translate(shake.x, shake.y);
+      super.render(context);
+      context.restore();
+    }
+    this.#paintSpeech(context);
+  }
+
+  /**
+   * The character's line, by its seat, over the board (it takes no clicks).
+   * @param {CanvasRenderingContext2D} context
+   */
+  #paintSpeech(context) {
+    const layout = this.#layout;
+    if (!this.#speech.isShowing || layout === null || this.isTossing) {
       return;
     }
-    context.save();
-    context.translate(shake.x, shake.y);
-    super.render(context);
-    context.restore();
+    const { theme, viewport } = this.services;
+    this.#speech.paint(context, theme, { seat: layout.opponent.hud, stage: viewport.safeBounds, compact: viewport.compact });
   }
 
   /** @param {import("../../input/InputManager.js").KeyInput} input */

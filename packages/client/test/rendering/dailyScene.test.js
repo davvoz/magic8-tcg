@@ -2,8 +2,8 @@
  * The daily challenges screen (docs/tcg/24-sfide.md), against the real
  * DailyService over a scripted server and a stand-in online service: the
  * track asked once, the next challenge fought with a deck and handed over to
- * the match, the opponent's last words, the pack won shown once, and the
- * phone's layout kept on screen.
+ * the match, the opponent's last words, the pack won seen in the collection,
+ * and the phone's layout kept on screen.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -100,6 +100,15 @@ describe("DailyScene", () => {
     }
   });
 
+  it("keeps the portraits moving, and has a beaten opponent concede", async () => {
+    const opponents = DAY.opponents.map((opponent, index) => ({ ...opponent, state: ["beaten", "next", "locked"][index] }));
+    const { scene } = await world({ day: { ...DAY, opponents, run: { ...RUN, stage: 1, attempts: 1 } } });
+    assert.equal(scene.update(16), true, "every frame redraws while the opponents are on screen");
+    const texts = rendered(scene);
+    assert.ok(texts.includes("“kael loses”") && !texts.includes("“kael says hello”"));
+    assert.ok(texts.includes("“sira says hello”"));
+  });
+
   it("asks before fixing the day's track, then offers the fight", async () => {
     const { scene, calls } = await world();
     click(byId(scene, "daily.track.hard"));
@@ -136,22 +145,23 @@ describe("DailyScene", () => {
     assert.equal(byId(boss.scene, "daily.fight").text, "Fight Wyrm");
   });
 
-  it("shows the pack won once, card by card, and keeps it in reach", async () => {
+  it("shows the pack won in the collection, its cards first, as for a pack bought in the shop", async () => {
     const opponents = DAY.opponents.map((opponent) => ({ ...opponent, state: "beaten" }));
     const reward = { pack: "core_booster", cards: [{ id: "x1", definitionId: "ember_imp", serial: 12 }, { id: "x2", definitionId: "pyre_drake", serial: 3 }] };
     const { scene, navigated } = await world({ day: { ...DAY, opponents, run: { ...RUN, stage: 3, rewarded: true, reward } } });
-    assert.equal(scene.modal?.id, "daily.reveal", "shown by itself");
-    const texts = rendered(scene);
-    assert.ok(texts.includes("Your Core Booster"));
-    assert.ok(texts.includes("#12") && texts.includes("#3"));
-    click(byId(scene, "daily.reveal.close"));
-    assert.equal(scene.modal, null);
-    scene.relayout();
-    assert.equal(scene.modal, null, "once");
+    assert.equal(scene.modal, null, "no dialog of its own");
+    assert.match(byId(scene, "daily.info").text, /Core Booster is in your collection/);
     click(byId(scene, "daily.pack"));
-    click(byId(scene, "daily.reveal.collection"));
-    assert.equal(navigated.at(-1)?.id, SceneId.COLLECTION);
-    assert.equal(navigated.at(-1)?.params.fresh.length, 2);
+    assert.deepEqual(navigated.at(-1), {
+      id: SceneId.COLLECTION,
+      params: { fresh: [{ definitionId: "ember_imp", count: 1, serial: 12 }, { definitionId: "pyre_drake", count: 1, serial: 3 }], from: SceneId.DAILY },
+    });
+  });
+
+  it("opens the Info screen on how the challenges work, and comes back here", async () => {
+    const { scene, navigated } = await world();
+    click(byId(scene, "daily.help"));
+    assert.deepEqual(navigated.at(-1), { id: SceneId.INFO, params: { topic: "challenges", back: SceneId.DAILY } });
   });
 
   it("keeps everything on a phone's screen", async () => {

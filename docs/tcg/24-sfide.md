@@ -27,41 +27,41 @@ Una modalità per giocatore singolo che dà un motivo per tornare ogni giorno. O
 
 | | Normale | Difficile |
 |---|---|---|
-| Livello dell'IA (personaggio, personaggio, boss) | 2, 3, 5 | 6, 7, 10 |
+| Livello dell'IA (personaggio, personaggio, boss) | 2, 3, 3 | 6, 7, 10 |
 | Premio | **Core Mini Booster** (3 carte: 2 comuni, 1 non comune o meglio) | **Core Booster** (5 carte: 3 comuni, 1 non comune, 1 rara o meglio) |
 
 Sono i due pacchetti che lo shop vende già (`data/economy/drop-tables`). Altri pacchetti più avanti. I numeri stanno in `data/daily/tracks.json`.
 
-Il boss è più forte per il livello dell'IA, per il mazzo (il precostruito della fazione con la sua carta simbolo in più copie) e per la sua **condizione** (sotto, *Le condizioni dei boss*).
+Il boss è più forte per il mazzo (il precostruito della fazione con la sua carta simbolo in più) e per la sua **condizione** (sotto, *Le condizioni dei boss*); nel Difficile anche per il livello dell'IA. Nel Normale il boss gioca allo stesso livello del secondo personaggio: le misure mostrano che mazzo e condizione bastano a renderlo la sfida più dura.
 
-I numeri si regolano dopo le prove: l'obiettivo è che un giocatore con uno starter vinca il percorso Normale in buona parte dei giorni, e il Difficile solo con un mazzo migliorato.
+L'obiettivo: con uno starter, il Normale si vince in buona parte dei giorni, il Difficile serve a chi gioca bene o ha un mazzo migliorato. Vedi *Bilanciamento* sotto.
 
 ## I personaggi
 
-Uno per ogni mazzo precostruito, più un boss per fazione. Nomi, carattere e testi sono **provvisori**. Lo stile è quello dell'IA (23): *Aggressive*, *Balanced*, *Defensive*.
+Uno per ogni mazzo precostruito, più un boss per fazione. Il titolo è un epiteto, mai il nome del mazzo (che il giocatore non vede). Lo stile è quello dell'IA (23): *Aggressive*, *Balanced*, *Defensive*.
 
 | Personaggio | Mazzo | Stile | Carattere |
 |---|---|---|---|
-| Kael, Avanguardia di Brace | Ember Vanguard | Aggressive | soldato impaziente, attacca per primo e chiede dopo |
-| Sira Fiammaselvaggia | Ember Wildfire | Aggressive | piromane allegra, gioca per lo spettacolo |
-| Mastro Brunn | Iron Foundry | Balanced | fabbro brontolone, rispetta solo il lavoro fatto bene |
-| Capitano Varek | Iron Legion | Defensive | ufficiale rigido, tiene la linea a ogni costo |
-| Morwen la Mietitrice | Grave Harvest | Balanced | becchina gentile e inquietante |
-| Il Notaio del Patto | Shadow Pact | Balanced | mercante d'anime cortese, parla di contratti |
-| Elda del Boschetto | Verdant Grove | Defensive | eremita paziente, lascia crescere la foresta |
-| Rook il Cacciatore | Wild Hunt | Aggressive | cacciatore di poche parole |
-| Magistra Ilyra | Arcane Conclave | Defensive | studiosa sprezzante, ti corregge mentre giochi |
-| Thessaly della Guglia | Spire Bastion | Defensive | guardiana stanca, ha visto cadere molti sfidanti |
+| Kael, *First into the Fire* | Ember Vanguard | Aggressive | soldato impaziente, attacca per primo e chiede dopo |
+| Sira, *The Spark Dancer* | Ember Wildfire | Aggressive | piromane allegra, gioca per lo spettacolo |
+| Master Brunn, *Master of the Forge* | Iron Foundry | Balanced | fabbro brontolone, rispetta solo il lavoro fatto bene |
+| Captain Varek, *Keeper of the Line* | Iron Legion | Defensive | ufficiale rigido, tiene la linea a ogni costo |
+| Morwen, *The Reaper of Graves* | Grave Harvest | Balanced | becchina gentile e inquietante |
+| The Notary, *Keeper of Contracts* | Shadow Pact | Balanced | mercante d'anime cortese, parla di contratti |
+| Elda, *Hermit of the Grove* | Verdant Grove | Defensive | eremita paziente, lascia crescere la foresta |
+| Rook, *Tracker of the Deep Woods* | Wild Hunt | Aggressive | cacciatore di poche parole |
+| Magistra Ilyra, *First Chair of the Conclave* | Arcane Conclave | Defensive | studiosa sprezzante, ti corregge mentre giochi |
+| Thessaly, *Warden of the Spire* | Spire Bastion | Defensive | guardiana stanca, ha visto cadere molti sfidanti |
 
-**Boss**, uno per fazione, ciascuno con il precostruito della fazione e la sua carta simbolo in più copie (33 carte). Mazzi più curati in fase 4:
+**Boss**, uno per fazione, ciascuno con un precostruito della fazione e la sua carta simbolo in più (misurati in fase 5, vedi *Bilanciamento*):
 
-| Boss | Fazione | Carta simbolo |
+| Boss | Fazione | Mazzo |
 |---|---|---|
-| Il Wyrm Vulcanico | Ember | Volcanic Wyrm |
-| Il Colosso di Ferro | Iron | Iron Colossus |
-| Il Signore delle Tombe | Shadow | Gravelord |
-| La Radice del Mondo | Verdant | Worldroot Colossus |
-| L'Arcimago della Guglia | Arcane | Archmage of the Spire |
+| Il Wyrm Vulcanico | Ember | Ember Wildfire + 2 Volcanic Wyrm + 1 Blazing Titan |
+| Il Colosso di Ferro | Iron | Iron Legion + 1 Iron Colossus (3 in tutto) + 2 Rampart Automaton |
+| Il Signore delle Tombe | Shadow | Shadow Pact + 1 Gravelord |
+| La Radice del Mondo | Verdant | Verdant Grove + 1 Worldroot Colossus (2 in tutto) + 1 Thunderhoof Mammoth |
+| L'Arcimago della Guglia | Arcane | Arcane Conclave + 1 Archmage of the Spire (2 in tutto) |
 
 I boss sono il ponte verso la futura campagna: la storia potrà partire da loro.
 
@@ -76,6 +76,26 @@ Ogni personaggio ha poche battute, in un file di dati, senza codice:
 
 I personaggi possono citarsi a vicenda ("Hai battuto Varek? Con me non andrà così").
 
+## Bilanciamento
+
+`node packages/server/tools/challenge-balance.js` mette uno sfidante (un'IA al posto del giocatore: `basic` per un principiante, `search:<livello>` per chi ragiona) contro ogni avversario del roster con ciascuno dei 5 starter gratuiti, con la partita impostata come sul server (mazzo, stile, livello del percorso, condizioni), ciascun posto primo a turno. Dice la percentuale di vittorie per avversario e quante partite servono in media per completare la giornata. `--levels` e `--roster` provano livelli e roster diversi prima di cambiare i dati.
+
+**Prima misura** (100 partite per avversario; ±10 punti): nel Normale i personaggi andavano bene (46% per il principiante, 60% per `search:3`), ma i boss vincevano l'83–86% delle partite e il Colosso di Ferro il 96–98%. Il livello dell'IA non c'entrava (al livello 3 restavano al 75%): pesavano la condizione del Colosso (+0/+2 solo alle sue creature: 15% vinte dallo sfidante, 52% senza) e le carte simbolo in più copie di Signore delle Tombe e Arcimago.
+
+**Correzioni**: *Fortress* e *Curse of the Grave* valgono per tutti; Signore delle Tombe, Radice e Arcimago hanno una sola carta simbolo in più; il boss del Normale passa dal livello 5 al 3.
+
+| Sfidante, con uno starter | Personaggio | Boss | Partite per la giornata |
+|---|---|---|---|
+| Principiante, Normale | 46% | 31% (era 14%) | ~7,6 (era ~12) |
+| `search:3`, Normale | 60% | 39% (era 17%) | ~5,9 (era ~9) |
+| `search:5`, Difficile | 38% | 28% (era 19%) | ~8,8 (era ~10,5) |
+| `search:3`, Difficile | 22% | 12% (boss di prima) | ~18 |
+| Principiante, Difficile | 17% | 8% (boss di prima) | ~24 |
+
+L'Arcimago resta il boss più duro (17% per il principiante, 31% per `search:3`): un giorno più difficile nella rotazione va bene. Il Difficile con uno starter è duro di proposito.
+
+Uno sfidante IA non è un giocatore vero: i numeri si ricalibrano con le partite reali, che il server già registra (`daily_games` con avversario e risultato, livello nell'audit `daily.challenge_started`).
+
 ## Le condizioni dei boss
 
 Ogni boss porta al tavolo una regola che vale solo in quella partita. Le condizioni sono dati (`conditions` del boss in `data/daily/characters.json`), con un nome e una riga di testo per il giocatore, e una **portata**: tutti (`everyone`), solo il boss (`opponent`), solo lo sfidante (`challenger`).
@@ -83,8 +103,8 @@ Ogni boss porta al tavolo una regola che vale solo in quella partita. Le condizi
 | Boss | Condizione | Portata |
 |---|---|---|
 | Il Wyrm Vulcanico | *Scorched Earth*: a inizio turno chi gioca perde 1 vita | tutti |
-| Il Colosso di Ferro | *Fortress*: le sue creature entrano con +0/+2 | il boss |
-| Il Signore delle Tombe | *Curse of the Grave*: le tue magie costano 1 in più | lo sfidante |
+| Il Colosso di Ferro | *Fortress*: tutte le creature entrano con +0/+2 | tutti |
+| Il Signore delle Tombe | *Curse of the Grave*: le magie costano 1 in più a tutti | tutti |
 | La Radice del Mondo | *Ancient Forest*: le creature costano 1 in meno a tutti | tutti |
 | L'Arcimago | *Forbidden Library*: tutti pescano una carta in più a turno | tutti |
 
@@ -177,16 +197,27 @@ Le partite delle sfide si giocano **sul server**, come quelle online, con l'IA a
 
 ## Nel client
 
-- **Menu principale**: da connessi c'è *Challenges* sotto *Play online*, con l'avanzamento del giorno: *(1/3)*, *(done)*. Su telefono, quando i pulsanti non ci stanno, gli ultimi secondari si affiancano due per riga.
-- **Schermata *Challenges*** (`DailyScene`): i tre avversari affiancati (`daily/OpponentCard`), ciascuno con ritratto, nome, titolo, banda della fazione, la battuta d'apertura e, per il boss, le sue condizioni. Mazzo, stile e livello dell'IA **non** si mostrano: la schermata parla al giocatore (chi affronta, cosa vince), non di come è fatto il gioco. Al posto dei dettagli arriveranno le illustrazioni animate dei personaggi (fase 4). Il prossimo da battere è illuminato, gli altri sono *Beaten* o *Locked*. Sotto:
+- **Menu principale**: da connessi c'è *Challenges* sotto *Play online*; il nome resta sempre *Challenges*; il pulsante è dorato finché il pacchetto del giorno è da vincere, normale come gli altri una volta vinto, e fa sempre il clic normale. Su telefono, quando i pulsanti non ci stanno, gli ultimi secondari si affiancano due per riga.
+- **Schermata *Challenges*** (`DailyScene`): i tre avversari affiancati (`daily/OpponentCard`), ciascuno con il suo ritratto animato, nome e titolo sul ritratto, banda della fazione, una battuta e, per il boss, le sue condizioni. Prima della sfida la battuta è quella d'apertura; battuto, l'avversario concede (una battuta di sconfitta). Mazzo, stile e livello dell'IA **non** si mostrano: la schermata parla al giocatore (chi affronta, cosa vince), non di come è fatto il gioco. Il prossimo da battere è illuminato, gli altri sono *Beaten* o *Locked* (ritratto velato). Su telefono il ritratto è una striscia con il medaglione a sinistra del nome, e se manca spazio la battuta del boss cede il posto alle sue condizioni. Sotto:
   - senza percorso, i due percorsi con il pacchetto in palio, con una conferma (vale fino a domani);
   - con il percorso, il mazzo (scorre solo fra quelli giocabili) e *Fight Kael*, oppure *Back to your game* se la partita è in corso;
-  - vinte tutte e tre, *See the cards you won* e *Collection*. Il pacchetto si apre da solo la prima volta, carta per carta con i numeri di serie.
+  - vinte tutte e tre, *See the cards you won*: apre la collezione con le carte appena vinte segnate in cima, come un pacchetto comprato nello shop.
   - La riga di stato dice le ultime parole dell'avversario appena affrontato (*Kael won this time. "…" Fight again whenever you like.*) e l'entrata del boss quando tocca a lui.
 - **La partita** è una partita online come le altre (`OnlineService`, `match.found` con `mode: "daily"`). La schermata passa al tavolo appena inizia e il tavolo torna lì alla fine. La lobby non si apre da sola per una sfida, e il promemoria "Resume your game" riporta alla sfida.
-- **Al tavolo**: il personaggio è chiamato col suo nome (mai `@ai_kael`), col ritratto della sua iniziale. Se la partita ha condizioni, un pulsante *Rules* nel registro (nella finestra del registro, su telefono) le spiega a parole (`describeCondition`), per esempio *Your spells cost 1 more*.
-- **Il personaggio parla** (`DailyCompanion`, come notifiche a comparsa): all'inizio, quando scende a 5 vita o meno, e alla fine. Ogni battuta una volta per partita, scelta dall'id della partita.
-- La notifica `daily.reward` dice il pacchetto vinto e porta alla schermata.
+- **Al tavolo**: il personaggio è chiamato col suo nome (mai `@ai_kael`), col suo ritratto (o la sua iniziale); non si chiede a STEEM l'immagine di un account `ai_`. Se la partita ha condizioni, un pulsante *Rules* nel registro (nella finestra del registro, su telefono) le spiega a parole (`describeCondition`), per esempio *Your spells cost 1 more*.
+- **Il personaggio parla** (`DailyCompanion` decide quando, `CharacterVoice` porta la battuta al tavolo): un fumetto accanto al suo riquadro (`board/SpeechBubble`), con nome e battuta, per qualche secondo; non è una notifica e non si clicca. All'inizio (dopo il lancio della moneta), quando scende a 5 vita o meno, e alla fine. Ogni battuta una volta per partita, scelta dall'id della partita; una battuta detta mentre il tavolo si sta aprendo si sente lo stesso.
+- La notifica `daily.reward` dice il pacchetto vinto; *Open* apre la collezione con quelle carte in cima, come per i pacchetti dello shop.
+- **Info**: la sezione *Challenges* (`InfoTopicId.CHALLENGES`) spiega al giocatore come funzionano: tre avversari al giorno, Normal o Hard e il loro pacchetto, riprovare quante volte si vuole, la regola del boss, le carte vinte che sono sue. *Ways to play* e *Where cards come from* la citano. Dalla schermata, *How it works* (*Help* su telefono) apre questa sezione e Back torna alle sfide.
+
+### I ritratti
+
+`daily/CharacterPortrait` disegna il personaggio, `daily/FactionAura` l'aria intorno. Tutto dipende solo dall'orologio della schermata (nessuno stato da tenere), e la schermata si ridisegna a ogni fotogramma finché gli avversari sono visibili.
+
+- **Il ritratto dipinto**, se c'è, respira: leggermente ingrandito, si gonfia e si sgonfia piano attorno al suo `focus`. Senza ritratto, un **medaglione** nei colori della fazione con l'iniziale (l'ultima parola del nome: *Captain Varek* è V), che fluttua, con la luce che pulsa e un anello di rune che gira.
+- **L'aura** è fatta di particelle, ciascuna una funzione del tempo e del suo seme: Ember scintille che salgono, Iron limature che cadono, Shadow fumi lenti, Verdant foglie che scendono ondeggiando, Arcane luci che orbitano. Metà dietro la figura, metà davanti. Ogni fazione è una riga di dati (`AURAS`).
+- **Il boss** ha un alone rosso ai bordi e il medaglione più grande, cerchiato di rosso.
+- **I file**: `data/art/characters.json` (stesso formato di `illustrations.json`, sotto `characters`, chiave l'id del personaggio), immagini `character_<id>.jpg` in `data/art/`. I prompt per generarle sono in `data/art/character-prompts.md`. Tutti i 15 personaggi e boss hanno il loro ritratto (1344 px di larghezza, 130–220 KB); un personaggio nuovo senza file resta col medaglione finché non ha il suo. Su telefono il ritratto occupa solo il riquadro a sinistra del nome e sfuma nel buio.
+- **Anteprima**: `tools/preview/?scene=daily&stage=1&opponents=kael,morwen,gravelord` mostra la schermata su una giornata del roster vero.
 
 ## Il premio
 
@@ -194,7 +225,7 @@ Le partite delle sfide si giocano **sul server**, come quelle online, con l'IA a
 - Le carte hanno origine `reward` e sono **scambiabili e vendibili**: `reward` è in `TRADEABLE_ORIGINS` (`InventoryService`), e 13 è aggiornato.
 - Il pacchetto si estrae con la stessa funzione dello shop (`drawPack`, stesse probabilità) da un seme casuale di 32 byte salvato in `daily_runs.reward_seed`: con il seme chiunque ritrova le stesse carte. Non è legato alle epoche come gli acquisti: un premio non si paga, quindi non c'è un pagamento da cui proteggere il seme.
 - Il pacchetto va **sulla catena**: un record `m8tcg_grant` (03 §12b) con il giocatore, il giorno, il percorso, la tabella, il seme e le copie coniate (id, carta, numero di serie), nella stessa transazione che le conia. Lo stesso record c'è per il mazzo iniziale gratuito.
-- Una notifica (`daily.reward`) avvisa del premio. Il client la mostrerà, e aprirà il pacchetto con l'animazione dello shop, in fase 3.
+- Una notifica (`daily.reward`) avvisa del premio e porta alla collezione, le carte vinte in cima.
 
 ## Piano di lavoro
 
@@ -204,8 +235,8 @@ Le partite delle sfide si giocano **sul server**, come quelle online, con l'IA a
 | 2 | **Server**: modulo `daily` (calendario del giorno, percorso, progressi, premio), posto dell'IA in `GameActor` — **fatta** | `test/daily/daily.test.js`, anche una partita vera contro l'IA del server |
 | 2b | **Condizioni dei boss** nel motore, nel protocollo e nei dati — **fatta** | `test/domain/conditions.test.js` (motore), e la partita del boss in `test/daily/daily.test.js` |
 | 3 | **Client**: schermata Sfide (scelta del percorso, i tre avversari, dialoghi, condizioni, apertura del pacchetto) — **fatta** | `test/rendering/dailyScene.test.js`, i telefoni in `compactLayouts.test.js`, e `test/e2e/dailyChallenge.test.js` (client vero contro server vero) |
-| 4 | **Contenuti**: testi definitivi dei personaggi, ritratti (16), mazzi dei boss | — |
-| 5 | **Bilanciamento** e lancio | partite vere |
+| 4 | **Contenuti**: ritratti animati (medaglione e aura; i ritratti dipinti si aggiungono come file) e titoli dei personaggi che non ripetono il nome del mazzo — **fatta**. I mazzi dei boss si rivedono col bilanciamento | `test/rendering/characterPortrait.test.js`, `tools/preview/?scene=daily` |
+| 5 | **Bilanciamento**: strumento `challenge-balance.js`, boss e livelli del Normale corretti — **fatto**; ricalibrare con le partite vere dopo il lancio | `challenge-balance.js` |
 
 ## Fuori da questo documento
 

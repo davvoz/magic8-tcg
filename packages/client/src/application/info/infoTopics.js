@@ -1,8 +1,8 @@
 /**
  * The Info screen's topics, in plain English for players new to card games
  * and to the Steem blockchain: how a game is played, how purchases work,
- * how signing in works, ranked games and their entries, and every way to
- * get cards. Pure: the numbers of the rules come from the game content, so
+ * how signing in works, ranked games and their entries, the daily
+ * challenges, and every way to get cards. Pure: the numbers of the rules come from the game content, so
  * the text cannot drift from the rules the engine plays by.
  *
  * Each topic is a list of blocks: a heading, a paragraph, a bullet, or a
@@ -18,6 +18,7 @@ export const InfoTopicId = Object.freeze({
   PURCHASES: "purchases",
   ACCOUNT: "account",
   RANKED: "ranked",
+  CHALLENGES: "challenges",
   SHOP: "shop",
 });
 
@@ -46,6 +47,7 @@ export function infoTopics(content) {
     topic({ id: InfoTopicId.PURCHASES, title: "Purchases", shortTitle: "Purchases" }, purchases()),
     topic({ id: InfoTopicId.ACCOUNT, title: "Account & sign in", shortTitle: "Sign in", link: { text: "Create a free account: join.cur8.fun", url: JOIN_URL } }, account()),
     topic({ id: InfoTopicId.RANKED, title: "Ranked games", shortTitle: "Ranked" }, ranked()),
+    topic({ id: InfoTopicId.CHALLENGES, title: "Challenges", shortTitle: "Challenges" }, challenges()),
     topic({ id: InfoTopicId.SHOP, title: "Shop & cards", shortTitle: "Shop" }, shop()),
   ]);
 }
@@ -199,6 +201,7 @@ function ranked() {
     bullet("Practice vs AI: free, no account needed, nothing at stake. The best way to learn."),
     bullet("Casual: online, against other players, free. Your result is recorded, your rating does not change."),
     bullet("Ranked: online, it changes your rating and your place in the season's leaderboard. Each game costs one ranked entry."),
+    bullet("Challenges: three opponents a day, played alone against the game's characters. Beat all three to win a pack (see \"Challenges\")."),
     bullet("Watch: follow a game in progress as a spectator. You never see the players' hands."),
 
     heading("Starting a game online"),
@@ -235,10 +238,43 @@ function ranked() {
   ];
 }
 
+function challenges() {
+  return [
+    heading("Three opponents a day"),
+    paragraph("Every day three characters of the game wait for you: two challengers, then a boss. Beat all three and you win a pack. They are free to play: all you need is to be signed in and to have a deck."),
+    bullet("Open \"Challenges\" from the main menu. The button is gold while today's pack is still to win."),
+    bullet("New opponents arrive every day at midnight UTC; the screen tells you how long is left. Your progress starts again with them."),
+    bullet("You can win one pack a day."),
+
+    heading("Normal or Hard"),
+    paragraph("The first time you open the challenges in a day, you pick how hard they are. Your choice holds until the next opponents arrive."),
+    bullet("Normal: the prize is a Core Mini Booster (3 cards)."),
+    bullet("Hard: the opponents play much better, and the prize is a Core Booster (5 cards)."),
+
+    heading("Playing a challenge"),
+    ...steps([
+      "Pick one of your decks with the deck button.",
+      "Click \"Fight\" and the game starts. Your opponent talks to you before, during and after the game.",
+      "Win to unlock the next opponent. Lose, and you can try again whenever you like, as many times as you like.",
+    ]),
+    bullet("You face them in order, and you need not play them all at once: come back later in the day for the next one."),
+    bullet("Each turn has up to 10 minutes. If you leave a game for 15 minutes, it counts as lost, and you can simply try again."),
+
+    heading("The boss and its rule"),
+    paragraph("The boss plays a stronger deck and brings a special rule to the table, for that game only: for example, spells costing 1 more for everyone. Its card on the Challenges screen tells you the rule and whom it affects; during the game, the \"Rules\" button next to the game log explains it again."),
+
+    heading("Your prize"),
+    bullet("When you beat the boss, the pack opens by itself and shows you each card with its serial number. \"See the cards you won\" shows them again."),
+    bullet("The cards are yours, like any other: use them in your decks, trade them, or sell them on the Market."),
+    bullet("The pack is recorded on the blockchain, like every card in the game."),
+  ];
+}
+
 function shop() {
   return [
     heading("Where cards come from"),
     bullet("Free starter deck: once signed in, pick one of 5 decks, one per faction, ready to play. You get it once per account."),
+    bullet("Challenges: beat the day's three opponents and win a free pack (see \"Challenges\")."),
     bullet("The Shop: packs, complete decks, single cards and ranked entries."),
     bullet("The Market: buy cards from other players, or sell your own."),
     bullet("Trades: swap cards with another player."),

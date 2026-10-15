@@ -160,7 +160,7 @@ describe("characters and rules in words", () => {
     const text = describeNotification({ kind: "daily.reward", data: { day: "2026-10-15", track: "hard", pack: "core_booster", cards: [{ definitionId: "ember_imp", count: 2 }, { definitionId: "pyre_drake", count: 1 }] } }, content.catalog);
     assert.equal(text.title, "Challenges won");
     assert.match(text.body, /Core Booster is open, 3 cards added/);
-    assert.equal(text.target, "daily");
+    assert.equal(text.target, "collection", "opens the collection, the cards won first");
     assert.equal(text.cards.length, 2);
   });
 });

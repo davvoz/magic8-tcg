@@ -105,7 +105,7 @@ describe("CardIllustrations", () => {
     assert.equal(illustrations.imageFor("cinder_hound"), null);
     assert.equal(loader.requested.length, 2, "not retried");
     assert.equal(renders.count, 0);
-    assert.deepEqual(logger.entries.map((entry) => [entry.level, /** @type {any} */ (entry.data).cardId]), [["warn", "ember_imp"], ["warn", "cinder_hound"]]);
+    assert.deepEqual(logger.entries.map((entry) => [entry.level, /** @type {any} */ (entry.data).id]), [["warn", "ember_imp"], ["warn", "cinder_hound"]]);
   });
 
   it("preloads a few at a time, skips cards without art, and settles even when some fail", async () => {

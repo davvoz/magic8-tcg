@@ -6,7 +6,8 @@
  * is not retried: that card stays procedural for the session.
  *
  * Downloads go through an ImageCache; this class knows which cards have an
- * illustration, where each file is, and how it is framed.
+ * illustration, where each file is, and how it is framed. The challenge
+ * characters' portraits are loaded the same way, keyed by character id.
  */
 import { ImageCache } from "../images/ImageCache.js";
 
@@ -31,15 +32,16 @@ export class CardIllustrations {
    *   loadImage: (url: string) => Promise<LoadedImage>,
    *   onLoaded?: () => void,
    *   logger: import("../../application/ports/Logger.contract.js").Logger,
-   * }} deps
+   *   subject?: string,
+   * }} deps `subject`: what a failed image is called in the log
    */
-  constructor({ manifest, urlFor, loadImage, onLoaded = () => undefined, logger }) {
+  constructor({ manifest, urlFor, loadImage, onLoaded = () => undefined, logger, subject = "card illustration" }) {
     this.#entries = manifest.entries;
     this.#urlFor = urlFor;
     this.#images = new ImageCache({
       loadImage,
       onLoaded,
-      onFailed: ({ key, url, reason }) => logger.warn("card illustration unavailable", { cardId: key, url, reason }),
+      onFailed: ({ key, url, reason }) => logger.warn(`${subject} unavailable`, { id: key, url, reason }),
     });
   }
 
