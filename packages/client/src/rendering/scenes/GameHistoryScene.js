@@ -4,6 +4,7 @@
  * default; a leaderboard line opens that player's. Older games load a page
  * at a time from the last line. An auto game (docs/tcg/23) opens its replay.
  */
+import { seatLabel } from "../../application/daily/characters.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -22,11 +23,12 @@ const AUTO_MODE = "auto";
 const END_TEXT = Object.freeze({ life_depleted: "life depleted", concede: "conceded", draw: "draw" });
 
 /**
- * "Won vs @bob".
+ * "Won vs @bob", or "Lost vs Kael" against a daily challenge's character.
  * @param {import("../../application/ports/GameHistoryApi.contract.js").PlayedGame} game
+ * @param {(account: string) => string | null} [nameOf] a character's name, when known
  */
-export function playedGameTitle(game) {
-  return `${RESULT_TEXT[game.result]} vs @${game.opponent}`;
+export function playedGameTitle(game, nameOf) {
+  return `${RESULT_TEXT[game.result]} vs ${seatLabel(game.opponent, nameOf)}`;
 }
 
 /**
@@ -186,7 +188,7 @@ export class GameHistoryScene extends Scene {
           y: this.#screen.rowY(index),
           width: list.rowWidth,
           height: row,
-          text: playedGameTitle(game),
+          text: playedGameTitle(game, (account) => this.#app.daily?.characterOf(account)?.name ?? null),
           subtitle: replayable ? `${playedGameSubtitle(game, now)} · click to watch` : playedGameSubtitle(game, now),
           avatar: game.opponent,
           onActivate: replayable ? () => this.services.navigate(SceneId.REPLAY, { gameId: game.gameId, from: SceneId.GAME_HISTORY }) : () => undefined,

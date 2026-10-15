@@ -3,6 +3,7 @@
  * checked for the shape the application relies on.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
+import { isSeatAccount } from "../../application/daily/characters.js";
 import { ApiFailure } from "../../application/ports/AuthApi.contract.js";
 import { HttpJsonTransport } from "./HttpJsonTransport.js";
 
@@ -17,7 +18,7 @@ function playedGame(value) {
   const valid =
     isGameId(value?.gameId) &&
     typeof value.mode === "string" &&
-    isAccount(value.opponent) &&
+    isSeatAccount(value.opponent) &&
     RESULTS.includes(value.result) &&
     (value.endReason === null || typeof value.endReason === "string") &&
     isCount(value.turn) &&

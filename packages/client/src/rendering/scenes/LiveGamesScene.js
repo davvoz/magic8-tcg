@@ -2,6 +2,7 @@
  * Games being played now, the most watched first: pick one to watch it
  * (docs/tcg/10-spettatori.md). The list is a snapshot; "Refresh" asks again.
  */
+import { seatLabel } from "../../application/daily/characters.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -127,7 +128,7 @@ export class LiveGamesScene extends Scene {
           y: this.#screen.rowY(index),
           width: list.rowWidth,
           height: this.#screen.row.height,
-          text: game.players.map((player) => `@${player.account}`).join(" vs "),
+          text: game.players.map((player) => seatLabel(player.account, (account) => this.#app.daily?.characterOf(account)?.name ?? null)).join(" vs "),
           subtitle: liveGameSubtitle(game),
           avatar: game.players.map((player) => player.account),
           onActivate: () => this.#watch(game.gameId),

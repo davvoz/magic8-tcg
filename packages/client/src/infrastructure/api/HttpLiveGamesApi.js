@@ -3,16 +3,16 @@
  * for the shape the application relies on.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
+import { isSeatAccount } from "../../application/daily/characters.js";
 import { ApiFailure } from "../../application/ports/AuthApi.contract.js";
 import { HttpJsonTransport } from "./HttpJsonTransport.js";
 
 const GAME_ID = /^[0-9a-hjkmnp-tv-z]{26}$/;
 const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
-const isAccount = (value) => typeof value === "string" && /^[a-z0-9.-]{1,32}$/.test(value);
 
 /** @param {any} value */
 function player(value) {
-  return typeof value?.seat === "string" && isAccount(value.account) ? Object.freeze({ seat: value.seat, account: value.account }) : null;
+  return typeof value?.seat === "string" && isSeatAccount(value.account) ? Object.freeze({ seat: value.seat, account: value.account }) : null;
 }
 
 /** @param {any} value */

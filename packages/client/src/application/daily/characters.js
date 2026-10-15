@@ -8,6 +8,39 @@
 import { hashString } from "@magic8/engine/shared/hash.js";
 
 const PREFIX = "ai_";
+const STEEM_ACCOUNT = /^[a-z0-9.-]{1,32}$/;
+/** The server's character ids (DailyRoster) behind the prefix. */
+const CHARACTER_ACCOUNT = /^ai_[a-z][a-z0-9_]{1,23}$/;
+
+/**
+ * A seat's name as the server sends it: a STEEM account or a character.
+ * @param {unknown} value
+ * @returns {value is string}
+ */
+export function isSeatAccount(value) {
+  return typeof value === "string" && (STEEM_ACCOUNT.test(value) || CHARACTER_ACCOUNT.test(value));
+}
+
+/**
+ * How a seat is shown: "@bob" for a player, the character's name for a
+ * character ("Kael"), or its id made readable when it was never met here.
+ * @param {string} account
+ * @param {(account: string) => string | null} [nameOf] a character's name, when known
+ */
+export function seatLabel(account, nameOf = () => null) {
+  if (!isCharacterAccount(account)) {
+    return `@${account}`;
+  }
+  const name = nameOf(account);
+  if (name !== null) {
+    return name;
+  }
+  return characterIdOf(account)
+    .split("_")
+    .filter((word) => word.length > 0)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 /**
  * @param {string | null | undefined} account a seat's name at the table

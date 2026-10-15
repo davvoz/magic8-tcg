@@ -76,6 +76,8 @@ describe("HttpLiveGamesApi", () => {
     assert.equal((await api.live()).error.code, "BAD_RESPONSE");
     body = { games: [] };
     assert.deepEqual((await api.live()).value, []);
+    body = { games: [{ ...LIVE, players: [LIVE.players[0], { seat: "s1", account: "ai_kael" }] }] };
+    assert.deepEqual((await api.live()).value, body.games, "a daily challenge's character sits at the table too");
   });
 });
 

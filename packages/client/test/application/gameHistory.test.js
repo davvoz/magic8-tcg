@@ -71,6 +71,12 @@ describe("HttpGameHistoryApi", () => {
     body = { account: "alice", games: [], next: "../admin" };
     assert.equal((await api.played("alice")).error.code, "BAD_RESPONSE");
   });
+
+  it("reads a game against a daily challenge's character, whose seat is no STEEM account", async () => {
+    const body = { account: "alice", games: [{ ...FIRST, mode: "daily", opponent: "ai_lady_vex" }], next: null };
+    const api = new HttpGameHistoryApi({ fetch: async () => json(200, body) });
+    assert.deepEqual((await api.played("alice")).value, body);
+  });
 });
 
 describe("game history texts", () => {
@@ -78,6 +84,8 @@ describe("game history texts", () => {
     assert.equal(playedGameTitle(FIRST), "Won vs @bob");
     assert.equal(playedGameTitle(SECOND), "Lost vs @carol");
     assert.equal(playedGameTitle(OLDER), "Draw vs @bob");
+    assert.equal(playedGameTitle(game("d3", { opponent: "ai_kael" }), (account) => (account === "ai_kael" ? "Kael the Bold" : null)), "Won vs Kael the Bold");
+    assert.equal(playedGameTitle(game("d3", { opponent: "ai_lady_vex", result: "loss" })), "Lost vs Lady Vex", "a character never met here is named by its id");
     assert.equal(playedGameSubtitle(FIRST, NOW), "casual · 7 turns · life depleted · 2 h ago");
     assert.equal(playedGameSubtitle(SECOND, NOW), "ranked · 1 turn · conceded · 2 h ago");
     assert.equal(playedGameSubtitle(OLDER, NOW), "casual · 7 turns · 2 h ago");
