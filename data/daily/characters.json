@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "characters": [
+    {
+      "id": "kael",
+      "name": "Kael",
+      "title": "Ember Vanguard",
+      "faction": "ember",
+      "style": "aggressive",
+      "deck": "precon_ember",
+      "lines": {
+        "intro": ["Shields up? Doesn't matter. I hit first.", "You look slow. Let's find out.", "The vanguard never waits. Neither will I."],
+        "low": ["Still standing. Still swinging."],
+        "win": ["Too slow. Told you.", "That's how the vanguard does it."],
+        "lose": ["Fine. You earned that one.", "Next time I hit harder."]
+      }
+    },
+    {
+      "id": "sira",
+      "name": "Sira",
+      "title": "Wildfire",
+      "faction": "ember",
+      "style": "aggressive",
+      "deck": "precon_wildfire",
+      "lines": {
+        "intro": ["Oh, a new audience! Let's make it bright.", "Do you like fireworks? You will.", "Stand back. Or don't, it's more fun."],
+        "low": ["Ooh, now it's getting exciting!"],
+        "win": ["What a show! Same time tomorrow?", "Look at it burn!"],
+        "lose": ["Aw. The fire's out. For now.", "You stole my finale!"]
+      }
+    },
+    {
+      "id": "brunn",
+      "name": "Master Brunn",
+      "title": "Iron Foundry",
+      "faction": "iron",
+      "style": "balanced",
+      "deck": "precon_foundry",
+      "lines": {
+        "intro": ["Hmph. Let's see if your work holds up.", "Every gear in its place. Is yours?", "I've no time for sloppy craft. Show me yours."],
+        "low": ["A crack in the casting. It happens."],
+        "win": ["Solid work beats clever work. Every time.", "Back to the anvil with you."],
+        "lose": ["Well forged. I'll grant you that.", "Hmph. Not bad. Not bad at all."]
+      }
+    },
+    {
+      "id": "varek",
+      "name": "Captain Varek",
+      "title": "Iron Legion",
+      "faction": "iron",
+      "style": "defensive",
+      "deck": "precon_iron",
+      "lines": {
+        "intro": ["The line holds. It always holds.", "State your business, challenger.", "Formation! We have company."],
+        "low": ["Close ranks! Nobody breaks!"],
+        "win": ["The line held. Dismissed.", "Discipline wins wars."],
+        "lose": ["The line... broke. Well fought.", "I'll drill them twice as hard."]
+      }
+    },
+    {
+      "id": "morwen",
+      "name": "Morwen",
+      "title": "The Reaper of Graves",
+      "faction": "shadow",
+      "style": "balanced",
+      "deck": "precon_harvest",
+      "lines": {
+        "intro": ["Oh, a visitor. The dead are always glad of company.", "Mind the soil, dear. It remembers.", "Every harvest begins with a little sorrow."],
+        "low": ["How lovely. I'll be resting soon."],
+        "win": ["There, there. You'll rise again tomorrow.", "Another for the garden."],
+        "lose": ["You have a living person's luck.", "Come back soon. They'll miss you."]
+      }
+    },
+    {
+      "id": "notary",
+      "name": "The Notary",
+      "title": "Shadow Pact",
+      "faction": "shadow",
+      "style": "balanced",
+      "deck": "precon_shadow",
+      "lines": {
+        "intro": ["Sign here, and here. The terms are very fair.", "Every duel is a contract. Shall we begin?", "I see you read the small print. How rare."],
+        "low": ["A minor breach. Easily amended."],
+        "win": ["The terms have been met. I'll collect later.", "A pleasure doing business."],
+        "lose": ["A loophole. How annoying.", "Our agreement is void. For today."]
+      }
+    },
+    {
+      "id": "elda",
+      "name": "Elda",
+      "title": "Hermit of the Grove",
+      "faction": "verdant",
+      "style": "defensive",
+      "deck": "precon_verdant",
+      "lines": {
+        "intro": ["Sit. The grove is in no hurry.", "Roots take time. So will you.", "Hush. Listen to the leaves first."],
+        "low": ["Even old trees bend."],
+        "win": ["Patience grows strong things.", "The forest thanks you for visiting."],
+        "lose": ["A good storm. The grove will grow back.", "You walk lightly. That is wise."]
+      }
+    },
+    {
+      "id": "rook",
+      "name": "Rook",
+      "title": "The Wild Hunt",
+      "faction": "verdant",
+      "style": "aggressive",
+      "deck": "precon_wildhunt",
+      "lines": {
+        "intro": ["Hunt's on.", "Run.", "I've tracked worse."],
+        "low": ["Wounded. Still dangerous."],
+        "win": ["Caught.", "Good chase."],
+        "lose": ["You got away.", "Hm. Respect."]
+      }
+    },
+    {
+      "id": "ilyra",
+      "name": "Magistra Ilyra",
+      "title": "Arcane Conclave",
+      "faction": "arcane",
+      "style": "defensive",
+      "deck": "precon_arcane",
+      "lines": {
+        "intro": ["You may begin. Try not to embarrass yourself.", "I have read every move you could make. Twice.", "A lesson, then. Take notes."],
+        "low": ["An interesting hypothesis. Unproven."],
+        "win": ["As predicted. Class dismissed.", "Study harder."],
+        "lose": ["Fascinating. I must revise my notes.", "An anomaly. It will not repeat."]
+      }
+    },
+    {
+      "id": "thessaly",
+      "name": "Thessaly",
+      "title": "Warden of the Spire",
+      "faction": "arcane",
+      "style": "defensive",
+      "deck": "precon_bastion",
+      "lines": {
+        "intro": ["Another climber. Let's see how far you get.", "The Spire has outlasted a thousand of you.", "I've watched many fall. Don't rush to join them."],
+        "low": ["The walls still stand. Mostly."],
+        "win": ["The Spire stands. As always.", "Rest. Then try again."],
+        "lose": ["Well. That has not happened in a while.", "Climb on, then. The top awaits."]
+      }
+    }
+  ],
+  "bosses": [
+    {
+      "id": "volcanic_wyrm",
+      "name": "The Volcanic Wyrm",
+      "title": "Heart of the Mountain",
+      "faction": "ember",
+      "style": "aggressive",
+      "deck": { "base": "precon_wildfire", "add": [{ "cardId": "volcanic_wyrm", "count": 2 }, { "cardId": "blazing_titan", "count": 1 }] },
+      "conditions": [{"name": "Scorched Earth", "text": "At the start of each turn, the player whose turn it is loses 1 life.", "scope": "everyone", "rule": {"kind": "turn_start", "effect": "lose_life", "amount": 1}}],
+      "lines": {
+        "unlock": ["The mountain rumbles. Something below has woken."],
+        "intro": ["SMALL THING. YOU SMELL OF ASH ALREADY.", "THE MOUNTAIN REMEMBERS EVERY FOOL WHO CLIMBED IT."],
+        "low": ["THE FIRE... FLICKERS?"],
+        "win": ["BACK TO THE CINDERS."],
+        "lose": ["THE MOUNTAIN... SLEEPS. FOR NOW."]
+      }
+    },
+    {
+      "id": "iron_colossus",
+      "name": "The Iron Colossus",
+      "title": "First Engine of the Foundry",
+      "faction": "iron",
+      "style": "defensive",
+      "deck": { "base": "precon_iron", "add": [{ "cardId": "iron_colossus", "count": 1 }, { "cardId": "rampart_automaton", "count": 2 }] },
+      "conditions": [{"name": "Fortress", "text": "The Colossus's creatures enter the battlefield with +0/+2.", "scope": "opponent", "rule": {"kind": "enter_stats", "attack": 0, "health": 2}}],
+      "lines": {
+        "unlock": ["Deep in the foundry, an engine older than the city starts to turn."],
+        "intro": ["INTRUDER DETECTED. ASSESSING.", "PROTOCOL: DEFEND. PROTOCOL: DESTROY."],
+        "low": ["STRUCTURAL INTEGRITY FAILING."],
+        "win": ["THREAT REMOVED. RESUMING STANDBY."],
+        "lose": ["SHUTTING... DOWN..."]
+      }
+    },
+    {
+      "id": "gravelord",
+      "name": "The Gravelord",
+      "title": "King Beneath",
+      "faction": "shadow",
+      "style": "balanced",
+      "deck": { "base": "precon_shadow", "add": [{ "cardId": "gravelord", "count": 2 }, { "cardId": "dread_wraith", "count": 1 }] },
+      "conditions": [{"name": "Curse of the Grave", "text": "Your spells cost 1 more.", "scope": "challenger", "rule": {"kind": "cost", "filter": {"type": "spell"}, "amount": 1}}],
+      "lines": {
+        "unlock": ["The graves are restless tonight. Their king is listening."],
+        "intro": ["Kneel, and I may let you serve me after.", "Every throne needs a floor. You will do."],
+        "low": ["Death has always been kind to me."],
+        "win": ["Rise, servant. You belong to me now."],
+        "lose": ["I will wait. I am very good at waiting."]
+      }
+    },
+    {
+      "id": "worldroot",
+      "name": "The Worldroot",
+      "title": "Oldest of the Forest",
+      "faction": "verdant",
+      "style": "defensive",
+      "deck": { "base": "precon_verdant", "add": [{ "cardId": "worldroot_colossus", "count": 2 }, { "cardId": "thunderhoof_mammoth", "count": 1 }] },
+      "conditions": [{"name": "Ancient Forest", "text": "Creatures cost 1 less for everyone.", "scope": "everyone", "rule": {"kind": "cost", "filter": {"type": "creature"}, "amount": -1}}],
+      "lines": {
+        "unlock": ["The whole forest has gone quiet. Something ancient is paying attention."],
+        "intro": ["...you are... very... small...", "...the forest... sees you..."],
+        "low": ["...the roots... are deep..."],
+        "win": ["...return... to the soil..."],
+        "lose": ["...a new season... begins..."]
+      }
+    },
+    {
+      "id": "archmage",
+      "name": "The Archmage",
+      "title": "Master of the Spire",
+      "faction": "arcane",
+      "style": "balanced",
+      "deck": { "base": "precon_arcane", "add": [{ "cardId": "archmage_of_the_spire", "count": 2 }, { "cardId": "void_conjurer", "count": 1 }] },
+      "conditions": [{"name": "Forbidden Library", "text": "Everyone draws an extra card at the start of each turn.", "scope": "everyone", "rule": {"kind": "extra_draw", "amount": 1}}],
+      "lines": {
+        "unlock": ["At the top of the Spire, a light that has not shone for years is burning."],
+        "intro": ["So you climbed my tower. Impressive. And futile.", "I have unmade better challengers before breakfast."],
+        "low": ["Hm. You have studied."],
+        "win": ["Return to the bottom of the stairs."],
+        "lose": ["Remarkable. Perhaps you will take my place one day."]
+      }
+    }
+  ]
+}

@@ -4,6 +4,7 @@
  * the domain sees GameSnapshot projections instead.
  */
 import { CombatState } from "../combat/CombatState.js";
+import { MatchConditions } from "../conditions/MatchConditions.js";
 import { GamePhase } from "./GamePhase.js";
 
 export class GameState {
@@ -31,9 +32,11 @@ export class GameState {
   ended;
   /** @type {number} incremented on every committed command */
   version;
+  /** @type {MatchConditions} rules that hold for the whole game (immutable, shared by clones) */
+  conditions;
 
   /**
-   * @param {{ players: readonly import("./Player.js").Player[], turnNumber?: number, activePlayerId: string, awaitingPlayerId?: string | null, phase?: string, combat?: CombatState, rng: import("../random/RandomSource.contract.js").RandomSource, nextInstanceNumber?: number, winnerId?: string | null, endReason?: string | null, ended?: boolean, version?: number }} fields
+   * @param {{ players: readonly import("./Player.js").Player[], turnNumber?: number, activePlayerId: string, awaitingPlayerId?: string | null, phase?: string, combat?: CombatState, rng: import("../random/RandomSource.contract.js").RandomSource, nextInstanceNumber?: number, winnerId?: string | null, endReason?: string | null, ended?: boolean, version?: number, conditions?: MatchConditions }} fields
    */
   constructor(fields) {
     this.players = Object.freeze([...fields.players]);
@@ -48,6 +51,7 @@ export class GameState {
     this.endReason = fields.endReason ?? null;
     this.ended = fields.ended ?? false;
     this.version = fields.version ?? 0;
+    this.conditions = fields.conditions ?? MatchConditions.NONE;
   }
 
   get isOver() {
@@ -152,6 +156,7 @@ export class GameState {
       endReason: this.endReason,
       ended: this.ended,
       version: this.version,
+      conditions: this.conditions,
     });
   }
 }

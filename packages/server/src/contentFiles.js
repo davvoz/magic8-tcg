@@ -1,7 +1,7 @@
 /**
  * Reads everything data-driven the server needs from the repository's
- * data/ directory: the game content bundle, the economy files and the
- * ranked settings. Values
+ * data/ directory: the game content bundle, the economy files, the
+ * ranked settings and the daily challenges (roster and tracks). Values
  * are raw JSON here; the modules validate them when the app is composed.
  */
 import { readFile, readdir } from "node:fs/promises";
@@ -27,11 +27,12 @@ async function readJsonDirectory(directory) {
 
 /**
  * @param {string} dataDirectory
- * @returns {Promise<Readonly<{ raw: import("@magic8/engine/domain/content/GameContent.js").RawContent, starterOffer: unknown, assets: unknown, market: import("./modules/marketplace/index.js").RawMarketData, ranked: unknown }>>}
+ * @returns {Promise<Readonly<{ raw: import("@magic8/engine/domain/content/GameContent.js").RawContent, starterOffer: unknown, assets: unknown, market: import("./modules/marketplace/index.js").RawMarketData, ranked: unknown, daily: Readonly<{ roster: unknown, tracks: unknown }> }>>}
  */
 export async function readServerContent(dataDirectory) {
   const economy = join(dataDirectory, "economy");
-  const [raw, starterOffer, assets, rarities, dropTables, pricing, products, ranked] = await Promise.all([
+  const daily = join(dataDirectory, "daily");
+  const [raw, starterOffer, assets, rarities, dropTables, pricing, products, ranked, roster, tracks] = await Promise.all([
     readContentDirectory(dataDirectory),
     readJson(join(economy, "starter-offer.json")),
     readJson(join(economy, "assets.json")),
@@ -40,6 +41,8 @@ export async function readServerContent(dataDirectory) {
     readJson(join(economy, "pricing.json")),
     readJsonDirectory(join(economy, "products")),
     readJson(join(dataDirectory, "ranked", "ranked.json")),
+    readJson(join(daily, "characters.json")),
+    readJson(join(daily, "tracks.json")),
   ]);
-  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, pricing, products }), ranked });
+  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, pricing, products }), ranked, daily: Object.freeze({ roster, tracks }) });
 }

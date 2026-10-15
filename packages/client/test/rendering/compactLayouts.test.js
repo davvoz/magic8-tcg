@@ -25,6 +25,9 @@ import { ActiveKeyPrompt } from "../../src/application/wallet/ActiveKeyPrompt.js
 import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
 import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { DailyScene } from "../../src/rendering/scenes/DailyScene.js";
+import { DailyService } from "../../src/application/daily/DailyService.js";
+import { DAY } from "../application/dailyFixtures.js";
 import { NotificationsScene } from "../../src/rendering/scenes/NotificationsScene.js";
 import { OnlineScene } from "../../src/rendering/scenes/OnlineScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
@@ -75,7 +78,9 @@ async function world(phone, { starter = true } = {}) {
     shop: new ShopService({ api: fakeMarketApi().api, wallet, account: account.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" }),
     online: new OnlineService({ connection, randomHex: (bytes) => "ab".repeat(bytes), newCommandId: () => "00000000-0000-4000-8000-000000000001", accountDecks: () => [{ id: "11111111-1111-4111-8111-111111111111", name: "Iron Foundry", mix: [{ faction: "iron", count: 30 }], totalCards: 30, playable: true, problem: null }], logger }),
     notifications: new NotificationService({ api: { list: async () => ok({ notifications: feed, unread: 1, more: false }), markRead: async () => ok({ unread: 0 }) }, connection, logger }),
+    daily: dailyService(DAY),
   };
+  await app.daily.refresh();
   app.notifications.start();
   await settle();
   const viewport = new Viewport(theme.layout);
@@ -191,9 +196,20 @@ function withRankedPlay(app, { eligible = true, auto = false } = {}) {
 /** @param {any} scene */
 const openRanked = (scene) => scene.root.findById("online.mode.ranked")?.activate();
 
+/** The daily challenges over a server that always answers with `day`. */
+function dailyService(day) {
+  return new DailyService({ api: { today: async () => ok(day), chooseTrack: async () => ok(day), play: async () => ok({ gameId: "g" }) } });
+}
+const RUN = Object.freeze({ track: "hard", stage: 1, gameId: null, attempts: 2, rewarded: false, last: { gameId: "g-1", stage: 0, opponent: "kael", result: "win" }, reward: null });
+const WON = Object.freeze({ ...RUN, stage: 3, rewarded: true, reward: { pack: "core_booster", cards: [{ id: "c1", definitionId: "ember_imp", serial: 4 }, { id: "c2", definitionId: "pyre_drake", serial: 9 }] } });
+/** @param {any} run */
+const withDailyRun = (run) => (app) => Object.assign(app, { daily: dailyService({ ...DAY, run }) });
+
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
   { name: "main menu", make: (s, app) => new MainMenuScene(s, app) },
+  { name: "main menu with every entry (daily challenges, tutorial)", make: (s, app) => new MainMenuScene(s, app), before: (app) => Object.assign(app, { tutorial: {} }), after: (scene) => (assert.ok(scene.root.findById("daily")), assert.ok(scene.root.findById("tutorial"))) },
+  { name: "main menu, account dialog", make: (s, app) => new MainMenuScene(s, app), after: (scene) => (scene.root.findById("profile")?.activate(), assert.ok(scene.modal?.findById("signOut"))) },
   { name: "deck selection", make: (s, app) => new DeckSelectionScene(s, app) },
   { name: "deck builder library", make: (s, app) => new DeckBuilderScene(s, app) },
   { name: "deck builder editor", make: (s, app) => new DeckBuilderScene(s, app), before: (app) => app.deckBuilding.startNew() },
@@ -216,6 +232,9 @@ const SCREENS = Object.freeze([
   { name: "sign in with a posting key", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }) },
   { name: "shop asking for the active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, false), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.key")) },
   { name: "shop unlocking the saved active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, true), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.forget")) },
+  { name: "daily challenges, track choice", make: (s, app) => new DailyScene(s, app) },
+  { name: "daily challenges, next fight", make: (s, app) => new DailyScene(s, app), before: withDailyRun(RUN), after: (scene) => assert.ok(scene.root.findById("daily.fight")) },
+  { name: "daily challenges, pack won", make: (s, app) => new DailyScene(s, app), before: withDailyRun(WON), after: (scene) => assert.equal(scene.modal?.id, "daily.reveal") },
   { name: "info", make: (s, app) => new InfoScene(s, app) },
   { name: "info on signing in", make: (s, app) => new InfoScene({ ...s, openLink: () => undefined }, app), params: { topic: "account" }, after: (scene) => assert.ok(scene.root.findById("info.link")) },
   { name: "error", make: (s) => new ErrorScene(s), params: { title: "Something went wrong", message: "A long explanation of what went wrong." }, controls: false },

@@ -139,8 +139,9 @@ export class TurnManager {
     }
     const skipDraw = state.turnNumber === 1 && this.#rules.firstPlayerSkipsFirstDraw;
     if (!skipDraw) {
-      this.drawCards(state, player, this.#rules.cardsDrawnPerTurn, context);
+      this.drawCards(state, player, this.#rules.cardsDrawnPerTurn + state.conditions.extraDraws(player.id), context);
     }
+    state.conditions.applyTurnStart(player, { drawCards: (who, amount) => this.drawCards(state, who, amount, context), events: context.events });
     enqueueTurnStartTriggers(state, context);
   }
 

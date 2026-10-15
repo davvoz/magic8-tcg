@@ -30,6 +30,13 @@
  * be published once on chain (m8tcg_result, docs/tcg/03 §9): the server
  * commits publicly to a history it keeps in its database.
  *
+ * A seat may be the server's AI (a daily challenge, docs/tcg/24-sfide.md):
+ * it has no user and no connection; whenever the engine waits on it, the
+ * actor asks its AI for a move, in the mailbox like any input, and records
+ * it as a move (such games are protocol v1: nobody signs moves). Should the
+ * AI have no move the engine accepts (a bug), the seat makes the smallest
+ * move a forced move would, so the game goes on.
+ *
  * Spectators (docs/tcg/10-spettatori.md) get the table as the SPECTATOR
  * perspective: no hand, no drawn card. That is less than either player
  * sees, so a spectator relaying what they watch to a player tells them
@@ -117,6 +124,10 @@ export class GameActor {
   /** @type {Promise<unknown>} */
   #mailbox = Promise.resolve();
   #broken = false;
+  /** @type {ReadonlyMap<string, import("@magic8/engine/domain/ai/AiPolicy.contract.js").AiPolicy>} seat → the AI that plays it */
+  #ais;
+  /** An AI move is queued in the mailbox (one at a time). */
+  #aiQueued = false;
 
   /**
    * @param {{
@@ -136,13 +147,18 @@ export class GameActor {
    *   signAck?: AckSignature,
    *   signatures?: import("./ports.js").MoveSignatures | null,
    *   results?: import("./ports.js").ResultOutbox | null,
+   *   ais?: ReadonlyMap<string, import("@magic8/engine/domain/ai/AiPolicy.contract.js").AiPolicy>,
    * }} deps `signatures` is required for v2 games; `results` receives finished games' results (none: not published);
-   *   `onAborted` writes in the unit of work that calls a game off (e.g. gives back what it cost)
+   *   `onAborted` writes in the unit of work that calls a game off (e.g. gives back what it cost); `ais`: the AI of each seat the server plays
    */
-  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, onAborted = async () => undefined, signAck = () => ({}), signatures = null, results = null }) {
+  constructor({ game, recorder, content, repository, notifier, clock, random, unitOfWork, logger, timePolicy, onBroken, onFinished, onAborted = async () => undefined, signAck = () => ({}), signatures = null, results = null, ais = new Map() }) {
     if (recorder.version >= GameProtocol.V2 && signatures === null) {
       throw new Error(`game ${game.id}: a v2 game needs move signature checks`);
     }
+    if (ais.size > 0 && recorder.version >= GameProtocol.V2) {
+      throw new Error(`game ${game.id}: a seat the AI plays cannot sign moves; such games are protocol v1`);
+    }
+    this.#ais = ais;
     this.#game = game;
     this.#recorder = recorder;
     this.#content = content;
@@ -204,9 +220,66 @@ export class GameActor {
     return this.#game.players.find((player) => player.userId === userId)?.seat ?? null;
   }
 
-  /** The users seated in this game. */
+  /** The users seated in this game (not the AI's seat). */
   userIds() {
-    return this.#game.players.map((player) => player.userId);
+    return this.#humans().map((player) => /** @type {string} */ (player.userId));
+  }
+
+  /** The seats people play: those with a user, a connection, a perspective to be sent. */
+  #humans() {
+    return this.#game.players.filter((player) => player.userId !== null);
+  }
+
+  /**
+   * Lets the AI seats take part: before the start, each gives its entropy (the server's); once started, the AI moves
+   * whenever the game waits on it. Called when the actor is created or rebuilt.
+   */
+  wakeAi() {
+    if (this.#ais.size === 0) {
+      return Promise.resolve();
+    }
+    return this.#enqueue(async () => {
+      for (const seat of this.#ais.keys()) {
+        if (this.#status === GameStatus.CREATED && !this.#entropies.has(seat)) {
+          await this.#join(seat, bytesToHex(this.#random.bytes(LIMITS.ENTROPY_BYTES)), EntropySource.SERVER);
+        }
+      }
+      this.#scheduleAi();
+    });
+  }
+
+  /** Queues the AI's move when the game waits on a seat it plays. */
+  #scheduleAi() {
+    const seat = this.#engine?.awaitingPlayerId ?? null;
+    if (this.#aiQueued || this.#status !== GameStatus.ACTIVE || seat === null || !this.#ais.has(seat)) {
+      return;
+    }
+    this.#aiQueued = true;
+    this.#enqueue(() => this.#playAi()).catch((error) => this.#logger.error("the AI's move failed", { game: this.id, error: error instanceof Error ? error.message : String(error) }));
+  }
+
+  /** The AI's move for the seat the game waits on, recorded like any move. */
+  async #playAi() {
+    this.#aiQueued = false;
+    const engine = this.#engine;
+    const seat = engine?.awaitingPlayerId ?? null;
+    const ai = seat === null ? undefined : this.#ais.get(seat);
+    if (engine === null || seat === null || ai === undefined || this.#status !== GameStatus.ACTIVE) {
+      return;
+    }
+    const view = engine.getSnapshot(seat);
+    const chosen = ai.decide(view);
+    let applied = chosen === null ? null : this.#apply(seat, chosen, null);
+    if (applied === null || !applied.ok) {
+      this.#logger.warn("the AI had no move the engine accepted; the smallest move was made instead", { game: this.id, seat, command: chosen });
+      applied = this.#apply(seat, forcedCommandFor(/** @type {any} */ (view)), null);
+    }
+    if (!applied.ok) {
+      throw new Error(`game ${this.id}: even the smallest move was refused for the AI (${applied.error.message})`);
+    }
+    await this.#commit(applied, null);
+    this.#turnClock.acted(seat, this.#clock.now());
+    this.#afterMove(applied);
   }
 
   /** Whether players must sign their moves (game protocol v2). */
@@ -623,13 +696,15 @@ export class GameActor {
   /** Tells both players what happened (each from their own perspective), and the result if the game ended. */
   #afterMove(applied) {
     this.#syncClock();
-    for (const player of this.#game.players) {
-      this.#notifier.send(player.userId, "game.events", { ...this.#viewFor(player.seat), events: redactEventsFor(applied.events, player.seat) });
+    for (const player of this.#humans()) {
+      const userId = /** @type {string} */ (player.userId);
+      this.#notifier.send(userId, "game.events", { ...this.#viewFor(player.seat), events: redactEventsFor(applied.events, player.seat) });
       if (applied.over) {
-        this.#notifier.send(player.userId, "game.over", { gameId: this.id, winner: applied.winner, reason: applied.reason, you: player.seat });
+        this.#notifier.send(userId, "game.over", { gameId: this.id, winner: applied.winner, reason: applied.reason, you: player.seat });
       }
     }
     this.#stream(applied);
+    this.#scheduleAi();
   }
 
   /** Tells the spectators what the table now shows; lets them go when the game ends. */
@@ -712,7 +787,7 @@ export class GameActor {
 
   /** @returns {string[]} v2: the seats that have not authorised a session key yet (none in v1) */
   #unauthorizedSeats() {
-    return this.signsMoves ? SEATS.filter((seat) => !this.#sessions.has(seat)) : [];
+    return this.signsMoves ? SEATS.filter((seat) => !this.#sessions.has(seat) && !this.#ais.has(seat)) : [];
   }
 
   /** v2: while the game waits for its players, each one learns who has accepted it so far. */
@@ -720,8 +795,8 @@ export class GameActor {
     if (!this.signsMoves) {
       return;
     }
-    for (const player of this.#game.players) {
-      this.#notifier.send(player.userId, "game.state", this.#viewFor(player.seat));
+    for (const player of this.#humans()) {
+      this.#notifier.send(/** @type {string} */ (player.userId), "game.state", this.#viewFor(player.seat));
     }
   }
 
@@ -743,8 +818,8 @@ export class GameActor {
     });
     this.#status = GameStatus.ABORTED;
     this.#logger.info("game called off before it started", { game: this.id, reason, seats });
-    for (const player of this.#game.players) {
-      this.#notifier.send(player.userId, "game.aborted", { gameId: this.id, reason, seats: [...seats], you: player.seat });
+    for (const player of this.#humans()) {
+      this.#notifier.send(/** @type {string} */ (player.userId), "game.aborted", { gameId: this.id, reason, seats: [...seats], you: player.seat });
     }
   }
 
@@ -776,6 +851,7 @@ export class GameActor {
       decks: this.#game.players.map((player) => player.deck),
       firstSeat: this.#recorder.firstSeat,
       engineSeed: this.#recorder.engineSeed,
+      conditions: this.#game.conditions.length === 0 ? undefined : this.#game.conditions,
     });
     if (!engine.ok) {
       throw new Error(`game ${this.id}: the engine could not be built (${engine.error.message})`);
@@ -795,6 +871,7 @@ export class GameActor {
     const opponent = this.#game.players.find((player) => player.seat !== seat);
     return Object.freeze({
       gameId: this.id,
+      mode: this.#game.mode,
       seat,
       status: this.#status,
       opponent: Object.freeze({ account: opponent?.account ?? null }),

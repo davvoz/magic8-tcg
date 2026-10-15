@@ -218,13 +218,19 @@ describe("sales between players", () => {
     assert.deepEqual(await w.copyOf(copy.id), [bob.id, "active"]);
   });
 
+  it("lists a reward copy like any other: the daily challenges' packs are the player's to sell", async () => {
+    const w = await world();
+    const alice = await w.player("alice");
+    const { listing } = await w.list(alice, await w.owned(alice, "ember_imp", "reward"), "1");
+    assert.equal(listing.status, "ACTIVE");
+  });
+
   it("checks what is listed and who buys, gives copies back on cancel and expiry, and limits listings and purchases", async () => {
     const w = await world({ maxActiveListings: 3, maxLivePurchases: 1 });
     const alice = await w.player("alice");
     const bob = await w.player("bob");
     const copy = await w.owned(alice);
     await assert.rejects(w.list(bob, copy), /no such card in your collection/);
-    await assert.rejects(w.list(alice, await w.owned(alice, "ember_imp", "reward")), /not one of your tradeable copies/);
     for (const price of ["0", "1.0001", "-1", "abc", "100000.001"]) {
       await assert.rejects(w.list(alice, copy, price), /price/, price);
     }

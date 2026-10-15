@@ -211,7 +211,7 @@ Scambio **carta contro carta**, senza denaro.
 - Un giocatore offre fino a 10 sue copie e chiede in cambio fino a 10 carte a un altro giocatore. Chiedere niente equivale a un regalo.
 - Le carte offerte restano **bloccate in garanzia** (escrow) finché l'altro non risponde.
 - Se il destinatario **accetta**, le carte passano di mano tutte insieme, in un colpo solo. Se **rifiuta**, se il proponente **ritira** l'offerta o dopo **72 ore**, le carte tornano libere.
-- Si scambiano carte comprate e carte dello starter; le ricompense no.
+- Si scambiano carte comprate, carte dello starter e ricompense (i pacchetti delle sfide giornaliere).
 - Ogni scambio concluso viene registrato sulla blockchain.
 
 ---

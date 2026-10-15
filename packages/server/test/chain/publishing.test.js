@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { OperationId, PackVerdict, ackKeysManifest, ackMessage, broadcastersManifest, canonicalize, parseGameResultRecord, verifyOrderOnChain } from "@magic8/protocol";
+import { OperationId, PackVerdict, ackKeysManifest, ackMessage, broadcastersManifest, canonicalize, parseGameResultRecord, parseGrantRecord, verifyOrderOnChain } from "@magic8/protocol";
 import { SignerError, recoverSigner } from "@magic8/steem";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { ResourceMode, signerFor } from "../../src/modules/chain/index.js";
@@ -157,6 +157,22 @@ describe("ChainBroadcaster and ChainTracker", () => {
     assert.equal((await rowsOf(w)).length, 1, "one record for the whole game");
     await assert.rejects(w.setup.app.outbox.enqueueResult({ network: "steem", gameId, payload: row.payload }), "never a second result for a game");
     assert.deepEqual(await alerts(w), []);
+  });
+
+  it("publishes the starter deck a player takes as a grant (m8tcg_grant), the copies' public birth", async () => {
+    const w = await world();
+    await w.setup.app.starters.claim({ userId: w.alice.id, starterId: "precon_foundry", ip: "127.0.0.1" });
+    const [row] = await rowsOf(w);
+    assert.equal(row.kind, "GRANT");
+    assert.equal(await w.chain.broadcaster.runOnce(), 1);
+    assert.equal(w.ledger.mempool[0].operations[0].data.id, OperationId.GRANT);
+    assert.equal(w.ledger.mempool[0].operations[0].data.json, row.payload);
+    w.ledger.produceBlock();
+    w.ledger.finalize();
+    await w.chain.tracker.runOnce();
+    assert.deepEqual([(await rowsOf(w))[0].status, (await rowsOf(w))[0].reconciliation], ["IRREVERSIBLE", "MATCH"]);
+    assert.equal(parseGrantRecord(row.payload).u, "alice");
+    assert.deepEqual(await alerts(w), [], "the tracker knows the operation as ours");
   });
 
   it("signs every accepted command's ack with the key the root's ack_keys manifest names", async () => {

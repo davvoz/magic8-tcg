@@ -170,7 +170,7 @@ export class EffectContext {
    * @param {number} amount
    */
   healPlayer(player, amount) {
-    const gained = player.gainLife(amount, this.rules.startingLife);
+    const gained = player.gainLife(amount, player.maxLife);
     this.emit(GameEventType.HEALED, { targetId: player.id, amount: gained });
     this.emit(GameEventType.LIFE_CHANGED, { playerId: player.id, life: player.life, delta: gained });
   }

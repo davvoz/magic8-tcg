@@ -26,8 +26,17 @@ export const SPECTATOR = "#spectator";
  *   cost: number, attack: number, health: number, maxHealth: number, damage: number,
  *   keywords: readonly string[], text: string, ownerId: string, controllerId: string,
  *   summoningSick: boolean, exhausted: boolean, zone: string,
- *   abilities: readonly AbilityView[]
+ *   abilities: readonly AbilityView[], modifiers: readonly ModifierView[],
+ *   printedAttack: number, printedHealth: number, printedCost: number
  * }>} CardView
+ *
+ * `attack`, `health` and `maxHealth` are the card's current values;
+ * `printedAttack` and `printedHealth` what the card says. `cost` is what the
+ * card costs its owner now (a match condition may change it), `printedCost`
+ * what it says. `keywords` include those a condition gave it. `modifiers`: the
+ * stat changes on the card, public like everything on the table; the
+ * current values already include them (and `damage`).
+ * @typedef {Readonly<{ attack: number, health: number, duration: string }>} ModifierView
  *
  * @typedef {Readonly<{
  *   trigger: string, effect: string, params: Readonly<Record<string, number | string>>,
@@ -50,9 +59,10 @@ function projectAbility(ability) {
 
 /**
  * @param {import("../cards/CardInstance.js").CardInstance} card
+ * @param {number} [cost] what it costs now (default: what it says)
  * @returns {CardView}
  */
-export function projectCard(card) {
+export function projectCard(card, cost = card.definition.cost) {
   const { definition } = card;
   return {
     instanceId: card.instanceId,
@@ -60,12 +70,12 @@ export function projectCard(card) {
     name: definition.name,
     type: definition.type,
     faction: definition.faction,
-    cost: definition.cost,
+    cost,
     attack: card.attack,
     health: card.health,
     maxHealth: card.maxHealth,
     damage: card.damage,
-    keywords: [...definition.keywords],
+    keywords: [...card.keywords],
     text: definition.text,
     ownerId: card.ownerId,
     controllerId: card.controllerId,
@@ -73,26 +83,30 @@ export function projectCard(card) {
     exhausted: card.exhausted,
     zone: card.zone,
     abilities: definition.abilities.map(projectAbility),
+    modifiers: card.modifiers.map((modifier) => ({ ...modifier })),
+    printedAttack: definition.attack,
+    printedHealth: definition.health,
+    printedCost: definition.cost,
   };
 }
 
 /**
  * @param {import("./Player.js").Player} player
  * @param {boolean} revealHand
- * @param {import("./GameRules.js").GameRules} rules
+ * @param {import("../conditions/MatchConditions.js").MatchConditions} conditions
  */
-function projectPlayer(player, revealHand, rules) {
+function projectPlayer(player, revealHand, conditions) {
   return {
     id: player.id,
     name: player.name,
     life: player.life,
-    maxLife: rules.startingLife,
+    maxLife: player.maxLife,
     resources: { current: player.resources.current, max: player.resources.max },
     librarySize: player.library.size,
     handSize: player.hand.size,
-    hand: revealHand ? player.hand.cards.map(projectCard) : null,
-    battlefield: player.battlefield.cards.map(projectCard),
-    graveyard: player.graveyard.cards.map(projectCard),
+    hand: revealHand ? player.hand.cards.map((card) => projectCard(card, conditions.costOf(player.id, card.definition))) : null,
+    battlefield: player.battlefield.cards.map((card) => projectCard(card)),
+    graveyard: player.graveyard.cards.map((card) => projectCard(card)),
   };
 }
 
@@ -114,8 +128,9 @@ export function createSnapshot(state, perspectivePlayerId, rules) {
     isOver: state.isOver,
     winnerId: state.winnerId,
     endReason: state.endReason,
-    players: state.players.map((player) => projectPlayer(player, omniscient || player.id === perspectivePlayerId, rules)),
+    players: state.players.map((player) => projectPlayer(player, omniscient || player.id === perspectivePlayerId, state.conditions)),
     combat: state.combat.toPlain(),
+    conditions: state.conditions.toPlain(),
     legalMoves: omniscient || spectator ? null : computeLegalMoves(state, perspectivePlayerId, rules),
   });
 }

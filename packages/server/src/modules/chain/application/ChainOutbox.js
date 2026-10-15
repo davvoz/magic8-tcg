@@ -1,7 +1,7 @@
 /**
  * ChainOutbox: protocol records waiting to be published on chain
- * (docs/tcg/03-game-blockchain-protocol.md §16): purchase receipts, pack
- * epochs, trades, sales and game results. A game's history stays in the
+ * (docs/tcg/03-game-blockchain-protocol.md §16): purchase receipts, grants
+ * (the cards the game gives away), pack epochs, trades, sales and game results. A game's history stays in the
  * database; only its result, committing to that history, is published. A record is written in the
  * same transaction as the state it describes — a fulfilled order and its
  * receipt commit together — and is immutable afterwards (database
@@ -10,7 +10,7 @@
  */
 import { sha256Hex, utf8 } from "@magic8/protocol";
 
-export const OutboxKind = Object.freeze({ RECEIPT: "RECEIPT", EPOCH: "EPOCH", TRADE: "TRADE", SALE: "SALE", RESULT: "RESULT" });
+export const OutboxKind = Object.freeze({ RECEIPT: "RECEIPT", EPOCH: "EPOCH", TRADE: "TRADE", SALE: "SALE", RESULT: "RESULT", GRANT: "GRANT" });
 /** Every kind goes out in the order it was written. */
 const PRIORITY = 0;
 
@@ -65,6 +65,14 @@ export class ChainOutbox {
    */
   async enqueueResult({ network, gameId, payload }) {
     await this.#repository.insert({ network, kind: OutboxKind.RESULT, gameId, payload, payloadHash: sha256Hex(utf8(payload)), priority: PRIORITY, at: this.#clock.now() });
+  }
+
+  /**
+   * Copies the game gave away (m8tcg_grant): a starter deck, a daily challenges' pack, written with the copies.
+   * @param {{ network: string, payload: string }} entry canonical JSON
+   */
+  async enqueueGrant({ network, payload }) {
+    await this.#repository.insert({ network, kind: OutboxKind.GRANT, payload, payloadHash: sha256Hex(utf8(payload)), priority: PRIORITY, at: this.#clock.now() });
   }
 
   /**

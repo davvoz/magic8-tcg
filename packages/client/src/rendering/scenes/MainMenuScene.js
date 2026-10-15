@@ -1,6 +1,8 @@
 /**
  * Entry screen: a fan of cards under the game's name in living gold, the navigation
- * buttons and a content summary. Buttons whose destination scene is not
+ * buttons and a content summary. The account lives in the top-left corner:
+ * signed out, Sign in; signed in, the player's portrait and name, which open
+ * their account (and Sign out). Buttons whose destination scene is not
  * registered are disabled rather than pretending to work. Signed in, the
  * top-right button opens the notifications and counts the unread ones;
  * beside it, Sound opens the sound settings (music, effects, mute), and Info
@@ -13,17 +15,20 @@
  * banner under the title on a compact screen), its countdown ticking; signed
  * in, a click on it opens the leaderboard.
  *
- * The tutorial (a guided first match) is offered under the play buttons.
+ * Signed in, the day's challenges sit under online play, with how far the
+ * player got today. The tutorial (a guided first match) is offered under the play buttons.
  * The Deck Builder has a button of its own only while there is no
  * collection to open (signed out, or offline); signed in, it is opened from
  * the collection, beside the cards it builds with.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
-import { IdentityStatus } from "../../application/identity/IdentityService.js";
+import { IdentityStatus, SignInMethod } from "../../application/identity/IdentityService.js";
 import { AvatarNode } from "../ui/AvatarNode.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
+import { Hotspot } from "../ui/Hotspot.js";
 import { Label } from "../ui/Label.js";
+import { Modal } from "../ui/Modal.js";
 import { Ornament } from "../ui/Ornament.js";
 import { buildAudioSettingsModal } from "./audioSettings.js";
 import { deckStorageText } from "./deckStorage.js";
@@ -53,8 +58,10 @@ const SOUND = Object.freeze({ width: 160, gap: 12, compactWidth: 130 });
 const INFO = Object.freeze({ width: 120, compactWidth: 96 });
 /** The jackpot card, right of the button column: its gap from the column and its widest. */
 const JACKPOT = Object.freeze({ gap: 60, maxWidth: 500 });
-/** The signed-in player's portrait and name, in the top-left corner (the bell's mirror). */
-const PROFILE = Object.freeze({ size: 56, nameWidth: 320 });
+/** The signed-in player's portrait and name, in the top-left corner (the bell's mirror); Sign in in their place when signed out. */
+const PROFILE = Object.freeze({ size: 56, nameWidth: 320, signInWidth: 200 });
+/** The account dialog the profile opens. */
+const ACCOUNT = Object.freeze({ width: 460, height: 250, compactHeight: 210, avatar: 64, button: 52, inset: 24 });
 /**
  * The compact layout: the header row (portrait, bell), the left half (fan,
  * title, subtitle, summary lines from the bottom) and the button column
@@ -64,7 +71,7 @@ const COMPACT = Object.freeze({
   margin: 14,
   header: Object.freeze({ y: 8, height: 48 }),
   bell: Object.freeze({ width: 200 }),
-  profile: Object.freeze({ size: 46, nameWidth: 260 }),
+  profile: Object.freeze({ size: 46, nameWidth: 260, signInWidth: 150 }),
   hero: Object.freeze({ y: 40, width: 380, height: 210 }),
   title: Object.freeze({ y: 124, height: 84 }),
   subtitle: Object.freeze({ y: 206, height: 26 }),
@@ -83,6 +90,8 @@ export class MainMenuScene extends Scene {
   #unsubscribeNotifications = null;
   /** @type {(() => void) | null} */
   #unsubscribeAudio = null;
+  /** @type {(() => void) | null} */
+  #unsubscribeDaily = null;
   /** The sound settings button, relabelled when the game is muted from anywhere (M). @type {Button | null} */
   #soundButton = null;
   /** @type {Array<() => void>} */
@@ -107,6 +116,7 @@ export class MainMenuScene extends Scene {
     // The account loads after sign-in; redraw when it does (and when it fails).
     this.#unsubscribe = this.#app.account?.subscribe(() => this.#rebuild()) ?? null;
     this.#unsubscribeNotifications = this.#app.notifications?.subscribe(() => this.#rebuild()) ?? null;
+    this.#unsubscribeDaily = this.#app.daily?.subscribe(() => this.#rebuild()) ?? null;
     this.#unsubscribeAudio = this.#app.audio?.subscribe((settings) => {
       if (this.#soundButton !== null) {
         this.#soundButton.text = soundLabel(settings);
@@ -128,6 +138,8 @@ export class MainMenuScene extends Scene {
     this.#unsubscribeNotifications = null;
     this.#unsubscribeAudio?.();
     this.#unsubscribeAudio = null;
+    this.#unsubscribeDaily?.();
+    this.#unsubscribeDaily = null;
     this.#jackpotWatch.forEach((stop) => stop());
     this.#jackpotWatch = [];
     this.#jackpotPanel = null;
@@ -146,31 +158,37 @@ export class MainMenuScene extends Scene {
     const collection = this.#collectionEntries();
     const entries = [
       ...this.#onlineEntries(),
+      ...this.#dailyEntries(),
       { id: "play", text: this.#onlineEntries().length > 0 ? "Practice vs AI" : "Play", scene: SceneId.DECK_SELECTION, variant: this.#onlineEntries().length > 0 ? "secondary" : "primary" },
       ...this.#tutorialEntries(),
       ...(collection.length === 0 ? [{ id: "deckBuilder", text: "Deck Builder", scene: SceneId.DECK_BUILDER, variant: "secondary" }] : collection),
       ...(this.#app.shop === undefined ? [] : [{ id: "shop", text: "Shop", scene: SceneId.SHOP, variant: "secondary" }]),
-      ...this.#accountEntries(),
     ];
     /** @type {Button | null} */
     let first = null;
     const { buttons } = layout;
-    const buttonsTop = buttons.top + Math.max(0, (buttons.room - (entries.length * (buttons.height + buttons.gap) - buttons.gap)) / 2);
-    entries.forEach((entry, index) => {
-      const button = this.root.add(
-        new Button({
-          id: entry.id,
-          x: buttons.centerX - buttons.width / 2,
-          y: buttonsTop + index * (buttons.height + buttons.gap),
-          width: buttons.width,
-          height: buttons.height,
-          text: entry.text,
-          variant: /** @type {import("../ui/Button.js").ButtonVariant} */ (entry.variant),
-          onActivate: entry.onActivate ?? (() => navigate(/** @type {string} entries without onActivate have a scene */ (entry.scene))),
-        }),
-      );
-      button.enabled = entry.scene === null || hasScene(entry.scene);
-      first ??= button;
+    // A phone's column pairs its last secondary entries side by side rather than overflow the screen when there are many.
+    const rows = rowsFor(entries, buttons);
+    const buttonsTop = buttons.top + Math.max(0, (buttons.room - (rows.length * (buttons.height + buttons.gap) - buttons.gap)) / 2);
+    rows.forEach((row, index) => {
+      const buttonWidth = (buttons.width - (row.length - 1) * buttons.gap) / row.length;
+      row.forEach((entry, place) => {
+        const button = this.root.add(
+          new Button({
+            id: entry.id,
+            x: buttons.centerX - buttons.width / 2 + place * (buttonWidth + buttons.gap),
+            y: buttonsTop + index * (buttons.height + buttons.gap),
+            width: buttonWidth,
+            height: buttons.height,
+            text: entry.text,
+            textSize: row.length > 1 ? "small" : "body",
+            variant: /** @type {import("../ui/Button.js").ButtonVariant} */ (entry.variant),
+            onActivate: entry.onActivate ?? (() => navigate(/** @type {string} entries without onActivate have a scene */ (entry.scene))),
+          }),
+        );
+        button.enabled = entry.scene === null || hasScene(entry.scene);
+        first ??= button;
+      });
     });
 
     this.#buildBell(layout);
@@ -333,19 +351,61 @@ export class MainMenuScene extends Scene {
   }
 
   /**
-   * The signed-in player's STEEM profile picture and name, the name stopping short of the header's buttons.
+   * The account corner: signed out, Sign in; signed in, the player's STEEM profile picture and name (stopping short of
+   * the header's buttons), which open their account. Nothing offline: there is no account to have.
    * @param {MenuLayout} layout
    * @param {number} edge where the header's buttons start
    */
-  #buildProfile({ profile }, edge) {
+  #buildProfile({ profile, bell }, edge) {
     const state = this.#app.identity?.state;
+    if (state?.status === IdentityStatus.SIGNED_OUT) {
+      const width = Math.min(profile.signInWidth, edge - SOUND.gap - profile.x);
+      this.root.add(new Button({ id: "signIn", x: profile.x, y: bell.y, width, height: bell.height, text: "Sign in", variant: "primary", keepPlate: true, textSize: this.services.viewport.compact ? "small" : "body", enabled: this.services.hasScene(SceneId.LOGIN), onActivate: () => this.services.navigate(SceneId.LOGIN) }));
+      return;
+    }
     const user = state?.status === IdentityStatus.SIGNED_IN ? state.user : null;
     if (user === null || user === undefined) {
       return;
     }
     this.root.add(new AvatarNode({ id: "profile.avatar", x: profile.x, y: profile.y, size: profile.size, account: user.account }));
     const nameX = profile.x + profile.size + 12;
-    this.root.add(new Label({ id: "profile.name", x: nameX, y: profile.y, width: Math.min(profile.nameWidth, edge - SOUND.gap - nameX), height: profile.size, text: `@${user.account}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    const nameWidth = Math.min(profile.nameWidth, edge - SOUND.gap - nameX);
+    const nameHeight = Math.round(profile.size * 0.6);
+    this.root.add(new Label({ id: "profile.name", x: nameX, y: profile.y, width: nameWidth, height: nameHeight, text: `@${user.account}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    this.root.add(new Label({ id: "profile.hint", x: nameX, y: profile.y + nameHeight, width: nameWidth, height: profile.size - nameHeight, text: "Account · Sign out", size: "tiny", colorKey: "textMuted", align: "left", fit: true }));
+    this.root.add(new Hotspot({ id: "profile", x: profile.x - 4, y: profile.y - 2, width: nameX + nameWidth - profile.x + 8, height: profile.size + 4, onActivate: () => this.#showAccount(user) }));
+  }
+
+  /**
+   * The signed-in account: who, how they signed in, and Sign out.
+   * @param {import("../../application/ports/AuthApi.contract.js").SessionUser} user
+   */
+  #showAccount(user) {
+    const identity = this.#app.identity;
+    if (identity === undefined) {
+      return;
+    }
+    const { viewport } = this.services;
+    const width = Math.min(ACCOUNT.width, viewport.logicalWidth - 20);
+    const height = viewport.compact ? ACCOUNT.compactHeight : ACCOUNT.height;
+    const close = () => this.closeModal();
+    const modal = new Modal({ id: "account", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: width, panelHeight: height, onDismiss: close });
+    const { panel } = modal;
+    const { inset, avatar } = ACCOUNT;
+    panel.add(new AvatarNode({ x: inset, y: inset, size: avatar, account: user.account }));
+    const textX = inset + avatar + 16;
+    panel.add(new Label({ x: textX, y: inset, width: width - textX - inset, height: avatar / 2, text: `@${user.account}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Label({ x: textX, y: inset + avatar / 2, width: width - textX - inset, height: avatar / 2, text: signedInWith(identity.state.method, user.network), size: "small", colorKey: "textMuted", align: "left", fit: true }));
+    const half = (width - 2 * inset - 12) / 2;
+    const buttonY = height - inset - ACCOUNT.button;
+    const signOut = () => {
+      close();
+      void identity.signOut().then(() => this.services.navigate(SceneId.MAIN_MENU));
+    };
+    panel.add(new Button({ id: "signOut", x: inset, y: buttonY, width: half, height: ACCOUNT.button, text: "Sign out", variant: "danger", onActivate: signOut }));
+    const closeButton = panel.add(new Button({ id: "account.close", x: inset + half + 12, y: buttonY, width: half, height: ACCOUNT.button, text: "Close", onActivate: close }));
+    this.openModal(modal);
+    this.focus(closeButton);
   }
 
   /** The tutorial, when the game has one. */
@@ -360,6 +420,18 @@ export class MainMenuScene extends Scene {
     return ready ? [{ id: "online", text: "Play online", scene: SceneId.ONLINE, variant: "primary" }] : [];
   }
 
+  /** The daily challenges, once signed in and the account is loaded, with today's progress. */
+  #dailyEntries() {
+    const daily = this.#app.daily;
+    const ready = daily !== undefined && this.#app.online !== undefined && this.#app.account?.state.status === AccountStatus.READY;
+    if (!ready) {
+      return [];
+    }
+    const run = daily.state.day?.run ?? null;
+    const done = run?.rewarded === true;
+    return [{ id: "daily", text: `Challenges${dailyProgress(run)}`, scene: SceneId.DAILY, variant: done ? "secondary" : "primary" }];
+  }
+
   /** The free starter deck until it is taken, the collection afterwards. */
   #collectionEntries() {
     const account = this.#app.account;
@@ -370,23 +442,6 @@ export class MainMenuScene extends Scene {
       return [{ id: "starter", text: "Free starter deck", scene: SceneId.STARTER, variant: "primary" }];
     }
     return [{ id: "collection", text: "Collection", scene: SceneId.COLLECTION, variant: "secondary" }];
-  }
-
-  /** Sign in / sign out, when a game server is reachable. */
-  #accountEntries() {
-    const identity = this.#app.identity;
-    if (identity === undefined) {
-      return [];
-    }
-    const { status, user } = identity.state;
-    if (status === IdentityStatus.SIGNED_IN && user !== null) {
-      const signOut = () => identity.signOut().then(() => this.services.navigate(SceneId.MAIN_MENU));
-      return [{ id: "signOut", text: `Sign out @${user.account}`, scene: null, variant: "secondary", onActivate: signOut }];
-    }
-    if (status === IdentityStatus.SIGNED_OUT) {
-      return [{ id: "signIn", text: "Sign in", scene: SceneId.LOGIN, variant: "secondary" }];
-    }
-    return [];
   }
 
   #accountSummary() {
@@ -444,6 +499,48 @@ export class MainMenuScene extends Scene {
   }
 }
 
+/**
+ * The menu's buttons in rows: one a row, unless the column (a phone's, `room` > 0) would overflow; then its last
+ * secondary entries go two a row, from the bottom up, until it fits.
+ * @template {{ variant: string }} T
+ * @param {readonly T[]} entries in order
+ * @param {{ height: number, gap: number, room: number }} column
+ * @returns {T[][]}
+ */
+function rowsFor(entries, { height, gap, room }) {
+  const rows = entries.map((entry) => [entry]);
+  const fits = () => room === 0 || rows.length * (height + gap) - gap <= room;
+  for (let index = rows.length - 1; index > 0 && !fits(); index -= 1) {
+    const [above, below] = [rows[index - 1], rows[index]];
+    if (above.length === 1 && below.length === 1 && above[0].variant === "secondary" && below[0].variant === "secondary") {
+      rows.splice(index - 1, 2, [above[0], below[0]]);
+      index -= 1;
+    }
+  }
+  return rows;
+}
+
+/**
+ * How the player signed in, as their account dialog says it.
+ * @param {string | null} method one of SignInMethod
+ * @param {string} network
+ */
+function signedInWith(method, network) {
+  const how = method === SignInMethod.KEYS ? "with your posting key" : "with Steem Keychain";
+  return `Signed in on ${network} ${how}`;
+}
+
+/**
+ * How far the player got in today's challenges, after their name: nothing before the track is chosen.
+ * @param {import("../../application/ports/DailyApi.contract.js").DailyRun | null} run
+ */
+function dailyProgress(run) {
+  if (run === null) {
+    return "";
+  }
+  return run.rewarded ? " (done)" : ` (${run.stage}/3)`;
+}
+
 /** @param {import("../../application/audio/AudioSettings.js").AudioSettings} settings */
 function soundLabel(settings) {
   return settings.muted ? "Sound off" : "Sound";
@@ -458,7 +555,7 @@ function soundLabel(settings) {
  *   buttons: { centerX: number, width: number, height: number, gap: number, top: number, room: number },
  *   summary: { centerX: number, width: number, y: number, bottom: number | null, lineHeight: number, size: import("../theme/Theme.js").FontSize },
  *   bell: { x: number, y: number, width: number, height: number },
- *   profile: { x: number, y: number, size: number, nameWidth: number },
+ *   profile: { x: number, y: number, size: number, nameWidth: number, signInWidth: number },
  *   jackpot: { x: number, y: number, width: number, layout: import("./jackpot/JackpotPanel.js").JackpotLayout },
  * }>} MenuLayout `buttons.room`: the height the column is centred in (0 starts it at `top`); `summary.bottom`: where its last line ends, when it is laid out from the bottom
  */
@@ -478,7 +575,7 @@ function wideLayout(width) {
     buttons: { centerX, width: BUTTON_WIDTH, height: BUTTON_HEIGHT, gap: BUTTON_GAP, top: BUTTONS_Y, room: 0 },
     summary: { centerX, width: SUMMARY.width, y: SUMMARY.y, bottom: null, lineHeight: SUMMARY.lineHeight, size: "small" },
     bell: { x: width - BELL.margin - BELL.width, y: BELL.margin / 2, width: BELL.width, height: BELL.height },
-    profile: { x: BELL.margin, y: BELL.margin / 2 + (BELL.height - PROFILE.size) / 2, size: PROFILE.size, nameWidth: PROFILE.nameWidth },
+    profile: { x: BELL.margin, y: BELL.margin / 2 + (BELL.height - PROFILE.size) / 2, size: PROFILE.size, nameWidth: PROFILE.nameWidth, signInWidth: PROFILE.signInWidth },
     jackpot: { x: centerX + BUTTON_WIDTH / 2 + JACKPOT.gap, y: BUTTONS_Y, width: Math.min(JACKPOT.maxWidth, width - centerX - BUTTON_WIDTH / 2 - JACKPOT.gap - BELL.margin), layout: "card" },
   });
 }
@@ -501,7 +598,7 @@ function compactLayout(width) {
     buttons: { centerX: half + half / 2, width: buttonWidth, height: button.height, gap: button.gap, top: button.top, room: button.bottom - button.top },
     summary: { centerX: left, width: half - 2 * margin, y: 0, bottom: COMPACT.summary.bottom, lineHeight: COMPACT.summary.lineHeight, size: "tiny" },
     bell: { x: width - margin - COMPACT.bell.width, y: header.y, width: COMPACT.bell.width, height: header.height },
-    profile: { x: margin, y: header.y, size: COMPACT.profile.size, nameWidth: COMPACT.profile.nameWidth },
+    profile: { x: margin, y: header.y, size: COMPACT.profile.size, nameWidth: COMPACT.profile.nameWidth, signInWidth: COMPACT.profile.signInWidth },
     jackpot: { x: margin, y: COMPACT.jackpot.y, width: half - 2 * margin, layout: "banner" },
   });
 }

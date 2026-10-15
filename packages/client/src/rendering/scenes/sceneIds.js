@@ -8,6 +8,7 @@ export const SceneId = Object.freeze({
   COLLECTION: "collection",
   SHOP: "shop",
   ONLINE: "online",
+  DAILY: "daily",
   LEADERBOARD: "leaderboard",
   GAME_HISTORY: "gameHistory",
   LIVE_GAMES: "liveGames",

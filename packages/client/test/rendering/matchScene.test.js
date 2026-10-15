@@ -10,6 +10,7 @@ import { BasicAiController } from "../../src/application/match/BasicAiController
 import { humanController } from "../../src/application/match/HumanController.js";
 import { MatchSession } from "../../src/application/match/MatchSession.js";
 import { CommandType } from "@magic8/engine/domain/commands/CommandType.js";
+import { playCard } from "@magic8/engine/domain/commands/commandFactories.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
 import { ZoneType } from "@magic8/engine/domain/game/ZoneType.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
@@ -880,6 +881,46 @@ describe("MatchScene on the board", () => {
     tapNode(byId(scene, "gameOver.again"));
     assert.deepEqual(navigated, [SceneId.DECK_SELECTION]);
     assert.equal(session.isStopped, true);
+  });
+
+  it("explains a changed creature's stats under the inspected card: printed, boosts, now", async () => {
+    const { scene, session } = await sceneFor({ p1: { hand: ["reinforce"], battlefield: ["clockwork_knight"], resources: 2 }, p2: { battlefield: ["iron_colossus"] } });
+    const inspect = (name) => {
+      const { x, y } = cardNamed(scene, name).bounds;
+      scene.onPointer({ type: "down", x: x + 5, y: y + 5, button: 2, pointerId: 1 });
+      assert.equal(scene.modal?.id, "inspect");
+      const texts = rendered(scene);
+      scene.onKey(key("Escape"));
+      return texts;
+    };
+    assert.ok(!inspect("Clockwork Knight").includes("Printed"), "printed stats explain nothing");
+    tapNode(cardNamed(scene, "Reinforce"));
+    tapNode(cardNamed(scene, "Clockwork Knight"));
+    await session.whenIdle();
+    settle(scene);
+    const texts = inspect("Clockwork Knight");
+    for (const text of ["Printed", "4/4", "Boosts", "+2/+2", "Now", "6/6"]) {
+      assert.ok(texts.includes(text), `shows ${text}`);
+    }
+    assert.ok(!inspect("Iron Colossus").includes("Printed"), "the untouched colossus has nothing to explain");
+  });
+
+  it("on a phone, lists the breakdown under Close, beside the card and inside the panel", async () => {
+    const viewport = new Viewport(theme.layout);
+    viewport.resize({ cssWidth: 667, cssHeight: 375 });
+    const { scene, session } = await sceneFor({ p1: { hand: ["reinforce"], battlefield: ["clockwork_knight"], resources: 2 } }, { viewport });
+    const knight = cardNamed(scene, "Clockwork Knight").card.instanceId;
+    session.submit(playCard(P1, cardNamed(scene, "Reinforce").card.instanceId, [knight]));
+    await session.whenIdle();
+    settle(scene);
+    scene.onSecondary(cardNamed(scene, "Clockwork Knight"));
+    const stats = byId(scene, "inspect.stats").bounds;
+    const card = byId(scene, "inspect.card").bounds;
+    const close = byId(scene, "inspect.close").bounds;
+    const panel = byId(scene, "inspect.card").parent.bounds;
+    assert.ok(stats.x >= card.x + card.width, "beside the card");
+    assert.ok(stats.y >= close.y + close.height, "under Close");
+    assert.ok(stats.x + stats.width <= panel.x + panel.width && stats.y + stats.height <= panel.y + panel.height, "inside the panel");
   });
 
   it("attacks with the creature that deals damage: it draws back, lunges at its target and returns; the blow shows as it lands", async () => {

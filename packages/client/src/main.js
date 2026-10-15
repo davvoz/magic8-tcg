@@ -39,6 +39,10 @@ import { deckMix } from "./application/decks/deckMix.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
 import { IdentityService } from "./application/identity/IdentityService.js";
 import { CoinFace } from "./application/match/CoinToss.js";
+import { AiOpponentFactory } from "./application/match/AiOpponents.js";
+import { DailyCompanion } from "./application/daily/DailyCompanion.js";
+import { DailyService } from "./application/daily/DailyService.js";
+import { HttpDailyApi } from "./infrastructure/api/HttpDailyApi.js";
 import { MatchSetupService } from "./application/match/MatchSetupService.js";
 import { TutorialService } from "./application/tutorial/TutorialService.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
@@ -137,6 +141,8 @@ const CONTENT_MANIFEST = Object.freeze({
 const ART_DIRECTORY = "data/art/";
 /** Notifications after which the player's wallet holds a different amount. */
 const WALLET_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "sale.sold", "sale.bought"]);
+/** How a daily challenge's character's words are toned: its win is the player's loss. */
+const SPEECH_TONES = Object.freeze({ intro: "info", low: "info", win: "bad", lose: "good" });
 /**
  * On a phone, card illustrations are kept this wide (enough for the largest
  * card it shows, at twice its pixel density), and fetched as cards are shown
@@ -502,6 +508,8 @@ async function boot() {
   refreshWhenPaid(shop, (state) => state.purchase.stage === PurchaseStage.CONFIRMING, balance);
   refreshWhenPaid(sales, (state) => state.buying.stage === BuyStage.CONFIRMING, balance);
   // A purchase, a connection and a standing belong to the account that started them.
+  // The daily challenges (docs/tcg/24): today's opponents and the player's day, read at sign-in; the games come as online games.
+  const daily = new DailyService({ api: new HttpDailyApi({ fetch: httpFetch }) });
   // What happened to the player's orders, trades and sales: read at sign-in, pushed while here.
   const notifications = new NotificationService({ api: new HttpNotificationsApi({ fetch: httpFetch }), connection: realtime, logger });
   account.subscribe((state) => {
@@ -511,6 +519,7 @@ async function boot() {
       autoList.start();
       // A challenge can be accepted while the player is on another screen: the game must reach them there.
       online.start();
+      void daily.refresh();
     }
     if (state.account === null) {
       notifications.stop();
@@ -523,10 +532,12 @@ async function boot() {
       trading.reset();
       sales.reset();
       balance.reset();
+      daily.reset();
     }
   });
 
-  const matchSetup = new MatchSetupService({ content: content.value, effects: createCoreEffectRegistry(), scheduler: browserScheduler, logger });
+  const effects = createCoreEffectRegistry();
+  const matchSetup = new MatchSetupService({ content: content.value, effects, scheduler: browserScheduler, logger });
   /** @type {import("./application/AppContext.js").AppContext} */
   const app = Object.freeze({
     content: content.value,
@@ -534,6 +545,7 @@ async function boot() {
     deckSelection: new DeckSelectionService({ content: content.value, repository, logger, showPreconstructed: () => repository.storage === DeckStorage.BROWSER }),
     deckBuilding,
     matchSetup,
+    opponents: new AiOpponentFactory({ content: content.value, effects }),
     tutorial: new TutorialService({ matchSetup, content: content.value }),
     createSeed,
     logger,
@@ -544,6 +556,7 @@ async function boot() {
     balance,
     activeKeys,
     online,
+    daily,
     lobby,
     autoList,
     autoReplays,
@@ -589,7 +602,9 @@ async function boot() {
   // A game found while the player is elsewhere (their challenge was accepted): the lobby shows it and asks Keychain to accept it.
   let onlineStatus = online.state.status;
   online.subscribe((state) => {
-    if (state.status === OnlineStatus.MATCHED && onlineStatus !== OnlineStatus.MATCHED && sceneManager.currentId !== SceneId.ONLINE && sceneManager.currentId !== SceneId.MATCH) {
+    // A daily challenge is started from its own screen, which hands over to the match: not the lobby's business.
+    const elsewhere = sceneManager.currentId !== SceneId.ONLINE && sceneManager.currentId !== SceneId.MATCH && sceneManager.currentId !== SceneId.DAILY;
+    if (state.status === OnlineStatus.MATCHED && onlineStatus !== OnlineStatus.MATCHED && elsewhere && state.mode !== "daily") {
       sceneManager.navigate(SceneId.ONLINE);
     }
     onlineStatus = state.status;
@@ -618,7 +633,19 @@ async function boot() {
     }
   });
   // A game in progress the player is not looking at (the page was reopened mid-game): back into it, or a toast until they are.
-  const gameReturn = returnToGame({ online, scenes: sceneManager, toasts });
+  const gameReturn = returnToGame({ online, scenes: sceneManager, toasts, nameOf: (seat) => daily.characterOf(seat)?.name ?? null });
+  // The pack of the daily challenges is in: the challenges screen shows it.
+  notifications.onArrival((notification) => {
+    if (notification.kind === "daily.reward") {
+      void daily.refresh();
+    }
+  });
+  // The character of a daily challenge speaks as the game starts, when it is nearly beaten, and when it ends.
+  new DailyCompanion({
+    online,
+    daily,
+    say: ({ opponent, kind, line }) => toasts.show({ key: `daily.${kind}`, title: opponent.name, body: `“${line}”`, tone: SPEECH_TONES[kind] ?? "info", account: opponent.account }),
+  }).start();
   sceneManager.navigate(SceneId.MAIN_MENU);
   preloadArt({ illustrations, coinArt });
   // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.

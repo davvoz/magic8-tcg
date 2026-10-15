@@ -11,8 +11,8 @@
  *   concurrent request can never grant twice.
  * - escrow / release / transfer: what a trade does to copies
  *   (docs/tcg/13-scambi.md), inside the trade's unit of work. Bought copies
- *   (orders, packs) and free grants (the starter deck) can be traded;
- *   rewards cannot.
+ *   (orders, packs), free grants (the starter deck) and rewards (the daily
+ *   challenges' packs, docs/tcg/24-sfide.md) can all be traded.
  */
 import { AppError } from "../../../kernel/AppError.js";
 import { assertImplements } from "../../../kernel/contracts.js";
@@ -24,8 +24,8 @@ import { INVENTORY_REPOSITORY_METHODS } from "./ports.js";
  * @typedef {Readonly<{ definitionId: string, copies: readonly Readonly<{ id: string, edition: string, serial: number, status: string, tradeable: boolean }>[] }>} CollectionEntry
  */
 
-/** Where a copy must come from to be traded. */
-export const TRADEABLE_ORIGINS = Object.freeze([OriginKind.PURCHASE, OriginKind.PACK, OriginKind.GRANT]);
+/** Where a copy must come from to be traded: anywhere (rewards too, the daily challenges' packs: docs/tcg/24-sfide.md). */
+export const TRADEABLE_ORIGINS = Object.freeze([OriginKind.PURCHASE, OriginKind.PACK, OriginKind.GRANT, OriginKind.REWARD]);
 
 /** @param {import("../domain/CardInstance.js").CardInstance} instance */
 const isTradeable = (instance) => TRADEABLE_ORIGINS.includes(/** @type {any} */ (instance.originKind));

@@ -19,10 +19,11 @@ export const GAME_TOAST_KEY = "online.game";
  *   online: Pick<import("../../application/online/OnlineService.js").OnlineService, "state" | "subscribe" | "resume">,
  *   scenes: { readonly currentId: string | null, readonly current: any, navigate: (sceneId: string, params?: Readonly<Record<string, unknown>>) => boolean, onNavigate: (listener: (sceneId: string) => void) => () => void },
  *   toasts: Pick<import("../ui/ToastLayer.js").ToastLayer, "show" | "dismiss">,
- * }} deps
+ *   nameOf?: (account: string) => string | null,
+ * }} deps `nameOf`: a seat's name when it is not a STEEM account (a daily challenge's character)
  * @returns {{ open: () => void }} `open`: into the match of the game in progress
  */
-export function returnToGame({ online, scenes, toasts }) {
+export function returnToGame({ online, scenes, toasts, nameOf = () => null }) {
   /** The game this page last knew of: none yet, so a game already heard of before this started counts as just learned of. @type {string | null} */
   let known = null;
   /** A game the page just learned of, not yet acted on (no screen was showing). @type {string | null} */
@@ -31,7 +32,8 @@ export function returnToGame({ online, scenes, toasts }) {
   let toastFor = null;
 
   const open = () => {
-    scenes.navigate(SceneId.MATCH, { session: online.resume(), againScene: SceneId.ONLINE });
+    // A daily challenge goes back to its own screen when it ends; any other game to the lobby.
+    scenes.navigate(SceneId.MATCH, { session: online.resume(), againScene: online.state.mode === "daily" ? SceneId.DAILY : SceneId.ONLINE });
   };
   const dismiss = () => {
     if (toastFor !== null) {
@@ -53,7 +55,8 @@ export function returnToGame({ online, scenes, toasts }) {
       return;
     }
     toastFor = session.gameId;
-    const against = opponent === null ? "your opponent" : "@" + opponent;
+    const character = opponent === null ? null : nameOf(opponent);
+    const against = opponent === null ? "your opponent" : (character ?? "@" + opponent);
     toasts.show({
       key: GAME_TOAST_KEY,
       sticky: true,

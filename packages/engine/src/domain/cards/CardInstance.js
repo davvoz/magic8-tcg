@@ -36,6 +36,8 @@ export class CardInstance {
   exhausted = false;
   /** @type {{ attack: number, health: number, duration: string }[]} */
   #modifiers = [];
+  /** Keywords given while on the battlefield (a match condition), beyond the printed ones. @type {string[]} */
+  #granted = [];
 
   /**
    * @param {{ instanceId: string, definition: import("./CardDefinition.js").CardDefinition, ownerId: string, controllerId?: string, zone: string }} fields
@@ -66,6 +68,26 @@ export class CardInstance {
 
   get health() {
     return this.maxHealth - this.damage;
+  }
+
+  /** The printed keywords and the granted ones. @returns {readonly string[]} */
+  get keywords() {
+    return Object.freeze([...new Set([...this.definition.keywords, ...this.#granted])]);
+  }
+
+  /** @param {string} keyword one of Keyword */
+  hasKeyword(keyword) {
+    return this.definition.hasKeyword(keyword) || this.#granted.includes(keyword);
+  }
+
+  /**
+   * Gives the card a keyword until it leaves the battlefield.
+   * @param {string} keyword one of Keyword
+   */
+  grantKeyword(keyword) {
+    if (!this.hasKeyword(keyword)) {
+      this.#granted.push(keyword);
+    }
   }
 
   get isLethallyDamaged() {
@@ -131,6 +153,7 @@ export class CardInstance {
     if (this.zone === ZoneType.BATTLEFIELD && zone !== ZoneType.BATTLEFIELD) {
       this.damage = 0;
       this.#modifiers = [];
+      this.#granted = [];
       this.summoningSick = false;
       this.exhausted = false;
     }
@@ -149,6 +172,7 @@ export class CardInstance {
     copy.summoningSick = this.summoningSick;
     copy.exhausted = this.exhausted;
     copy.#modifiers = this.#modifiers.map((modifier) => ({ ...modifier }));
+    copy.#granted = [...this.#granted];
     return copy;
   }
 

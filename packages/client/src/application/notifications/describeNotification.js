@@ -7,10 +7,10 @@
  */
 
 /** Where a notification leads. */
-export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", ONLINE: "online", REPLAY: "replay" });
+export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", ONLINE: "online", REPLAY: "replay", DAILY: "daily" });
 
 /** Kinds after which the player's collection has changed (it should be read again). */
-export const COLLECTION_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "trade.accepted", "trade.declined", "trade.cancelled", "trade.expired", "sale.sold", "sale.bought", "sale.listing_expired"]);
+export const COLLECTION_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "daily.reward", "trade.accepted", "trade.declined", "trade.cancelled", "trade.expired", "sale.sold", "sale.bought", "sale.listing_expired"]);
 
 /** Most cards named in a sentence; the rest are counted. */
 const NAMED_CARDS = 3;
@@ -80,6 +80,11 @@ const DESCRIBERS = Object.freeze({
   "auto.refunded": ({ data }) => {
     const why = data.reason === "season_ended" ? "The season ended before anyone joined the auto list against you" : "Your auto game could not be played";
     return text({ title: "Your ranked entry is back", body: `${why}: your ranked entry is back, ready for another game.`, target: NotificationTarget.ONLINE, tone: "info" });
+  },
+  "daily.reward": ({ data }) => {
+    const cards = cardsOf(data.cards);
+    const total = cards.reduce((sum, card) => sum + (card.count ?? 1), 0);
+    return text({ title: "Challenges won", body: `You beat today's three opponents: your ${packName(data.pack)} is open, ${plural(total, "card")} added to your collection.`, cards, target: NotificationTarget.DAILY, tone: "good" });
   },
   "sale.payment_problem": ({ account, single, singleName, problem }) => text({ title: "Payment not accepted", body: `Your transfer to ${account} for ${singleName} pays nothing: ${problem}. Ask ${account} to send it back.`, cards: only(single), target: NotificationTarget.MARKET, tone: "bad" }),
 });
@@ -154,6 +159,14 @@ const isOne = (cards) => cards.length === 1 && (cards[0].count ?? 1) === 1;
  * @param {unknown} value
  * @returns {NotificationCard[]}
  */
+/**
+ * A pack's name from its drop table's id: "core_mini_booster" is the Core Mini Booster.
+ * @param {unknown} id
+ */
+export function packName(id) {
+  return typeof id === "string" && id.length > 0 ? id.split("_").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ") : "pack";
+}
+
 function cardsOf(value) {
   if (!Array.isArray(value)) {
     return [];

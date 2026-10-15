@@ -9,6 +9,7 @@
 import { LIMITS } from "../../shared/limits.js";
 import { fail, ok } from "../../shared/Result.js";
 import { CardInstance } from "../cards/CardInstance.js";
+import { MatchConditions } from "../conditions/MatchConditions.js";
 import { GameState } from "./GameState.js";
 import { Player } from "./Player.js";
 import { ZoneType } from "./ZoneType.js";
@@ -26,11 +27,11 @@ const PLAYER_ID_PATTERN = LIMITS.ID_PATTERN;
  */
 
 /**
- * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, resourceSystem: import("../resources/ResourceSystem.contract.js").ResourceSystem, players: readonly PlayerSetup[], rng: import("../random/RandomSource.contract.js").RandomSource, shuffle?: boolean }} setup
- *   `shuffle`: false keeps every library in its deck list's order
+ * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, resourceSystem: import("../resources/ResourceSystem.contract.js").ResourceSystem, players: readonly PlayerSetup[], rng: import("../random/RandomSource.contract.js").RandomSource, shuffle?: boolean, conditions?: MatchConditions }} setup
+ *   `shuffle`: false keeps every library in its deck list's order; `conditions`: the game's (starting life and hand among them)
  * @returns {import("../../shared/Result.js").Ok<GameState> | import("../../shared/Result.js").Fail}
  */
-export function createInitialState({ rules, catalog, resourceSystem, players, rng, shuffle = true }) {
+export function createInitialState({ rules, catalog, resourceSystem, players, rng, shuffle = true, conditions = MatchConditions.NONE }) {
   const playersProblem = validatePlayers(players);
   if (playersProblem !== null) {
     return fail(SetupError.INVALID_PLAYERS, playersProblem);
@@ -39,13 +40,13 @@ export function createInitialState({ rules, catalog, resourceSystem, players, rn
   const allocateId = () => `c${nextInstanceNumber++}`;
   const built = [];
   for (const setup of players) {
-    const result = buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId, shuffle });
+    const result = buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId, shuffle, conditions });
     if (!result.ok) {
       return result;
     }
     built.push(result.value);
   }
-  return ok(new GameState({ players: built, activePlayerId: players[0].id, rng, nextInstanceNumber }));
+  return ok(new GameState({ players: built, activePlayerId: players[0].id, rng, nextInstanceNumber, conditions }));
 }
 
 /**
@@ -71,10 +72,10 @@ function validatePlayers(players) {
 
 /**
  * @param {PlayerSetup} setup
- * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, resourceSystem: import("../resources/ResourceSystem.contract.js").ResourceSystem, rng: import("../random/RandomSource.contract.js").RandomSource, allocateId: () => string, shuffle: boolean }} deps
+ * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, resourceSystem: import("../resources/ResourceSystem.contract.js").ResourceSystem, rng: import("../random/RandomSource.contract.js").RandomSource, allocateId: () => string, shuffle: boolean, conditions: MatchConditions }} deps
  * @returns {import("../../shared/Result.js").Ok<Player> | import("../../shared/Result.js").Fail}
  */
-function buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId, shuffle }) {
+function buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId, shuffle, conditions }) {
   const instances = [];
   for (const entry of setup.deckList.entries) {
     const definition = catalog.get(entry.cardId);
@@ -88,11 +89,12 @@ function buildPlayer(setup, { rules, catalog, resourceSystem, rng, allocateId, s
   if (instances.length === 0) {
     return fail(SetupError.EMPTY_DECK, `deck "${setup.deckList.id}" is empty`);
   }
-  const player = new Player({ id: setup.id, name: setup.name, life: rules.startingLife, resources: resourceSystem.createPool() });
+  const life = Math.max(1, rules.startingLife + conditions.lifeBonus(setup.id));
+  const player = new Player({ id: setup.id, name: setup.name, life, maxLife: life, resources: resourceSystem.createPool() });
   for (const card of shuffle ? rng.shuffle(instances) : instances) {
     player.library.add(card);
   }
-  for (let drawn = 0; drawn < rules.startingHandSize; drawn += 1) {
+  for (let drawn = 0; drawn < rules.startingHandSize + conditions.extraStartingCards(setup.id); drawn += 1) {
     const card = player.library.takeTop();
     if (card !== undefined) {
       player.hand.add(card);

@@ -211,6 +211,15 @@ describe("schema", () => {
     }
   });
 
+  it("records a game's match conditions when it has some, and only valid ones naming its seats", () => {
+    const base = { a: null, i: 0, k: EventKind.GAME_CREATED, ms: 0, t: 0, d: { content: "ab".repeat(32), deck_c: ["cd".repeat(32), "ef".repeat(32)], eng: "0.1.0", mode: "daily", net: "steem", seats: [{ acct: "alice", seat: "s0" }, { acct: "ai_kael", seat: "s1" }], seed_c: "12".repeat(32) } };
+    const withConditions = (cond) => ({ ...base, d: { ...base.d, cond } });
+    assert.equal(validateEvent(withConditions([{ kind: "cost", players: ["s0"], filter: { type: "spell" }, amount: 1 }])).ok, true);
+    for (const cond of [[], [{ kind: "cost", players: ["s2"], amount: 1 }], [{ kind: "luck", players: ["s0"] }], "none"]) {
+      assert.equal(validateEvent(withConditions(cond)).ok, false, JSON.stringify(cond));
+    }
+  });
+
   it("limits forced moves to doing nothing", () => {
     const forced = (cmd) => ({ a: "s0", d: { cmd, why: "timeout" }, i: 0, k: EventKind.FORCED_MOVE, ms: 0, t: 1 });
     assert.equal(validateEvent(forced({ type: "END_TURN" })).ok, true);

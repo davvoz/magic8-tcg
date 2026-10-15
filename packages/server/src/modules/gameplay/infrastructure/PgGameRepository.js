@@ -32,6 +32,7 @@ function toGame(row, players) {
     createdAt: fromTimestamp(row.created_at),
     startedAt: fromNullableTimestamp(row.started_at),
     finishedAt: fromNullableTimestamp(row.finished_at),
+    conditions: Object.freeze(row.conditions ?? []),
     players: Object.freeze(
       players.map((player) =>
         Object.freeze({
@@ -43,6 +44,7 @@ function toGame(row, players) {
           deckCommit: player.deck_commit,
           entropy: player.entropy === null ? null : player.entropy.trim(),
           entropySource: player.entropy_source,
+          ai: player.ai_profile ?? null,
         }),
       ),
     ),
@@ -63,12 +65,12 @@ export class PgGameRepository {
   async insertGame(game, created) {
     await this.#db.query(
       `INSERT INTO games (id, mode, status, network, protocol_version, engine_version, content_hash, secret_encrypted, seed_commit,
-                          engine_version_counter, last_event_seq, chain_head, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [game.id, game.mode, game.status, game.network, game.protocolVersion, game.engineVersion, game.contentHash, Buffer.from(game.sealedSecret), game.seedCommit, game.version, created.event.i, created.head, toTimestamp(game.createdAt)],
+                          engine_version_counter, last_event_seq, chain_head, created_at, conditions)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [game.id, game.mode, game.status, game.network, game.protocolVersion, game.engineVersion, game.contentHash, Buffer.from(game.sealedSecret), game.seedCommit, game.version, created.event.i, created.head, toTimestamp(game.createdAt), JSON.stringify(game.conditions)],
     );
     for (const player of game.players) {
-      await this.#db.query("INSERT INTO game_players (game_id, seat, user_id, account, deck_id, deck_snapshot, deck_commit) VALUES ($1, $2, $3, $4, $5, $6, $7)", [
+      await this.#db.query("INSERT INTO game_players (game_id, seat, user_id, account, deck_id, deck_snapshot, deck_commit, ai_profile) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [
         game.id,
         player.seat,
         player.userId,
@@ -76,6 +78,7 @@ export class PgGameRepository {
         player.deckId,
         JSON.stringify(player.deck),
         player.deckCommit,
+        player.ai === null ? null : JSON.stringify(player.ai),
       ]);
     }
     await this.#insertEvents(game.id, [created], game.createdAt);

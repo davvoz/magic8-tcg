@@ -4,6 +4,7 @@
  * initial on a colour of its own, so the same player always looks the same.
  */
 import { hashString } from "@magic8/engine/shared/hash.js";
+import { characterIdOf, isCharacterAccount } from "../../application/daily/characters.js";
 import { mix, shade, withAlpha } from "../theme/color.js";
 import { bodyFont } from "../theme/Theme.js";
 import { drawImageCover, drawTextInRect, radialGradient } from "./drawing.js";
@@ -44,7 +45,8 @@ export function drawAvatar(context, theme, { account, center, radius, picture = 
   context.restore();
 }
 
-/** @param {string} account */
+/** @param {string} account a STEEM account, or a daily challenge's character (its own initial: "ai_kael" is K) */
 function initialOf(account) {
-  return (account.replace(/^@/, "")[0] ?? "?").toUpperCase();
+  const name = isCharacterAccount(account) ? characterIdOf(account) : account.replace(/^@/, "");
+  return (name[0] ?? "?").toUpperCase();
 }

@@ -25,8 +25,8 @@ export const DEFAULT_BROADCAST_POLICY = Object.freeze({
   maxRowsPerRound: 200,
 });
 
-const OPERATION_OF_KIND = Object.freeze({ [OutboxKind.RECEIPT]: OperationId.RECEIPT, [OutboxKind.EPOCH]: OperationId.EPOCH, [OutboxKind.TRADE]: OperationId.TRADE, [OutboxKind.SALE]: OperationId.SALE, [OutboxKind.RESULT]: OperationId.RESULT });
-const PURPOSE_OF_KIND = Object.freeze({ [OutboxKind.RECEIPT]: "RECEIPT", [OutboxKind.EPOCH]: "EPOCH", [OutboxKind.TRADE]: "TRADE", [OutboxKind.SALE]: "SALE", [OutboxKind.RESULT]: "RESULT" });
+const OPERATION_OF_KIND = Object.freeze({ [OutboxKind.RECEIPT]: OperationId.RECEIPT, [OutboxKind.EPOCH]: OperationId.EPOCH, [OutboxKind.TRADE]: OperationId.TRADE, [OutboxKind.SALE]: OperationId.SALE, [OutboxKind.RESULT]: OperationId.RESULT, [OutboxKind.GRANT]: OperationId.GRANT });
+const PURPOSE_OF_KIND = Object.freeze({ [OutboxKind.RECEIPT]: "RECEIPT", [OutboxKind.EPOCH]: "EPOCH", [OutboxKind.TRADE]: "TRADE", [OutboxKind.SALE]: "SALE", [OutboxKind.RESULT]: "RESULT", [OutboxKind.GRANT]: "GRANT" });
 
 /**
  * @typedef {import("../infrastructure/PgChainRepository.js").OutboxRow} OutboxRow

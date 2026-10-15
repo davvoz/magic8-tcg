@@ -14,6 +14,7 @@ import {
   checkString,
   checkUnique,
 } from "@magic8/engine/shared/validation.js";
+import { MatchConditions } from "@magic8/engine/domain/conditions/MatchConditions.js";
 import { utf8Length } from "../canonical/CanonicalJson.js";
 import { isHash } from "../crypto/hash.js";
 import {
@@ -164,9 +165,15 @@ function isStrictlySorted(values) {
 const PAYLOADS = Object.freeze({
   [EventKind.GAME_CREATED]: {
     actor: "null",
-    keys: ["content", "deck_c", "eng", "mode", "net", "seats", "seed_c"],
+    keys: ["cond", "content", "deck_c", "eng", "mode", "net", "seats", "seed_c"],
     check(issues, d, path) {
       checkEnum(issues, d.mode, `${path}.mode`, Object.values(GameMode));
+      if (d.cond !== undefined) {
+        const conditions = MatchConditions.fromPlain(d.cond, SEATS);
+        if (!conditions.ok || conditions.value.isEmpty) {
+          issues.add(`${path}.cond`, conditions.ok ? "recorded only when the game has conditions" : conditions.error.message);
+        }
+      }
       checkString(issues, d.net, `${path}.net`, { pattern: NETWORK_PATTERN });
       checkString(issues, d.eng, `${path}.eng`, { pattern: ENGINE_VERSION_PATTERN });
       checkHash(issues, d.content, `${path}.content`);

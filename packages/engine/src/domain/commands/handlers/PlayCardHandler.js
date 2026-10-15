@@ -54,13 +54,14 @@ export const playCardHandler = Object.freeze({
     if ("code" in targets) {
       throw new Error(`PlayCardHandler: ${targets.message}`);
     }
-    player.resources.spend(card.definition.cost);
+    player.resources.spend(state.conditions.costOf(player.id, card.definition));
     context.events.emit(GameEventType.RESOURCES_CHANGED, { playerId: player.id, current: player.resources.current, max: player.resources.max });
     player.hand.remove(card.instanceId);
     const destination = card.isCreature ? ZoneType.BATTLEFIELD : ZoneType.GRAVEYARD;
     player.zone(destination).add(card);
     if (card.isCreature) {
-      card.summoningSick = context.rules.combat.summoningSickness && !card.definition.hasKeyword(Keyword.HASTE);
+      state.conditions.applyOnEnter(card);
+      card.summoningSick = context.rules.combat.summoningSickness && !card.hasKeyword(Keyword.HASTE);
     }
     context.events.emit(GameEventType.CARD_PLAYED, {
       playerId: player.id,

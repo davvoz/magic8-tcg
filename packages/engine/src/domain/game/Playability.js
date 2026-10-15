@@ -63,8 +63,9 @@ function mustBeTargetable(card, ability) {
  * @returns {PlayabilityProblem | null}
  */
 export function playabilityProblem(state, player, card, rules) {
-  if (!player.resources.canAfford(card.definition.cost)) {
-    return problem(CommandError.CANNOT_AFFORD, `${card.definition.name} costs ${card.definition.cost}; ${player.resources.current} available`);
+  const cost = state.conditions.costOf(player.id, card.definition);
+  if (!player.resources.canAfford(cost)) {
+    return problem(CommandError.CANNOT_AFFORD, `${card.definition.name} costs ${cost}; ${player.resources.current} available`);
   }
   if (card.isCreature && player.creatures.length >= rules.maxBattlefieldCreatures) {
     return problem(CommandError.ZONE_FULL, `the battlefield already holds ${rules.maxBattlefieldCreatures} creatures`);

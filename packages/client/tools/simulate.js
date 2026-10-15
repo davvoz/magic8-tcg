@@ -11,7 +11,13 @@
  * against the other styles, the style-against-style matrix, and each deck's
  * win rate with each style.
  *
- *   node tools/simulate.js [gamesPerPairing=25] [deckId,deckId,...] [--styles]
+ * With --versus=first,second two AIs play each other on every pairing
+ * (mirrors included), each seat in turn: it prints the first AI's win rate,
+ * overall and with each deck, and how long the AIs took. An AI is written
+ * basic[:style] or search:level[:style] (application/match/AiOpponents.js),
+ * e.g. --versus=search:5,basic.
+ *
+ *   node tools/simulate.js [gamesPerPairing=25] [deckId,deckId,...] [--styles | --versus=ai,ai]
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -19,6 +25,7 @@ import { join, resolve } from "node:path";
 import { loadContent } from "../src/application/content/ContentService.js";
 import { deckMix } from "../src/application/decks/deckMix.js";
 import { AI_STYLES, AiStyle } from "@magic8/engine/domain/ai/BasicAi.js";
+import { AiOpponentFactory, describeAiSpec, parseAiSpec } from "../src/application/match/AiOpponents.js";
 import { BasicAiController } from "../src/application/match/BasicAiController.js";
 import { MatchSetupService } from "../src/application/match/MatchSetupService.js";
 import { ContentResource } from "../src/application/ports/ContentSource.contract.js";
@@ -53,15 +60,18 @@ async function loadBundled(effects) {
   return content.value;
 }
 
+/** BasicAi controllers playing these styles, seat "a" first. */
+const basicControllers = (styles = [AiStyle.BALANCED, AiStyle.BALANCED]) => styles.map((style) => new BasicAiController(style));
+
 /**
- * One AI-vs-AI game; seat "a" plays `first` with the first style.
+ * One AI-vs-AI game; seat "a" plays `first` with the first controller.
  * @returns {Promise<{ winner: "a" | "b" | null, turns: number }>}
  */
-async function playGame(setup, [first, second], seed, styles = [AiStyle.BALANCED, AiStyle.BALANCED]) {
+async function playGame(setup, [first, second], seed, controllers = basicControllers()) {
   const created = setup.createMatch({
     seats: [
-      { id: "a", name: first.name, deckList: first, controller: new BasicAiController(styles[0]) },
-      { id: "b", name: second.name, deckList: second, controller: new BasicAiController(styles[1]) },
+      { id: "a", name: first.name, deckList: first, controller: controllers[0] },
+      { id: "b", name: second.name, deckList: second, controller: controllers[1] },
     ],
     seed,
   });
@@ -241,12 +251,65 @@ async function simulateStyles(setup, decks, games) {
   for (const pairing of styledPairings(decks)) {
     for (let seed = 1; seed <= games; seed += 1) {
       played += 1;
-      const { winner } = await playGame(setup, pairing.decks, seed * 7919 + played, pairing.styles);
+      const { winner } = await playGame(setup, pairing.decks, seed * 7919 + played, basicControllers(pairing.styles));
       standings.add(pairing, winner);
     }
   }
   console.log(`${played} games, ${((performance.now() - started) / played).toFixed(1)} ms/game`);
   standings.print(decks);
+}
+
+/** The first AI's record against the second: overall, and with each deck. A draw is a game nobody won. */
+class VersusStandings {
+  wins = 0;
+  draws = 0;
+  games = 0;
+  byDeck = new Tally();
+
+  /**
+   * @param {{ id: string }} deck the deck the first AI played
+   * @param {boolean} won
+   * @param {boolean} drawn
+   */
+  add(deck, won, drawn) {
+    this.games += 1;
+    this.wins += won ? 1 : 0;
+    this.draws += drawn ? 1 : 0;
+    this.byDeck.add(deck.id, won);
+  }
+
+  /**
+   * @param {readonly any[]} decks
+   * @param {readonly [string, string]} names
+   * @param {number} elapsedMs
+   */
+  print(decks, [first, second], elapsedMs) {
+    console.log(`${this.games} games, ${(elapsedMs / this.games).toFixed(1)} ms/game, ${this.draws} draws`);
+    console.log(`${first} beats ${second} ${percent(this.wins, this.games)}`);
+    console.log(tableHeader(`${first} with`, ["win rate"]));
+    for (const deck of decks) {
+      console.log(deck.name.padEnd(20) + cell(this.byDeck.rate(deck.id).text));
+    }
+  }
+}
+
+/**
+ * Two AIs on every pairing of decks, mirrors included; the first AI takes seat "a" in even games and "b" in odd ones.
+ * @param {{ setup: MatchSetupService, opponents: AiOpponentFactory, decks: readonly any[], games: number }} run `games` per pairing
+ * @param {readonly import("../src/application/match/AiOpponents.js").AiSpec[]} specs the two AIs
+ */
+async function simulateVersus({ setup, opponents, decks, games }, [first, second]) {
+  const standings = new VersusStandings();
+  const started = performance.now();
+  for (const pairing of decks.flatMap((one) => decks.map((other) => [one, other]))) {
+    for (let seed = 1; seed <= games; seed += 1) {
+      const firstSeat = standings.games % 2 === 0 ? "a" : "b";
+      const controllers = [opponents.controllerFor(first, `${seed}`), opponents.controllerFor(second, `${seed}`)];
+      const { winner } = await playGame(setup, pairing, seed * 7919 + standings.games, firstSeat === "a" ? controllers : controllers.reverse());
+      standings.add(pairing[firstSeat === "a" ? 0 : 1], winner === firstSeat, winner === null);
+    }
+  }
+  standings.print(decks, [describeAiSpec(first), describeAiSpec(second)], performance.now() - started);
 }
 
 async function main() {
@@ -260,6 +323,15 @@ async function main() {
   const decks = selectDecks(content.preconDecks, decksArg);
   if (flags.includes("--styles")) {
     await simulateStyles(setup, decks, games);
+    return;
+  }
+  const versus = flags.find((flag) => flag.startsWith("--versus="));
+  if (versus !== undefined) {
+    const specs = versus.slice("--versus=".length).split(",").map(parseAiSpec);
+    if (specs.length !== 2) {
+      throw new Error("--versus takes two AIs, e.g. --versus=search:5,basic");
+    }
+    await simulateVersus({ setup, opponents: new AiOpponentFactory({ content, effects }), decks, games }, specs);
     return;
   }
   const standings = new Standings(decks);

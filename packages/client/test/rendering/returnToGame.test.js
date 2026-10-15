@@ -70,6 +70,16 @@ describe("returnToGame", () => {
     assert.deepEqual(toasts.shown, []);
   });
 
+  it("brings a daily challenge back to its own screen, and names its character", () => {
+    const { online, scenes, toasts } = world({ scene: SceneId.SHOP });
+    returnToGame({ online, scenes, toasts, nameOf: (account) => (account === "ai_kael" ? "Kael" : null) });
+    online.set({ status: OnlineStatus.PLAYING, session: session(), opponent: "ai_kael", mode: "daily" });
+    assert.match(toasts.shown[0].body, /against Kael\./);
+    scenes.navigate(SceneId.MAIN_MENU);
+    online.set({ status: OnlineStatus.PLAYING, session: session("g2"), opponent: "ai_kael", mode: "daily" });
+    assert.equal(scenes.visits.at(-1).params.againScene, SceneId.DAILY);
+  });
+
   it("counts a game heard of before it started as just learned of", () => {
     const { online, scenes, toasts } = world({ scene: null });
     online.set({ status: OnlineStatus.PLAYING, session: session(), opponent: "bob" });

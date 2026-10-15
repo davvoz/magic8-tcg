@@ -20,6 +20,12 @@
  * An auto game (docs/tcg/23-automatica.md) has no actor: the AI plays both
  * seats to the end inside the unit of work that creates it, and the game is
  * stored finished. Its result goes on chain like any other.
+ *
+ * A game may seat the server's AI against a player (a daily challenge,
+ * docs/tcg/24-sfide.md): that entrant has an AI profile instead of a user.
+ * Such a game is protocol v1 (the AI cannot sign moves, so nobody does),
+ * plays by its mode's time policy, and, being a player against the house,
+ * its result is not published on chain.
  */
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
 import { EntropySource, GameMode, GameProtocol, GameRecorder, LATEST_GAME_PROTOCOL, SEATS, ackMessage, bytesToHex, canonicalDeck, createGameEngine, deckCommitment, gameResultRecord, hexToBytes, seedCommitment } from "@magic8/protocol";
@@ -31,9 +37,12 @@ import { GameActor, GameError, GameStatus } from "./GameActor.js";
 import { GAME_REPOSITORY_METHODS } from "./ports.js";
 
 const SECRET_BYTES = 32;
+/** Modes whose results stay off chain: games against the house. */
+const UNPUBLISHED_MODES = Object.freeze(/** @type {string[]} */ ([GameMode.DAILY]));
 
 /**
- * @typedef {Readonly<{ userId: string, account: string, deckId: string | null, deck: readonly { cardId: string, count: number }[] }>} Entrant
+ * @typedef {Readonly<{ userId: string | null, account: string, deckId: string | null, deck: readonly { cardId: string, count: number }[], ai?: import("./ports.js").AiProfile }>} Entrant
+ *   a player (`userId`) or the server's AI (`ai`, `userId` null)
  */
 
 export class GameService {
@@ -54,6 +63,8 @@ export class GameService {
   #ackSigner;
   #signatures;
   #gameProtocol;
+  #createAi;
+  #timePolicies;
   /** @type {((summary: import("./ports.js").FinishedGame) => Promise<void>)[]} */
   #finishedListeners = [];
   /** @type {((summary: import("./ports.js").AbortedGame) => Promise<void>)[]} */
@@ -84,9 +95,12 @@ export class GameService {
    *   ackSigner?: import("./ports.js").AckSigner | null,
    *   signatures?: import("./ports.js").MoveSignatures | null,
    *   gameProtocol?: number,
-   * }} deps `gameProtocol`: the version new games are created with (2: signed moves, which needs `signatures`)
+   *   createAi?: import("./ports.js").AiFactory | null,
+   *   timePolicies?: Readonly<Record<string, Partial<import("../domain/TurnClock.js").TimePolicy>>>,
+   * }} deps `gameProtocol`: the version new games are created with (2: signed moves, which needs `signatures`);
+   *   `createAi`: builds the AI of a seat the server plays (none: no such games); `timePolicies`: per mode, over `timePolicy`
    */
-  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, results = null, timePolicy = {}, ackSigner = null, signatures = null, gameProtocol = LATEST_GAME_PROTOCOL }) {
+  constructor({ repository, currentContent, contentVersion, effects, secrets, notifier, clock, random, unitOfWork, audit, logger, network, results = null, timePolicy = {}, ackSigner = null, signatures = null, gameProtocol = LATEST_GAME_PROTOCOL, createAi = null, timePolicies = {} }) {
     assertImplements(repository, GAME_REPOSITORY_METHODS, "GameRepository");
     this.#repository = repository;
     this.#currentContent = currentContent;
@@ -104,7 +118,10 @@ export class GameService {
     this.#ackSigner = ackSigner;
     this.#signatures = signatures;
     this.#gameProtocol = gameProtocol;
-    this.#timePolicy = Object.freeze({ ...DEFAULT_TIME_POLICY, ...timePolicy });  }
+    this.#createAi = createAi;
+    this.#timePolicies = timePolicies;
+    this.#timePolicy = Object.freeze({ ...DEFAULT_TIME_POLICY, ...timePolicy });
+  }
 
   /**
    * Called after a game ends and is committed (ranking, statistics). A listener that fails is logged; the game is over anyway.
@@ -173,24 +190,30 @@ export class GameService {
    * Writes a new game inside the caller's unit of work (matchmaking pairs
    * the tickets and creates the game atomically). Nothing is announced:
    * call launchGame once the unit of work has committed.
-   * @param {{ mode?: string, entrants: readonly Entrant[] }} request
+   * @param {{ mode?: string, entrants: readonly Entrant[], conditions?: readonly Readonly<Record<string, unknown>>[] }} request
+   *   `conditions`: the game's match conditions as plain data, naming seats (a boss fight's, docs/tcg/24-sfide.md)
    * @returns {Promise<Readonly<{ game: import("./ports.js").StoredGame, recorder: GameRecorder }>>}
    */
-  async stageGame({ mode = GameMode.CASUAL, entrants }) {
+  async stageGame({ mode = GameMode.CASUAL, entrants, conditions = [] }) {
     const { hash, engineVersion } = this.#currentContent();
+    const seatsAi = entrants.some((entrant) => entrant.ai !== undefined);
+    if (seatsAi && this.#createAi === null) {
+      throw new Error("a game seats the AI but nothing builds AIs (createAi)");
+    }
+    const protocolVersion = seatsAi ? GameProtocol.V1 : this.#gameProtocol;
     const id = ulid(this.#clock, this.#random);
     const secret = bytesToHex(this.#random.bytes(SECRET_BYTES));
     const decks = entrants.map((entrant) => canonicalDeck(entrant.deck.map((entry) => [entry.cardId, entry.count])));
-    const recorder = new GameRecorder({ gameId: id, secret, decks, version: this.#gameProtocol });
+    const recorder = new GameRecorder({ gameId: id, secret, decks, version: protocolVersion });
     const now = this.#clock.now();
-    const created = recorder.created({ mode, network: this.#network, engineVersion, contentHash: hash, accounts: entrants.map((entrant) => entrant.account), ms: 0 });
+    const created = recorder.created({ mode, network: this.#network, engineVersion, contentHash: hash, accounts: entrants.map((entrant) => entrant.account), ms: 0, conditions });
     /** @type {import("./ports.js").StoredGame} */
     const game = Object.freeze({
       id,
       mode,
       status: GameStatus.CREATED,
       network: this.#network,
-      protocolVersion: this.#gameProtocol,
+      protocolVersion,
       engineVersion,
       contentHash: hash,
       sealedSecret: this.#secrets.seal(hexToBytes(secret), secretContext(id)),
@@ -204,6 +227,7 @@ export class GameService {
       createdAt: now,
       startedAt: null,
       finishedAt: null,
+      conditions: Object.freeze([...conditions]),
       players: Object.freeze(
         entrants.map((entrant, index) =>
           Object.freeze({
@@ -215,6 +239,7 @@ export class GameService {
             deckCommit: deckCommitment(secret, index, decks[index]),
             entropy: null,
             entropySource: null,
+            ai: entrant.ai ?? null,
           }),
         ),
       ),
@@ -242,7 +267,7 @@ export class GameService {
     const created = recorder.created({ mode: GameMode.AUTO, network: this.#network, engineVersion, contentHash: hash, accounts, ms: 0 });
     const players = Object.freeze(
       entrants.map((entrant, index) =>
-        Object.freeze({ seat: seatAt(index), userId: entrant.userId, account: entrant.account, deckId: entrant.deckId, deck: decks[index], deckCommit: deckCommitment(secret, index, decks[index]), entropy: null, entropySource: null }),
+        Object.freeze({ seat: seatAt(index), userId: entrant.userId, account: entrant.account, deckId: entrant.deckId, deck: decks[index], deckCommit: deckCommitment(secret, index, decks[index]), entropy: null, entropySource: null, ai: null }),
       ),
     );
     /** @type {import("./ports.js").StoredGame} */
@@ -265,6 +290,7 @@ export class GameService {
       createdAt: now,
       startedAt: null,
       finishedAt: null,
+      conditions: Object.freeze([]),
       players,
     });
     await this.#repository.insertGame(game, created);
@@ -356,12 +382,18 @@ export class GameService {
    * @param {Readonly<{ game: import("./ports.js").StoredGame, recorder: GameRecorder }>} staged
    */
   launchGame({ game, recorder }) {
-    this.#actors.set(game.id, this.#newActor(game, recorder, this.#currentContent().content));
+    const actor = this.#newActor(game, recorder, this.#currentContent().content);
+    this.#actors.set(game.id, actor);
+    const policy = this.#policyFor(game.mode);
     for (const player of game.players) {
+      if (player.userId === null) {
+        continue;
+      }
       const opponent = game.players.find((other) => other.seat !== player.seat);
-      const authorizeDeadline = game.protocolVersion >= GameProtocol.V2 ? { authorizeDeadline: game.createdAt + this.#timePolicy.authorizeMs } : {};
-      this.#notifier.send(player.userId, "match.found", { gameId: game.id, seat: player.seat, opponent: { account: opponent?.account ?? null }, seedCommit: game.seedCommit, protocol: game.protocolVersion, entropyDeadline: game.createdAt + this.#timePolicy.entropyMs, ...authorizeDeadline });
+      const authorizeDeadline = game.protocolVersion >= GameProtocol.V2 ? { authorizeDeadline: game.createdAt + policy.authorizeMs } : {};
+      this.#notifier.send(player.userId, "match.found", { gameId: game.id, mode: game.mode, seat: player.seat, opponent: { account: opponent?.account ?? null }, seedCommit: game.seedCommit, protocol: game.protocolVersion, entropyDeadline: game.createdAt + policy.entropyMs, ...authorizeDeadline });
     }
+    actor.wakeAi().catch((error) => this.#logger.error("the AI could not join its game", { game: game.id, error: error instanceof Error ? error.message : String(error) }));
   }
 
   /**
@@ -591,6 +623,7 @@ export class GameService {
     const actor = this.#newActor(game, recorder, version.content);
     actor.replay(await this.#repository.listEvents(gameId));
     this.#actors.set(gameId, actor);
+    await actor.wakeAi();
     // A rebuilt actor keeps streaming to whoever watched the one it replaces.
     for (const [userId, watched] of this.#watching) {
       if (watched === gameId) {
@@ -606,6 +639,7 @@ export class GameService {
    * @param {import("@magic8/engine/domain/content/GameContent.js").GameContent} content the version the game was created with
    */
   #newActor(game, recorder, content) {
+    const ais = new Map(game.players.flatMap((player) => (player.ai === null ? [] : [[player.seat, this.#aiFor(player.ai, content)]])));
     return new GameActor({
       game,
       recorder,
@@ -616,14 +650,15 @@ export class GameService {
       random: this.#random,
       unitOfWork: this.#unitOfWork,
       logger: this.#logger,
-      timePolicy: this.#timePolicy,
+      timePolicy: this.#policyFor(game.mode),
       onBroken: (gameId) => {
         this.#logger.error("game actor failed to persist; it will be rebuilt from the database", { game: gameId });
         this.#actors.delete(gameId);
       },
       signAck: (fields) => this.#signAck(fields),
       signatures: this.#signatures,
-      results: this.#results,
+      results: UNPUBLISHED_MODES.includes(game.mode) ? null : this.#results,
+      ais,
       onAborted: async (summary) => {
         for (const listener of this.#abortedListeners) {
           await listener(summary);
@@ -635,6 +670,27 @@ export class GameService {
         }
       },
     });
+  }
+
+  /**
+   * @param {import("./ports.js").AiProfile} profile
+   * @param {import("@magic8/engine/domain/content/GameContent.js").GameContent} content
+   */
+  #aiFor(profile, content) {
+    if (this.#createAi === null) {
+      throw new Error(`a seat is played by the AI "${profile.id}" but nothing builds AIs (createAi)`);
+    }
+    return this.#createAi(profile, content);
+  }
+
+  /**
+   * The time policy of a mode's games.
+   * @param {string} mode
+   * @returns {import("../domain/TurnClock.js").TimePolicy}
+   */
+  #policyFor(mode) {
+    const overrides = this.#timePolicies[mode];
+    return overrides === undefined ? this.#timePolicy : Object.freeze({ ...this.#timePolicy, ...overrides });
   }
 
   /** @type {import("./GameActor.js").AckSignature} */
@@ -650,7 +706,7 @@ export class GameService {
   /** @param {string} gameId */
   async #playersOf(gameId) {
     const game = await this.#repository.findGame(gameId);
-    return game === null ? [] : game.players.map((player) => player.userId);
+    return game === null ? [] : game.players.flatMap((player) => (player.userId === null ? [] : [player.userId]));
   }
 }
 

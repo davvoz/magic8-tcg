@@ -117,7 +117,7 @@ function hitPlayer(attacker, defender, context, amount = attacker.attack) {
  * @param {import("../commands/CommandHandler.contract.js").ExecutionContext} context
  */
 function exchangeDamage(attacker, blockers, defender, context) {
-  const tramples = attacker.definition.hasKeyword(Keyword.TRAMPLE);
+  const tramples = attacker.hasKeyword(Keyword.TRAMPLE);
   let remaining = attacker.attack;
   blockers.forEach((blocker, index) => {
     const isLast = !tramples && index === blockers.length - 1;

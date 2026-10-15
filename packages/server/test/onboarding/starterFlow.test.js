@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 
-import { openContent } from "@magic8/protocol";
+import { openContent, parseGrantRecord } from "@magic8/protocol";
 import { validateStarterOffer } from "../../src/modules/onboarding/index.js";
 import { buildTestApp, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
@@ -54,6 +54,13 @@ describe("new player flow over HTTP", () => {
     const collection = await client.get("/api/collection");
     const copies = collection.json.cards.reduce((sum, entry) => sum + entry.copies.length, 0);
     assert.equal(copies, chosen.size, "the second claim minted nothing");
+
+    const grants = await setup.database.rows("SELECT payload FROM blockchain_events WHERE kind = 'GRANT'");
+    assert.equal(grants.length, 1, "the starter's copies go on chain, once");
+    const record = parseGrantRecord(grants[0].payload);
+    assert.deepEqual([record.k, record.u, record.deck, record.cards.length], ["starter", "alice", "precon_shadow", chosen.size]);
+    const minted = collection.json.cards.flatMap((entry) => entry.copies.map((copy) => copy.id)).sort();
+    assert.deepEqual(record.cards.map(([id]) => id).sort(), minted, "every copy, by id");
     const decks = await client.get("/api/decks");
     assert.deepEqual(decks.json.decks.map((deck) => deck.id), [claim.json.deck.id]);
     assert.equal(decks.json.limit, 50);

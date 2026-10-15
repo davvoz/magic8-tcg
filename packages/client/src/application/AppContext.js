@@ -7,6 +7,7 @@
  * @property {import("./decks/DeckSelectionService.js").DeckSelectionService} deckSelection
  * @property {import("./decks/DeckBuildingService.js").DeckBuildingService} deckBuilding
  * @property {import("./match/MatchSetupService.js").MatchSetupService} matchSetup
+ * @property {import("./match/AiOpponents.js").AiOpponentFactory} [opponents] the AI opponents practice can seat; absent in tools and previews (the classic AI plays)
  * @property {import("./tutorial/TutorialService.js").TutorialService} [tutorial] the guided first match; absent in tools and previews
  * @property {() => string} createSeed
  * @property {import("./ports/Logger.contract.js").Logger} logger
@@ -17,6 +18,7 @@
  * @property {import("./wallet/BalanceService.js").BalanceService} [balance] what the player's wallet holds, their budget where they buy; absent with `identity`
  * @property {import("./wallet/ActiveKeyPrompt.js").ActiveKeyPrompt} [activeKeys] asks for the active key a payment needs, when the player signs with their own keys; absent with `identity`
  * @property {import("./online/OnlineService.js").OnlineService} [online] online games; absent with `identity`
+ * @property {import("./daily/DailyService.js").DailyService} [daily] the daily challenges against the server's AI; absent with `identity`
  * @property {import("./lobby/LobbyService.js").LobbyService} [lobby] who else is online, and challenges between players; absent with `identity`
  * @property {import("./auto/AutoListService.js").AutoListService} [autoList] the auto list of ranked play (the AI plays the player's deck); absent with `identity`
  * @property {import("./auto/AutoReplayService.js").AutoReplayService} [autoReplays] replays of played auto games; absent with `identity`

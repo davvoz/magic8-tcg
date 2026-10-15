@@ -29,7 +29,7 @@ export const declareAttackersHandler = Object.freeze({
       if (card === undefined) {
         throw new Error(`DeclareAttackersHandler: attacker "${id}" vanished`);
       }
-      card.exhausted = !card.definition.hasKeyword(Keyword.VIGILANCE);
+      card.exhausted = !card.hasKeyword(Keyword.VIGILANCE);
     }
     state.combat.declareAttackers(attackerIds);
     context.events.emit(GameEventType.ATTACKERS_DECLARED, { playerId: player.id, attackerIds: Object.freeze([...attackerIds]) });

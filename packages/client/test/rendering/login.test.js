@@ -204,7 +204,11 @@ describe("MainMenuScene account entries", () => {
     const scene = new MainMenuScene(services(), appWith(service));
     scene.enter({});
     assert.ok(texts(scene).includes("Signed in as @alice (steem)"));
-    scene.root.focusableNodes().find((node) => node.id === "signOut").activate();
+    assert.equal(scene.root.findById("signOut"), null, "signing out is not a menu entry: it is in the account corner");
+    scene.root.findById("profile").activate();
+    assert.equal(scene.modal?.id, "account");
+    assert.ok(texts(scene).includes("Signed in on steem with Steem Keychain"));
+    scene.modal.findById("signOut").activate();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(deleted.length, 1);
     assert.equal(service.state.status, IdentityStatus.SIGNED_OUT);
@@ -216,6 +220,6 @@ describe("MainMenuScene account entries", () => {
     const scene = new MainMenuScene(services(), appWith(service));
     scene.enter({});
     assert.ok(texts(scene).some((text) => text.startsWith("Offline")));
-    assert.equal(scene.root.focusableNodes().some((node) => node.id === "signIn" || node.id === "signOut"), false);
+    assert.equal(scene.root.focusableNodes().some((node) => node.id === "signIn" || node.id === "profile"), false);
   });
 });

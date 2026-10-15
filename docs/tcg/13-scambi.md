@@ -8,7 +8,7 @@
 ## Cosa si può scambiare
 
 - **Carta contro carta.** Un giocatore offre alcune sue copie (fino a 10) a un altro giocatore e chiede in cambio fino a 10 carte, per tipo e quantità. Chiedere niente è un regalo. Si possono chiedere solo carte che l'altro giocatore ha, scambiabili, nel momento dell'offerta: il server rifiuta le altre richieste, e il client mostra solo quelle. Prima di rispondere l'altro può comunque darle via, e allora l'accettazione fallisce.
-- **Copie comprate e omaggi** (ordini, pacchetti, mazzo iniziale). Anche le carte dello starter si scambiano: si accetta il rischio che qualcuno crei molti account e passi gli starter a uno solo. Le ricompense (`reward`) restano non scambiabili.
+- **Copie comprate e omaggi** (ordini, pacchetti, mazzo iniziale). Anche le carte dello starter si scambiano: si accetta il rischio che qualcuno crei molti account e passi gli starter a uno solo. Dal 2026-10-15 si scambiano anche le ricompense (`reward`, i pacchetti delle sfide giornaliere, doc 24): sono del giocatore come le altre.
 - **Le vendite contro STEEM sono un'altra cosa** (14): una bacheca pubblica dove il compratore paga direttamente il venditore e la carta resta in escrow fino alla conferma sulla catena. Uno scambio non muove mai fondi: un escrow vero dei fondi richiederebbe che il server firmi con una chiave active, e il server non tiene mai chiavi con autorità sui fondi (05, 06).
 
 ## Come funziona l'escrow

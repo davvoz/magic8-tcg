@@ -55,6 +55,8 @@ export class PlayerNode extends UiNode {
   highlight;
   /** The player's STEEM account in an online game (their portrait is shown), or null. @type {string | null} */
   avatar;
+  /** What the HUD calls the player. @type {string} */
+  name;
   /** @type {(playerId: string) => void} */
   onTap;
   /** The life drawn in the crystal, read every frame: it may lag the snapshot while a cast plays out. @type {() => number} */
@@ -63,9 +65,10 @@ export class PlayerNode extends UiNode {
   lifeKick;
 
   /**
-   * @param {{ player: PlayerView, rect: import("@magic8/engine/shared/geometry.js").Rect, isMe: boolean, isActive: boolean, highlight: string | null, onTap: (playerId: string) => void, lifeShown?: () => number, lifeKick?: () => { progress: number, delta: number } | null, avatar?: string | null }} options
+   * @param {{ player: PlayerView, rect: import("@magic8/engine/shared/geometry.js").Rect, isMe: boolean, isActive: boolean, highlight: string | null, onTap: (playerId: string) => void, lifeShown?: () => number, lifeKick?: () => { progress: number, delta: number } | null, avatar?: string | null, name?: string }} options
+   *   `name`: what the HUD calls the player, when not their seat's name (a daily challenge's character)
    */
-  constructor({ player, rect, isMe, isActive, highlight, onTap, lifeShown = () => player.life, lifeKick = () => null, avatar = null }) {
+  constructor({ player, rect, isMe, isActive, highlight, onTap, lifeShown = () => player.life, lifeKick = () => null, avatar = null, name = player.name }) {
     super({ id: player.id, ...rect, enabled: highlight === Highlight.TARGETABLE });
     this.player = player;
     this.lifeShown = lifeShown;
@@ -74,6 +77,7 @@ export class PlayerNode extends UiNode {
     this.isActive = isActive;
     this.highlight = highlight;
     this.avatar = avatar;
+    this.name = name;
     this.onTap = onTap;
     this.interactive = true;
     this.focusable = this.enabled;
@@ -138,7 +142,7 @@ export class PlayerNode extends UiNode {
       drawAvatar(context, theme, { account: this.avatar, center: { x: line.x + nameHeight / 2, y: line.y + nameHeight / 2 }, radius: nameHeight / 2 });
     }
     const tagWidth = this.isMe ? 44 * s : 0;
-    drawTextInRect(context, this.player.name, { ...line, x: line.x + portrait, width: line.width - portrait - (s < 1 ? tagWidth : 0) }, { font: fontAt(theme, "body", s, "bold"), color: this.isActive ? colors.accentLight : colors.text, align: "left" });
+    drawTextInRect(context, this.name, { ...line, x: line.x + portrait, width: line.width - portrait - (s < 1 ? tagWidth : 0) }, { font: fontAt(theme, "body", s, "bold"), color: this.isActive ? colors.accentLight : colors.text, align: "left" });
     if (this.isMe) {
       const tag = { x: line.x + line.width - tagWidth, y: line.y + 3 * s, width: tagWidth, height: nameHeight - 6 * s };
       fillRoundedRect(context, tag, { fill: withAlpha(colors.accent, 0.2), stroke: withAlpha(colors.accent, 0.7), radius: tag.height / 2, lineWidth: 1 });

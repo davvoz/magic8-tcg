@@ -77,6 +77,7 @@ import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/comma
 import { SoundCue } from "../../application/audio/SoundCue.js";
 import { REPLAY_SPEEDS, ReplayPace, ReplaySpeed } from "../../application/auto/ReplayPace.js";
 import { helpFor } from "../../application/help/matchHelp.js";
+import { describeCondition } from "../../application/match/describeCondition.js";
 import { TutorialCoach } from "../../application/tutorial/TutorialCoach.js";
 import { GameEndReason } from "@magic8/engine/domain/game/GameEventType.js";
 import { KeyMap, isKey } from "../../input/KeyMap.js";
@@ -103,6 +104,7 @@ import { cardFaceLayout } from "../cards/CardFace.js";
 import { splitIntoBeats } from "../board/StepBeats.js";
 import { LogKind, describeEvent } from "../board/eventLog.js";
 import { CardDetail } from "../cards/CardDetail.js";
+import { StatBreakdown, statLines } from "../cards/StatBreakdown.js";
 import { drawTableBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
@@ -130,12 +132,16 @@ const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
 const SOUND_BUTTON = Object.freeze({ width: 84, height: 26, dialogWidth: 110 });
 /** The battle log opened from a compact board's action column, as large as the screen allows. */
 const LOG_MODAL = Object.freeze({ width: 600, height: 380, margin: 10 });
+/** The most room one of the game's rules takes in the Rules dialog (two lines of body text). */
+const RULE_LINE_HEIGHT = 72;
 /** The result dialog: its size, where the title, the duel and the buttons sit, and the room a tutorial's closing line takes. */
 const GAME_OVER = Object.freeze({ width: 800, height: 480, top: 22, title: 84, duelGap: 6, buttonHeight: 52, buttonGap: 14, foot: 22, line: 32 });
 const COMPACT_GAME_OVER = Object.freeze({ width: 700, height: 370, top: 12, title: 60, duelGap: 0, buttonHeight: 46, buttonGap: 12, foot: 14, line: 26 });
 const INSPECT = Object.freeze({ width: 448, height: 640, card: Object.freeze({ width: 380, height: 540 }) });
 /** A compact screen's inspect view: the card on the left, Close beside it. */
 const COMPACT_INSPECT = Object.freeze({ width: 420, height: 376, card: Object.freeze({ width: 244, height: 342 }), close: Object.freeze({ width: 118, height: 46 }) });
+/** Rows of a creature's stat breakdown under the inspected card (wide) or under Close (compact), and the gap before them. */
+const INSPECT_STATS = Object.freeze({ wideRow: 26, compactRow: 22, gap: 12 });
 /** Marks that invite a tap, dropped while moves are held back. @type {ReadonlySet<string>} */
 const INVITING = new Set([Highlight.PLAYABLE, Highlight.TARGETABLE]);
 /** How far the help's headline keeps from the help button and the clock either side of it. */
@@ -209,17 +215,20 @@ export class MatchScene extends Scene {
   #elapsedMs = 0;
   /** Whether the match help is on, when the game has it. @type {import("../../application/help/HelpSettings.js").HelpSettings | undefined} */
   #help;
+  /** A seat's name when it is a daily challenge's character, not a STEEM account. @type {(account: string) => string | null} */
+  #characterName;
   /** @type {(() => void) | null} */
   #unsubscribeHelp = null;
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
    * @param {import("./Scene.js").SceneServices} services
-   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"], help?: import("../../application/help/HelpSettings.js").HelpSettings }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
-   *   `audio`: the sound settings (AudioService), opened from the battle log; `help`: whether the match help is on
+   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"], help?: import("../../application/help/HelpSettings.js").HelpSettings, characterName?: (account: string) => string | null }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
+   *   `audio`: the sound settings (AudioService), opened from the battle log; `help`: whether the match help is on; `characterName`: a daily challenge's character's name, from its seat
    */
-  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio, help } = {}) {
+  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio, help, characterName = () => null } = {}) {
     super(services);
+    this.#characterName = characterName;
     this.#rarityOf = rarityOf;
     this.#now = now;
     this.#audio = audio;
@@ -673,7 +682,7 @@ export class MatchScene extends Scene {
     this.#buildHelpHeadline(snapshot, layout);
     this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction), turnLabel: (playerId) => this.#turnLabel(snapshot, playerId) }));
     this.#buildSidebar(snapshot, layout, interaction);
-    this.#buildLog(layout);
+    this.#buildLog(layout, snapshot);
     this.#buildHelpPointers(snapshot, layout, interaction);
     this.#buildCoach(snapshot, layout, interaction);
     this.#buildCoinToss(snapshot);
@@ -737,7 +746,7 @@ export class MatchScene extends Scene {
       if (player === undefined) {
         continue;
       }
-      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeKick: () => this.#presenter.lifeKickFor(player.id), avatar: this.#accountOf(player.id) }));
+      this.root.add(new PlayerNode({ player, rect: seat.hud, isMe: !this.#spectating && seat === layout.me, isActive: !this.isTossing && snapshot.activePlayerId === player.id, highlight: this.#highlightFor(interaction, player.id), onTap: (id) => this.#tap(id), lifeKick: () => this.#presenter.lifeKickFor(player.id), avatar: this.#accountOf(player.id), name: this.#hudName(player) }));
     }
   }
 
@@ -1098,13 +1107,26 @@ export class MatchScene extends Scene {
   }
 
   /**
-   * A player as the toss and the result name them: @account for a STEEM account, else the seat's name (the AI, a player not signed in).
+   * What a seat's HUD says: its name, or a daily challenge's character's own name.
+   * @param {{ id: string, name: string }} player
+   */
+  #hudName(player) {
+    const account = this.#accountOf(player.id);
+    return (account === null ? null : this.#characterName(account)) ?? player.name;
+  }
+
+  /**
+   * A player as the toss and the result name them: @account for a STEEM account, a daily challenge's character by its
+   * name, else the seat's name (the AI, a player not signed in).
    * @param {Snapshot} snapshot
    * @param {string} playerId
    */
   #displayName(snapshot, playerId) {
     const account = this.#accountOf(playerId);
-    return account === null ? snapshot.players.find((player) => player.id === playerId)?.name ?? "?" : `@${account}`;
+    if (account === null) {
+      return snapshot.players.find((player) => player.id === playerId)?.name ?? "?";
+    }
+    return this.#characterName(account) ?? `@${account}`;
   }
 
   /**
@@ -1170,8 +1192,11 @@ export class MatchScene extends Scene {
     return !this.services.viewport.compact && this.services.usingTouch?.() !== true;
   }
 
-  /** @param {import("../board/BoardLayout.js").BoardLayout} layout */
-  #buildLog(layout) {
+  /**
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   * @param {Snapshot} snapshot
+   */
+  #buildLog(layout, snapshot) {
     const { log } = layout;
     if (log === null) {
       return;
@@ -1180,9 +1205,13 @@ export class MatchScene extends Scene {
     const width = log.width - 2 * LOG.inset;
     const audio = this.#audio;
     const soundWidth = audio === undefined ? 0 : SOUND_BUTTON.width;
-    panel.add(new Label({ x: LOG.inset, y: LOG.inset, width: width - soundWidth, height: LOG.headerHeight, text: "Battle log", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
+    const rulesWidth = conditionsOf(snapshot).length === 0 ? 0 : SOUND_BUTTON.width + LOG.inset;
+    panel.add(new Label({ x: LOG.inset, y: LOG.inset, width: width - soundWidth - rulesWidth, height: LOG.headerHeight, text: "Battle log", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
+    const y = LOG.inset + (LOG.headerHeight - SOUND_BUTTON.height) / 2;
+    if (rulesWidth > 0) {
+      panel.add(new Button({ id: "rules", x: LOG.inset + width - soundWidth - rulesWidth, y, width: SOUND_BUTTON.width, height: SOUND_BUTTON.height, text: "Rules", textSize: "small", variant: "primary", onActivate: () => this.#showRules(snapshot) }));
+    }
     if (audio !== undefined) {
-      const y = LOG.inset + (LOG.headerHeight - SOUND_BUTTON.height) / 2;
       panel.add(new Button({ id: "sound", x: LOG.inset + width - soundWidth, y, width: soundWidth, height: SOUND_BUTTON.height, text: soundLabel(audio.settings), textSize: "small", onActivate: () => this.#showAudioSettings() }));
     }
     const top = LOG.inset + LOG.headerHeight;
@@ -1213,7 +1242,12 @@ export class MatchScene extends Scene {
     const closeWidth = 110;
     const audio = this.#audio;
     const soundWidth = audio === undefined ? 0 : SOUND_BUTTON.dialogWidth + LOG.inset;
-    panel.add(new Label({ x: inset, y: inset, width: panelWidth - 2 * inset - closeWidth - soundWidth, height: 36, text: "Battle log", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    const snapshot = this.#taken;
+    const rulesWidth = snapshot === null || conditionsOf(snapshot).length === 0 ? 0 : SOUND_BUTTON.dialogWidth + LOG.inset;
+    panel.add(new Label({ x: inset, y: inset, width: panelWidth - 2 * inset - closeWidth - soundWidth - rulesWidth, height: 36, text: "Battle log", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    if (snapshot !== null && rulesWidth > 0) {
+      panel.add(new Button({ id: "logModal.rules", x: panelWidth - inset - closeWidth - soundWidth - rulesWidth, y: inset, width: SOUND_BUTTON.dialogWidth, height: 40, text: "Rules", textSize: "small", variant: "primary", onActivate: () => this.#showRules(snapshot) }));
+    }
     if (audio !== undefined) {
       panel.add(new Button({ id: "logModal.sound", x: panelWidth - inset - closeWidth - soundWidth, y: inset, width: SOUND_BUTTON.dialogWidth, height: 40, text: soundLabel(audio.settings), textSize: "small", onActivate: () => this.#showAudioSettings() }));
     }
@@ -1221,6 +1255,28 @@ export class MatchScene extends Scene {
     const top = inset + 48;
     panel.add(new BattleLogNode({ id: "logModal.entries", x: inset, y: top, width: panelWidth - 2 * inset, height: panelHeight - top - inset, entries: this.#log, view: this.#logScroll }));
     this.openModal(modal);
+  }
+
+  /**
+   * The rules that hold only in this game (a daily challenge's boss brings them), in words.
+   * @param {Snapshot} snapshot
+   */
+  #showRules(snapshot) {
+    const { viewport } = this.services;
+    const lines = conditionsOf(snapshot).map((condition) => describeCondition(condition, { viewerId: this.#spectating ? null : this.#playerId, nameOf: (playerId) => this.#displayName(snapshot, playerId) }));
+    const panelWidth = Math.min(LOG_MODAL.width, viewport.logicalWidth - 2 * LOG_MODAL.margin);
+    const panelHeight = Math.min(LOG_MODAL.height, viewport.logicalHeight - 2 * LOG_MODAL.margin);
+    const modal = new Modal({ id: "rules", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth, panelHeight, onDismiss: () => this.closeModal() });
+    const { panel } = modal;
+    const inset = LOG.inset + 8;
+    const closeWidth = 110;
+    panel.add(new Label({ x: inset, y: inset, width: panelWidth - 2 * inset - closeWidth, height: 36, text: "Rules of this game", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    const close = panel.add(new Button({ id: "rules.close", x: panelWidth - inset - closeWidth, y: inset, width: closeWidth, height: 40, text: "Close", textSize: "small", onActivate: () => this.closeModal() }));
+    const top = inset + 52;
+    const lineHeight = Math.min(RULE_LINE_HEIGHT, (panelHeight - top - inset) / Math.max(1, lines.length));
+    lines.forEach((line, index) => panel.add(new TextBlock({ id: `rules.${index}`, x: inset, y: top + index * lineHeight, width: panelWidth - 2 * inset, height: lineHeight, text: `• ${line}.`, size: "body", colorKey: "text" })));
+    this.openModal(modal);
+    this.focus(close);
   }
 
   /** The sound settings over the board; the match plays on underneath. */
@@ -1328,10 +1384,17 @@ export class MatchScene extends Scene {
       this.#showCompactInspect(card);
       return;
     }
-    const modal = new Modal({ id: "inspect", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: INSPECT.width, panelHeight: INSPECT.height, onDismiss: () => this.closeModal() });
+    const lines = statLines(card);
+    const stats = lines.length === 0 ? 0 : lines.length * INSPECT_STATS.wideRow + INSPECT_STATS.gap;
+    const height = INSPECT.height + stats;
+    const x = (INSPECT.width - INSPECT.card.width) / 2;
+    const modal = new Modal({ id: "inspect", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: INSPECT.width, panelHeight: height, onDismiss: () => this.closeModal() });
     const { panel } = modal;
-    panel.add(new CardDetail({ id: "inspect.card", x: (INSPECT.width - INSPECT.card.width) / 2, y: 20, width: INSPECT.card.width, height: INSPECT.card.height, card, rarity: this.#rarityOf(card.definitionId ?? card.id ?? "") }));
-    panel.add(new Button({ id: "inspect.close", x: (INSPECT.width - INSPECT.card.width) / 2, y: INSPECT.height - 20 - 48, width: INSPECT.card.width, height: 48, text: "Close", onActivate: () => this.closeModal() }));
+    panel.add(new CardDetail({ id: "inspect.card", x, y: 20, width: INSPECT.card.width, height: INSPECT.card.height, card, rarity: this.#rarityOf(card.definitionId ?? card.id ?? "") }));
+    if (lines.length > 0) {
+      panel.add(new StatBreakdown({ id: "inspect.stats", x, y: 20 + INSPECT.card.height + INSPECT_STATS.gap, width: INSPECT.card.width, lines, rowHeight: INSPECT_STATS.wideRow, size: "body" }));
+    }
+    panel.add(new Button({ id: "inspect.close", x, y: height - 20 - 48, width: INSPECT.card.width, height: 48, text: "Close", onActivate: () => this.closeModal() }));
     this.openModal(modal);
   }
 
@@ -1347,6 +1410,11 @@ export class MatchScene extends Scene {
     const margin = (size.height - size.card.height) / 2;
     panel.add(new CardDetail({ id: "inspect.card", x: margin, y: margin, width: size.card.width, height: size.card.height, card, rarity: this.#rarityOf(card.definitionId ?? card.id ?? "") }));
     panel.add(new Button({ id: "inspect.close", x: size.width - margin - size.close.width, y: margin, width: size.close.width, height: size.close.height, text: "Close", onActivate: () => this.closeModal() }));
+    const lines = statLines(card);
+    if (lines.length > 0) {
+      const x = margin + size.card.width + INSPECT_STATS.gap;
+      panel.add(new StatBreakdown({ id: "inspect.stats", x, y: margin + size.close.height + INSPECT_STATS.gap, width: size.width - margin - x, lines, rowHeight: INSPECT_STATS.compactRow }));
+    }
     this.openModal(modal);
   }
 
@@ -1575,4 +1643,13 @@ function soundLabel(settings) {
 /** @param {string} phase */
 function phaseName(phase) {
   return phase.toLowerCase().replaceAll("_", " ");
+}
+
+/**
+ * The rules that hold only in this game, as its snapshot carries them (none for most games).
+ * @param {Snapshot} snapshot
+ * @returns {readonly import("../../application/match/describeCondition.js").PlainCondition[]}
+ */
+function conditionsOf(snapshot) {
+  return /** @type {any} */ (snapshot).conditions ?? [];
 }

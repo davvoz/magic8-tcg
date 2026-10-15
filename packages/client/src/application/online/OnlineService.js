@@ -52,11 +52,11 @@ export const OnlineStatus = Object.freeze({
 /**
  * @typedef {Readonly<{ id: string, name: string, mix: readonly import("@magic8/engine/domain/decks/factionMix.js").FactionShare[], totalCards: number, playable: boolean, problem: string | null }>} OnlineDeck id is the server's deck id
  * @typedef {Readonly<{ you: boolean, opponent: boolean }>} Acceptance v2, while the game waits for its players: who has accepted it with Keychain
- * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, notice: string | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null, acceptance: Acceptance | null }>} OnlineState
- *   `notice`: while searching, why the queue holds the player apart from those waiting (the server's words)
+ * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, notice: string | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null, acceptance: Acceptance | null, mode: string | null }>} OnlineState
+ *   `notice`: while searching, why the queue holds the player apart from those waiting (the server's words); `mode`: the game's (casual, ranked, daily), when the server said
  */
 
-const INITIAL = Object.freeze({ status: OnlineStatus.OFFLINE, error: null, notice: null, opponent: null, session: null, watching: null, acceptance: null });
+const INITIAL = Object.freeze({ status: OnlineStatus.OFFLINE, error: null, notice: null, opponent: null, session: null, watching: null, acceptance: null, mode: null });
 
 export class OnlineService {
   #connection;
@@ -244,7 +244,7 @@ export class OnlineService {
       this.#close(session.gameId);
     }
     this.#state.session?.stop();
-    this.#set({ status: OnlineStatus.IDLE, session: null, opponent: null, acceptance: null });
+    this.#set({ status: OnlineStatus.IDLE, session: null, opponent: null, acceptance: null, mode: null });
   }
 
   /**
@@ -489,11 +489,11 @@ export class OnlineService {
     }
   }
 
-  /** @param {{ gameId: string, seat: string, opponent: { account: string | null }, protocol?: number }} found */
+  /** @param {{ gameId: string, seat: string, opponent: { account: string | null }, protocol?: number, mode?: string }} found */
   #matched(found) {
     const session = this.#playerSession(found.gameId, found.seat);
     const acceptance = (found.protocol ?? 1) >= 2 ? Object.freeze({ you: false, opponent: false }) : null;
-    this.#set({ status: OnlineStatus.MATCHED, opponent: found.opponent.account, session, error: null, acceptance });
+    this.#set({ status: OnlineStatus.MATCHED, opponent: found.opponent.account, session, error: null, acceptance, mode: typeof found.mode === "string" ? found.mode : null });
     // Our entropy, drawn only now that the server is committed to its secret.
     this.#sendEntropy(found.gameId);
     if ((found.protocol ?? 1) >= 2) {
@@ -532,7 +532,7 @@ export class OnlineService {
     }
     session.apply(view);
     this.#lastView = view;
-    this.#set({ status: statusOfGame(view.status), session, opponent: view.opponent?.account ?? this.#state.opponent, acceptance: acceptanceIn(view) });
+    this.#set({ status: statusOfGame(view.status), session, opponent: view.opponent?.account ?? this.#state.opponent, acceptance: acceptanceIn(view), mode: typeof view.mode === "string" ? view.mode : this.#state.mode });
   }
 
   /** @param {string} gameId */

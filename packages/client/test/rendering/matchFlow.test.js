@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { AiOpponentFactory } from "../../src/application/match/AiOpponents.js";
 import { MatchSession } from "../../src/application/match/MatchSession.js";
 import { MatchSetupService } from "../../src/application/match/MatchSetupService.js";
 import { DeckBuildingService } from "../../src/application/decks/DeckBuildingService.js";
@@ -70,7 +71,7 @@ describe("registerScenes", () => {
   it("registers every scene and the menu can reach them all", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     registerScenes(manager, appContext());
-    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.LEADERBOARD, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
+    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.DAILY, SceneId.LEADERBOARD, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
     assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map((id) => !accountScenes.includes(id)), "account scenes need a game server");
     assert.equal(manager.navigate(SceneId.MAIN_MENU), true);
     assert.equal(buttonNamed(manager.current, "Deck Builder").enabled, true);
@@ -101,6 +102,49 @@ describe("DeckSelectionScene", () => {
     assert.equal(navigated[0].id, SceneId.MATCH);
     assert.ok(navigated[0].params.session instanceof MatchSession);
     assert.deepEqual(navigated[0].params.session.humanPlayerIds, ["player"]);
+  });
+
+  it("offers the opponents to choose from, weakest to strongest and round again, and seats the one chosen", () => {
+    const navigated = [];
+    const logger = new MemoryLogger();
+    const app = { ...appContext(), logger, opponents: new AiOpponentFactory({ content, effects }) };
+    const scene = new DeckSelectionScene(services({ navigate: (id, params) => navigated.push({ id, params }) }), app);
+    scene.enter({});
+    const opponent = () => buttons(scene).find((node) => node.id === "opponent");
+    assert.equal(opponent().text, "Opponent: Normal", "the middle one first");
+    const seen = [];
+    for (let presses = 0; presses < 5; presses += 1) {
+      opponent().activate();
+      seen.push(opponent().text);
+    }
+    assert.deepEqual(seen, ["Opponent: Hard", "Opponent: Expert", "Opponent: Classic", "Opponent: Easy", "Opponent: Normal"]);
+    opponent().activate();
+    buttonNamed(scene, "Start match").activate();
+    assert.ok(navigated[0].params.session instanceof MatchSession);
+    assert.equal(logger.entries.find((entry) => entry.message === "match created")?.data?.opponent, "hard");
+
+    const panel = scene.root.children[0];
+    for (const node of buttons(scene).filter((button) => ["backToMenu", "opponent", "editDecks"].includes(button.id))) {
+      assert.ok(node.bounds.y + node.bounds.height <= panel.bounds.y + panel.bounds.height, `${node.text} overflows the panel`);
+    }
+  });
+
+  it("fits the opponent button in the one-row footer of a phone", () => {
+    const viewport = new Viewport(theme.layout);
+    viewport.resize({ cssWidth: 667, cssHeight: 375 });
+    const scene = new DeckSelectionScene(services({ viewport }), { ...appContext(), opponents: new AiOpponentFactory({ content, effects }) });
+    scene.enter({});
+    const footer = ["backToMenu", "opponent", "editDecks", "startMatch"].map((id) => buttons(scene).find((node) => node.id === id).bounds);
+    const panel = scene.root.children[0].bounds;
+    footer.slice(1).forEach((bounds, index) => assert.ok(bounds.x >= footer[index].x + footer[index].width, "side by side, in order"));
+    assert.ok(footer.at(-1).x + footer.at(-1).width <= panel.x + panel.width, "Start stays inside the panel");
+    assert.ok(footer.at(-1).width >= 120, "and keeps room for its label");
+  });
+
+  it("offers no choice without an opponent factory: the classic AI plays", () => {
+    const scene = new DeckSelectionScene(services(), appContext());
+    scene.enter({});
+    assert.equal(buttons(scene).find((node) => node.id === "opponent"), undefined);
   });
 
   it("seats a signed-in player as their account, named and pictured; signed out, as You", () => {

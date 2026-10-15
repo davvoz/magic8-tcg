@@ -5,10 +5,11 @@
  * database. Composing publishes the content (idempotent) and validates the
  * data-driven offers against it, so a bad data file stops the start.
  */
+import { SearchAi } from "@magic8/engine/domain/ai/search/SearchAi.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { ENGINE_VERSION } from "@magic8/engine/version.js";
 import { AuditTrail } from "./kernel/audit/AuditTrail.js";
-import { hexToBytes, packEpochAnnouncement, sha256Hex, utf8 } from "@magic8/protocol";
+import { GameMode, hexToBytes, packEpochAnnouncement, sha256Hex, utf8 } from "@magic8/protocol";
 import { SecretBox } from "./kernel/crypto/SecretBox.js";
 import { unitOfWorkOf } from "./kernel/unitOfWork.js";
 import { PgAuditStore } from "./platform/audit/PgAuditStore.js";
@@ -19,7 +20,7 @@ import { CatalogService, PgContentRepository, registerCatalogRoutes } from "./mo
 import { InventoryService, PgInventoryRepository, registerCollectionRoutes } from "./modules/collection/index.js";
 import { DeckService, PgDeckRepository, registerDeckRoutes } from "./modules/decks/index.js";
 import { EconomyService, formatAmount, parseAmount, validateAssets } from "./modules/economy/index.js";
-import { ChainBroadcaster, ChainOutbox, ChainTracker, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS } from "./modules/chain/index.js";
+import { ChainBroadcaster, ChainOutbox, ChainTracker, GrantPublisher, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
 import { PAYMENT_PROVIDER_METHODS, PaymentService, PgPaymentRepository, RefundWatcher } from "./modules/payments/index.js";
 import { AdminService, Monitor, PgOperationsReadModel, registerAdminRoutes, registerMonitoringRoutes } from "./modules/admin/index.js";
@@ -33,7 +34,8 @@ import { JackpotService, PgJackpotRepository, PrizePayoutWatcher, registerJackpo
 import { ENTRY_KINDS, EntryService, PgEntryRepository, registerEntryRoutes } from "./modules/entries/index.js";
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
 import { BoardRelay, PgSalesRepository, SaleSettlement, SalesService, registerSalesRoutes } from "./modules/sales/index.js";
-import { NotificationRelay, NotificationService, PgNotificationRepository, registerNotificationRoutes } from "./modules/notifications/index.js";
+import { NotificationKind, NotificationRelay, NotificationService, PgNotificationRepository, countCards, registerNotificationRoutes } from "./modules/notifications/index.js";
+import { DAILY_TIME_POLICY, DailyChallengeService, DailyRewarder, DailySchedule, PgDailyRepository, registerDailyRoutes, validateDailyRoster, validateDailyTracks } from "./modules/daily/index.js";
 import { MaintenanceService, PgMaintenanceRepository, registerMaintenanceRoutes } from "./modules/maintenance/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
 import { WebSocketGateway } from "./platform/realtime/WebSocketGateway.js";
@@ -90,7 +92,6 @@ export async function createServerApp(deps) {
   const currentContent = () => catalog.current().content;
   const inventory = new InventoryService({ repository: new PgInventoryRepository(database), isKnownCard: (id) => currentContent().catalog.has(id), random, clock, unitOfWork });
   const decks = new DeckService({ repository: new PgDeckRepository(database), ownedCards: (userId) => inventory.activeCounts(userId), content: currentContent, random, clock, unitOfWork });
-  const starters = new StarterService({ offer: offer.value, inventory, decks, audit, unitOfWork });
 
   for (const provider of paymentProviders.values()) {
     assertImplements(provider, PAYMENT_PROVIDER_METHODS, "PaymentProvider");
@@ -124,6 +125,9 @@ export async function createServerApp(deps) {
   const payments = new PaymentService({ repository: paymentRepository, random, clock, unitOfWork });
   const refunds = new RefundWatcher({ repository: paymentRepository, providers: paymentProviders, senderFor: receiverFor, audit, clock, logger });
   const outbox = new ChainOutbox({ repository: new PgOutboxRepository(database), clock });
+  // What the game gives away goes on chain like what it sells: the starter deck and the daily challenges' packs.
+  const grants = new GrantPublisher({ outbox, network: defaultNetwork, accountsOf: (ids) => users.accountsOf(ids) });
+  const starters = new StarterService({ offer: offer.value, inventory, decks, audit, unitOfWork, grants });
   // What a player should hear about is written with the change; each process pushes it to the players connected to it.
   const notifications = new NotificationService({ repository: new PgNotificationRepository(database), clock, unitOfWork });
   const epochs = new PackEpochService({ repository: marketRepository, secrets, random, clock, unitOfWork, maxAgeMs: policy.epochMaxAgeMs, firstEpochId: config.firstEpochId, publisher: { publishEpoch: (payload) => outbox.enqueueEpoch({ network: defaultNetwork, payload }) } });
@@ -135,7 +139,10 @@ export async function createServerApp(deps) {
   const marketplace = new MarketplaceService({ catalog: market.value, economy, repository: marketRepository, epochs, receiverFor, audit, clock, random, unitOfWork, policy, describeFulfilment: (order) => fulfilment.describe(order), commitmentAnchored, gate: maintenance });
   await marketplace.syncProducts();
   const gameRepository = new PgGameRepository(database);
-  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: createCoreEffectRegistry(), secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, results: outbox, timePolicy, ackSigner, gameProtocol: config.gameProtocol, signatures: moveSignatures(wallets.get(defaultNetwork), verifyMoveSignature) });
+  const gameEffects = createCoreEffectRegistry();
+  // A seat the server plays (a daily challenge's character) is the search AI at the profile's level and style.
+  const createAi = (profile, gameContent) => new SearchAi({ rules: gameContent.gameRules, catalog: gameContent.catalog, effects: gameEffects, level: profile.level, style: profile.style, salt: profile.salt });
+  const games = new GameService({ repository: gameRepository, currentContent: () => catalog.current(), contentVersion: (hash) => catalog.version(hash), effects: gameEffects, secrets, notifier: hub, clock, random, unitOfWork, audit, logger, network: defaultNetwork, results: outbox, timePolicy, ackSigner, gameProtocol: config.gameProtocol, signatures: moveSignatures(wallets.get(defaultNetwork), verifyMoveSignature), createAi, timePolicies: { [GameMode.DAILY]: DAILY_TIME_POLICY } });
   const trading = new TradeService({ repository: new PgTradeRepository(database), inventory, findUser: (network, account) => users.findByAccount(network, account), isKnownCard: (id) => currentContent().catalog.has(id), outbox, notifier: hub, notifications, audit, clock, random, unitOfWork, logger, network: defaultNetwork });
   // Sales between players: paid straight to the seller, watched with the shop's payment providers.
   const salesRepository = new PgSalesRepository(database);
@@ -178,6 +185,10 @@ export async function createServerApp(deps) {
   });
   // The auto list: each player's deck played by the AI in their style, against whoever joins next (docs/tcg/23).
   const auto = new AutoService({ repository: new PgAutoRepository(database), decks, games, ranking, entries, notifications, notifier: hub, secrets, clock, random, unitOfWork, logger, gate: maintenance });
+  // The daily challenges: three games a day against characters the server's AI plays, a pack for all three (docs/tcg/24).
+  const daily = buildDaily({ raw: content.daily, gameContent: published.content, dropTables: market.value.dropTables, games, decks, inventory, notifications, grants, audit, clock, random, unitOfWork, logger, database, gate: maintenance });
+  games.onGameFinished((summary) => daily.onGameFinished(summary));
+  games.onGameAborted((summary) => daily.onGameAborted(summary));
   maintenance.onClose(() => matchmaking.closeQueue());
   maintenance.onClose(async () => lobby.closeAll());
   const settlement = new PaymentSettlement({ orders: marketRepository, payments, providers: paymentProviders, receiverFor, audit, notifications, formatAmount: (units, asset) => formatAmount(units, precisionOf(paymentProviders, asset)), clock, unitOfWork, logger });
@@ -199,6 +210,7 @@ export async function createServerApp(deps) {
   registerEntryRoutes({ router, entries });
   registerGameRoutes({ router, games });
   registerAutoRoutes({ router, auto });
+  registerDailyRoutes({ router, daily });
   const readModel = new PgOperationsReadModel(database);
   const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
   const monitor = new Monitor({ readModel, runtime, clock, logger, policy: alarmPolicy });
@@ -252,7 +264,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, practice, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, realtime });
+  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, practice, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, daily, realtime });
 }
 
 /**
@@ -338,6 +350,31 @@ async function readWalletBalance(wallet, account, asset, precision) {
   const balances = await wallet?.balancesOf?.(account);
   const amount = balances?.ok ? balances.value.find((balance) => balance.asset === asset)?.amount : undefined;
   return amount === undefined ? null : parseAmount(amount, precision);
+}
+
+/**
+ * The daily challenges, from their data (roster and tracks), checked against the game content and the shop's drop tables.
+ * @param {{
+ *   raw: Readonly<{ roster: unknown, tracks: unknown }>,
+ *   gameContent: import("@magic8/engine/domain/content/GameContent.js").GameContent,
+ *   dropTables: ReadonlyMap<string, { table: import("@magic8/protocol").DropTable, hash: string }>,
+ *   games: GameService, decks: DeckService, inventory: InventoryService, notifications: NotificationService, grants: GrantPublisher,
+ *   audit: AuditTrail, clock: import("./kernel/time.js").Clock, random: import("./kernel/random.js").SecureRandom,
+ *   unitOfWork: import("./kernel/unitOfWork.js").UnitOfWork, logger: import("./kernel/logger.js").Logger,
+ *   database: import("./platform/db/Database.js").Database, gate: { assertOpen: (what: string) => void },
+ * }} deps
+ */
+function buildDaily({ raw, gameContent, dropTables, games, decks, inventory, notifications, grants, audit, clock, random, unitOfWork, logger, database, gate }) {
+  const roster = validateDailyRoster(raw.roster, gameContent);
+  if (!roster.ok) {
+    throw new Error(`daily challenge roster is invalid: ${roster.error.message}`);
+  }
+  const tracks = validateDailyTracks(raw.tracks, { hasDropTable: (id) => dropTables.has(id) });
+  if (!tracks.ok) {
+    throw new Error(`daily challenge tracks are invalid: ${tracks.error.message}`);
+  }
+  const rewarder = new DailyRewarder({ dropTable: (id) => dropTables.get(id), inventory, notifications, notificationKind: NotificationKind.DAILY_REWARD, countCards, random, grants });
+  return new DailyChallengeService({ repository: new PgDailyRepository(database), schedule: new DailySchedule(roster.value), tracks: tracks.value, games, decks, rewarder, audit, clock, unitOfWork, logger, gate });
 }
 
 /** Anchoring states that prove a payload is on chain. */

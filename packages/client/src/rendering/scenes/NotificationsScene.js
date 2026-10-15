@@ -61,6 +61,7 @@ const TARGET_SCENES = Object.freeze({
   [NotificationTarget.SHOP]: SceneId.SHOP,
   [NotificationTarget.ONLINE]: SceneId.ONLINE,
   [NotificationTarget.REPLAY]: SceneId.REPLAY,
+  [NotificationTarget.DAILY]: SceneId.DAILY,
 });
 
 /**

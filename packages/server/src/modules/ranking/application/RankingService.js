@@ -38,6 +38,8 @@ export const SETTLED_GAMES = 3;
 /**
  * @typedef {import("../infrastructure/PgRankingRepository.js").StoredRating} StoredRating
  * @typedef {import("../../gameplay/application/ports.js").FinishedGame} FinishedGame
+ * @typedef {FinishedGame & { players: readonly Readonly<{ seat: string, userId: string, account: string }>[] }} RatedGame
+ *   a finished game two people played (no seat of the server's AI)
  */
 
 /**
@@ -207,14 +209,15 @@ export class RankingService {
   /**
    * Records a finished game (idempotent). Casual games are ignored. Joins the caller's unit of work, if any (an
    * auto game is rated in the one that records it).
-   * @param {FinishedGame} game
+   * @param {FinishedGame} finished
    * @returns {Promise<boolean>} true when this call recorded it
    */
-  async record(game) {
-    const season = seasonAt(this.#settings, game.finishedAt);
-    if (!RATED_MODES.includes(game.mode) || season === null || game.players.length !== 2) {
+  async record(finished) {
+    const season = seasonAt(this.#settings, finished.finishedAt);
+    if (!RATED_MODES.includes(finished.mode) || season === null || finished.players.length !== 2 || finished.players.some((player) => player.userId === null)) {
       return false;
     }
+    const game = /** @type {RatedGame} */ (finished);
     const weight = game.mode === AUTO ? this.#settings.auto.ratingWeightPercent / 100 : 1;
     const recorded = await this.#unitOfWork(async () => {
       if (await this.#repository.recorded(game.gameId)) {
@@ -246,7 +249,7 @@ export class RankingService {
   }
 
   /**
-   * @param {{ game: FinishedGame, season: string, player: { userId: string }, opponent: { userId: string }, score: 0 | 0.5 | 1, counted: boolean, weight: number, before: StoredRating, after: import("../domain/Glicko2.js").Rating }} change
+   * @param {{ game: RatedGame, season: string, player: { userId: string }, opponent: { userId: string }, score: 0 | 0.5 | 1, counted: boolean, weight: number, before: StoredRating, after: import("../domain/Glicko2.js").Rating }} change
    */
   async #write({ game, season, player, opponent, score, counted, weight, before, after }) {
     const result = counted ? after : before;
@@ -273,7 +276,7 @@ export class RankingService {
 
   /**
    * Fair-play flags for operators.
-   * @param {FinishedGame} game
+   * @param {RatedGame} game
    * @param {string} season
    * @param {boolean} counted
    */

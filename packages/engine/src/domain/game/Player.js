@@ -9,18 +9,22 @@ export class Player {
   name;
   /** @type {number} */
   life;
+  /** @type {number} the most life healing restores: the starting life, conditions included */
+  maxLife;
   /** @type {import("../resources/ResourcePool.js").ResourcePool} */
   resources;
   /** @type {Map<string, Zone>} */
   #zones;
 
   /**
-   * @param {{ id: string, name: string, life: number, resources: import("../resources/ResourcePool.js").ResourcePool, zones?: ReadonlyMap<string, Zone> }} fields
+   * @param {{ id: string, name: string, life: number, maxLife?: number, resources: import("../resources/ResourcePool.js").ResourcePool, zones?: ReadonlyMap<string, Zone> }} fields
+   *   `maxLife`: the starting life when not given
    */
-  constructor({ id, name, life, resources, zones }) {
+  constructor({ id, name, life, maxLife = life, resources, zones }) {
     this.id = id;
     this.name = name;
     this.life = life;
+    this.maxLife = maxLife;
     this.resources = resources;
     this.#zones = new Map(ZONE_TYPES.map((type) => [type, zones?.get(type) ?? new Zone(type)]));
   }
@@ -95,6 +99,6 @@ export class Player {
 
   clone() {
     const zones = new Map([...this.#zones].map(([type, zone]) => [type, zone.clone()]));
-    return new Player({ id: this.id, name: this.name, life: this.life, resources: this.resources.clone(), zones });
+    return new Player({ id: this.id, name: this.name, life: this.life, maxLife: this.maxLife, resources: this.resources.clone(), zones });
   }
 }

@@ -30,6 +30,8 @@ export const NotificationKind = Object.freeze({
   AUTO_FINISHED: "auto.finished",
   /** To a player: the season ended before their auto ticket found an opponent; the entry went back. */
   AUTO_REFUNDED: "auto.refunded",
+  /** To a player: they won the day's three challenges, and the pack (docs/tcg/24-sfide.md). */
+  DAILY_REWARD: "daily.reward",
 });
 
 /** @type {ReadonlySet<string>} */

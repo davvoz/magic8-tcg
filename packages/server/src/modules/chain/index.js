@@ -5,6 +5,7 @@
  * modules use only what is exported here.
  */
 export { ChainOutbox, OutboxKind } from "./application/ChainOutbox.js";
+export { GrantPublisher } from "./application/GrantPublisher.js";
 export { ChainBroadcaster, DEFAULT_BROADCAST_POLICY, operationJson, signerFor } from "./application/ChainBroadcaster.js";
 export { AlertKind, ChainTracker, DEFAULT_TRACKER_POLICY } from "./application/ChainTracker.js";
 export { DEFAULT_RC_POLICY, RcMonitor, ResourceMode } from "./application/RcMonitor.js";

@@ -62,16 +62,18 @@ export class GameRecorder {
   }
 
   /**
-   * @param {{ mode: string, network: string, engineVersion: string, contentHash: string, accounts: readonly string[], ms: number }} input accounts in seat order
+   * @param {{ mode: string, network: string, engineVersion: string, contentHash: string, accounts: readonly string[], ms: number, conditions?: readonly Readonly<Record<string, unknown>>[] }} input
+   *   accounts in seat order; `conditions`: the game's match conditions as plain data (MatchConditions.toPlain), recorded only when there are some
    * @returns {ChainedEvent}
    */
-  created({ mode = GameMode.CASUAL, network, engineVersion, contentHash, accounts, ms }) {
+  created({ mode = GameMode.CASUAL, network, engineVersion, contentHash, accounts, ms, conditions = [] }) {
     return this.#chain.append({
       k: EventKind.GAME_CREATED,
       a: null,
       t: 0,
       ms,
       d: {
+        ...(conditions.length === 0 ? {} : { cond: conditions }),
         content: contentHash,
         deck_c: SEATS.map((_, index) => deckCommitment(this.#secret, index, this.#decks[index])),
         eng: engineVersion,

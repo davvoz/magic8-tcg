@@ -43,6 +43,7 @@ Le parole DEVE / NON DEVE / DOVREBBE hanno il significato di RFC 2119.
 |---|---|---|---|
 | `m8tcg_receipt` | un account del pool broadcaster | `required_posting_auths = [broadcaster]`, `required_auths = []` | Ricevute di fulfilment degli ordini (§12) |
 | `m8tcg_epoch` | un account del pool broadcaster | posting | Impegno e rivelazione delle epoche dei pacchetti (§11.1) |
+| `m8tcg_grant` | un account del pool broadcaster | posting | Copie regalate: mazzo iniziale e pacchetti delle sfide giornaliere (§12b) |
 | `m8tcg_trade` | un account del pool broadcaster | posting | Scambi carta contro carta tra giocatori (13) |
 | `m8tcg_sale` | un account del pool broadcaster | posting | Vendite di copie tra giocatori (14) |
 | `m8tcg_result` | un account del pool broadcaster | posting | Risultato di una partita finita, con l'hash finale della sua storia (§9) |
@@ -124,7 +125,7 @@ head_i    = H("event", raw(head_{i-1}) ‖ utf8(canonical(body_i)))     con head
 
 | `k` | `a` | `d` | Vincoli |
 |---|---|---|---|
-| `GAME_CREATED` | `null` | `{ "mode": "casual"\|"ranked", "net": "steem", "eng": "<versione motore>", "content": "<hex64>", "seats": [{"seat":"s0","acct":"alice"},{"seat":"s1","acct":"bob"}], "seed_c": "<hex64>", "deck_c": ["<hex64>","<hex64>"] }` | Deve essere l'evento `i = 0`. `content` è l'hash dei contenuti (regole + catalogo) usati. |
+| `GAME_CREATED` | `null` | `{ "mode": "casual"\|"ranked"\|"auto"\|"daily", "net": "steem", "eng": "<versione motore>", "content": "<hex64>", "seats": [{"seat":"s0","acct":"alice"},{"seat":"s1","acct":"bob"}], "seed_c": "<hex64>", "deck_c": ["<hex64>","<hex64>"] }` | Deve essere l'evento `i = 0`. `content` è l'hash dei contenuti (regole + catalogo) usati. `cond` (facoltativo, solo se la partita ne ha): le condizioni della partita, regole che valgono solo lì (doc 24), ciascuna con i posti per cui vale; il motore della partita si costruisce con esse. |
 | `PLAYER_JOINED` | posto | `{ "ent": "<hex32>", "src": "client"\|"server" }` | Uno per posto, prima di `GAME_STARTED`. |
 | `GAME_STARTED` | `null` | `{ "first": "s0"\|"s1" }` | Dopo entrambi i `PLAYER_JOINED`; `first` deve coincidere con il valore derivato da `K`. |
 | `MOVE` | posto | comando del motore senza `playerId` (es. `{"type":"END_TURN"}`) | Il `playerId` del motore è `a`. In v2: `{ "cid", "cmd", "ev", "sig" }`, firmato dal giocatore (12). |
@@ -152,7 +153,7 @@ head_i    = H("event", raw(head_{i-1}) ‖ utf8(canonical(body_i)))     con head
 |---|---|
 | `g` | id della partita |
 | `a` | account dei due posti, in ordine (`s0`, `s1`) |
-| `m` | modalità: `casual` o `ranked` |
+| `m` | modalità: `casual`, `ranked` o `auto` (le partite `daily`, contro l'IA del server, doc 24, non vanno sulla catena) |
 | `w` | posto vincitore, `null` per un pareggio |
 | `r` | motivo della fine (come in `GAME_FINISHED.why`) |
 | `n` | sequenza dell'ultimo evento (`GAME_FINISHED`) |
@@ -216,6 +217,20 @@ Collega pubblicamente pagamento, ordine e copie coniate (id, definizione, numero
 - che la drop table abbia l'hash `t`.
 
 Infine ripescano ogni pacchetto: ogni carta estratta deve essere tra quelle coniate. Il server vende pacchetti solo dopo che l'impegno dell'epoca è sulla catena, quindi il segreto è fissato prima che esista il txId che genera i pacchetti.
+
+## 12b. Copie regalate (`m8tcg_grant`)
+
+Dal 2026-10-15 anche le copie che il gioco regala, invece di venderle, nascono in pubblico: con le ricevute (§12), ogni copia scambiata (13) o venduta (14) si segue fino al conio. Il record entra nell'outbox nella stessa transazione che conia le copie.
+
+```json
+{"cards":[["<uuid>","ember_imp",1042],…],"deck":"precon_foundry","k":"starter","u":"alice","v":1}
+{"cards":[["<uuid>","pyre_drake",77],…],"day":"2026-10-15","k":"daily","seed":"<hex64>","t":"<hash della drop table>","track":"hard","u":"alice","v":1}
+```
+
+- `starter`: il mazzo iniziale gratuito (`deck`: il precostruito scelto). Uno per account.
+- `daily`: il pacchetto vinto con le tre sfide di un giorno (doc 24). `t` è l'hash della drop table come nelle ricevute, `seed` il seme del pacchetto: `drawPack(tabella, seed)` estrae esattamente le carte del record. Il seme lo sceglie il server al momento del premio, quindi il record prova **cosa** è stato dato, non che l'estrazione sia stata equa (un premio non si paga: non c'è un pagamento da cui proteggerlo).
+- `grantRecord` e `parseGrantRecord` in `@magic8/protocol`; al massimo 60 copie per record.
+- Le copie regalate prima di questa data non hanno il loro record.
 
 ## 13. Validazione server-side
 

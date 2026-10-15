@@ -91,6 +91,33 @@ describe("MainMenuScene — account", () => {
     menu.exit();
   });
 
+  it("offers the daily challenges once signed in, with today's progress", async () => {
+    const world = harness();
+    const day = { day: "2026-10-15", endsAt: 0, tracks: [], opponents: [], run: null };
+    const listeners = new Set();
+    const daily = {
+      state: { day, loading: false, error: null, busy: null },
+      subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+      progress(run) {
+        daily.state = { ...daily.state, day: { ...day, run } };
+        listeners.forEach((listener) => listener(daily.state));
+      },
+    };
+    const menu = new MainMenuScene(world.services, { ...world.app, daily, online: { subscribe: () => () => undefined } });
+    menu.enter({});
+    assert.equal(byId(menu, "daily"), null, "signed out: no daily challenges");
+    world.identity.become(ALICE);
+    await settle();
+    assert.equal(byId(menu, "daily").text, "Challenges");
+    daily.progress({ stage: 2, rewarded: false });
+    assert.equal(byId(menu, "daily").text, "Challenges (2/3)");
+    daily.progress({ stage: 3, rewarded: true });
+    assert.equal(byId(menu, "daily").text, "Challenges (done)");
+    click(byId(menu, "daily"));
+    assert.equal(world.navigated.at(-1).id, SceneId.DAILY);
+    menu.exit();
+  });
+
   it("stays inside the screen with every account entry shown", async () => {
     const world = harness();
     world.identity.become(ALICE);
@@ -306,7 +333,7 @@ describe("registerScenes — with a game server", () => {
   it("registers the account scenes", () => {
     const world = harness();
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: world.logger, requestRender: () => undefined });
-    registerScenes(manager, { ...world.app, shop: { subscribe: () => () => undefined }, online: { subscribe: () => () => undefined, canWatch: true }, ranking: { subscribe: () => () => undefined }, gameHistory: { played: async () => undefined }, autoReplays: { open: async () => undefined }, trading: { subscribe: () => () => undefined }, sales: { subscribe: () => () => undefined }, notifications: { subscribe: () => () => undefined } });
+    registerScenes(manager, { ...world.app, shop: { subscribe: () => () => undefined }, online: { subscribe: () => () => undefined, canWatch: true }, ranking: { subscribe: () => () => undefined }, gameHistory: { played: async () => undefined }, autoReplays: { open: async () => undefined }, trading: { subscribe: () => () => undefined }, sales: { subscribe: () => () => undefined }, notifications: { subscribe: () => () => undefined }, daily: { subscribe: () => () => undefined } });
     assert.ok(Object.values(SceneId).every((id) => manager.has(id)));
   });
 });

@@ -16,6 +16,7 @@ export { RECEIPT_VERSION, buildReceipts } from "./receipts/receipts.js";
 export { MAX_TRADE_CARDS, TRADE_VERSION, parseTradeRecord, tradeRecord } from "./trades/trades.js";
 export { SALE_VERSION, parseSaleRecord, saleRecord } from "./sales/sales.js";
 export { RESULT_VERSION, gameResultRecord, parseGameResultRecord } from "./results/results.js";
+export { GRANT_VERSION, GrantKind, MAX_GRANT_CARDS, grantRecord, parseGrantRecord } from "./grants/grants.js";
 export { DROP_TABLE_VERSION, PACK_SECRET_BYTES, PackEpochKind, drawPack, dropTableHash, dropTableOdds, packEpochAnnouncement, packEpochCommitment, packEpochReveal, packSeed, validateDropTable } from "./packs/packs.js";
 export {
   EVENT_KINDS,

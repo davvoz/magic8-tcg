@@ -1,6 +1,9 @@
 /**
  * Deck selection: pick one of your decks and start a match against the
  * built-in AI, which plays a preconstructed deck (chosen by the match seed).
+ * The Opponent button picks how strong it is, from the classic rules AI to
+ * the search AI at its levels (AiOpponents.js); without an opponent factory
+ * (tools, previews) the classic one plays.
  * A coin toss (with its own seed) decides who plays first; the match screen
  * shows it and starts the match once the coin has landed.
  * Signed in, "your decks" are the account's (the starter you took and the
@@ -11,6 +14,7 @@
  * disabled with the first problem so the player knows to fix them.
  * On a compact screen the panel fills it and the footer is one row.
  */
+import { DEFAULT_PRACTICE_OPPONENT, PRACTICE_OPPONENTS } from "../../application/match/AiOpponents.js";
 import { BasicAiController } from "../../application/match/BasicAiController.js";
 import { DeckSource } from "../../application/decks/DeckSelectionService.js";
 import { deckMix } from "../../application/decks/deckMix.js";
@@ -58,8 +62,9 @@ const COMPACT = Object.freeze({
   listBottom: 76,
   footer: Object.freeze({ height: 48, gap: 12, oneRow: true }),
 });
-/** In the compact footer: Back and Deck builder take these widths, Start the rest. */
+/** In the compact footer: Back, Opponent (when offered) and Deck builder take these widths, Start the rest. */
 const COMPACT_FOOTER = Object.freeze({ back: 140, builder: 190 });
+const COMPACT_FOOTER_WITH_OPPONENT = Object.freeze({ back: 110, opponent: 170, builder: 160 });
 /** The player's seat; signed in, it is named after their account instead. */
 const HUMAN_SEAT = Object.freeze({ id: "player", name: "You" });
 const AI_SEAT = Object.freeze({ id: "ai", name: "Opponent" });
@@ -70,6 +75,8 @@ export class DeckSelectionScene extends Scene {
   /** @type {string | null} */
   #selectedDeckId = null;
   #scrollY = 0;
+  /** Which of PRACTICE_OPPONENTS plays; kept while the game runs. */
+  #opponentId = DEFAULT_PRACTICE_OPPONENT;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -172,19 +179,39 @@ export class DeckSelectionScene extends Scene {
     const startSpec = { id: "startMatch", variant: /** @type {const} */ ("primary"), enabled: this.#selectedDeckId !== null, text: "Start match", onActivate: () => this.#startMatch() };
     const back = { id: "backToMenu", text: "Back", onActivate: () => navigate(SceneId.MAIN_MENU) };
     const builder = { id: "editDecks", text: "Deck builder", enabled: hasScene(SceneId.DECK_BUILDER), onActivate: () => navigate(SceneId.DECK_BUILDER, { from: SceneId.DECK_SELECTION }) };
+    const opponent = this.#app.opponents === undefined ? null : { id: "opponent", text: `Opponent: ${this.#opponent().label}`, onActivate: () => this.#nextOpponent() };
     if (footer.oneRow) {
+      const row =
+        opponent === null
+          ? [{ spec: back, width: COMPACT_FOOTER.back }, { spec: builder, width: COMPACT_FOOTER.builder }]
+          : [{ spec: back, width: COMPACT_FOOTER_WITH_OPPONENT.back }, { spec: opponent, width: COMPACT_FOOTER_WITH_OPPONENT.opponent }, { spec: builder, width: COMPACT_FOOTER_WITH_OPPONENT.builder }];
       const y = size.height - inset / 2 - footer.height;
-      panel.add(new Button({ ...back, x: inset, y, width: COMPACT_FOOTER.back, height: footer.height }));
-      panel.add(new Button({ ...builder, x: inset + COMPACT_FOOTER.back + footer.gap, y, width: COMPACT_FOOTER.builder, height: footer.height }));
-      const startX = inset + COMPACT_FOOTER.back + COMPACT_FOOTER.builder + 2 * footer.gap;
-      return panel.add(new Button({ ...startSpec, x: startX, y, width: inset + width - startX, height: footer.height }));
+      let x = inset;
+      for (const button of row) {
+        panel.add(new Button({ ...button.spec, x, y, width: button.width, height: footer.height }));
+        x += button.width + footer.gap;
+      }
+      return panel.add(new Button({ ...startSpec, x, y, width: inset + width - x, height: footer.height }));
     }
-    const half = (width - footer.gap) / 2;
     const top = size.height - listBottom + 20;
     const start = panel.add(new Button({ ...startSpec, x: inset, y: top, width, height: footer.height }));
-    panel.add(new Button({ ...back, x: inset, y: top + footer.height + footer.gap, width: half, height: 50 }));
-    panel.add(new Button({ ...builder, x: inset + half + footer.gap, y: top + footer.height + footer.gap, width: half, height: 50 }));
+    const secondary = [back, ...(opponent === null ? [] : [opponent]), builder];
+    const share = (width - (secondary.length - 1) * footer.gap) / secondary.length;
+    secondary.forEach((spec, index) => panel.add(new Button({ ...spec, x: inset + index * (share + footer.gap), y: top + footer.height + footer.gap, width: share, height: 50 })));
     return start;
+  }
+
+  /** @returns {import("../../application/match/AiOpponents.js").NamedOpponent} */
+  #opponent() {
+    return PRACTICE_OPPONENTS.find((opponent) => opponent.id === this.#opponentId) ?? PRACTICE_OPPONENTS[0];
+  }
+
+  /** The next opponent, after the strongest the weakest again. */
+  #nextOpponent() {
+    const index = PRACTICE_OPPONENTS.findIndex((opponent) => opponent.id === this.#opponentId);
+    this.#opponentId = PRACTICE_OPPONENTS[(index + 1) % PRACTICE_OPPONENTS.length].id;
+    this.#rememberScroll();
+    this.#rebuild();
   }
 
   /** @param {string} deckId */
@@ -213,7 +240,7 @@ export class DeckSelectionScene extends Scene {
     const created = this.#app.matchSetup.createMatch({
       seats: [
         { ...human, deckList: selected.deck, controller: humanController },
-        { ...AI_SEAT, deckList: rival.deck, controller: new BasicAiController() },
+        { ...AI_SEAT, deckList: rival.deck, controller: this.#app.opponents?.controllerFor(this.#opponent().spec, seed) ?? new BasicAiController() },
       ],
       seed,
       coinSeed,
@@ -223,7 +250,7 @@ export class DeckSelectionScene extends Scene {
       this.services.logger.error("match setup failed", created.error);
       return;
     }
-    this.#app.logger.info("match created", { deck: selected.deck.id, rival: rival.deck.id, seed, coinSeed, first: created.value.openingToss?.firstPlayerId ?? null });
+    this.#app.logger.info("match created", { deck: selected.deck.id, rival: rival.deck.id, opponent: this.#app.opponents === undefined ? "classic" : this.#opponentId, seed, coinSeed, first: created.value.openingToss?.firstPlayerId ?? null });
     if ("account" in human) {
       this.#app.practice?.track(created.value, HUMAN_SEAT.id);
     }

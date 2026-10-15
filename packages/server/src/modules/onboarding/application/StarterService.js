@@ -1,9 +1,11 @@
 /**
  * Claiming the free starter deck. One unit of work: record the grant (its
  * key makes a second claim impossible, even concurrently), mint the cards,
- * save them as a ready-to-play deck, write the audit entry. Any failure
- * undoes all of it.
+ * save them as a ready-to-play deck, queue the grant's record for the chain
+ * (m8tcg_grant: the copies' public birth), write the audit entry. Any
+ * failure undoes all of it.
  */
+import { GrantKind, grantRecord } from "@magic8/protocol";
 import { AppError } from "../../../kernel/AppError.js";
 
 const GRANT_KIND = "starter";
@@ -17,6 +19,7 @@ export class StarterService {
   #decks;
   #audit;
   #unitOfWork;
+  #grants;
 
   /**
    * @param {{
@@ -25,14 +28,16 @@ export class StarterService {
    *   decks: import("../../decks/index.js").DeckService,
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
-   * }} deps
+   *   grants: { publish: (userId: string, record: (account: string) => string) => Promise<void> },
+   * }} deps `grants`: queues a grant record for the chain, given how to write it for the player's account
    */
-  constructor({ offer, inventory, decks, audit, unitOfWork }) {
+  constructor({ offer, inventory, decks, audit, unitOfWork, grants }) {
     this.#offer = offer;
     this.#inventory = inventory;
     this.#decks = decks;
     this.#audit = audit;
     this.#unitOfWork = unitOfWork;
+    this.#grants = grants;
   }
 
   /**
@@ -71,6 +76,8 @@ export class StarterService {
         throw new AppError("STARTER_ALREADY_CLAIMED", "you already received your starter deck");
       }
       const deck = await this.#decks.create(userId, { name: starter.name, cards: starter.entries });
+      const cards = grant.instances.map((copy) => ({ id: copy.id, definitionId: copy.definitionId, serial: copy.serial }));
+      await this.#grants.publish(userId, (account) => grantRecord({ kind: GrantKind.STARTER, account, cards, deck: starter.id }));
       await this.#audit.record({ actorKind: "user", actorUserId: userId, action: "collection.starter_claimed", targetKind: "grant", targetId: key, ip, details: { starter: starter.id, cards: grant.instances.length, deck: deck.id } });
       return Object.freeze({ deck, cardsGranted: grant.instances.length });
     });

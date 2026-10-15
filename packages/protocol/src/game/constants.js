@@ -34,6 +34,8 @@ export const OperationId = Object.freeze({
   SALE: "m8tcg_sale",
   /** The result of a finished game, committing to its whole history (docs/tcg/03 §9). */
   RESULT: "m8tcg_result",
+  /** Copies the game gives away: the free starter deck, the daily challenges' packs (docs/tcg/03 §12b). */
+  GRANT: "m8tcg_grant",
 });
 
 export const EventKind = Object.freeze({
@@ -55,8 +57,11 @@ export const EVENT_KINDS = Object.freeze(Object.values(EventKind));
 export const Seat = Object.freeze({ S0: "s0", S1: "s1" });
 export const SEATS = Object.freeze([Seat.S0, Seat.S1]);
 
-/** auto: a ranked game the server plays with the AI for both players (docs/tcg/23-automatica.md). */
-export const GameMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked", AUTO: "auto" });
+/**
+ * auto: a ranked game the server plays with the AI for both players (docs/tcg/23-automatica.md);
+ * daily: a daily challenge, a player against a character the server's AI plays (docs/tcg/24-sfide.md).
+ */
+export const GameMode = Object.freeze({ CASUAL: "casual", RANKED: "ranked", AUTO: "auto", DAILY: "daily" });
 
 export const EntropySource = Object.freeze({ CLIENT: "client", SERVER: "server" });
 

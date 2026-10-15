@@ -9,6 +9,7 @@
  */
 import { CardInstance } from "../../../src/domain/cards/CardInstance.js";
 import { createCoreCommandRegistry } from "../../../src/domain/commands/registerCoreCommands.js";
+import { MatchConditions } from "../../../src/domain/conditions/MatchConditions.js";
 import { GameEngine } from "../../../src/domain/game/GameEngine.js";
 import { GameState } from "../../../src/domain/game/GameState.js";
 import { Player } from "../../../src/domain/game/Player.js";
@@ -28,7 +29,8 @@ import { P1, P2, catalog, effects, rulesWith } from "./fixtures.js";
  */
 
 /**
- * @param {{ p1?: PlayerSpec, p2?: PlayerSpec, rules?: import("../../../src/domain/game/GameRules.js").GameRules, seed?: number }} [spec]
+ * @param {{ p1?: PlayerSpec, p2?: PlayerSpec, rules?: import("../../../src/domain/game/GameRules.js").GameRules, seed?: number, conditions?: readonly Record<string, unknown>[] }} [spec]
+ *   `conditions`: match conditions as plain data (those of setup, starting life and hand, do not apply: the board is hand-made)
  */
 export function createScenario(spec = {}) {
   const rules = spec.rules ?? rulesWith();
@@ -39,7 +41,7 @@ export function createScenario(spec = {}) {
   const buildPlayer = (id, name, playerSpec, isActive) => {
     const resources = playerSpec.resources ?? 10;
     const startValue = isActive ? Math.max(0, resources - rules.resource.gainPerTurn) : resources;
-    const player = new Player({ id, name, life: playerSpec.life ?? rules.startingLife, resources: new ResourcePool({ current: startValue, max: startValue }) });
+    const player = new Player({ id, name, life: playerSpec.life ?? rules.startingLife, maxLife: rules.startingLife, resources: new ResourcePool({ current: startValue, max: startValue }) });
     const place = (zoneType, definitionIds) => {
       placed[`${id}.${zoneType}`] = [];
       for (const definitionId of definitionIds) {
@@ -60,7 +62,11 @@ export function createScenario(spec = {}) {
   };
 
   const players = [buildPlayer(P1, "Alice", spec.p1 ?? {}, true), buildPlayer(P2, "Bob", spec.p2 ?? {}, false)];
-  const state = new GameState({ players, activePlayerId: P1, rng: ChaChaRandom.fromSeed(spec.seed ?? 1), nextInstanceNumber: ids.next });
+  const conditions = MatchConditions.fromPlain(spec.conditions, [P1, P2]);
+  if (!conditions.ok) {
+    throw new Error(`scenario: ${conditions.error.message}`);
+  }
+  const state = new GameState({ players, activePlayerId: P1, rng: ChaChaRandom.fromSeed(spec.seed ?? 1), nextInstanceNumber: ids.next, conditions: conditions.value });
   const resourceSystem = createResourceSystem(rules);
   const engine = new GameEngine({
     state,

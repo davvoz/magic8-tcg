@@ -59,21 +59,35 @@ export class GameEngine {
   }
 
   /**
-   * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, effects: import("../effects/EffectRegistry.js").EffectRegistry, commands: import("../commands/CommandRegistry.js").CommandRegistry, players: readonly import("./MatchSetup.js").PlayerSetup[], seed: string | Uint8Array | number, shuffle?: boolean }} setup
+   * @param {{ rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, effects: import("../effects/EffectRegistry.js").EffectRegistry, commands: import("../commands/CommandRegistry.js").CommandRegistry, players: readonly import("./MatchSetup.js").PlayerSetup[], seed: string | Uint8Array | number, shuffle?: boolean, conditions?: import("../conditions/MatchConditions.js").MatchConditions }} setup
    *   `seed`: a 32-byte key (64 lowercase hex characters or bytes) for real matches; a safe integer only for tests, tools and offline practice.
    *   `shuffle`: false deals every deck in its list's order, top first (a scripted match: the tutorial); never for a real match.
+   *   `conditions`: rules that hold for this game only (docs/tcg/24-sfide.md); none by default
    * @returns {import("../../shared/Result.js").Ok<GameEngine> | import("../../shared/Result.js").Fail}
    */
-  static create({ rules, catalog, effects, commands, players, seed, shuffle = true }) {
+  static create({ rules, catalog, effects, commands, players, seed, shuffle = true, conditions = undefined }) {
     if (!ChaChaRandom.isValidSeed(seed)) {
       return fail(CommandError.INVALID_COMMAND, "seed must be a 32-byte key (hex or bytes) or a safe integer");
     }
     const resourceSystem = createResourceSystem(rules);
-    const initial = createInitialState({ rules, catalog, resourceSystem, players, rng: ChaChaRandom.fromSeed(seed), shuffle });
+    const initial = createInitialState({ rules, catalog, resourceSystem, players, rng: ChaChaRandom.fromSeed(seed), shuffle, conditions });
     if (!initial.ok) {
       return initial;
     }
     return ok(new GameEngine({ state: initial.value, rules, catalog, effects, commands, turnManager: GameEngine.createTurnManager(rules, resourceSystem) }));
+  }
+
+  /**
+   * An engine already under way from a prepared state, mid-game: no first
+   * turn to enter. For the search AI, which rebuilds a game from what one
+   * player sees (ai/search/PerspectiveWorld.js); never for a real match.
+   * @param {{ state: import("./GameState.js").GameState, rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, effects: import("../effects/EffectRegistry.js").EffectRegistry, commands: import("../commands/CommandRegistry.js").CommandRegistry }} deps
+   * @returns {GameEngine}
+   */
+  static resume({ state, rules, catalog, effects, commands }) {
+    const engine = new GameEngine({ state, rules, catalog, effects, commands, turnManager: GameEngine.createTurnManager(rules, createResourceSystem(rules)) });
+    engine.#started = true;
+    return engine;
   }
 
   /**
@@ -93,6 +107,16 @@ export class GameEngine {
     return this.#state.isOver;
   }
 
+  /** Whose turn it is; the same as every snapshot's `activePlayerId`, without building one. */
+  get activePlayerId() {
+    return this.#state.activePlayerId;
+  }
+
+  /** Who must act now, null when nobody (automatic phases, game over); as every snapshot's `awaitingPlayerId`. */
+  get awaitingPlayerId() {
+    return this.#state.awaitingPlayerId;
+  }
+
   /**
    * Enters the first turn. Must be called exactly once before any command.
    * @returns {CommandResult}
@@ -103,6 +127,18 @@ export class GameEngine {
     }
     this.#started = true;
     return this.#transaction((state, context) => this.#turnManager.start(state, context));
+  }
+
+  /**
+   * A copy that goes its own way from here: commands on one never reach the
+   * other. Cheap, because a committed state is never mutated (every command
+   * works on a clone, see #transaction), so both start from the same one.
+   * @returns {GameEngine}
+   */
+  fork() {
+    const copy = new GameEngine({ state: this.#state, rules: this.#rules, catalog: this.#catalog, effects: this.#effects, commands: this.#commands, turnManager: this.#turnManager });
+    copy.#started = this.#started;
+    return copy;
   }
 
   /**
