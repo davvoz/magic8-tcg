@@ -13,6 +13,7 @@ COPY packages/protocol/package.json packages/protocol/
 COPY packages/steem/package.json packages/steem/
 COPY packages/server/package.json packages/server/
 COPY packages/client/package.json packages/client/
+COPY packages/bots/package.json packages/bots/
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 COPY data data

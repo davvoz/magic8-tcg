@@ -29,6 +29,8 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 | `M8_STEEM_NODES` | default nell'ordine di 06 | nodi RPC, separati da virgola |
 | `M8_HOST`, `M8_PORT`, `M8_LOG_LEVEL`, `M8_SERVE_CLIENT`, `M8_APP_NAME` | no | |
 | `M8_BUILD` | no | La build servita (lettere, cifre, `.`, `_`, `-`; al massimo 64). In Docker è il commit del deploy (`APP_TAG`), passato come build arg e scritto **nell'immagine** (anche nel client, `packages/client/src/release.js`): un rollback a un'immagine precedente riporta la sua. `GET /api/maintenance` la espone con `version` (dal `package.json` radice); una scheda che esegue un'altra build propone di aggiornare. Senza (sviluppo), nessun avviso. |
+| `M8_BOT_KEYS` | per i bot | servizio `bots` (25): `account:WIF_posting[:stile],…`, **solo chiavi posting**; vuota = nessun bot |
+| `M8_BOT_THINK_MS` | no | quanto pensa un bot prima di ogni mossa, `min-max` in ms (default `1200-3200`) |
 | `M8_LOG_FORMAT` | no | `pretty` (predefinito: righe brevi, senza hash, txId e chiavi) oppure `json` (tutti i campi, per un sistema di raccolta log) |
 
 Il server rifiuta di partire con:
@@ -93,6 +95,7 @@ Il server rifiuta di partire con:
 
 - **Token delle metriche:** si cambia la variabile e si riavvia.
 - **Sessioni utente:** un utente che cambia la chiave posting perde le sessioni aperte entro 10 minuti (job di controllo delle chiavi).
+- **Chiave posting di un bot (25):** cambiarla sull'account STEEM, aggiornare `M8_BOT_KEYS` e lanciare `docker compose up -d bots`. La chiave posting non muove fondi: chi la ruba può solo accedere e giocare a nome del bot.
 
 ## 4.5 Scambi
 

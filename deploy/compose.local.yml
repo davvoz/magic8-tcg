@@ -12,3 +12,11 @@ services:
       M8_LOG_FORMAT: pretty
     ports: !override
       - "8081:8080"
+
+  # No bot by default; to try them: M8_BOT_KEYS="account:WIF,…" npm run docker:up (never in local.env, which is committed).
+  bots:
+    env_file: !reset []
+    environment:
+      M8_BOT_ORIGIN: http://localhost:8081
+      M8_BOT_KEYS: ${M8_BOT_KEYS:-}
+      M8_LOG_LEVEL: info

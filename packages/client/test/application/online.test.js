@@ -271,6 +271,19 @@ describe("OnlineService", () => {
     assert.deepEqual(updates[0].events, [{ type: "CARD_DRAWN" }]);
   });
 
+  it("stays matched when the queue pairs the player as they join (the match is announced before the reply)", async () => {
+    const { online, server } = service();
+    online.start();
+    await flush();
+    server.replies["queue.join"] = () => {
+      server.push("match.found", { gameId: VIEW().gameId, seat: "s1", opponent: { account: "bob" }, seedCommit: "ef".repeat(32) });
+      return { t: "queue.status", d: { state: "searching" } };
+    };
+    assert.equal((await online.queue("deck-1")).ok, true);
+    assert.equal(online.state.status, OnlineStatus.MATCHED);
+    assert.equal(online.state.opponent, "bob");
+  });
+
   it("says why the server took the player out of the ranked queue when their entries ran out", async () => {
     const { online, server } = service();
     online.start();

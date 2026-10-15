@@ -124,6 +124,12 @@ export default [
     rules: qualityRules,
   },
   {
+    // The house players: a Node process driving the browser client's application layer (docs/tcg/25-bot.md).
+    files: ["packages/bots/src/**/*.js"],
+    languageOptions: { ecmaVersion: 2022, sourceType: "module", globals: { ...nodeGlobals, setInterval: "readonly" } },
+    rules: { ...qualityRules, "no-console": "error" },
+  },
+  {
     files: ["packages/client/src/application/**/*.js"],
     languageOptions: { globals: {} },
   },

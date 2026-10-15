@@ -5,7 +5,7 @@
 #   2. checks out the commit and builds its image while the old version keeps serving;
 #   3. waits until the announced time, or less once no game is in progress;
 #   4. backs up the database (a new migration makes the old version refuse the database);
-#   5. replaces the app container and waits until /api/ready answers, then ends the maintenance;
+#   5. replaces the app container and waits until /api/ready answers, then the bots, and ends the maintenance;
 #   6. if it does not, puts the previous image and commit back and fails.
 # A failure before the swap ends the maintenance: the old version goes on serving.
 # Usage (on the server): sh deploy/deploy.sh [--notice=<minutes>] [commit]
@@ -88,6 +88,8 @@ main() {
   if APP_TAG=$tag docker compose up -d --no-deps --wait --wait-timeout 90 app; then
     docker tag "magic8-tcg:$tag" magic8-tcg:current
     echo "deploy: $tag is live"
+    # The house players run the same image: they come back on the new version (docs/tcg/25-bot.md).
+    APP_TAG=$tag docker compose up -d --no-deps bots || echo "deploy: the bots did not restart; start them with: docker compose up -d bots" >&2
     # The maintenance is over: everything reopens (on the new version, which open tabs offer to reload).
     notice end || echo "deploy: could not end the maintenance; end it with: sh deploy/maintenance.sh off" >&2
   else

@@ -42,6 +42,23 @@ services:
     stop_grace_period: 15s
     logging: *logging
 
+  # House players (docs/tcg/25-bot.md): the same image, another process. They sign in and play over the
+  # app's own HTTP and WebSocket, like a browser. M8_BOT_KEYS empty: the process starts and does nothing.
+  bots:
+    image: magic8-tcg:${APP_TAG:-current}
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment:
+      M8_BOT_SERVER: http://app:8080
+      M8_BOT_ORIGIN: https://${M8_DOMAIN:?set M8_DOMAIN in .env}
+    command: ["node", "packages/bots/src/main.js"]
+    depends_on:
+      app:
+        condition: service_healthy
+    stop_grace_period: 10s
+    logging: *logging
+
   db:
     image: postgres:17
     restart: unless-stopped

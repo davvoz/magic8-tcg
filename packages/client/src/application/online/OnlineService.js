@@ -168,7 +168,8 @@ export class OnlineService {
       this.#set({ error: { code: error.code, message: error.message } });
       return fail(error.code, error.message);
     }
-    this.#set({ status: OnlineStatus.SEARCHING, error: null });
+    // Paired on joining: the server announced the game (match.found) before it answered.
+    this.#set({ status: this.#state.session === null ? OnlineStatus.SEARCHING : this.#state.status, error: null });
     return ok(undefined);
   }
 
