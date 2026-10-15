@@ -9,7 +9,8 @@ import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { signMessage } from "@magic8/steem";
 
 const JSON_HEADERS = Object.freeze({ "Content-Type": "application/json", "X-M8-Request": "1" });
-const SESSION_COOKIE = "m8_session=";
+/** The session cookie's names: over HTTPS (production) the server prefixes it with "__Host-". */
+const SESSION_COOKIES = Object.freeze(["__Host-m8_session=", "m8_session="]);
 
 /**
  * @typedef {Readonly<{ id: string, name: string, playable: boolean }>} BotDeck
@@ -20,7 +21,7 @@ export class BotHttp {
   #server;
   #origin;
   #fetch;
-  /** "m8_session=…", once signed in. @type {string | null} */
+  /** "m8_session=…" (or "__Host-m8_session=…"), once signed in. @type {string | null} */
   #cookie = null;
 
   /**
@@ -58,7 +59,7 @@ export class BotHttp {
     if (!session.ok) {
       return session;
     }
-    const cookie = session.value.headers.getSetCookie().find((/** @type {string} */ value) => value.startsWith(SESSION_COOKIE));
+    const cookie = session.value.headers.getSetCookie().find((/** @type {string} */ value) => SESSION_COOKIES.some((name) => value.startsWith(name)));
     if (cookie === undefined) {
       return fail("NO_SESSION", "the server signed us in without a session cookie");
     }
