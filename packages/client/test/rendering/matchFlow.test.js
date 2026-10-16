@@ -68,15 +68,13 @@ const rendered = (scene) => {
 };
 
 describe("registerScenes", () => {
-  it("registers every scene and the menu can reach them all", () => {
+  it("registers every scene, and the rail and the sections' own screens reach them", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     registerScenes(manager, appContext());
     const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.DAILY, SceneId.SEASON, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
     assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map((id) => !accountScenes.includes(id)), "account scenes need a game server");
-    assert.equal(manager.navigate(SceneId.MAIN_MENU), true);
-    assert.equal(buttonNamed(manager.current, "My decks").enabled, true);
-    assert.equal(buttonNamed(manager.current, "Play").enabled, true);
-    buttonNamed(manager.current, "My decks").activate();
+    assert.equal(manager.navigate(SceneId.HOME), true);
+    manager.current.findNode("shell.nav.decks").activate();
     assert.equal(manager.currentId, SceneId.DECKS);
     assert.equal(manager.current.findNode("shell.back"), null, "a section's own screen has no Back");
     manager.current.findNode("decks.new").activate();

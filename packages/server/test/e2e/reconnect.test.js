@@ -106,10 +106,10 @@ describe("a dead connection mid-game (two real clients, real server)", () => {
       onNavigate: (/** @type {(sceneId: string) => void} */ listener) => (navigations.add(listener), () => navigations.delete(listener)),
     };
     returnToGame({ online: reopened.online, scenes, toasts: { show: (message) => toasts.push(message), dismiss: () => undefined } });
-    scenes.navigate(SceneId.MAIN_MENU);
+    scenes.navigate(SceneId.HOME);
 
     await until(() => screens.currentId === SceneId.MATCH, "back in the match without a click");
-    assert.deepEqual(screens.visits, [SceneId.MAIN_MENU, SceneId.MATCH]);
+    assert.deepEqual(screens.visits, [SceneId.HOME, SceneId.MATCH]);
     assert.deepEqual(toasts, [], "no reminder needed: the player is in it");
     const session = screens.current.session;
     assert.equal(session.gameId, gameId, "the same game");

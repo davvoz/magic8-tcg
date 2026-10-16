@@ -88,7 +88,7 @@ export function returnToGame({ online, scenes, toasts, nameOf = () => null }) {
       return false;
     }
     arriving = null;
-    if (scenes.currentId !== SceneId.HOME && scenes.currentId !== SceneId.MAIN_MENU) {
+    if (scenes.currentId !== SceneId.HOME) {
       return false;
     }
     open();

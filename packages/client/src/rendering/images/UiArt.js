@@ -23,7 +23,7 @@ export const UiPiece = Object.freeze({
   BUTTON_PRIMARY: "buttonPrimary",
   /** The plate of every other button: thin gold rim. */
   BUTTON_SECONDARY: "buttonSecondary",
-  /** The game's name over the main menu, engraved gold letters on transparency. */
+  /** The game's name at the top of the rail, engraved gold letters on transparency. */
   TITLE: "title",
   /** The Play screen's pictures of its ways to play: online (crossed swords), practice (a target), the tutorial (a book). */
   PLAY_ONLINE: "playOnline",

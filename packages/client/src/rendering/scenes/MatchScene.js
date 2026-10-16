@@ -62,7 +62,7 @@
  * the middle of the table (and the side panel's prompt), and only what a
  * task names glows and answers a tap. Rings and arrows point at what the
  * coach talks about (CoachCard).
- * Leaving it is not conceding: the player just goes back to the menu.
+ * Leaving it is not conceding: the player just goes back Home.
  *
  * Any other match the player plays has the help (HelpSettings), unless they
  * turned it off: the "?" in the banner's left margin (or H) turns it off and
@@ -276,7 +276,7 @@ export class MatchScene extends Scene {
     const session = /** @type {import("../../application/match/MatchSession.js").MatchSession | undefined} */ (params.session);
     if (session === undefined) {
       this.services.logger.error("MatchScene entered without a session");
-      this.services.navigate(SceneId.MAIN_MENU);
+      this.services.navigate(SceneId.HOME);
       return;
     }
     this.#session = session;
@@ -1290,13 +1290,13 @@ export class MatchScene extends Scene {
   }
 
   /**
-   * Conceding, or once the match is over going back to the menu; the tutorial is simply left.
+   * Conceding, or once the match is over going back Home; the tutorial is simply left.
    * @param {Snapshot} snapshot
    */
   #leaveButton(snapshot) {
     const base = { id: "leave", visible: true, enabled: true, plays: false };
     if (snapshot.isOver) {
-      return { ...base, text: "Back to menu", shortText: "Menu", variant: /** @type {const} */ ("secondary"), onActivate: () => this.#leave(SceneId.MAIN_MENU) };
+      return { ...base, text: "Back to Home", shortText: "Home", variant: /** @type {const} */ ("secondary"), onActivate: () => this.#leave(SceneId.HOME) };
     }
     if (this.#coach !== null) {
       return { ...base, text: "Leave tutorial", shortText: "Leave", variant: /** @type {const} */ ("secondary"), onActivate: () => this.#confirmLeaveTutorial() };
@@ -1433,9 +1433,9 @@ export class MatchScene extends Scene {
       buildConfirmModal({
         viewport: this.services.viewport,
         title: "Leave the tutorial?",
-        message: "You can play it again from the main menu.",
+        message: "You can play it again from Play.",
         confirmText: "Leave",
-        onConfirm: () => this.#leave(SceneId.MAIN_MENU),
+        onConfirm: () => this.#leave(SceneId.HOME),
         onCancel: () => this.closeModal(),
       }),
     );
@@ -1472,13 +1472,13 @@ export class MatchScene extends Scene {
   }
 
   /**
-   * What the result offers next: play again, the menu, sharing the game (an online one). A click outside it shows the board.
+   * What the result offers next: play again, Home, sharing the game (an online one). A click outside it shows the board.
    * @param {Snapshot} snapshot
    */
   #gameOverButtons(snapshot) {
     return [
       { id: "gameOver.again", text: this.#againText(snapshot), variant: /** @type {const} */ ("primary"), enabled: true, onActivate: () => this.#leave(this.#againScene) },
-      { id: "gameOver.menu", text: "Back to menu", variant: /** @type {const} */ ("secondary"), enabled: true, onActivate: () => this.#leave(SceneId.MAIN_MENU) },
+      { id: "gameOver.menu", text: "Back to Home", variant: /** @type {const} */ ("secondary"), enabled: true, onActivate: () => this.#leave(SceneId.HOME) },
       ...(this.#canShare() ? [{ id: "gameOver.share", text: this.#shared ? "Shared" : "Share", variant: /** @type {const} */ ("secondary"), enabled: !this.#shared, onActivate: () => this.#openShare(snapshot) }] : []),
     ];
   }

@@ -5,7 +5,7 @@ import { JOIN_URL } from "../../src/application/info/infoTopics.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
@@ -117,8 +117,8 @@ describe("InfoScene", () => {
 
 describe("The settings — Info", () => {
   it("opens Info from the settings of any screen, and Info's Back returns there", () => {
-    const svc = { ...services(), currentScene: () => SceneId.MAIN_MENU };
-    const menu = new MainMenuScene(svc, app());
+    const svc = services();
+    const menu = new HomeScene(svc, app());
     menu.enter({});
     menu.findNode("settings").activate();
     const info = menu.overlay?.findById("settings.info");
@@ -126,11 +126,11 @@ describe("The settings — Info", () => {
     assert.equal(info.enabled, true);
     info.activate();
     assert.equal(menu.overlay, null, "the settings close");
-    assert.deepEqual(svc.navigated.map((entry) => [entry.id, entry.params?.back]), [[SceneId.INFO, SceneId.MAIN_MENU]]);
+    assert.deepEqual(svc.navigated.map((entry) => [entry.id, entry.params?.back]), [[SceneId.INFO, SceneId.HOME]]);
   });
 
   it("disables it when the screen is not there", () => {
-    const menu = new MainMenuScene(services({ hasScene: () => false }), app());
+    const menu = new HomeScene(services({ hasScene: () => false }), app());
     menu.enter({});
     menu.findNode("settings").activate();
     assert.equal(menu.overlay?.findById("settings.info").enabled, false);

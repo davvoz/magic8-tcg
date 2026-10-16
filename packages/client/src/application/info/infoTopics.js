@@ -177,7 +177,7 @@ function account() {
     paragraph("You can practise against the AI without any account."),
 
     heading("Two ways to sign in"),
-    paragraph("Click \"Sign in\" in the main menu, then choose one of these:"),
+    paragraph("Click \"Sign in\" at the top right of the screen, then choose one of these:"),
     bullet("Keychain (best on a computer): Steem Keychain is a browser extension that keeps your keys. Type your account name and click \"Sign in\": Keychain asks you to sign a one-time login message. Your keys never leave the extension."),
     bullet("Posting key (best on a phone): type your account name and paste your private posting key (it starts with 5). It is checked on the blockchain and kept encrypted in this browser, so next time you are signed in straight away."),
 
@@ -191,7 +191,7 @@ function account() {
     bullet("Your private keys never reach our server: everything is signed in your browser (or in Keychain), and the server only checks the signature."),
     bullet("When an online game starts, your browser creates a key for that game only, and every move you make is signed with it. Nobody, not even the server, can make moves in your name."),
     bullet("You stay signed in for up to 7 days, or until you have been away for 24 hours."),
-    bullet("\"Sign out\" in the main menu forgets the keys saved in this browser. Always sign out on a computer you share."),
+    bullet("\"Sign out\" (click your picture at the top right) forgets the keys saved in this browser. Always sign out on a computer you share."),
   ];
 }
 
@@ -206,7 +206,7 @@ function ranked() {
 
     heading("Starting a game online"),
     ...steps([
-      "Sign in, and take your free starter deck from the main menu.",
+      "Sign in, and take your free starter deck in Decks.",
       "Click \"Play online\".",
       "Pick one of your decks on the left.",
       "Open the \"Casual\" or the \"Ranked\" tab, then click \"Find a match\". Or click a player in the list of players online to challenge them.",
@@ -234,7 +234,7 @@ function ranked() {
     bullet("Fair play: you can play at most 3 ranked games against the same opponent in 24 hours, so nobody can farm rating off one player. Past that, the queue pairs you with others and ranked challenges between you are refused; both say when you can play ranked together again. Casual games are not limited."),
 
     heading("The season's jackpot"),
-    paragraph("When the season has a jackpot, the main menu shows it: how much it holds, the prize for each place, who is leading and how long is left. It grows with every pack and every ranked entry sold. When the season ends, the top 3 players of the leaderboard share it."),
+    paragraph("When the season has a jackpot, Home and Season show it: how much it holds, the prize for each place, who is leading and how long is left. It grows with every pack and every ranked entry sold. When the season ends, the top 3 players of the leaderboard share it."),
   ];
 }
 
@@ -242,7 +242,7 @@ function challenges() {
   return [
     heading("Three opponents a day"),
     paragraph("Every day three characters of the game wait for you: two challengers, then a boss. Beat all three and you win a pack. They are free to play: all you need is to be signed in and to have a deck."),
-    bullet("Open \"Challenges\" from the main menu. The button is gold while today's pack is still to win."),
+    bullet("Open \"Daily challenges\" in Play, or today's challenge on Home."),
     bullet("New opponents arrive every day at midnight UTC; the screen tells you how long is left. Your progress starts again with them."),
     bullet("You can win one pack a day."),
 
@@ -278,10 +278,10 @@ function shop() {
     bullet("The Shop: packs, complete decks, single cards and ranked entries."),
     bullet("The Market: buy cards from other players, or sell your own."),
     bullet("Trades: swap cards with another player."),
-    paragraph("Every card you own is a unique copy, with its own serial number (such as \"Ember Imp #4\") and its own history. Your Collection, in the main menu, lists them all."),
+    paragraph("Every card you own is a unique copy, with its own serial number (such as \"Ember Imp #4\") and its own history. Your Collection, in Decks, lists them all."),
 
     heading("The Shop"),
-    paragraph("Open it from the main menu. Pick a shelf with the tabs on the left; on the right you see the item you selected, its price and the buttons to buy it."),
+    paragraph("Open it from Market. Pick a shelf with the tabs on the left; on the right you see the item you selected, its price and the buttons to buy it."),
     bullet("Packs: cards you do not know in advance. A Core Booster has 5 cards (3 common, 1 uncommon, 1 rare or better), a Core Mini Booster 3 cards (2 common, 1 uncommon or better). The exact odds are shown under \"Pack odds\"."),
     bullet("Decks: complete preconstructed decks, saved in your account ready to play. A deck costs the sum of its cards."),
     bullet("Singles: any card in the game, priced by rarity (common, uncommon, rare, epic, legendary). Filter them by faction, rarity and type."),

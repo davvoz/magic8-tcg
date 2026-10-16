@@ -24,9 +24,8 @@ Dove si vede:
 
 | Schermata | Come |
 |---|---|
-| Menu principale (desktop) | scheda a destra dei pulsanti; con l'accesso fatto, un clic apre la classifica |
-| Menu principale (telefono) | banner di tre righe sotto il titolo, al posto del sottotitolo |
-| Classifica | in testa, su tutta la larghezza; *Back* torna da dove si è arrivati |
+| Home | scheda *Season* a destra (su telefono l'importo e il tempo rimasto); *Open the leaderboard* apre Season |
+| Season (27) | scheda accanto alla classifica (su telefono un banner di tre righe), con *How ranked works* e *Play ranked* |
 | Notifiche | al vincitore: *You finished 1st in Season 1!* con l'importo |
 
 Il pannello si vede anche senza accesso: il jackpot è pubblico. Il client lo rilegge ogni minuto finché è sullo schermo; il conto alla rovescia si aggiorna ogni secondo dall'orologio del dispositivo.

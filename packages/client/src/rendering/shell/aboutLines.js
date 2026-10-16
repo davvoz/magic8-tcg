@@ -1,9 +1,25 @@
 /**
  * What the game says about itself, for a player who wants to know (the
- * settings): what the game holds, where custom decks are kept, and which
- * release they run.
+ * settings): whether it reaches the game server and who is signed in, what
+ * the game holds, where custom decks are kept, and which release they run.
  */
+import { IdentityStatus } from "../../application/identity/IdentityService.js";
 import { deckStorageText } from "../scenes/deckStorage.js";
+
+/**
+ * "Signed in as @alice (steem)", "Not signed in", or that the game plays offline.
+ * @param {import("../../application/AppContext.js").AppContext} app
+ */
+export function connectionLine(app) {
+  const state = app.identity?.state;
+  if (state === undefined || state.status === IdentityStatus.OFFLINE) {
+    return "Offline: no game server, practice against the AI";
+  }
+  if (state.status === IdentityStatus.SIGNED_IN && state.user !== null) {
+    return `Signed in as @${state.user.account} (${state.user.network})`;
+  }
+  return state.status === IdentityStatus.UNKNOWN ? "Connecting to the game server…" : "Not signed in";
+}
 
 /**
  * "120 cards · 10 preconstructed decks · factions: ember · iron · …".
@@ -34,9 +50,9 @@ export function versionLine(app) {
 }
 
 /**
- * The three lines, in order.
+ * The lines, in order.
  * @param {import("../../application/AppContext.js").AppContext} app
  */
 export function aboutLines(app) {
-  return [contentLine(app), storageLine(app), versionLine(app)];
+  return [connectionLine(app), contentLine(app), storageLine(app), versionLine(app)];
 }

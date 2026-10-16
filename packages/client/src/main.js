@@ -246,7 +246,7 @@ const FALLBACK_THEME_RAW = Object.freeze({
 });
 
 const logger = new ConsoleLogger();
-/** Shown by the page itself before any script ran; lifted when the main menu is ready, or for the error screen. */
+/** Shown by the page itself before any script ran; lifted when the first screen is ready, or for the error screen. */
 const loading = new LoadingScreen(document, window);
 
 /**

@@ -1,9 +1,8 @@
 /**
  * The account screens driven end to end against real application services
- * and the in-memory game server: the main menu's account entries, taking
- * the starter deck, and browsing the collection.
+ * and the in-memory game server: taking the starter deck, and browsing the
+ * collection.
  */
-import { SoundCue } from "../../src/application/audio/SoundCue.js";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -12,7 +11,6 @@ import { DeckSelectionService } from "../../src/application/decks/DeckSelectionS
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { copyLabel, editionLabel } from "../../src/rendering/cards/cardInfo.js";
 import { CollectionScene } from "../../src/rendering/scenes/CollectionScene.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
 import { StarterScene } from "../../src/rendering/scenes/StarterScene.js";
 import { registerScenes } from "../../src/rendering/scenes/registerScenes.js";
@@ -65,80 +63,6 @@ function nodes(scene) {
   visit(scene.root);
   return found;
 }
-
-describe("MainMenuScene — account", () => {
-  it("offers the starter deck until it is taken, then the collection, and redraws as the account loads", async () => {
-    const world = harness();
-    const menu = new MainMenuScene(world.services, world.app);
-    menu.enter({});
-    assert.equal(byId(menu, "starter"), null);
-    assert.equal(byId(menu, "collection"), null, "nothing to show while signed out");
-    assert.ok(byId(menu, "signIn"), "signed out: sign in");
-    assert.ok(byId(menu, "deckBuilder"), "signed out, the Deck Builder has a button of its own");
-
-    world.identity.become(ALICE);
-    assert.ok(rendered(menu).some((text) => text.includes("loading your collection")));
-    await settle();
-    assert.equal(byId(menu, "starter").text, "Free starter deck");
-    click(byId(menu, "starter"));
-    assert.equal(world.navigated.at(-1).id, SceneId.STARTER);
-
-    await world.account.claimStarter("precon_foundry");
-    assert.equal(byId(menu, "starter"), null);
-    assert.equal(byId(menu, "collection").text, "Collection");
-    assert.equal(byId(menu, "deckBuilder"), null, "signed in, the Deck Builder opens from the collection");
-    assert.ok(rendered(menu).some((text) => text.includes("30 cards owned")));
-    assert.ok(rendered(menu).some((text) => text === "1 custom deck saved to @alice's account"));
-    menu.exit();
-  });
-
-  it("offers the daily challenges once signed in, with today's progress", async () => {
-    const world = harness();
-    const day = { day: "2026-10-15", endsAt: 0, tracks: [], opponents: [], run: null };
-    const listeners = new Set();
-    const daily = {
-      state: { day, loading: false, error: null, busy: null },
-      subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
-      progress(run) {
-        daily.state = { ...daily.state, day: { ...day, run } };
-        listeners.forEach((listener) => listener(daily.state));
-      },
-    };
-    const menu = new MainMenuScene(world.services, { ...world.app, daily, online: { subscribe: () => () => undefined } });
-    menu.enter({});
-    assert.equal(byId(menu, "daily"), null, "signed out: no daily challenges");
-    world.identity.become(ALICE);
-    await settle();
-    assert.equal(byId(menu, "daily").text, "Challenges");
-    assert.equal(byId(menu, "daily").variant, "primary", "to win: gold");
-    assert.equal(byId(menu, "daily").activationCue, SoundCue.UI_CLICK, "with the plain click of the other entries");
-    daily.progress({ stage: 2, rewarded: false });
-    assert.deepEqual([byId(menu, "daily").text, byId(menu, "daily").variant], ["Challenges", "primary"], "the name never changes");
-    daily.progress({ stage: 3, rewarded: true });
-    assert.deepEqual([byId(menu, "daily").text, byId(menu, "daily").variant], ["Challenges", "secondary"], "all won: plain like the others");
-    click(byId(menu, "daily"));
-    assert.equal(world.navigated.at(-1).id, SceneId.DAILY);
-    menu.exit();
-  });
-
-  it("stays inside the screen with every account entry shown", async () => {
-    const world = harness();
-    world.identity.become(ALICE);
-    await settle();
-    const menu = new MainMenuScene(world.services, world.app);
-    menu.enter({});
-    for (const node of nodes(menu)) {
-      assert.ok(node.bounds.y + node.bounds.height <= theme.layout.logicalHeight, `${node.id ?? node.text} overflows`);
-    }
-    const buttons = nodes(menu).filter((node) => node.interactive);
-    const apart = (a, b) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
-    buttons.forEach((button, index) => {
-      for (const other of buttons.slice(index + 1)) {
-        assert.ok(apart(button.bounds, other.bounds), `${button.id} and ${other.id} do not overlap`);
-      }
-    });
-  });
-});
 
 describe("StarterScene", () => {
   async function starterScene(options) {

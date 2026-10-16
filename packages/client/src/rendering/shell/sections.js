@@ -70,7 +70,7 @@ function needsSignIn(reason) {
 
 /** @type {readonly Section[]} */
 export const SECTIONS = Object.freeze([
-  Object.freeze({ id: SectionId.HOME, label: "Home", icon: Icon.HOME, tabs: [], destination: (context) => firstOf(context, [SceneId.HOME, SceneId.MAIN_MENU]) }),
+  Object.freeze({ id: SectionId.HOME, label: "Home", icon: Icon.HOME, tabs: [], destination: (context) => firstOf(context, [SceneId.HOME]) }),
   Object.freeze({
     id: SectionId.PLAY,
     label: "Play",

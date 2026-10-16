@@ -14,7 +14,6 @@
  * A screen that opens another hands it `returnTo(...)` so that Back there
  * comes back to it, as it was (and its own Back still leads where it did).
  */
-import { landingScene } from "../scenes/landing.js";
 import { SceneId } from "../scenes/sceneIds.js";
 import { SectionId, sectionById } from "./sections.js";
 
@@ -24,7 +23,6 @@ const MAX_DEPTH = 6;
 /** Which section each screen belongs to; a screen not named here belongs to none. @type {ReadonlyMap<string, string>} */
 const SCREEN_SECTIONS = new Map([
   [SceneId.HOME, SectionId.HOME],
-  [SceneId.MAIN_MENU, SectionId.HOME],
   [SceneId.PLAY, SectionId.PLAY],
   [SceneId.DAILY, SectionId.PLAY],
   [SceneId.ONLINE, SectionId.PLAY],
@@ -101,7 +99,7 @@ export function backTarget(sceneId, params, context) {
     return null;
   }
   const section = sectionOf(sceneId);
-  const home = section === null ? { scene: landingScene(context.hasScene) } : section.destination(context);
+  const home = section === null ? { scene: SceneId.HOME } : section.destination(context);
   if (!("scene" in home) || home.scene === sceneId || !context.hasScene(home.scene)) {
     return null;
   }

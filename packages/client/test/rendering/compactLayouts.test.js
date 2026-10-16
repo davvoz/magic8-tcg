@@ -27,7 +27,6 @@ import { ErrorScene } from "../../src/rendering/scenes/ErrorScene.js";
 import { ActiveKeyPrompt } from "../../src/application/wallet/ActiveKeyPrompt.js";
 import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
 import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { PlayScene } from "../../src/rendering/scenes/PlayScene.js";
 import { OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
@@ -256,10 +255,8 @@ const SCREENS = Object.freeze([
   { name: "play, choosing the deck", make: (s, app) => new PlayScene(s, app), after: (scene) => (scene.root.findById("play.deck.change")?.activate(), assert.ok(scene.modal?.findById("deckPicker.close"))) },
   { name: "home, with the guide", make: (s, app) => new HomeScene(s, app), before: (app) => withGuide(app), after: (scene) => assert.ok(scene.root.findById("home.next")) },
   { name: "home, without the guide", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app), withGuide(app).dismiss()), after: (scene) => assert.equal(scene.root.findById("home.next"), null) },
-  { name: "main menu", make: (s, app) => new MainMenuScene(s, app) },
-  { name: "main menu with every entry (daily challenges, tutorial)", make: (s, app) => new MainMenuScene(s, app), before: (app) => Object.assign(app, { tutorial: {} }), after: (scene) => (assert.ok(scene.root.findById("daily")), assert.ok(scene.root.findById("tutorial"))) },
-  { name: "main menu, account dialog", make: (s, app) => new MainMenuScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },
-  { name: "main menu, settings", make: (s, app) => new MainMenuScene(s, app), before: (app) => Object.assign(app, { audio: fakeAudio() }), after: (scene) => (scene.findNode("settings")?.activate(), assert.ok(scene.overlay?.findById("audio.music.up"))) },
+  { name: "home, account dialog", make: (s, app) => new HomeScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },
+  { name: "home, settings", make: (s, app) => new HomeScene(s, app), before: (app) => Object.assign(app, { audio: fakeAudio() }), after: (scene) => (scene.findNode("settings")?.activate(), assert.ok(scene.overlay?.findById("audio.music.up")), assert.ok(scene.overlay?.findById("settings.about.3"))) },
   { name: "deck selection", make: (s, app) => new DeckSelectionScene(s, app) },
   { name: "my decks", make: (s, app) => new DecksScene(s, app), after: (scene) => assert.ok(scene.findNode("shell.tab.collection")) },
   { name: "my decks, the starter to take", make: (s, app) => new DecksScene(s, app), starter: false, after: (scene) => assert.ok(scene.root.findById("decks.starter")) },

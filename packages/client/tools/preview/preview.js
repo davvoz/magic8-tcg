@@ -4,7 +4,6 @@
  * content and jumps straight to a screen chosen by the query string, so
  * every screen can be screenshotted headlessly without clicking through:
  *
- *   /tools/preview/?scene=menu
  *   /tools/preview/?scene=home               Home, signed in, over the lobby's and the challenges' scripted servers
  *   /tools/preview/?scene=home&eligible=0    ...a player new to ranked play, so the guide is not over (onlineWorld.js lists the other options)
  *   /tools/preview/?scene=home&done=2        ...with that many of the guide's milestones kept here (tutorial, challenge, online game)
@@ -376,7 +375,7 @@ async function show(sceneManager, app, request) {
   } else if (scene === "match") {
     await showMatch(sceneManager, app, request);
   } else {
-    sceneManager.navigate(SceneId.MAIN_MENU);
+    sceneManager.navigate(SceneId.HOME);
   }
 }
 

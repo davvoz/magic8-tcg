@@ -13,7 +13,6 @@ import { Panel } from "../ui/Panel.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { Scene } from "./Scene.js";
 import { namedBack } from "../shell/navigation.js";
-import { landingScene } from "./landing.js";
 import { SceneId } from "./sceneIds.js";
 
 const PANEL = Object.freeze({ width: 760, height: 280, button: 56 });
@@ -38,7 +37,7 @@ export class ReplayScene extends Scene {
 
   /** @param {Readonly<Record<string, unknown>>} params `{ gameId: string, back?: string, backParams?: object }` */
   enter(params) {
-    this.#back = namedBack(SceneId.REPLAY, params, this.services.hasScene) ?? Object.freeze({ scene: landingScene(this.services.hasScene), params: Object.freeze({}) });
+    this.#back = namedBack(SceneId.REPLAY, params, this.services.hasScene) ?? Object.freeze({ scene: SceneId.HOME, params: Object.freeze({}) });
     this.#error = null;
     this.#generation += 1;
     this.#rebuild();

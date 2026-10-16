@@ -1,6 +1,6 @@
 /**
  * Starts the tutorial and opens its board, from wherever it is offered (the
- * main menu, the Info screen). Once it is won, the next step offered is a
+ * Play screen, Home's guide, the Info screen). Once it is won, the next step offered is a
  * practice match: "Practice vs AI" leads to deck selection.
  */
 import { SceneId } from "./sceneIds.js";

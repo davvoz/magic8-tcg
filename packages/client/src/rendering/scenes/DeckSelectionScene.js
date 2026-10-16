@@ -148,7 +148,7 @@ export class DeckSelectionScene extends SectionScene {
     const width = size.width - 2 * inset;
     const list = panel.add(new ScrollList({ id: LIST_ID, x: inset, y: listTop, width, height: size.height - listTop - listBottom }));
     if (options.length === 0) {
-      list.add(new Label({ x: 0, y: 0, width, height: ROW.height, text: this.#app.account?.needsStarter ? "No decks yet: take your free starter deck from the main menu." : "No decks are available.", colorKey: "textMuted", fit: true }));
+      list.add(new Label({ x: 0, y: 0, width, height: ROW.height, text: this.#app.account?.needsStarter ? "No decks yet: take your free starter deck in Decks." : "No decks are available.", colorKey: "textMuted", fit: true }));
       list.contentHeight = ROW.height;
       return;
     }

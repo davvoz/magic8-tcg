@@ -12,7 +12,7 @@ import { PurchaseStage, ShopService } from "../../src/application/shop/ShopServi
 import { BalanceService } from "../../src/application/wallet/BalanceService.js";
 import { EntryService } from "../../src/application/entries/EntryService.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
 import { EntryTickets } from "../../src/rendering/scenes/entries/EntryTickets.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
@@ -424,11 +424,12 @@ describe("ShopScene", () => {
     assert.match(scene.modal.findById(`orders.detail.${order.id}`).text, /time to pay is over: it closes on its own$/);
   });
 
-  it("is reachable from the main menu", async () => {
-    const { app, services } = await harness();
-    const menu = new MainMenuScene(services, app);
-    menu.enter({});
-    assert.equal(menu.root.findById("shop").text, "Shop");
-    menu.exit();
+  it("is what the rail's Market opens", async () => {
+    const { app, services, navigated } = await harness();
+    const home = new HomeScene(services, app);
+    home.enter({});
+    home.findNode("shell.nav.market").activate();
+    assert.equal(navigated.at(-1).id ?? navigated.at(-1), SceneId.SHOP);
+    home.exit();
   });
 });

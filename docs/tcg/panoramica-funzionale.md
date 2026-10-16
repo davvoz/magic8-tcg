@@ -239,7 +239,7 @@ Il gioco **non tocca mai i soldi** e **non prende commissioni**: il venditore ri
 - Ogni risultato è pubblico sulla blockchain: chiunque può ricalcolare la classifica.
 
 ---
-- **Stagioni con jackpot:** Season 1 dura un mese (5 ottobre – 5 novembre 2026). I primi tre della classifica si dividono i 2/3 del wallet della banca (@verdu.green): 65%, 25% e 10%. Il jackpot cresce con ogni pacchetto e ogni ingresso ranked venduto; menu principale e classifica mostrano importo, quote, chi è in testa e il conto alla rovescia (doc 21).
+- **Stagioni con jackpot:** Season 1 dura un mese (5 ottobre – 5 novembre 2026). I primi tre della classifica si dividono i 2/3 del wallet della banca (@verdu.green): 65%, 25% e 10%. Il jackpot cresce con ogni pacchetto e ogni ingresso ranked venduto; Home e Season mostrano importo, quote, chi è in testa e il conto alla rovescia (doc 21).
 - **Ingressi ranked:** ogni partita classificata costa 1 STEEM a giocatore, e la lobby lo mostra sul pulsante Ranked. Si comprano nello shop (scaffale *Ranked*) quanti ingressi si vuole con un solo trasferimento Keychain; ogni partita ne toglie uno, una partita annullata prima di cominciare lo restituisce. Gli ingressi finiscono nel jackpot (doc 22).
 
 ## 10. Il ruolo della blockchain

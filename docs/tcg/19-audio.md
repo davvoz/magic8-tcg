@@ -1,7 +1,7 @@
 # 19 — Suoni e musica
 
 **Stato:** 2026-10-03.
-- **Client:** effetti sonori sintetizzati nel browser (Web Audio API, nessun file), musica di sottofondo in loop da `data/audio/`, impostazioni (musica, effetti, muto) salvate nel browser e apribili dal menu principale (**Sound**) e in partita (pulsante **Sound** nell'intestazione del log di battaglia; su telefono nel dialogo del log), tasto **M** per il muto ovunque.
+- **Client:** effetti sonori sintetizzati nel browser (Web Audio API, nessun file), musica di sottofondo in loop da `data/audio/`, impostazioni (musica, effetti, muto) salvate nel browser e apribili dalle impostazioni nella barra in alto di ogni schermata e in partita (pulsante **Sound** nell'intestazione del log di battaglia; su telefono nel dialogo del log), tasto **M** per il muto ovunque.
 - **Server:** serve anche `.mp3` e `.ogg` (limite di 5 MB per file, come per ogni file statico).
 
 ## Decisioni
@@ -25,7 +25,7 @@ infrastructure/audio/   WebAudioOutput (grafo e voci), MusicPlayer, SoundBank + 
 infrastructure/persistence/StoredAudioPreferences
 rendering/board/MatchSoundscape   i suoni della partita, al passo con la board
 rendering/audio/        MusicDirector (musica per scena), serviceSounds (shop, mercato, partita trovata)
-rendering/scenes/audioSettings    il dialogo Sound (dal menu principale)
+rendering/scenes/audioSettings    i comandi del suono (nelle impostazioni, rendering/shell/SettingsDialog)
 ```
 
 - **Widget:** ogni `UiNode` ha un `activationCue`; la `Scene` lo suona quando il nodo viene attivato (click, tap, Invio) e solo se è attivabile. `Button` ne ha uno per variante (primary → conferma, secondary → tick, danger → colpo sordo), sovrascrivibile con `cue`.

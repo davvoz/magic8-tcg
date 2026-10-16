@@ -68,7 +68,7 @@ Items A1–A4 are worth confirming before Increment 2 (domain engine) starts. Ev
 ### 1.4 Minimum viable game loop
 
 ```
-Main menu
+Home (one of five sections on a fixed rail: Home, Play, Decks, Market, Season — docs/tcg/27-navigazione.md)
   ├─ Play → Deck selection (precon or saved custom) → Match setup
   │     Match setup: validate both deck lists → seed RNG → shuffle → draw opening hands
   └─ Deck builder → build/edit → validate → save (localStorage) → back
@@ -82,7 +82,7 @@ Match loop (per turn, active player P):
   TURN_END     (automatic) end-of-turn cleanup, hand-size limit, pass turn
 
 After every command and every resolved effect: state-based actions run until stable.
-Game over when a player's life ≤ 0 or on CONCEDE → game-over overlay → main menu.
+Game over when a player's life ≤ 0 or on CONCEDE → game-over overlay → Home.
 ```
 
 ### 1.5 Technical risks
@@ -309,10 +309,11 @@ magic8/
 │       ├── scenes/
 │       │   ├── Scene.js            enter/exit/update/render/onPointer/onKey
 │       │   ├── SceneManager.js
-│       │   ├── MainMenuScene.js
+│       │   ├── SectionScene.js     base of the screens inside the navigation shell (rendering/shell/)
+│       │   ├── HomeScene.js, PlayScene.js, DecksScene.js, SeasonScene.js   the sections' own screens
 │       │   ├── DeckSelectionScene.js
 │       │   ├── DeckBuilderScene.js
-│       │   ├── deckBuilder/        LibraryView, EditorView, modals, layout
+│       │   ├── deckBuilder/        EditorView, modals, layout
 │       │   └── MatchScene.js
 │       ├── ui/                     UiNode, Button, Label, Panel, ScrollList, TextField, TextBlock, Modal, ConfirmModal
 │       ├── cards/CardDetail.js, CardRenderer.js, CardVisual.js
@@ -613,7 +614,7 @@ graph LR
 ```
 
 - **One canvas, one loop.** `GameLoop` calls `scene.update(dt)` then `scene.render(ctx)`; the loop skips redraws when the scene reports nothing dirty — a card game does not need 60 fps redraws while waiting for input.
-- **Scenes** (`MainMenu`, `DeckSelection`, `DeckBuilder`, `Match`) share a `Scene` base with `enter(params)/exit()/update/render/onPointer/onKey`. `SceneManager.navigate(id, params)` is the only navigation API; scenes never construct each other.
+- **Scenes** (`Home`, `Play`, `Decks`, `DeckSelection`, `DeckBuilder`, `Match`, …) share a `Scene` base; those inside the navigation shell extend `SectionScene` (rail, top bar, one Back rule: `rendering/shell/navigation.js`) with `enter(params)/exit()/update/render/onPointer/onKey`. `SceneManager.navigate(id, params)` is the only navigation API; scenes never construct each other.
 - **Widget kit** (`UiNode` tree): bounds in logical units, children, `visible/enabled`, `draw(ctx)`, `hitTest(point)`, clipping for `ScrollList`. Small by design; it is not a layout engine — positions come from explicit layout helpers per scene.
 - **Match presentation:** `BoardLayout` derives rectangles for zones and card slots from the snapshot (hand size, battlefield count) and the logical viewport. `CardVisual` objects (keyed by instance id) hold *presentation* position/scale/alpha and tween toward layout targets. `MatchPresenter` consumes engine events to enqueue animations (`CardPlayed` → hand→battlefield tween, `DamageDealt` → floating number, `CreatureDied` → fade). Interaction is blocked while a *blocking* animation runs; hit regions come from layout targets, not tweened positions.
 - **Card rendering** is fully procedural (no image assets, no glyph shortcuts). `cards/CardFace.js` is the single painter of a card's face at any size: a proportional layout (`cardFaceLayout`, pure and tested) and a *profile* (`COMPACT` for the board, `FULL` for inspect) choosing type sizes and the art/text split. It composes `cards/CardArt.js` (faction motif painters in a strategy table — fire, steel, wilderness — plus a type emblem, every variable choice seeded by `hashString(definitionId)` so a card always looks the same) and `cards/statGem.js` (cost, attack and health gems with drawn sword/shield pictograms). `CardRenderer.drawCard` adds the interaction ring and the base-130×182 scale transform for the board; `CardDetail` adds a halo for the inspect views; `CardStrip` is the one-line list form used by the deck builder. Adding image art later means one branch in `CardArt` (draw the image instead of the motif) and nothing else.

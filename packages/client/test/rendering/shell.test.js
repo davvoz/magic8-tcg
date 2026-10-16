@@ -185,7 +185,7 @@ describe("The rail", () => {
   });
 
   it("keeps a section it cannot open in its place, locked, and says why", () => {
-    const { app, services, navigated } = world({ scenes: [SceneId.MAIN_MENU, SceneId.DECK_SELECTION, SceneId.DECK_BUILDER] });
+    const { app, services, navigated } = world({ scenes: [SceneId.HOME, SceneId.DECK_SELECTION, SceneId.DECK_BUILDER] });
     const scene = new ProbeScene(services, app);
     const market = scene.findNode("shell.nav.market");
     assert.equal(market.locked, true);

@@ -1,7 +1,7 @@
 /**
  * Notifications and rarity on screen: the feed (new markers, cards that open
  * their details, the way to the follow-up screen, marking read), the toasts
- * over any scene, the main menu's button, and a card's rarity shown on its
+ * over any scene, the top bar's bell, and a card's rarity shown on its
  * face, on its strip and in the details of every screen that lists cards.
  */
 import assert from "node:assert/strict";
@@ -15,7 +15,7 @@ import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { CardDetail } from "../../src/rendering/cards/CardDetail.js";
 import { CardStrip } from "../../src/rendering/cards/CardStrip.js";
 import { CardThumb } from "../../src/rendering/cards/CardThumb.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { NotificationsScene, timeAgo } from "../../src/rendering/scenes/NotificationsScene.js";
 import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
@@ -169,7 +169,7 @@ describe("NotificationsScene", () => {
 describe("the top bar's notifications", () => {
   it("appear once the account is loaded and count the unread notifications", async () => {
     const h = harness();
-    const menu = new MainMenuScene(h.services, h.app);
+    const menu = new HomeScene(h.services, h.app);
     menu.enter({});
     assert.equal(byId(menu, "notifications"), null, "not before sign-in");
     h.identity.become(ALICE);

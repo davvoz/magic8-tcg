@@ -6,7 +6,7 @@ import { IdentityService, IdentityStatus } from "../../src/application/identity/
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
@@ -185,15 +185,23 @@ describe("LoginScene with a posting key", () => {
   });
 });
 
-describe("MainMenuScene account entries", () => {
+/** What the settings say about the connection (their first line). */
+function connection(scene) {
+  scene.findNode("settings").activate();
+  const line = scene.overlay?.findById("settings.about.0")?.text;
+  scene.overlay?.findById("settings.close")?.activate();
+  return line;
+}
+
+describe("The top bar's account", () => {
   it("offers sign-in when a server is reachable and nobody is signed in", async () => {
     const { service } = identity();
     await service.restore();
     const navigated = [];
-    const scene = new MainMenuScene(services({ navigate: (id) => navigated.push(id) }), appWith(service));
+    const scene = new HomeScene(services({ navigate: (id) => navigated.push(id) }), appWith(service));
     scene.enter({});
     const signIn = scene.findNode("signIn");
-    assert.ok(texts(scene).includes("Not signed in"));
+    assert.equal(connection(scene), "Not signed in", "the settings say so");
     signIn.activate();
     assert.deepEqual(navigated, [SceneId.LOGIN]);
   });
@@ -201,10 +209,10 @@ describe("MainMenuScene account entries", () => {
   it("shows the signed-in account and signs out", async () => {
     const { service, deleted } = identity({ currentUser: async () => ok(USER) });
     await service.restore();
-    const scene = new MainMenuScene(services(), appWith(service));
+    const scene = new HomeScene(services(), appWith(service));
     scene.enter({});
-    assert.ok(texts(scene).includes("Signed in as @alice (steem)"));
-    assert.equal(scene.findNode("signOut"), null, "signing out is not a menu entry: it is in the account, in the top bar");
+    assert.equal(connection(scene), "Signed in as @alice (steem)");
+    assert.equal(scene.findNode("signOut"), null, "signing out is in the account, in the top bar");
     scene.findNode("profile").activate();
     assert.equal(scene.overlay?.id, "account");
     assert.equal(scene.focusedNode?.id, "account.close", "Enter never signs out by accident");
@@ -218,9 +226,9 @@ describe("MainMenuScene account entries", () => {
   it("stays usable offline, without account entries", async () => {
     const { service } = identity({ currentUser: async () => fail("NETWORK", "down") });
     await service.restore();
-    const scene = new MainMenuScene(services(), appWith(service));
+    const scene = new HomeScene(services(), appWith(service));
     scene.enter({});
-    assert.ok(texts(scene).some((text) => text.startsWith("Offline")));
+    assert.ok(connection(scene).startsWith("Offline"));
     assert.equal(scene.findNode("signIn") ?? scene.findNode("profile"), null);
   });
 });

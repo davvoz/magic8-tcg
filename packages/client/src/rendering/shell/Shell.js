@@ -13,7 +13,6 @@
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
-import { landingScene } from "../scenes/landing.js";
 import { SceneId } from "../scenes/sceneIds.js";
 import { Button } from "../ui/Button.js";
 import { Icon } from "../ui/icons.js";
@@ -305,7 +304,7 @@ export class Shell {
     const close = () => this.#host.hideOverlay();
     const onSignOut = () => {
       close();
-      void identity.signOut().then(() => services.navigate(landingScene(services.hasScene)));
+      void identity.signOut().then(() => services.navigate(SceneId.HOME));
     };
     this.#host.showOverlay(buildAccountDialog({ viewport: services.viewport, user, method: identity.state.method, onSignOut, onClose: close }));
   }

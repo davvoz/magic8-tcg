@@ -29,7 +29,7 @@ import { MatchSoundscape } from "../../src/rendering/board/MatchSoundscape.js";
 import { blowLandsAfter } from "../../src/rendering/cards/CardVisual.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { buildAudioSettingsModal } from "../../src/rendering/scenes/audioSettings.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { MatchScene } from "../../src/rendering/scenes/MatchScene.js";
 import { Scene } from "../../src/rendering/scenes/Scene.js";
 import { Button } from "../../src/rendering/ui/Button.js";
@@ -402,7 +402,7 @@ describe("sound settings", () => {
     const { audio } = audioWorld();
     const content = await loadBundledContent();
     const app = { content, deckSelection: { listDecks: () => [] }, deckBuilding: {}, matchSetup: {}, createSeed: () => "9f".repeat(32), logger: new MemoryLogger(), environment: { version: "test", storage: "local" }, audio };
-    const scene = new MainMenuScene(services(), /** @type {any} */ (app));
+    const scene = new HomeScene(services(), /** @type {any} */ (app));
     scene.enter({});
     scene.findNode("settings")?.activate();
     assert.equal(scene.overlay?.id, "settings");
