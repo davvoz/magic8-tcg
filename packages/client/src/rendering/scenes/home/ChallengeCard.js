@@ -1,14 +1,13 @@
 /**
  * Today's challenge on the Home screen: the opponent to beat next (their
- * name and title, then their living portrait, in the same box as the
- * pictures of the cards beside it), and Fight (which opens the challenges). Once the day's
+ * living portrait, in the same box as the pictures of the cards beside it,
+ * then their name and title), and Fight (which opens the challenges). Once the day's
  * three are beaten, when new ones come; signed out or offline, the
  * challenges locked with the reason. Whatever the day, a character's
  * portrait fills the card: the next opponent, the day's boss once it is
  * won, the Archmage (veiled) before the day is known (PlayViews.challenger).
  */
 import { CharacterPortrait } from "../daily/CharacterPortrait.js";
-import { PAINTING_ASPECT } from "../play/TileArt.js";
 import { HomeCard } from "./HomeCard.js";
 
 /**
@@ -34,21 +33,21 @@ export class ChallengeCard extends HomeCard {
     const fight = { id: "home.challenge.fight", onActivate: onFight, variant: /** @type {import("../../ui/Button.js").ButtonVariant} */ (primary ? "primary" : "secondary") };
     switch (view.kind) {
       case "locked":
+        this.#buildChallenger(challenger, clock);
         this.addTitle("Three opponents a day");
         this.addText("Beat all three to win a pack of cards.");
-        this.#buildChallenger(challenger, clock);
         this.addActions([{ ...fight, text: "Fight", locked: true }], { note: view.reason, noteId: "home.challenge.note" });
         return;
       case "waiting":
+        this.#buildChallenger(challenger, clock);
         this.addTitle("Three opponents a day");
         this.addText(view.text);
-        this.#buildChallenger(challenger, clock);
         this.addActions([{ ...fight, text: "See the challenges" }]);
         return;
       case "done":
+        this.#buildChallenger(challenger, clock);
         this.addTitle("All three beaten today", { colorKey: "success" });
         this.addText("Your pack of cards is in your collection.");
-        this.#buildChallenger(challenger, clock);
         this.addActions([{ ...fight, text: "See the challenges", variant: "secondary" }], { note: `New opponents in ${view.renewsIn}.` });
         return;
       default:
@@ -58,25 +57,25 @@ export class ChallengeCard extends HomeCard {
   }
 
   /**
-   * The character standing for the day, in the room left under the words.
+   * The character standing for the day, under the kicker, where the cards beside it have their picture.
    * @param {import("../daily/CharacterPortrait.js").PortraitCharacter} character
    * @param {() => number} clock
    */
   #buildChallenger(character, clock) {
-    const room = this.takePictureRoom(this.compact ? MIN_PORTRAIT.compact : MIN_PORTRAIT.wide, PAINTING_ASPECT);
+    const room = this.takePictureRoom(this.compact ? MIN_PORTRAIT.compact : MIN_PORTRAIT.wide);
     if (room !== null) {
       this.add(new CharacterPortrait({ id: "home.challenge.portrait", ...room, character, layout: "stacked", clock }));
     }
   }
 
   /**
-   * The opponent to beat next: their name and title, then their portrait where the other cards have their picture.
+   * The opponent to beat next: their portrait where the other cards have their picture, then their name and title.
    * @param {import("../../../application/ports/DailyApi.contract.js").DailyOpponent} opponent
    * @param {() => number} clock
    */
   #buildOpponent(opponent, clock) {
+    this.#buildChallenger(opponent, clock);
     this.addTitle(opponent.name, { id: "home.challenge.name" });
     this.addText(opponent.title, { colorKey: "textMuted" });
-    this.#buildChallenger(opponent, clock);
   }
 }

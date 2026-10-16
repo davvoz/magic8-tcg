@@ -24,6 +24,9 @@ export const CARD_METRICS = Object.freeze({
   compact: Object.freeze({ inset: SMALL_PANEL_INSET, gap: 4, kicker: 16, title: 26, line: 16, button: 46, note: 16, sizes: Object.freeze({ kicker: "tiny", title: "body", text: "tiny", note: "tiny" }) }),
 });
 
+/** A card's picture is an upright rectangle: its width over its height, at most. */
+const PICTURE_SHAPE = 3 / 4;
+
 /**
  * A button along a card's foot.
  * @typedef {Readonly<{ id: string, text: string, onActivate: () => void, variant?: import("../../ui/Button.js").ButtonVariant, enabled?: boolean, locked?: boolean }>} CardAction
@@ -98,20 +101,22 @@ export class HomeCard extends Panel {
   }
 
   /**
-   * The room left above the foot, for a picture across the card's width — no taller than `aspect` asks for that width,
-   * so cards side by side give theirs the same box; null when there is less than `least`. Taking it moves the next
-   * part under it.
+   * The room for a picture, from here down to where a title and two lines of words still fit above the foot: an
+   * upright rectangle (at most PICTURE_SHAPE wide for its height; the card's width when that is narrower), centred
+   * across the card. Cards side by side that take it at the same point get the same box. Null when there is less
+   * than `least`; taking it moves the next part under it.
    * @param {number} least the least height the picture is worth showing at
-   * @param {number} aspect the picture's shape: width over height
    * @returns {{ x: number, y: number, width: number, height: number } | null}
    */
-  takePictureRoom(least, aspect) {
-    const height = Math.min(this.footTop - this.#cursor - this.metrics.gap, Math.round(this.inner / aspect));
+  takePictureRoom(least) {
+    const { title, line, gap } = this.metrics;
+    const height = this.footTop - this.#cursor - gap - (title + 2 * line + 4 + gap);
     if (height < least) {
       return null;
     }
-    const room = { x: this.left, y: this.#cursor, width: this.inner, height };
-    this.advance(height + this.metrics.gap);
+    const width = Math.min(this.inner, Math.round(height * PICTURE_SHAPE));
+    const room = { x: this.left + Math.round((this.inner - width) / 2), y: this.#cursor, width, height };
+    this.advance(height + gap);
     return room;
   }
 
