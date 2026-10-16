@@ -11,7 +11,6 @@ import { IconButton } from "../../ui/IconButton.js";
 import { Label } from "../../ui/Label.js";
 import { Panel, PANEL_INSET, SMALL_PANEL_INSET } from "../../ui/Panel.js";
 import { TextBlock } from "../../ui/TextBlock.js";
-import { PAINTING_ASPECT } from "../play/TileArt.js";
 
 /**
  * @typedef {Readonly<{
@@ -99,16 +98,15 @@ export class HomeCard extends Panel {
   }
 
   /**
-   * The room for a picture across the card's width, no taller than the paintings' shape asks for that width (about
-   * square) and no lower than where a title and two lines of words still fit above the foot. Cards side by side that
-   * take it at the same point get the same box. Null when there is less than `least`; taking it moves the next part
-   * under it.
+   * The room for a picture across the card's width, from here down to where a title and its lines still fit above
+   * the foot: cards side by side that take it at the same point get the same box, whatever the screen's shape. Null
+   * when there is less than `least`; taking it moves the next part under it.
    * @param {number} least the least height the picture is worth showing at
    * @returns {{ x: number, y: number, width: number, height: number } | null}
    */
   takePictureRoom(least) {
     const { title, line, gap } = this.metrics;
-    const height = Math.min(this.footTop - this.#cursor - gap - (title + 2 * line + 4 + gap), Math.round(this.inner / PAINTING_ASPECT));
+    const height = this.footTop - this.#cursor - gap - (title + 2 * line + 4 + gap);
     if (height < least) {
       return null;
     }

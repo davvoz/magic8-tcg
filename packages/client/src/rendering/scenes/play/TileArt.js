@@ -7,10 +7,12 @@
  * their shape; until the painting is ready, a large emblem in the glow. Drawing only; the challenge tile shows a
  * character's portrait instead. The painting may be one of the table's
  * (Theme.tableArt: the card back), and the whole picture may be dimmed (a
- * locked section on a phone's Home).
+ * locked section on a phone's Home). With `cover`, the painting fills
+ * the frame instead, cropped as little as it takes (Home's online card,
+ * whose box is the challenge portrait's beside it).
  */
 import { drawIcon } from "../../ui/icons.js";
-import { radialGradient, roundedRectPath } from "../../ui/drawing.js";
+import { drawImageCover, radialGradient, roundedRectPath } from "../../ui/drawing.js";
 import { UiNode } from "../../ui/UiNode.js";
 import { withAlpha } from "../../theme/color.js";
 
@@ -32,17 +34,20 @@ export class TileArt extends UiNode {
   from;
   /** Whether it is dimmed. */
   dim;
+  /** Whether the painting fills the frame (cropped to it) rather than showing whole. */
+  cover;
 
   /**
-   * @param {{ id?: string, x: number, y: number, width: number, height: number, piece: string, icon: string, faction: string, from?: "ui" | "table", dim?: boolean }} options
+   * @param {{ id?: string, x: number, y: number, width: number, height: number, piece: string, icon: string, faction: string, from?: "ui" | "table", dim?: boolean, cover?: boolean }} options
    */
-  constructor({ piece, icon, faction, from = "ui", dim = false, ...frame }) {
+  constructor({ piece, icon, faction, from = "ui", dim = false, cover = false, ...frame }) {
     super(frame);
     this.piece = piece;
     this.icon = icon;
     this.faction = faction;
     this.from = from;
     this.dim = dim;
+    this.cover = cover;
     this.passthrough = true;
   }
 
@@ -78,7 +83,9 @@ export class TileArt extends UiNode {
     context.fillRect(area.x, area.y, area.width, area.height);
     context.fillStyle = radialGradient(context, center, Math.max(area.width, area.height) * 0.7, [[0, withAlpha(tones.base, 0.85)], [0.55, withAlpha(tones.base, 0.25)], [1, withAlpha(tones.dark, 0)]]);
     context.fillRect(area.x, area.y, area.width, area.height);
-    if (painting !== null) {
+    if (painting !== null && this.cover) {
+      drawImageCover(context, painting, area);
+    } else if (painting !== null) {
       const shown = containedRect(painting, area);
       context.imageSmoothingEnabled = true;
       context.imageSmoothingQuality = "high";

@@ -29,7 +29,7 @@ export class OnlineCard extends HomeCard {
     this.addKicker("Online");
     const room = this.takePictureRoom(this.compact ? MIN_PICTURE.compact : MIN_PICTURE.wide);
     if (room !== null) {
-      this.add(new TileArt({ id: "home.online.art", ...room, piece: UiPiece.PLAY_ONLINE, icon: Icon.PLAY, faction: "ember" }));
+      this.add(new TileArt({ id: "home.online.art", ...room, piece: UiPiece.PLAY_ONLINE, icon: Icon.PLAY, faction: "ember", cover: true }));
     }
     this.addTitle("Play a real opponent");
     this.addText(this.compact ? "Casual to practise, Ranked to climb the season." : "Casual to practise. Ranked to climb the season and win a share of the jackpot.", { lines: 2 });
