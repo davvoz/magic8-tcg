@@ -63,7 +63,7 @@ function nodes(root) {
   visit(root);
   return found;
 }
-const byId = (scene, id) => scene.root.findById(id) ?? (scene.modal === null ? null : scene.modal.findById(id));
+const byId = (scene, id) => scene.findNode(id) ?? (scene.modal === null ? null : scene.modal.findById(id));
 function rendered(scene) {
   const context = new FakeContext2D();
   scene.render(context);
@@ -166,8 +166,8 @@ describe("NotificationsScene", () => {
   });
 });
 
-describe("main menu notifications button", () => {
-  it("appears once the account is loaded and counts the unread notifications", async () => {
+describe("the top bar's notifications", () => {
+  it("appear once the account is loaded and count the unread notifications", async () => {
     const h = harness();
     const menu = new MainMenuScene(h.services, h.app);
     menu.enter({});
@@ -176,7 +176,7 @@ describe("main menu notifications button", () => {
     await settle();
     h.notifications.start();
     await settle();
-    assert.equal(byId(menu, "notifications").text, "Notifications (2)");
+    assert.equal(byId(menu, "notifications").badge, "2", "the bell counts what is unread");
     byId(menu, "notifications").activate();
     assert.equal(h.navigated.at(-1).id, SceneId.NOTIFICATIONS);
     menu.exit();

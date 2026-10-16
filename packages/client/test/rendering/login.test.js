@@ -192,7 +192,7 @@ describe("MainMenuScene account entries", () => {
     const navigated = [];
     const scene = new MainMenuScene(services({ navigate: (id) => navigated.push(id) }), appWith(service));
     scene.enter({});
-    const signIn = scene.root.focusableNodes().find((node) => node.id === "signIn");
+    const signIn = scene.findNode("signIn");
     assert.ok(texts(scene).includes("Not signed in"));
     signIn.activate();
     assert.deepEqual(navigated, [SceneId.LOGIN]);
@@ -204,11 +204,12 @@ describe("MainMenuScene account entries", () => {
     const scene = new MainMenuScene(services(), appWith(service));
     scene.enter({});
     assert.ok(texts(scene).includes("Signed in as @alice (steem)"));
-    assert.equal(scene.root.findById("signOut"), null, "signing out is not a menu entry: it is in the account corner");
-    scene.root.findById("profile").activate();
-    assert.equal(scene.modal?.id, "account");
+    assert.equal(scene.findNode("signOut"), null, "signing out is not a menu entry: it is in the account, in the top bar");
+    scene.findNode("profile").activate();
+    assert.equal(scene.overlay?.id, "account");
+    assert.equal(scene.focusedNode?.id, "account.close", "Enter never signs out by accident");
     assert.ok(texts(scene).includes("Signed in on steem with Steem Keychain"));
-    scene.modal.findById("signOut").activate();
+    scene.overlay.findById("signOut").activate();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(deleted.length, 1);
     assert.equal(service.state.status, IdentityStatus.SIGNED_OUT);
@@ -220,6 +221,6 @@ describe("MainMenuScene account entries", () => {
     const scene = new MainMenuScene(services(), appWith(service));
     scene.enter({});
     assert.ok(texts(scene).some((text) => text.startsWith("Offline")));
-    assert.equal(scene.root.focusableNodes().some((node) => node.id === "signIn" || node.id === "profile"), false);
+    assert.equal(scene.findNode("signIn") ?? scene.findNode("profile"), null);
   });
 });

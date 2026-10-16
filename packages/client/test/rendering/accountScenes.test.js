@@ -44,7 +44,7 @@ function harness(options = {}) {
   return { ...world, app, services, navigated };
 }
 
-const byId = (scene, id) => scene.root.findById(id);
+const byId = (scene, id) => scene.findNode(id);
 const click = (node) => {
   assert.ok(node, "node exists");
   assert.equal(node.isEffectivelyEnabled, true, `${node.id} is enabled`);
@@ -207,7 +207,7 @@ describe("StarterScene", () => {
     const { scene, navigated } = await starterScene({ claimed: true });
     assert.equal(byId(scene, "starter.take.precon_ember").enabled, false);
     assert.equal(byId(scene, "starter.status").text, "You already took your starter deck.");
-    assert.equal(scene.focusedNode.id, "starter.back");
+    assert.equal(scene.focusedNode.id, "shell.back");
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });
     assert.equal(navigated.at(-1).id, SceneId.MAIN_MENU);
   });
@@ -279,8 +279,8 @@ describe("CollectionScene", () => {
     assert.equal(firstCopy.text, `Copy #${serial} · Core Set 1 · new`, "the copy received comes first, lit");
     assert.equal(firstCopy.colorKey, "success");
 
-    assert.equal(byId(scene, "collection.back").text, "Back");
-    click(byId(scene, "collection.back"));
+    assert.equal(byId(scene, "shell.back").caption, "Back");
+    click(byId(scene, "shell.back"));
     assert.equal(navigated.at(-1).id, SceneId.NOTIFICATIONS);
     scene.exit();
   });

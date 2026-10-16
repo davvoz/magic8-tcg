@@ -4,24 +4,24 @@
  * back resumes editing. The scene keeps only presentation state (scroll
  * offsets, the inspected card, focus) and rebuilds its whole widget tree
  * after every change; the trees are small and this keeps the views free
- * of incremental-update bugs.
+ * of incremental-update bugs. Its title (in the top bar) says whether a
+ * deck is being edited.
  */
+import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
-import { Button } from "../ui/Button.js";
-import { Label } from "../ui/Label.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { EditorView } from "./deckBuilder/EditorView.js";
 import { LibraryView } from "./deckBuilder/LibraryView.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { buildInspectModal } from "./deckBuilder/modals.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
-export class DeckBuilderScene extends Scene {
-  /** The frame for the screen in use (the compact one on a phone). */
+export class DeckBuilderScene extends SectionScene {
+  /** The frame for the screen in use (the compact one on a phone): the two columns fill it, with no toolbar. */
   get #screen() {
-    return screenLayout(this.services.viewport);
+    return screenLayout(this.services.viewport, { toolbar: false });
   }
 
   #app;
@@ -39,14 +39,15 @@ export class DeckBuilderScene extends Scene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services);
+    super(services, app, { section: SectionId.DECKS, title: "Deck Builder" });
     this.#app = app;
+    this.setHeading({ back: () => this.#leave() });
     /** @type {import("./deckBuilder/layout.js").BuilderHost} */
     const host = {
       app,
       theme: services.theme,
       screen: () => this.#screen,
-      dialog: { viewport: services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() },
+      dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() },
       rebuild: () => this.#rebuild(),
       inspect: (cardId) => this.#inspect(cardId),
       confirm: (request) => this.#confirm(request),
@@ -82,26 +83,17 @@ export class DeckBuilderScene extends Scene {
     this.#rememberScroll();
     this.closeModal();
     this.root.clear();
-    this.#buildHeader();
+    this.setHeading({ title: this.isEditing ? "Deck Builder · editing" : "Deck Builder" });
     const view = this.isEditing ? this.#editor : this.#library;
     const initialFocus = view.build(this.root);
     if (this.#inspecting !== null) {
       this.#openInspect(this.#inspecting);
     }
     // Focus never escapes an open modal, even when the previously focused node still exists beneath it.
-    const scope = this.modal ?? this.root;
+    const kept = this.modal === null ? this.findNode(focusedId) : this.modal.findById(focusedId);
     const fallback = this.modal === null ? initialFocus : this.modal.focusableNodes()[0] ?? null;
-    this.focus(scope.findById(focusedId) ?? fallback);
+    this.focus(kept ?? fallback);
     this.services.requestRender();
-  }
-
-  #buildHeader() {
-    const { viewport } = this.services;
-    const { header, backText } = this.#screen;
-    const title = this.isEditing ? "Deck Builder · editing" : "Deck Builder";
-    const backX = viewport.logicalWidth - header.sideMargin - header.backWidth;
-    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: Math.min(800, backX - header.sideMargin - header.gap), height: header.height, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    this.root.add(new Button({ id: "builder.back", x: backX, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#from === SceneId.MAIN_MENU ? backText : "Back", onActivate: () => this.#leave() }));
   }
 
   /** Scroll offsets survive rebuilds so adding a card does not jump the list. */

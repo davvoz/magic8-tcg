@@ -15,8 +15,8 @@ import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { InfoArticle } from "./info/InfoArticle.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 import { startTutorial } from "./startTutorial.js";
 
 /**
@@ -33,10 +33,10 @@ const SPACING = 12;
 /** How much of the article a page key scrolls: most of its height, so the reader keeps a line of context. */
 const PAGE = 0.85;
 
-export class InfoScene extends Scene {
-  /** The frame for the screen in use (the compact one on a phone). */
+export class InfoScene extends SectionScene {
+  /** The frame for the screen in use (the compact one on a phone): the tabs and the article fill it, with no toolbar. */
   get #screen() {
-    return screenLayout(this.services.viewport);
+    return screenLayout(this.services.viewport, { toolbar: false });
   }
 
   get #m() {
@@ -61,7 +61,8 @@ export class InfoScene extends Scene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services);
+    super(services, app, { section: null, title: "Info" });
+    this.setHeading({ back: () => this.onCancel() });
     this.#topics = infoTopics(app.content);
     this.#tutorial = app.tutorial;
   }
@@ -118,12 +119,8 @@ export class InfoScene extends Scene {
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
-    const { viewport } = this.services;
-    const { header, columns, inset, panel: panelOptions, compact } = this.#screen;
+    const { columns, inset, panel: panelOptions, compact } = this.#screen;
     const m = this.#m;
-    const titleWidth = viewport.logicalWidth - 2 * header.sideMargin - header.backWidth - 16;
-    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: titleWidth, height: header.height, text: "Info", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    const back = this.root.add(new Button({ id: "info.back", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#back === SceneId.MAIN_MENU ? this.#screen.backText : "Back", onActivate: () => this.onCancel() }));
 
     const left = columns.left.x;
     const tabs = this.root.add(new Panel({ ...panelOptions, x: left, y: columns.top, width: m.tabsWidth, height: columns.height }));
@@ -145,7 +142,7 @@ export class InfoScene extends Scene {
     });
 
     this.#buildArticle(left + m.tabsWidth + m.gap);
-    this.focus(this.root.findById(focusedId) ?? back);
+    this.focus(this.findNode(focusedId) ?? this.backButton);
     this.services.requestRender();
   }
 

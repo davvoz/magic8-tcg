@@ -107,29 +107,32 @@ describe("InfoScene", () => {
     const svc = services();
     const scene = new InfoScene(svc, app());
     scene.enter({});
-    assert.equal(scene.root.findById("info.back").text, "Back to menu");
+    assert.equal(scene.findNode("shell.back").caption, "Back", "Back is the top bar's");
     scene.onKey(key("Escape"));
     scene.enter({ back: SceneId.ONLINE });
-    scene.root.findById("info.back").activate();
+    scene.findNode("shell.back").activate();
     assert.deepEqual(svc.navigated.map((entry) => entry.id), [SceneId.MAIN_MENU, SceneId.ONLINE]);
   });
 });
 
-describe("MainMenuScene — Info", () => {
-  it("opens Info from the header", () => {
-    const svc = services();
+describe("The settings — Info", () => {
+  it("opens Info from the settings of any screen, and Info's Back returns there", () => {
+    const svc = { ...services(), currentScene: () => SceneId.MAIN_MENU };
     const menu = new MainMenuScene(svc, app());
     menu.enter({});
-    const info = menu.root.findById("info");
-    assert.equal(info.text, "Info");
+    menu.findNode("settings").activate();
+    const info = menu.overlay?.findById("settings.info");
+    assert.equal(info?.text, "Info");
     assert.equal(info.enabled, true);
     info.activate();
-    assert.deepEqual(svc.navigated.map((entry) => entry.id), [SceneId.INFO]);
+    assert.equal(menu.overlay, null, "the settings close");
+    assert.deepEqual(svc.navigated.map((entry) => [entry.id, entry.params?.back]), [[SceneId.INFO, SceneId.MAIN_MENU]]);
   });
 
   it("disables it when the screen is not there", () => {
     const menu = new MainMenuScene(services({ hasScene: () => false }), app());
     menu.enter({});
-    assert.equal(menu.root.findById("info").enabled, false);
+    menu.findNode("settings").activate();
+    assert.equal(menu.overlay?.findById("settings.info").enabled, false);
   });
 });

@@ -2,7 +2,9 @@
  * Layout lint for phones: every screen, built for the compact profile on the
  * smallest supported phone (an iPhone SE) and a common one (an iPhone 14),
  * keeps each control on screen (or inside the list that scrolls it), tall
- * enough for a finger, and clear of the other controls.
+ * enough for a finger, and clear of the other controls. A screen inside the
+ * navigation shell keeps its controls in the content area the shell leaves
+ * it, and the shell's own (the rail, the top bar) on screen and clear of them.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -115,23 +117,19 @@ const overlap = (a, b) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x,
  */
 function assertFitsPhone(scene, viewport, label) {
   scene.render(new FakeContext2D());
-  const screen = { x: 0, y: 0, width: viewport.logicalWidth, height: viewport.logicalHeight };
+  // The scene's own frame (the shell's content area, for a screen inside it), in the scene's coordinates.
+  const frame = scene.services.viewport;
+  const ownArea = { x: 0, y: 0, width: frame.logicalWidth, height: frame.logicalHeight };
+  // A dialog, and the shell around the content, may use the whole design area.
+  const whole = frame.designArea ?? ownArea;
   const layer = topLayer(scene);
-  const controls = walk(layer).filter(({ node }) => node.interactive && node !== layer && node.width > 0);
-  assert.ok(controls.length > 0, `${label}: has controls`);
-  for (const { node, clip } of controls) {
-    const bounds = node.bounds;
-    const name = `${label}: ${node.id || node.constructor.name}`;
-    if (clip === null) {
-      assert.ok(within(bounds, screen), `${name} stays on screen (${JSON.stringify(bounds)})`);
-    } else {
-      const list = clip.bounds;
-      assert.ok(bounds.x >= list.x - EPSILON && bounds.x + bounds.width <= list.x + list.width + EPSILON, `${name} stays within its list's width`);
-    }
-    assert.ok(bounds.height * viewport.scale >= MIN_TOUCH - EPSILON, `${name} is tall enough for a finger (${(bounds.height * viewport.scale).toFixed(1)} px)`);
-  }
+  const chrome = layer === scene.root && scene.chrome !== null ? controlsOf(scene.chrome, scene.chrome) : [];
+  const own = controlsOf(layer, layer);
+  assert.ok(own.length + chrome.length > 0, `${label}: has controls`);
+  own.forEach((control) => assertReachable(control, { screen: layer === scene.root ? ownArea : whole, scale: viewport.scale, label }));
+  chrome.forEach((control) => assertReachable(control, { screen: whole, scale: viewport.scale, label }));
   // Controls laid out side by side never cover one another (a list's rows are compared within their list).
-  const loose = controls.filter(({ clip }) => clip === null);
+  const loose = [...own, ...chrome].filter(({ clip }) => clip === null);
   for (let index = 0; index < loose.length; index += 1) {
     for (let other = index + 1; other < loose.length; other += 1) {
       const a = loose[index].node;
@@ -144,8 +142,27 @@ function assertFitsPhone(scene, viewport, label) {
   }
 }
 
-/** What the player can touch: the overlay (the active key asked for), the scene's modal, or the scene. */
+/**
+ * A control stays on its screen (or within the list that scrolls it) and is tall enough for a finger.
+ * @param {{ node: import("../../src/rendering/ui/UiNode.js").UiNode, clip: ScrollList | null }} control
+ * @param {{ screen: { x: number, y: number, width: number, height: number }, scale: number, label: string }} where
+ */
+function assertReachable({ node, clip }, { screen, scale, label }) {
+  const bounds = node.bounds;
+  const name = `${label}: ${node.id || node.constructor.name}`;
+  if (clip === null) {
+    assert.ok(within(bounds, screen), `${name} stays on screen (${JSON.stringify(bounds)})`);
+  } else {
+    const list = clip.bounds;
+    assert.ok(bounds.x >= list.x - EPSILON && bounds.x + bounds.width <= list.x + list.width + EPSILON, `${name} stays within its list's width`);
+  }
+  assert.ok(bounds.height * scale >= MIN_TOUCH - EPSILON, `${name} is tall enough for a finger (${(bounds.height * scale).toFixed(1)} px)`);
+}
+
+/** What the player can touch: the overlay (the active key asked for, the shell's dialogs), the scene's modal, or the scene. */
 const topLayer = (scene) => scene.overlay ?? scene.modal ?? scene.root;
+/** The controls of a tree that have a size, with the list clipping each. */
+const controlsOf = (tree, layer) => walk(tree).filter(({ node }) => node.interactive && node !== layer && node.width > 0);
 
 const isAncestor = (node, descendant) => {
   for (let parent = descendant.parent; parent !== null; parent = parent.parent) {
@@ -196,6 +213,12 @@ function withRankedPlay(app, { eligible = true, auto = false } = {}) {
 /** @param {any} scene */
 const openRanked = (scene) => scene.root.findById("online.mode.ranked")?.activate();
 
+/** Sound settings that only remember what they are told. */
+function fakeAudio() {
+  let settings = { music: 0.5, effects: 0.5, muted: false };
+  return { get settings() { return settings; }, step: () => undefined, toggleMute: () => (settings = { ...settings, muted: !settings.muted }), play: () => undefined, subscribe: () => () => undefined };
+}
+
 /** The daily challenges over a server that always answers with `day`. */
 function dailyService(day) {
   return new DailyService({ api: { today: async () => ok(day), chooseTrack: async () => ok(day), play: async () => ok({ gameId: "g" }) } });
@@ -209,7 +232,8 @@ const withDailyRun = (run) => (app) => Object.assign(app, { daily: dailyService(
 const SCREENS = Object.freeze([
   { name: "main menu", make: (s, app) => new MainMenuScene(s, app) },
   { name: "main menu with every entry (daily challenges, tutorial)", make: (s, app) => new MainMenuScene(s, app), before: (app) => Object.assign(app, { tutorial: {} }), after: (scene) => (assert.ok(scene.root.findById("daily")), assert.ok(scene.root.findById("tutorial"))) },
-  { name: "main menu, account dialog", make: (s, app) => new MainMenuScene(s, app), after: (scene) => (scene.root.findById("profile")?.activate(), assert.ok(scene.modal?.findById("signOut"))) },
+  { name: "main menu, account dialog", make: (s, app) => new MainMenuScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },
+  { name: "main menu, settings", make: (s, app) => new MainMenuScene(s, app), before: (app) => Object.assign(app, { audio: fakeAudio() }), after: (scene) => (scene.findNode("settings")?.activate(), assert.ok(scene.overlay?.findById("audio.music.up"))) },
   { name: "deck selection", make: (s, app) => new DeckSelectionScene(s, app) },
   { name: "deck builder library", make: (s, app) => new DeckBuilderScene(s, app) },
   { name: "deck builder editor", make: (s, app) => new DeckBuilderScene(s, app), before: (app) => app.deckBuilding.startNew() },

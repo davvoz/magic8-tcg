@@ -78,7 +78,13 @@ describe("registerScenes", () => {
     assert.equal(buttonNamed(manager.current, "Play").enabled, true);
     buttonNamed(manager.current, "Deck Builder").activate();
     assert.equal(manager.currentId, SceneId.DECK_BUILDER);
-    buttonNamed(manager.current, "Back to menu").activate();
+    manager.current.findNode("shell.back").activate();
+    assert.equal(manager.currentId, SceneId.MAIN_MENU);
+    manager.current.findNode("shell.nav.decks").activate();
+    assert.equal(manager.currentId, SceneId.DECK_BUILDER, "offline, the rail's Decks opens the Deck Builder");
+    manager.current.findNode("shell.nav.play").activate();
+    assert.equal(manager.currentId, SceneId.DECK_SELECTION, "and Play the practice against the AI");
+    manager.current.findNode("shell.nav.home").activate();
     assert.equal(manager.currentId, SceneId.MAIN_MENU);
   });
 });
@@ -124,7 +130,7 @@ describe("DeckSelectionScene", () => {
     assert.equal(logger.entries.find((entry) => entry.message === "match created")?.data?.opponent, "hard");
 
     const panel = scene.root.children[0];
-    for (const node of buttons(scene).filter((button) => ["backToMenu", "opponent", "editDecks"].includes(button.id))) {
+    for (const node of buttons(scene).filter((button) => ["opponent", "editDecks"].includes(button.id))) {
       assert.ok(node.bounds.y + node.bounds.height <= panel.bounds.y + panel.bounds.height, `${node.text} overflows the panel`);
     }
   });
@@ -134,7 +140,7 @@ describe("DeckSelectionScene", () => {
     viewport.resize({ cssWidth: 667, cssHeight: 375 });
     const scene = new DeckSelectionScene(services({ viewport }), { ...appContext(), opponents: new AiOpponentFactory({ content, effects }) });
     scene.enter({});
-    const footer = ["backToMenu", "opponent", "editDecks", "startMatch"].map((id) => buttons(scene).find((node) => node.id === id).bounds);
+    const footer = ["opponent", "editDecks", "startMatch"].map((id) => buttons(scene).find((node) => node.id === id).bounds);
     const panel = scene.root.children[0].bounds;
     footer.slice(1).forEach((bounds, index) => assert.ok(bounds.x >= footer[index].x + footer[index].width, "side by side, in order"));
     assert.ok(footer.at(-1).x + footer.at(-1).width <= panel.x + panel.width, "Start stays inside the panel");

@@ -100,7 +100,7 @@ async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop =
   return { scene, online, lobby, requests, navigated, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
 }
 
-const byId = (scene, id) => scene.root.findById(id);
+const byId = (scene, id) => scene.findNode(id);
 function rendered(scene) {
   const context = new FakeContext2D();
   scene.render(context);

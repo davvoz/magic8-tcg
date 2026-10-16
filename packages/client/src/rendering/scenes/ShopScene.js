@@ -11,12 +11,12 @@
  * On the right,
  * the selected item: a pack's odds, a deck's card-by-card price, a card at
  * full size with the price list by rarity; then the
- * quantity, Buy and Add to cart. The cart (header) lists what was added from
+ * quantity, Buy and Add to cart. The cart (toolbar) lists what was added from
  * any shelf, lets the player change or remove it, and pays for all of it
  * with one transfer. Paying goes through the wallet (Keychain shows the
  * exact transfer); when the order is fulfilled the cards received are
  * revealed, pack by pack, to a rising chime (and a sweep of light when a
- * card of one of the top rarities is among them). Every price shown is the server's. The header
+ * card of one of the top rarities is among them). Every price shown is the server's. The toolbar
  * shows the player's budget, what their wallet holds in STEEM: what it
  * cannot pay for is not offered for payment.
  *
@@ -50,11 +50,12 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
+import { SectionId } from "../shell/sections.js";
 import { screenLayout } from "./deckBuilder/layout.js";
-import { Scene } from "./Scene.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
 import { EntryTickets } from "./entries/EntryTickets.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 import { approveTransferText, transferPreviewText } from "./walletText.js";
 
 const LIST_ID = "shop.list";
@@ -169,7 +170,7 @@ function describeUnpaid(order, now) {
   return { detail: `${order.total.amount} ${order.total.asset} · ordered ${ordered} · ${when}`, payable };
 }
 
-export class ShopScene extends Scene {
+export class ShopScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
   get #screen() {
     return screenLayout(this.services.viewport);
@@ -239,9 +240,10 @@ export class ShopScene extends Scene {
    * @param {() => number} [now] the time, for how long an unpaid order has left
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services);
+    super(services, app, { section: SectionId.MARKET, title: "Shop" });
     this.#app = app;
     this.#now = now;
+    this.setHeading({ back: () => this.services.navigate(this.#from) });
   }
 
   /** @param {{ category?: string, from?: string }} [params] `category`: the shelf to open (e.g. Ranked, from the lobby); `from`: where Back returns */
@@ -307,13 +309,13 @@ export class ShopScene extends Scene {
     this.closeModal();
     this.root.clear();
     const shelves = this.#shelves();
-    const back = this.#buildHeader();
+    const cart = this.#buildToolbar();
     const listPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width: this.#screen.columns.left.width, height: this.#screen.columns.height }));
     const firstControl = this.#buildShelfControls(listPanel, shelves);
     const firstRow = this.#buildList(listPanel, shelves, scrollY);
     const buy = this.#buildDetail(shelves);
     const modalFocus = this.#openRevealIfDone() ?? this.#openCartIfShown(focusedId, cartScrollY) ?? this.#openOrdersIfShown(focusedId, ordersScrollY);
-    this.focus(modalFocus ?? this.root.findById(focusedId) ?? buy ?? firstRow ?? firstControl ?? back);
+    this.focus(modalFocus ?? this.findNode(focusedId) ?? buy ?? firstRow ?? firstControl ?? cart);
     this.services.requestRender();
   }
 
@@ -366,19 +368,20 @@ export class ShopScene extends Scene {
     return buildCardFilterBar(panel, bar);
   }
 
-  /** @returns {Button} */
-  #buildHeader() {
+  /**
+   * The toolbar: the player's budget (or how to buy), then the orders still to pay, the player market and the cart.
+   * @returns {Button} the cart
+   */
+  #buildToolbar() {
     const { viewport } = this.services;
     const account = this.#app.account?.state.account ?? null;
     const { header } = this.#screen;
-    const title = this.#screen.compact ? 90 : 200;
-    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: title, height: header.height, text: "Shop", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const market = this.services.hasScene(SceneId.MARKET);
     const unpaid = this.#shop().state.orders.open.length;
-    const cartSlot = market ? 3 : 2;
+    const cartSlot = market ? 2 : 1;
     const buttons = unpaid > 0 ? cartSlot + 1 : cartSlot;
-    const noteX = header.sideMargin + title;
-    const noteWidth = viewport.logicalWidth - 2 * header.sideMargin - title - buttons * (header.backWidth + 16);
+    const noteX = header.sideMargin;
+    const noteWidth = viewport.logicalWidth - 2 * header.sideMargin - buttons * (header.backWidth + 16);
     if (account === null) {
       this.root.add(new Label({ x: noteX, y: header.y, width: noteWidth, height: header.height, text: "Sign in to buy. Prices are paid in STEEM, straight from your wallet.", size: "small", align: "left", colorKey: "textMuted", fit: true }));
     } else {
@@ -387,7 +390,7 @@ export class ShopScene extends Scene {
       this.root.add(new Label({ x: noteX, y: header.y + header.height / 2, width: noteWidth, height: header.height / 2, text: `Buying as @${account}. Payments go straight from your wallet; nothing is stored in the game.`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
     }
     const inCart = this.#shop().state.cart.reduce((sum, line) => sum + line.quantity, 0);
-    this.root.add(
+    const cart = this.root.add(
       new Button({
         id: "shop.cart",
         keepPlate: true,
@@ -402,13 +405,13 @@ export class ShopScene extends Scene {
     );
     this.#buildOrdersButton(unpaid, buttons);
     if (market) {
-      this.root.add(new Button({ keepPlate: true, id: "shop.market", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
+      this.root.add(new Button({ keepPlate: true, id: "shop.market", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: "Market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
     }
-    return this.root.add(new Button({ keepPlate: true, id: "shop.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(this.#from) }));
+    return cart;
   }
 
   /**
-   * "Orders (n)", left of the other header buttons, while the player has unpaid orders.
+   * "Orders (n)", left of the other toolbar buttons, while the player has unpaid orders.
    * @param {number} unpaid how many
    * @param {number} slot its place, counted from the right
    */

@@ -92,7 +92,7 @@ function screen() {
   return { api, trading, scene, navigated, reloads: () => reloads };
 }
 
-const byId = (scene, id) => scene.root.findById(id);
+const byId = (scene, id) => scene.findNode(id);
 const rendered = (scene) => {
   const context = new FakeContext2D();
   scene.render(context);

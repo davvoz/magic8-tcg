@@ -3,7 +3,8 @@
  * striped with its faction mix, and the selected one on the right with its
  * full card list and a "Take" button. Taking one is final (one starter per
  * account), so it asks first. The server mints the cards and saves the
- * deck; this screen only shows the offer and the outcome.
+ * deck; this screen only shows the offer and the outcome. What is going on
+ * (taking it, a refusal) is said in the status line at the foot.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { deckMix } from "../../application/decks/deckMix.js";
@@ -18,24 +19,25 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Panel, PANEL_INSET, SMALL_PANEL_INSET } from "../ui/Panel.js";
 import { Hotspot } from "../ui/Hotspot.js";
 import { ScrollList } from "../ui/ScrollList.js";
-import { Scene } from "./Scene.js";
+import { SectionId } from "../shell/sections.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 import { unknownCard } from "../cards/unknownCard.js";
 
 /**
  * Sizes of the offer, wide and compact (a phone in landscape).
  * @typedef {Readonly<{
- *   side: number, titleY: number, subtitleY: number, panels: { top: number, height: number, gap: number, choices: number }, inset: number,
+ *   side: number, subtitle: { y: number, height: number }, panels: { top: number, height: number, gap: number, choices: number }, inset: number,
  *   choicesTop: number, choicesTitle: boolean, deckListTop: number, deckTitle: number, choiceRow: { height: number, gap: number },
- *   cardRow: { height: number, gap: number }, take: number, footerY: number, back: { width: number, height: number }, info: { width: number, gap: number } | null,
- * }>} StarterMetrics `panels.choices`: the width of the list of decks (0: a share of the screen); `info`: the Info button beside a card (null: the card itself opens it)
+ *   cardRow: { height: number, gap: number }, take: number, status: { y: number, height: number }, info: { width: number, gap: number } | null,
+ * }>} StarterMetrics laid out in the content area the shell leaves (its title is the shell's); `panels.choices`: the width of the list of
+ *   decks (0: a share of the screen); `info`: the Info button beside a card (null: the card itself opens it)
  */
 /** @type {StarterMetrics} */
 const WIDE = Object.freeze({
-  side: 60,
-  titleY: 24,
-  subtitleY: 84,
-  panels: Object.freeze({ top: 140, height: 640, gap: 40, choices: 560 }),
+  side: 40,
+  subtitle: Object.freeze({ y: 12, height: 30 }),
+  panels: Object.freeze({ top: 56, height: 680, gap: 40, choices: 560 }),
   inset: PANEL_INSET,
   choicesTop: 104,
   choicesTitle: true,
@@ -44,16 +46,14 @@ const WIDE = Object.freeze({
   choiceRow: Object.freeze({ height: 72, gap: 10 }),
   cardRow: Object.freeze({ height: 44, gap: 6 }),
   take: 60,
-  footerY: 800,
-  back: Object.freeze({ width: 220, height: 56 }),
+  status: Object.freeze({ y: 750, height: 56 }),
   info: Object.freeze({ width: 64, gap: 8 }),
 });
 /** @type {StarterMetrics} */
 const COMPACT = Object.freeze({
   side: 10,
-  titleY: 4,
-  subtitleY: 42,
-  panels: Object.freeze({ top: 68, height: 276, gap: 10, choices: 0 }),
+  subtitle: Object.freeze({ y: 2, height: 26 }),
+  panels: Object.freeze({ top: 30, height: 282, gap: 10, choices: 0 }),
   inset: SMALL_PANEL_INSET,
   choicesTop: 12,
   choicesTitle: false,
@@ -62,8 +62,7 @@ const COMPACT = Object.freeze({
   choiceRow: Object.freeze({ height: 46, gap: 4 }),
   cardRow: Object.freeze({ height: 48, gap: 4 }),
   take: 46,
-  footerY: 350,
-  back: Object.freeze({ width: 130, height: 46 }),
+  status: Object.freeze({ y: 314, height: 32 }),
   info: null,
 });
 /** The compact list of decks' share of the screen's width. */
@@ -77,7 +76,7 @@ const FAILURE_TEXT = Object.freeze({
   UNAVAILABLE: "The game server is not available.",
 });
 
-export class StarterScene extends Scene {
+export class StarterScene extends SectionScene {
   #app;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
@@ -93,8 +92,9 @@ export class StarterScene extends Scene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services);
+    super(services, app, { section: SectionId.DECKS, title: "Choose your starter deck" });
     this.#app = app;
+    this.setHeading({ back: () => this.services.navigate(SceneId.MAIN_MENU) });
   }
 
   enter() {
@@ -147,9 +147,8 @@ export class StarterScene extends Scene {
     this.root.clear();
     const { viewport } = this.services;
     const width = viewport.logicalWidth;
-    const { side: SIDE, titleY, subtitleY, panels: PANELS, footerY: FOOTER_Y, back: BACK, inset: INSET } = this.#m;
-    this.root.add(new Label({ x: 0, y: titleY, width, height: 56, text: "Choose your starter deck", size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
-    this.root.add(new Label({ x: SIDE, y: subtitleY, width: width - 2 * SIDE, height: 30, text: "Free, once per account: the cards become yours, each with its own serial number, and the deck is ready to play.", size: "small", colorKey: "textMuted", fit: true }));
+    const { side: SIDE, subtitle, panels: PANELS, status: STATUS } = this.#m;
+    this.root.add(new Label({ x: SIDE, y: subtitle.y, width: width - 2 * SIDE, height: subtitle.height, text: "Free, once per account: the cards become yours, each with its own serial number, and the deck is ready to play.", size: "small", colorKey: "textMuted", fit: true }));
 
     const choices = this.#choices();
     const selected = choices.find((choice) => choice.id === this.#selectedId) ?? choices[0];
@@ -159,9 +158,8 @@ export class StarterScene extends Scene {
     }
 
     const status = this.#status();
-    this.root.add(new Label({ id: "starter.status", x: SIDE, y: FOOTER_Y, width: width - 2 * SIDE - BACK.width - INSET, height: BACK.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
-    const back = this.root.add(new Button({ id: "starter.back", x: width - SIDE - BACK.width, y: FOOTER_Y, width: BACK.width, height: BACK.height, text: viewport.compact ? "Menu" : "Back to menu", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
-    this.focus(this.root.findById(focusedId) ?? (this.#canTake() ? choiceRow : null) ?? back);
+    this.root.add(new Label({ id: "starter.status", x: SIDE, y: STATUS.y, width: width - 2 * SIDE, height: STATUS.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
+    this.focus(this.findNode(focusedId) ?? (this.#canTake() ? choiceRow : null) ?? this.backButton);
     this.services.requestRender();
   }
 

@@ -313,7 +313,7 @@ function buildPresentation(theme, sound) {
       context.fillRect(0, 0, cssWidth, cssHeight);
       viewport.applyTransform(context);
       sceneManager.render(context);
-      fieldInputs.sync(placeFields(sceneManager.textFields(), viewport));
+      fieldInputs.sync(placeFields(sceneManager.textFields(), viewport, sceneManager.origin));
     },
     onError: (error) => showFatal("Unexpected error", describeError(error)),
   };
@@ -326,12 +326,13 @@ function buildPresentation(theme, sound) {
  * Where each text field is on the page, in CSS pixels: the canvas fills the window from its top-left corner.
  * @param {readonly TextField[]} fields
  * @param {Viewport} viewport
+ * @param {{ x: number, y: number }} origin where the scene's frame starts on the design area (the fields are in its coordinates)
  * @returns {import("./rendering/page/FieldInputs.js").FieldPlacement[]}
  */
-function placeFields(fields, viewport) {
+function placeFields(fields, viewport, origin) {
   return fields.map((field) => {
     const { x, y, width, height } = field.bounds;
-    const corner = viewport.toCss(x, y);
+    const corner = viewport.toCss(x + origin.x, y + origin.y);
     return Object.freeze({ field, x: corner.x, y: corner.y, width: width * viewport.scale, height: height * viewport.scale, scale: viewport.scale });
   });
 }

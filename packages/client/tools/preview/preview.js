@@ -23,6 +23,7 @@
  *   /tools/preview/?scene=online&tab=ranked  the online lobby against a scripted server (onlineWorld.js lists its options)
  *   /tools/preview/?scene=daily&stage=1      the challenges screen over a day of the real roster (dailyWorld.js lists its options)
  *   ...&art=procedural                       every card and the table with procedural art, ignoring data/art/
+ *   ...&press=settings                       then presses a control of the screen by id (the shell's too: settings, profile, shell.nav.market)
  *
  * Illustrations are all loaded before the first frame, so a screenshot never
  * catches a card still procedural because its image was on its way.
@@ -526,6 +527,7 @@ async function boot() {
     help: query.get("help") !== "0",
     online: { tab: query.get("tab"), way: query.get("way"), guide: query.get("guide") === "1", entries: countParam(query, "entries", 3), eligible: query.get("eligible") !== "0" },
     daily: { opponents: query.get("opponents"), stage: optionalCount(query, "stage") },
+    press: query.get("press"),
   };
   const source = new FetchContentSource(MANIFEST, (url, init) => fetch(url, init));
   const [rawTheme, content, rawIllustrations, rawCharacterArt] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("illustrations"), source.load("characterArt")]);
@@ -566,6 +568,9 @@ async function present(theme, app, request) {
     await showOnline(sceneManager, request.online);
   } else {
     await show(sceneManager, app, request);
+  }
+  if (request.press !== null) {
+    sceneManager.current?.findNode(request.press)?.activate();
   }
 }
 

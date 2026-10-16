@@ -43,7 +43,7 @@ function harness(overrides = {}) {
   return { scene, app, repository, navigated };
 }
 
-const byId = (scene, id) => scene.root.findById(id);
+const byId = (scene, id) => scene.findNode(id);
 const click = (node) => {
   assert.ok(node, "node exists");
   assert.equal(node.isEffectivelyEnabled, true, `${node.id} is enabled`);
@@ -78,15 +78,15 @@ describe("DeckBuilderScene — library", () => {
       assert.equal(byId(scene, `library.delete.${deck.id}`), null, "bundled decks cannot be deleted");
     }
     assert.equal(scene.focusedNode, byId(scene, "library.new"));
-    click(byId(scene, "builder.back"));
+    click(byId(scene, "shell.back"));
     assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
   });
 
   it("goes back where it was opened from: the collection", () => {
     const { scene, navigated } = harness();
     scene.enter({ from: SceneId.COLLECTION });
-    assert.equal(byId(scene, "builder.back").text, "Back");
-    click(byId(scene, "builder.back"));
+    assert.equal(byId(scene, "shell.back").caption, "Back");
+    click(byId(scene, "shell.back"));
     assert.deepEqual(navigated, [SceneId.COLLECTION]);
   });
 });

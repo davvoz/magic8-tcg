@@ -12,6 +12,12 @@
  * Activating a widget makes its sound (`activationCue`), and M mutes the
  * game on any screen.
  *
+ * A scene may have chrome around its tree (the navigation shell,
+ * SectionScene): drawn beneath the tree, reached by the pointer where the
+ * tree has nothing, and by Tab after the tree's own controls; a modal or
+ * an overlay covers it like the rest. Such a scene lays itself out in a
+ * frame of its own (its viewport's `origin`, where the scene manager puts it).
+ *
  * Scenes own presentation state only. They read snapshots and read-models
  * and submit commands through application services; they never touch
  * domain entities.
@@ -24,7 +30,7 @@ import { UiNode } from "../ui/UiNode.js";
 /**
  * @typedef {object} SceneServices
  * @property {import("../theme/Theme.js").Theme} theme
- * @property {import("../canvas/Viewport.js").Viewport} viewport
+ * @property {import("../canvas/Viewport.js").Viewport | import("../shell/ContentViewport.js").ContentViewport} viewport the screen, or the part of it the scene lays itself out in (the shell's content area)
  * @property {(sceneId: string, params?: Readonly<Record<string, unknown>>) => void} navigate
  * @property {(sceneId: string) => boolean} hasScene
  * @property {() => void} requestRender
@@ -32,6 +38,7 @@ import { UiNode } from "../ui/UiNode.js";
  * @property {() => boolean} [usingTouch] whether the player is playing by touch (their last input was a finger or a pen)
  * @property {SoundPlayer} [sound] the game's sound (none under test): the cues scenes play, and muting
  * @property {(url: string) => void} [openLink] opens a web page outside the game, in a new tab (none under test)
+ * @property {() => string | null} [currentScene] the id of the scene on show (none under test)
  */
 
 /**
@@ -46,12 +53,16 @@ const LONG_PRESS_MS = 450;
 const SECONDARY_BUTTON = 2;
 /** A flicked list glides on, slowing by this time constant (ms), until slower than `stopSpeed` (logical px per ms). */
 const FLING = Object.freeze({ decayMs: 325, stopSpeed: 0.02, sampleMs: 100, maxSpeed: 6 });
+/** Where a scene without a frame of its own is drawn: at the design area's origin. */
+const NO_OFFSET = Object.freeze({ x: 0, y: 0 });
 
 export class Scene {
   /** @type {SceneServices} */
   services;
   /** @type {UiNode} */
   root;
+  /** What surrounds the scene's tree (the navigation shell), or null for a scene that has the screen to itself. @type {UiNode | null} */
+  chrome = null;
   /** @type {UiNode | null} */
   #pressed = null;
   /** @type {UiNode | null} */
@@ -85,6 +96,12 @@ export class Scene {
     this.#laidOutFor = designKey(services.viewport);
   }
 
+  /** Where the scene's frame starts on the design area: the scene manager draws it, and hands it the pointer, from there. */
+  get origin() {
+    const { viewport } = this.services;
+    return "origin" in viewport ? viewport.origin : NO_OFFSET;
+  }
+
   /** @param {Readonly<Record<string, unknown>>} _params */
   enter(_params) {
     // Scenes build their widget tree here.
@@ -106,8 +123,12 @@ export class Scene {
       this.#laidOutFor = key;
       this.relayout();
     }
-    this.#modal?.cover(this.services.viewport.bounds);
-    this.#overlay?.cover(this.services.viewport.bounds);
+    if (this.#modal !== null) {
+      this.#place(this.#modal);
+    }
+    if (this.#overlay !== null) {
+      this.#place(this.#overlay);
+    }
     this.services.requestRender();
   }
 
@@ -181,6 +202,7 @@ export class Scene {
   render(context) {
     // On a phone, labels too long for their room shrink a little before they are cut.
     const theme = this.services.viewport.compact === true ? compactTheme(this.services.theme) : this.services.theme;
+    this.chrome?.draw(context, theme);
     this.root.draw(context, theme);
     this.#overlay?.draw(context, theme);
   }
@@ -191,7 +213,7 @@ export class Scene {
       this.#onWheel(input);
       return;
     }
-    const hit = this.#topLayer().hitTest(input);
+    const hit = this.#hitTest(input);
     this.#setHovered(hit);
     if (input.type === "down") {
       this.#onDown(hit, input);
@@ -280,6 +302,16 @@ export class Scene {
     return this.#focused;
   }
 
+  /**
+   * The node with this id in the scene's tree, else in its chrome: where a scene that rebuilds its tree finds the
+   * focus again (the chrome is left alone).
+   * @param {string} id
+   * @returns {UiNode | null}
+   */
+  findNode(id) {
+    return this.root.findById(id) ?? this.chrome?.findById(id) ?? null;
+  }
+
   get modal() {
     return this.#modal;
   }
@@ -314,7 +346,7 @@ export class Scene {
       this.#focusBeforeOverlay = this.#focused;
     }
     this.#overlay = modal;
-    modal.cover(this.services.viewport.bounds);
+    this.#place(modal);
     this.#setHovered(null);
     this.#setPressed(null);
     this.#setFocused(modal.focusableNodes()[0] ?? null);
@@ -340,7 +372,7 @@ export class Scene {
     this.#setPressed(null);
     const restored = this.#focusBeforeOverlay;
     this.#focusBeforeOverlay = null;
-    this.#setFocused(restored !== null && isWithin(restored, this.#modal ?? this.root) ? restored : null);
+    this.#setFocused(restored !== null && this.#reachable(restored) ? restored : null);
     this.services.requestRender();
   }
 
@@ -355,7 +387,7 @@ export class Scene {
     }
     this.#focusBeforeModal = this.#overlay === null ? this.#focused : this.#focusBeforeOverlay;
     this.#modal = this.root.add(modal);
-    modal.cover(this.services.viewport.bounds);
+    this.#place(modal);
     this.focus(modal.focusableNodes()[0] ?? null);
     this.services.requestRender();
   }
@@ -464,6 +496,51 @@ export class Scene {
   }
 
   /**
+   * The control under the point: the overlay's, else the tree's, else (with no modal over it) the chrome's.
+   * @param {import("@magic8/engine/shared/geometry.js").Point} point
+   */
+  #hitTest(point) {
+    const hit = this.#topLayer().hitTest(point);
+    if (hit !== null || this.#overlay !== null || this.#modal !== null) {
+      return hit;
+    }
+    return this.chrome?.hitTest(point) ?? null;
+  }
+
+  /** What Tab moves through: the overlay, else the modal, else the tree's controls then the chrome's. */
+  #focusables() {
+    const layer = this.#overlay ?? this.#modal;
+    if (layer !== null) {
+      return layer.focusableNodes();
+    }
+    return [...this.root.focusableNodes(), ...(this.chrome?.focusableNodes() ?? [])];
+  }
+
+  /**
+   * Whether a node can hold the focus now: inside the modal when one is open, else inside the tree or the chrome.
+   * @param {UiNode} node
+   */
+  #reachable(node) {
+    if (this.#modal !== null) {
+      return isWithin(node, this.#modal);
+    }
+    return isWithin(node, this.root) || (this.chrome !== null && isWithin(node, this.chrome));
+  }
+
+  /**
+   * Stretches a modal over the whole canvas; in a frame of its own (the shell's content), its panel is centred on the
+   * whole design area, shell included.
+   * @param {import("../ui/Modal.js").Modal} modal
+   */
+  #place(modal) {
+    const { viewport } = this.services;
+    modal.cover(viewport.bounds);
+    if ("designArea" in viewport) {
+      modal.centerOn(viewport.designArea);
+    }
+  }
+
+  /**
    * Nearest ScrollList enclosing the point, if any.
    * @param {import("@magic8/engine/shared/geometry.js").Point} point
    */
@@ -478,7 +555,7 @@ export class Scene {
 
   /** @param {number} direction */
   #moveFocus(direction) {
-    const nodes = (this.#overlay ?? this.#modal ?? this.root).focusableNodes();
+    const nodes = this.#focusables();
     if (nodes.length === 0) {
       return;
     }
@@ -543,7 +620,7 @@ export class Scene {
 }
 
 /**
- * @param {import("../canvas/Viewport.js").Viewport} viewport
+ * @param {{ profile?: string, logicalWidth: number, logicalHeight: number }} viewport
  * @returns {string} what a scene's layout depends on: the profile and the design area's size
  */
 function designKey(viewport) {

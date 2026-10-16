@@ -62,7 +62,7 @@ async function harness({ signedIn = true, budget, listing = LISTING, entries, pa
   return { ...world, market, shop, scene, app, services, navigated, transfers };
 }
 
-const byId = (scene, id) => scene.root.findById(id);
+const byId = (scene, id) => scene.findNode(id);
 /** Every node of the scene, depth first. */
 const nodes = (scene) => {
   const found = [];
@@ -244,7 +244,7 @@ describe("ShopScene", () => {
     assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
     assert.equal(scene.modal, null, "no cards to reveal");
     assert.equal(byId(scene, "shop.status").text, "Done: 5 ranked entries are yours, and in the season's jackpot.");
-    click(byId(scene, "shop.back"));
+    click(byId(scene, "shell.back"));
     assert.equal(navigated.at(-1).id, SceneId.ONLINE, "back to the lobby that sent the player here");
   });
 

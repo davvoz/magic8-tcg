@@ -5,11 +5,11 @@
  * standing above. When the season has a jackpot, it heads the screen: the
  * amount, the countdown to the season's end, and what each paying place
  * wins and who holds it now. A line opens that player's games; "My games"
- * the player's own.
+ * (in the toolbar) the player's own.
  */
+import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
-import { Label } from "../ui/Label.js";
 import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
@@ -17,13 +17,13 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { JACKPOT_HEIGHT, JackpotPanel } from "./jackpot/JackpotPanel.js";
 import { standingText } from "./OnlineScene.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
-export class LeaderboardScene extends Scene {
-  /** The frame for the screen in use (the compact one on a phone). */
+export class LeaderboardScene extends SectionScene {
+  /** The frame for the screen in use (the compact one on a phone): a toolbar row only when "My games" is offered. */
   get #screen() {
-    return screenLayout(this.services.viewport);
+    return screenLayout(this.services.viewport, { toolbar: this.services.hasScene(SceneId.GAME_HISTORY) });
   }
 
   #app;
@@ -39,8 +39,9 @@ export class LeaderboardScene extends Scene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services);
+    super(services, app, { section: SectionId.SEASON, title: "Leaderboard" });
     this.#app = app;
+    this.setHeading({ back: () => this.onCancel() });
   }
 
   /** @param {{ back?: string }} [params] */
@@ -88,7 +89,8 @@ export class LeaderboardScene extends Scene {
     const { viewport } = this.services;
     const state = this.#ranking().state;
     const season = state.leaderboard?.season?.name ?? state.standing?.season?.name ?? null;
-    const back = this.#buildHeader(season);
+    this.setHeading({ title: season === null ? "Leaderboard" : `Leaderboard — ${season}` });
+    const history = this.#buildToolbar();
     const width = viewport.logicalWidth - 2 * this.#screen.columns.left.x;
     const compact = this.#screen.compact;
     const jackpotHeight = this.#buildJackpot(width);
@@ -99,26 +101,21 @@ export class LeaderboardScene extends Scene {
     panel.add(new TextBlock({ id: "leaderboard.standing", x: this.#screen.inset, y: compact ? 10 : 16, width: width - 2 * this.#screen.inset, height: 30, text: standingText(state), size: compact ? "small" : "body", colorKey: "text" }));
     const list = panel.add(new ScrollList({ id: "leaderboard.list", x: this.#screen.inset, y: listTop, width: width - 2 * this.#screen.inset, height: height - listTop - this.#screen.inset }));
     this.#fill(list, state);
-    this.focus(back);
+    this.focus(history ?? this.backButton);
     this.services.requestRender();
   }
 
   /**
-   * The title, Back and, when the history screen exists, "My games".
-   * @param {string | null} season
-   * @returns {Button} Back
+   * The toolbar: "My games", when the history screen exists.
+   * @returns {Button | null}
    */
-  #buildHeader(season) {
-    const { viewport } = this.services;
-    const history = this.services.hasScene(SceneId.GAME_HISTORY);
-    const buttons = history ? 2 : 1;
-    const titleWidth = Math.min(900, viewport.logicalWidth - 2 * this.#screen.header.sideMargin - buttons * (this.#screen.header.backWidth + 16));
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: titleWidth, height: this.#screen.header.height, text: season === null ? "Leaderboard" : `Leaderboard — ${season}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    const back = this.root.add(new Button({ keepPlate: true, id: "leaderboard.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.onCancel() }));
-    if (history) {
-      this.root.add(new Button({ keepPlate: true, id: "leaderboard.history", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "My games", onActivate: () => this.#openHistory() }));
+  #buildToolbar() {
+    if (!this.services.hasScene(SceneId.GAME_HISTORY)) {
+      return null;
     }
-    return back;
+    const { header } = this.#screen;
+    const x = this.services.viewport.logicalWidth - header.sideMargin - header.backWidth;
+    return this.root.add(new Button({ keepPlate: true, id: "leaderboard.history", x, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: "My games", onActivate: () => this.#openHistory() }));
   }
 
   /**

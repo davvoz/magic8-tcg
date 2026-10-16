@@ -52,6 +52,7 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
+import { SectionId } from "../shell/sections.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { EntryTickets } from "./entries/EntryTickets.js";
 import { PlayKind } from "./online/lobbyIcons.js";
@@ -60,29 +61,26 @@ import { Perks } from "./online/Perks.js";
 import { RankedGuide } from "./online/RankedGuide.js";
 import { RatingCrest } from "./online/RatingCrest.js";
 import { timeAgo } from "./NotificationsScene.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
 const LIST_ID = "online.decks";
 const PLAYERS_ID = "online.players";
 /**
  * Sizes of the lobby, wide and compact (a phone in landscape: the three columns share its width).
- * @typedef {Readonly<{ button: number, mode: { y: number, height: number, gap: number }, playerRow: { height: number, gap: number }, titleY: number, listTop: number, statusSize: "body" | "small", note: boolean, title: number, tab: number, tabGap: number }>} LobbyMetrics
+ * @typedef {Readonly<{ button: number, mode: { y: number, height: number, gap: number }, playerRow: { height: number, gap: number }, titleY: number, listTop: number, statusSize: "body" | "small", note: boolean, tab: number, tabGap: number }>} LobbyMetrics
  *   `mode`: the row of the ranked ways to play (and, without tabs, where the status starts); `note`: the paragraph on how games are kept fair;
- *   `title`: the width of the screen's title; `tab`: the height of the Casual and Ranked tabs, `tabGap` the space between them
+ *   `tab`: the height of the Casual and Ranked tabs, `tabGap` the space between them
  */
 /** @type {LobbyMetrics} */
-const WIDE = Object.freeze({ button: 60, mode: Object.freeze({ y: 64, height: 48, gap: 12 }), playerRow: Object.freeze({ height: 64, gap: 8 }), titleY: 14, listTop: 60, statusSize: "body", note: true, title: 400, tab: 64, tabGap: 10 });
+const WIDE = Object.freeze({ button: 60, mode: Object.freeze({ y: 64, height: 48, gap: 12 }), playerRow: Object.freeze({ height: 64, gap: 8 }), titleY: 14, listTop: 60, statusSize: "body", note: true, tab: 64, tabGap: 10 });
 /** @type {LobbyMetrics} */
-const COMPACT = Object.freeze({ button: 46, mode: Object.freeze({ y: 50, height: 46, gap: 6 }), playerRow: Object.freeze({ height: 52, gap: 6 }), titleY: 8, listTop: 50, statusSize: "small", note: false, title: 200, tab: 46, tabGap: 6 });
-/** The three columns: your decks, the players online, the game (its two tabs over its panel). */
-const LAYOUT = Object.freeze({
-  decks: Object.freeze({ x: 60, width: 400 }),
-  players: Object.freeze({ x: 480, width: 400 }),
-  game: Object.freeze({ x: 900, width: 640 }),
+const COMPACT = Object.freeze({ button: 46, mode: Object.freeze({ y: 50, height: 46, gap: 6 }), playerRow: Object.freeze({ height: 52, gap: 6 }), titleY: 8, listTop: 50, statusSize: "small", note: false, tab: 46, tabGap: 6 });
+/** The three columns (your decks, the players online, the game: its two tabs over its panel): their share of the width and the gap between them. */
+const COLUMN_SPLIT = Object.freeze({
+  wide: Object.freeze({ shares: Object.freeze([0.278, 0.278, 0.444]), gap: 20 }),
+  compact: Object.freeze({ shares: Object.freeze([0.3, 0.31, 0.39]), gap: 8 }),
 });
-/** On a compact screen: the columns' share of the width (decks, players, game) and the gap between them. */
-const COMPACT_COLUMNS = Object.freeze({ shares: Object.freeze([0.3, 0.31, 0.39]), gap: 8 });
 /** The status and the error under it, on a wide screen: what a line at the foot of the panel must leave them. */
 const STATUS_ROOM = 176;
 /**
@@ -146,7 +144,7 @@ const ACTIVITY_TEXT = Object.freeze({
   [PlayerActivity.PLAYING]: "In a game",
 });
 
-export class OnlineScene extends Scene {
+export class OnlineScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
   get #screen() {
     return screenLayout(this.services.viewport);
@@ -159,17 +157,15 @@ export class OnlineScene extends Scene {
 
   /** The three columns for the screen in use. */
   get #columns() {
-    if (!this.#screen.compact) {
-      return LAYOUT;
-    }
+    const split = this.#screen.compact ? COLUMN_SPLIT.compact : COLUMN_SPLIT.wide;
     const { sideMargin } = this.#screen.header;
-    const inner = this.services.viewport.logicalWidth - 2 * sideMargin - 2 * COMPACT_COLUMNS.gap;
-    const [decks, players] = COMPACT_COLUMNS.shares.map((share) => Math.round(inner * share));
+    const inner = this.services.viewport.logicalWidth - 2 * sideMargin - 2 * split.gap;
+    const [decks, players] = split.shares.map((share) => Math.round(inner * share));
     const game = inner - decks - players;
     return {
       decks: { x: sideMargin, width: decks },
-      players: { x: sideMargin + decks + COMPACT_COLUMNS.gap, width: players },
-      game: { x: sideMargin + decks + players + 2 * COMPACT_COLUMNS.gap, width: game },
+      players: { x: sideMargin + decks + split.gap, width: players },
+      game: { x: sideMargin + decks + players + 2 * split.gap, width: game },
     };
   }
 
@@ -204,9 +200,10 @@ export class OnlineScene extends Scene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services);
+    super(services, app, { section: SectionId.PLAY, title: "Play online" });
     this.#app = app;
     this.#now = now;
+    this.setHeading({ back: () => this.#leave() });
   }
 
   enter() {
@@ -305,21 +302,26 @@ export class OnlineScene extends Scene {
       this.closeModal();
     }
     this.root.clear();
-    const { viewport } = this.services;
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: this.#m.title, height: this.#screen.header.height, text: "Play online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    const back = this.root.add(new Button({ keepPlate: true, id: "online.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.#leave() }));
-    if (this.#app.ranking !== undefined && this.services.hasScene(SceneId.LEADERBOARD)) {
-      this.root.add(new Button({ keepPlate: true, id: "online.leaderboard", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Leaderboard", onActivate: () => this.services.navigate(SceneId.LEADERBOARD) }));
-    }
-    if (this.services.hasScene(SceneId.LIVE_GAMES)) {
-      this.root.add(new Button({ keepPlate: true, id: "online.watch", x: viewport.logicalWidth - this.#screen.header.sideMargin - 3 * this.#screen.header.backWidth - 32, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Watch", onActivate: () => this.services.navigate(SceneId.LIVE_GAMES) }));
-    }
+    this.#buildToolbar();
     const firstDeck = this.#buildDecks();
     this.#buildPlayers();
     const action = this.#buildActions();
-    this.focus(this.root.findById(focusedId) ?? action ?? firstDeck ?? back);
+    this.focus(this.findNode(focusedId) ?? action ?? firstDeck ?? this.backButton);
     this.#reopenDialog(focusedId);
     this.services.requestRender();
+  }
+
+  /** The toolbar, from the right: the leaderboard, and the games being played now to watch. */
+  #buildToolbar() {
+    const { viewport, hasScene, navigate } = this.services;
+    const { header } = this.#screen;
+    const buttons = [
+      ...(this.#app.ranking !== undefined && hasScene(SceneId.LEADERBOARD) ? [{ id: "online.leaderboard", text: "Leaderboard", onActivate: () => navigate(SceneId.LEADERBOARD) }] : []),
+      ...(hasScene(SceneId.LIVE_GAMES) ? [{ id: "online.watch", text: "Watch", onActivate: () => navigate(SceneId.LIVE_GAMES) }] : []),
+    ];
+    buttons.forEach((spec, index) => {
+      this.root.add(new Button({ keepPlate: true, ...spec, x: viewport.logicalWidth - header.sideMargin - (index + 1) * header.backWidth - index * header.gap, y: header.y + 4, width: header.backWidth, height: header.height - 8 }));
+    });
   }
 
   /** @returns {Button | null} */
