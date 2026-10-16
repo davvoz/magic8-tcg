@@ -34,6 +34,8 @@ export class LiveGamesScene extends SectionScene {
   #loading = false;
   /** @type {string | null} */
   #error = null;
+  /** Where Back leads. @type {string} */
+  #back = SceneId.ONLINE;
   /** Bumped on every load: an answer to an older request is dropped. */
   #generation = 0;
 
@@ -47,13 +49,15 @@ export class LiveGamesScene extends SectionScene {
     this.setHeading({ back: () => this.onCancel() });
   }
 
-  enter() {
+  /** @param {{ back?: string }} [params] `back`: where Back leads (the lobby by default) */
+  enter(params = {}) {
+    this.#back = typeof params.back === "string" && this.services.hasScene(params.back) ? params.back : SceneId.ONLINE;
     this.#error = null;
     this.#load();
   }
 
   onCancel() {
-    this.services.navigate(SceneId.ONLINE);
+    this.services.navigate(this.#back);
   }
 
   relayout() {

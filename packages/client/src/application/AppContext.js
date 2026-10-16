@@ -6,6 +6,7 @@
  * @property {import("./content/ContentService.js").GameContent} content
  * @property {import("./decks/DeckSelectionService.js").DeckSelectionService} deckSelection
  * @property {import("./decks/DeckBuildingService.js").DeckBuildingService} deckBuilding
+ * @property {import("./decks/SelectedDeck.js").SelectedDeck} [selectedDeck] the deck the player plays with, kept between visits; absent in tools and previews
  * @property {import("./match/MatchSetupService.js").MatchSetupService} matchSetup
  * @property {import("./match/AiOpponents.js").AiOpponentFactory} [opponents] the AI opponents practice can seat; absent in tools and previews (the classic AI plays)
  * @property {import("./tutorial/TutorialService.js").TutorialService} [tutorial] the guided first match; absent in tools and previews

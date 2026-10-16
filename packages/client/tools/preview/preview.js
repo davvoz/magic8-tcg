@@ -9,6 +9,7 @@
  *   /tools/preview/?scene=home&eligible=0    ...a player new to ranked play, so the guide is not over (onlineWorld.js lists the other options)
  *   /tools/preview/?scene=home&done=2        ...with that many of the guide's milestones kept here (tutorial, challenge, online game)
  *   /tools/preview/?scene=home&hidden=1      ...with the guide hidden
+ *   /tools/preview/?scene=play               Play, in the same world as Home
  *   /tools/preview/?scene=decks
  *   /tools/preview/?scene=builder            deck builder, library view
  *   /tools/preview/?scene=editor             deck builder, editing a copy of the first deck
@@ -350,7 +351,7 @@ function inspectFirstCard(sceneManager) {
 }
 
 /** Screens shown as they open, with nothing to set up. */
-const PLAIN_SCENES = Object.freeze({ home: SceneId.HOME, daily: SceneId.DAILY, decks: SceneId.DECK_SELECTION, starter: SceneId.STARTER, builder: SceneId.DECK_BUILDER });
+const PLAIN_SCENES = Object.freeze({ home: SceneId.HOME, play: SceneId.PLAY, daily: SceneId.DAILY, decks: SceneId.DECK_SELECTION, starter: SceneId.STARTER, builder: SceneId.DECK_BUILDER });
 
 /**
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
@@ -514,7 +515,7 @@ async function appFor(request, content) {
     // The lobby's services stand in for a server: casting them is the harness's business.
     return Object.freeze({ ...app, .../** @type {any} */ (onlineServices(content, request.online, logger)) });
   }
-  if (request.scene === "home") {
+  if (request.scene === "home" || request.scene === "play") {
     const lobby = /** @type {any} */ (onlineServices(content, request.online, logger));
     const { daily } = await dailyServices(content, request.daily);
     const onboarding = new OnboardingProgress({ preferences: { load: () => null, save: () => undefined } });

@@ -28,6 +28,7 @@ import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
 import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
+import { PlayScene } from "../../src/rendering/scenes/PlayScene.js";
 import { OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
 import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStore.js";
 import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnboarding.js";
@@ -241,6 +242,8 @@ const withDailyRun = (run) => (app) => Object.assign(app, { daily: dailyService(
 
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
+  { name: "play", make: (s, app) => new PlayScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("play.daily.play")) },
+  { name: "play, choosing the deck", make: (s, app) => new PlayScene(s, app), after: (scene) => (scene.root.findById("play.deck.change")?.activate(), assert.ok(scene.modal?.findById("deckPicker.close"))) },
   { name: "home, with the guide", make: (s, app) => new HomeScene(s, app), before: (app) => withGuide(app), after: (scene) => assert.ok(scene.root.findById("home.next")) },
   { name: "home, without the guide", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app), withGuide(app).dismiss()), after: (scene) => assert.equal(scene.root.findById("home.next"), null) },
   { name: "main menu", make: (s, app) => new MainMenuScene(s, app) },

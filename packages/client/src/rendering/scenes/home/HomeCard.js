@@ -34,22 +34,26 @@ export class HomeCard extends Panel {
   /** @type {CardMetrics} */
   metrics;
   compact;
+  /** Where the parts start from the card's left: its inset, or past what the card keeps on its left (a picture). */
+  left;
   /** Where the next part goes, from the top. */
   #cursor;
 
   /**
-   * @param {{ id: string, x: number, y: number, width: number, height: number, compact: boolean, glowKey?: string | null }} options
+   * @param {{ id: string, x: number, y: number, width: number, height: number, compact: boolean, glowKey?: string | null, lead?: number }} options
+   *   `lead`: the room kept on the card's left for something of its own (a picture), before the inset
    */
-  constructor({ compact, glowKey = null, ...frame }) {
+  constructor({ compact, glowKey = null, lead = 0, ...frame }) {
     super({ ...frame, smallCorners: compact, glowKey });
     this.compact = compact;
     this.metrics = compact ? CARD_METRICS.compact : CARD_METRICS.wide;
+    this.left = lead + this.metrics.inset;
     this.#cursor = this.metrics.inset;
   }
 
-  /** The width inside the card's insets. */
+  /** The width the parts have: inside the card's insets, past its lead. */
   get inner() {
-    return this.width - 2 * this.metrics.inset;
+    return this.width - this.left - this.metrics.inset;
   }
 
   /** Where the next part goes. */
@@ -67,8 +71,8 @@ export class HomeCard extends Panel {
    * @param {string} [colorKey]
    */
   addKicker(text, colorKey = "accent") {
-    const { inset, kicker, gap, sizes } = this.metrics;
-    this.add(new Label({ x: inset, y: this.#cursor, width: this.inner, height: kicker, text: text.toUpperCase(), size: sizes.kicker, weight: "bold", colorKey, align: "left", fit: true }));
+    const { kicker, gap, sizes } = this.metrics;
+    this.add(new Label({ x: this.left, y: this.#cursor, width: this.inner, height: kicker, text: text.toUpperCase(), size: sizes.kicker, weight: "bold", colorKey, align: "left", fit: true }));
     this.advance(kicker + gap);
   }
 
@@ -77,8 +81,8 @@ export class HomeCard extends Panel {
    * @param {{ id?: string, colorKey?: string }} [options]
    */
   addTitle(text, { id, colorKey = "accentLight" } = {}) {
-    const { inset, title, sizes } = this.metrics;
-    this.add(new Label({ id, x: inset, y: this.#cursor, width: this.inner, height: title, text, size: sizes.title, weight: "bold", colorKey, align: "left", fit: true }));
+    const { title, sizes } = this.metrics;
+    this.add(new Label({ id, x: this.left, y: this.#cursor, width: this.inner, height: title, text, size: sizes.title, weight: "bold", colorKey, align: "left", fit: true }));
     this.advance(title);
   }
 
@@ -87,9 +91,9 @@ export class HomeCard extends Panel {
    * @param {{ id?: string, lines?: number, colorKey?: string }} [options] `lines`: the most it may take
    */
   addText(text, { id, lines = 2, colorKey = "text" } = {}) {
-    const { inset, line, gap, sizes } = this.metrics;
+    const { line, gap, sizes } = this.metrics;
     const height = Math.max(line, Math.min(lines * line + 4, this.footTop - this.#cursor - gap));
-    this.add(new TextBlock({ id, x: inset, y: this.#cursor, width: this.inner, height, text, size: sizes.text, colorKey }));
+    this.add(new TextBlock({ id, x: this.left, y: this.#cursor, width: this.inner, height, text, size: sizes.text, colorKey }));
     this.advance(height + gap);
   }
 
@@ -103,12 +107,12 @@ export class HomeCard extends Panel {
     const { inset, gap, button, sizes } = this.metrics;
     const y = this.height - inset - button;
     if (note !== null) {
-      this.add(new Label({ id: noteId, x: inset, y: y - this.metrics.note - gap, width: this.inner, height: this.metrics.note, text: note, size: sizes.note, colorKey: noteKey, align: "left", fit: true }));
+      this.add(new Label({ id: noteId, x: this.left, y: y - this.metrics.note - gap, width: this.inner, height: this.metrics.note, text: note, size: sizes.note, colorKey: noteKey, align: "left", fit: true }));
     }
     const spacing = this.compact ? 8 : 14;
     const width = (this.inner - (actions.length - 1) * spacing) / actions.length;
     return actions.map((action, index) => {
-      const frame = { id: action.id, x: inset + index * (width + spacing), y, width, height: button, variant: action.variant ?? "secondary", enabled: action.enabled !== false && action.locked !== true, onActivate: action.onActivate, keepPlate: true };
+      const frame = { id: action.id, x: this.left + index * (width + spacing), y, width, height: button, variant: action.variant ?? "secondary", enabled: action.enabled !== false && action.locked !== true, onActivate: action.onActivate, keepPlate: true };
       return this.add(action.locked === true ? new IconButton({ ...frame, icon: Icon.LOCK, caption: action.text }) : new Button({ ...frame, text: action.text, textSize: this.compact ? "small" : "body" }));
     });
   }

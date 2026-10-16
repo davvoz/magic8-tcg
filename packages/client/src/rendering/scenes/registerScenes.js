@@ -12,6 +12,7 @@ import { DeckSelectionScene } from "./DeckSelectionScene.js";
 import { ErrorScene } from "./ErrorScene.js";
 import { GameHistoryScene } from "./GameHistoryScene.js";
 import { HomeScene } from "./HomeScene.js";
+import { PlayScene } from "./PlayScene.js";
 import { InfoScene } from "./InfoScene.js";
 import { LeaderboardScene } from "./LeaderboardScene.js";
 import { LiveGamesScene } from "./LiveGamesScene.js";
@@ -35,6 +36,7 @@ export function registerScenes(sceneManager, app) {
   sceneManager
     .register(SceneId.HOME, (services) => new HomeScene(services, app))
     .register(SceneId.MAIN_MENU, (services) => new MainMenuScene(services, app))
+    .register(SceneId.PLAY, (services) => new PlayScene(services, app))
     .register(SceneId.DECK_SELECTION, (services) => new DeckSelectionScene(services, app))
     .register(SceneId.DECK_BUILDER, (services) => new DeckBuilderScene(services, app))
     .register(SceneId.MATCH, (services) => new MatchScene(services, { rarityOf: (cardId) => app.rarities?.of(cardId) ?? null, audio: app.audio, help: app.help, characterName: (account) => app.daily?.characterOf(account)?.name ?? null, challengeStep: (account, outcome) => challengeStep(app, account, outcome), voice: app.voice, sharing: app.sharing }))

@@ -176,7 +176,7 @@ describe("The rail", () => {
     for (const section of SECTIONS) {
       scene.findNode(`shell.nav.${section.id}`).activate();
     }
-    assert.deepEqual(navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.DECK_SELECTION, SceneId.DECK_BUILDER, SceneId.SHOP, SceneId.LEADERBOARD], "signed out: practice, and the Deck Builder");
+    assert.deepEqual(navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.PLAY, SceneId.DECK_BUILDER, SceneId.SHOP, SceneId.LEADERBOARD], "signed out: every way to play, and the Deck Builder");
   });
 
   it("keeps a section it cannot open in its place, locked, and says why", () => {
@@ -198,11 +198,12 @@ describe("The rail", () => {
 describe("Sections", () => {
   const context = (app, scenes = Object.values(SceneId)) => ({ app, hasScene: (id) => scenes.includes(id) });
 
-  it("lead a signed-in player online, to the starter deck until it is taken, then to the collection", async () => {
+  it("lead to every way to play, to the starter deck until it is taken, then to the collection", async () => {
     const { app, identity, account } = world({ app: { online: {} } });
     identity.become(ALICE);
     await settle();
-    assert.deepEqual(sectionById(SectionId.PLAY).destination(context(app)), { scene: SceneId.ONLINE });
+    assert.deepEqual(sectionById(SectionId.PLAY).destination(context(app)), { scene: SceneId.PLAY });
+    assert.deepEqual(sectionById(SectionId.PLAY).destination(context(app, Object.values(SceneId).filter((id) => id !== SceneId.PLAY))), { scene: SceneId.ONLINE }, "without that screen, online play");
     assert.deepEqual(sectionById(SectionId.DECKS).destination(context(app)), { scene: SceneId.STARTER });
     await account.claimStarter("precon_ember");
     assert.deepEqual(sectionById(SectionId.DECKS).destination(context(app)), { scene: SceneId.COLLECTION });

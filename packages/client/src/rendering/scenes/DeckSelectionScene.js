@@ -94,7 +94,9 @@ export class DeckSelectionScene extends SectionScene {
 
   enter() {
     const options = this.#app.deckSelection.listPlayableDecks();
-    this.#selectedDeckId = options[0]?.deck.id ?? null;
+    // The deck the player plays with, wherever they chose it; else the first.
+    const chosen = this.#app.selectedDeck?.pick(options, { idOf: (option) => option.deck.id }) ?? options[0] ?? null;
+    this.#selectedDeckId = chosen?.deck.id ?? null;
     this.#rebuild();
   }
 
@@ -221,6 +223,7 @@ export class DeckSelectionScene extends SectionScene {
   /** @param {string} deckId */
   #select(deckId) {
     this.#selectedDeckId = deckId;
+    this.#app.selectedDeck?.choose(deckId);
     this.#rememberScroll();
     this.#rebuild();
   }

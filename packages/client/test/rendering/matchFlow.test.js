@@ -83,7 +83,7 @@ describe("registerScenes", () => {
     manager.current.findNode("shell.nav.decks").activate();
     assert.equal(manager.currentId, SceneId.DECK_BUILDER, "offline, the rail's Decks opens the Deck Builder");
     manager.current.findNode("shell.nav.play").activate();
-    assert.equal(manager.currentId, SceneId.DECK_SELECTION, "and Play the practice against the AI");
+    assert.equal(manager.currentId, SceneId.PLAY, "and Play every way to play");
     manager.current.findNode("shell.nav.home").activate();
     assert.equal(manager.currentId, SceneId.HOME);
   });

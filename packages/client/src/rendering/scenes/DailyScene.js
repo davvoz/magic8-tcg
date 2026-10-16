@@ -29,6 +29,7 @@ import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
 import { Label } from "../ui/Label.js";
 import { COMPACT_CARD, OpponentCard, WIDE_CARD } from "./daily/OpponentCard.js";
+import { deckKey } from "./OnlineScene.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 
@@ -313,7 +314,8 @@ export class DailyScene extends SectionScene {
    * @param {readonly import("../../application/online/OnlineService.js").OnlineDeck[]} decks the playable ones
    */
   #chosenDeck(decks) {
-    const deck = decks.find((candidate) => candidate.id === this.#deckId) ?? decks[0] ?? null;
+    // The one chosen here, else the deck the player plays with (wherever they chose it), else the first.
+    const deck = decks.find((candidate) => candidate.id === this.#deckId) ?? this.#app.selectedDeck?.pick(decks, { idOf: deckKey }) ?? decks[0] ?? null;
     this.#deckId = deck?.id ?? null;
     return deck;
   }
@@ -373,7 +375,11 @@ export class DailyScene extends SectionScene {
   /** @param {readonly import("../../application/online/OnlineService.js").OnlineDeck[]} decks */
   #nextDeck(decks) {
     const index = decks.findIndex((deck) => deck.id === this.#deckId);
-    this.#deckId = decks[(index + 1) % decks.length]?.id ?? null;
+    const next = decks[(index + 1) % decks.length] ?? null;
+    this.#deckId = next?.id ?? null;
+    if (next !== null) {
+      this.#app.selectedDeck?.choose(deckKey(next));
+    }
     this.#rebuild();
   }
 

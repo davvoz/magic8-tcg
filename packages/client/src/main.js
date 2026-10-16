@@ -59,6 +59,8 @@ import { createCoreSoundBank } from "./infrastructure/audio/registerCorePatches.
 import { StoredAudioPreferences } from "./infrastructure/persistence/StoredAudioPreferences.js";
 import { StoredHelpPreferences } from "./infrastructure/persistence/StoredHelpPreferences.js";
 import { StoredOnboarding } from "./infrastructure/persistence/StoredOnboarding.js";
+import { StoredSelectedDeck } from "./infrastructure/persistence/StoredSelectedDeck.js";
+import { SelectedDeck } from "./application/decks/SelectedDeck.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
@@ -451,6 +453,7 @@ async function boot() {
   const audio = buildAudio(localStore, storageAvailable);
   const help = buildHelp(localStore, storageAvailable);
   const onboarding = buildOnboarding(localStore, storageAvailable);
+  const selectedDeck = buildSelectedDeck(localStore, storageAvailable);
   const browserDecks = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
   // Signed in, decks live in the account (only owned cards); otherwise in this browser.
   const collectionApi = new HttpCollectionApi({ fetch: httpFetch });
@@ -483,7 +486,7 @@ async function boot() {
     accountDecks: () =>
       accountDecks.list().value.flatMap((deck) => {
         const ref = accountDecks.describe(deck.id);
-        return ref === undefined ? [] : [{ id: ref.serverId, name: deck.name, mix: deckMix(content.value, deck.entries), totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
+        return ref === undefined ? [] : [{ id: ref.serverId, localId: deck.id, name: deck.name, mix: deckMix(content.value, deck.entries), totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
       }),
     liveGames: new HttpLiveGamesApi({ fetch: httpFetch }),
     // Signed moves (docs/tcg/12): a key per game that cannot leave the browser, authorised with Keychain.
@@ -574,6 +577,7 @@ async function boot() {
     // Signed in, the player's decks are the account's; the preconstructed ones are offline practice only.
     deckSelection: new DeckSelectionService({ content: content.value, repository, logger, showPreconstructed: () => repository.storage === DeckStorage.BROWSER }),
     deckBuilding,
+    selectedDeck,
     matchSetup,
     opponents: new AiOpponentFactory({ content: content.value, effects }),
     tutorial,
@@ -732,6 +736,16 @@ function buildLocalKeys(localStore, storageAvailable, httpFetch) {
 function buildOnboarding(localStore, storageAvailable) {
   const store = storageAvailable ? localStore : new InMemoryStore();
   return new OnboardingProgress({ preferences: new StoredOnboarding({ store, logger }) });
+}
+
+/**
+ * The deck the player plays with, wherever they play, remembered in `store`.
+ * @param {LocalStorageStore} localStore
+ * @param {boolean} storageAvailable without it, the choice lasts only as long as the page
+ */
+function buildSelectedDeck(localStore, storageAvailable) {
+  const store = storageAvailable ? localStore : new InMemoryStore();
+  return new SelectedDeck({ preferences: new StoredSelectedDeck({ store, logger }) });
 }
 
 /**

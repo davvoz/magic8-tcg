@@ -50,7 +50,8 @@ export const OnlineStatus = Object.freeze({
 });
 
 /**
- * @typedef {Readonly<{ id: string, name: string, mix: readonly import("@magic8/engine/domain/decks/factionMix.js").FactionShare[], totalCards: number, playable: boolean, problem: string | null }>} OnlineDeck id is the server's deck id
+ * @typedef {Readonly<{ id: string, localId?: string, name: string, mix: readonly import("@magic8/engine/domain/decks/factionMix.js").FactionShare[], totalCards: number, playable: boolean, problem: string | null }>} OnlineDeck
+ *   `id` is the server's deck id; `localId` the same deck's in the player's decks (the deck builder's, practice's)
  * @typedef {Readonly<{ you: boolean, opponent: boolean }>} Acceptance v2, while the game waits for its players: who has accepted it with Keychain
  * @typedef {Readonly<{ status: string, error: Readonly<{ code: string, message: string }> | null, notice: string | null, opponent: string | null, session: RemoteMatchSession | null, watching: RemoteMatchSession | null, acceptance: Acceptance | null, mode: string | null }>} OnlineState
  *   `notice`: while searching, why the queue holds the player apart from those waiting (the server's words); `mode`: the game's (casual, ranked, daily), when the server said

@@ -15,6 +15,14 @@ export const Icon = Object.freeze({
   SETTINGS: "settings",
   BACK: "back",
   LOCK: "lock",
+  /** Watching a game. */
+  EYE: "eye",
+  /** Games played, to look back on. */
+  HISTORY: "history",
+  /** Practice: a target. */
+  TARGET: "target",
+  /** Learning the game: an open book. */
+  BOOK: "book",
 });
 
 const GRID = 24;
@@ -137,6 +145,45 @@ const PAINTERS = Object.freeze({
     pen.move(14.5, 5);
     pen.line(7.5, 12);
     pen.line(14.5, 19);
+    pen.stroke();
+  },
+  [Icon.EYE]: (pen) => {
+    pen.move(2.5, 12);
+    pen.arc(12, 20, 11.5, { from: Math.PI + 0.77, to: -0.77 });
+    pen.arc(12, 4, 11.5, { from: 0.77, to: Math.PI - 0.77 });
+    pen.stroke();
+    pen.dot(12, 12, 3);
+  },
+  [Icon.HISTORY]: (pen) => {
+    pen.move(4.5, 7.5);
+    pen.arc(12, 12, 8.5, { from: Math.PI + 0.55, to: Math.PI + 0.54, counter: false });
+    pen.move(4.5, 3.5);
+    pen.line(4.5, 7.5);
+    pen.line(8.5, 7.5);
+    pen.move(12, 7.5);
+    pen.line(12, 12);
+    pen.line(15, 14);
+    pen.stroke();
+  },
+  [Icon.TARGET]: (pen) => {
+    pen.dot(12, 12, 8.5);
+    pen.dot(12, 12, 4.5);
+    pen.dot(12, 12, 0.8);
+  },
+  [Icon.BOOK]: (pen) => {
+    pen.move(12, 6.5);
+    pen.line(12, 20);
+    pen.move(12, 6.5);
+    pen.line(7, 4.5);
+    pen.line(3, 5.5);
+    pen.line(3, 18.5);
+    pen.line(7, 17.5);
+    pen.line(12, 20);
+    pen.line(17, 17.5);
+    pen.line(21, 18.5);
+    pen.line(21, 5.5);
+    pen.line(17, 4.5);
+    pen.line(12, 6.5);
     pen.stroke();
   },
   [Icon.LOCK]: (pen) => {

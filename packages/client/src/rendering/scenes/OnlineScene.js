@@ -336,7 +336,10 @@ export class OnlineScene extends SectionScene {
     const list = panel.add(new ScrollList({ id: LIST_ID, x: this.#screen.inset, y: listTop, width, height: this.#screen.columns.height - listTop - this.#screen.inset }));
     const decks = this.#online().decks();
     if (!decks.some((deck) => deck.id === this.#selectedId && deck.playable)) {
-      this.#selectedId = decks.find((deck) => deck.playable)?.id ?? null;
+      // The deck the player plays with, wherever they chose it; else the first that can be played.
+      const playable = (/** @type {import("../../application/online/OnlineService.js").OnlineDeck} */ deck) => deck.playable;
+      const chosen = this.#app.selectedDeck?.pick(decks, { idOf: deckKey, playable }) ?? decks.find(playable) ?? null;
+      this.#selectedId = chosen?.id ?? null;
     }
     if (decks.length === 0) {
       list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * this.#screen.row.height, text: "You have no decks in your account yet. Take your free starter deck, or build a deck in the Deck Builder.", size: "small", colorKey: "textMuted" }));
@@ -360,6 +363,7 @@ export class OnlineScene extends SectionScene {
           stripe: mixBands(this.services.theme, deck.mix),
           onActivate: () => {
             this.#selectedId = deck.id;
+            this.#app.selectedDeck?.choose(deckKey(deck));
             this.#rebuild();
           },
         }),
@@ -1186,6 +1190,14 @@ export class OnlineScene extends SectionScene {
     }
     return this.#app.online;
   }
+}
+
+/**
+ * How the player's decks name an online deck (SelectedDeck): its id in the account's repository.
+ * @param {import("../../application/online/OnlineService.js").OnlineDeck} deck
+ */
+export function deckKey(deck) {
+  return deck.localId ?? deck.id;
 }
 
 /**

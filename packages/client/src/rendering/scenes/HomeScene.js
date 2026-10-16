@@ -12,8 +12,6 @@
  * One gold button: the top card's; without one, the challenge's Fight (or
  * Casual).
  */
-import { AccountStatus } from "../../application/account/AccountService.js";
-import { IdentityStatus } from "../../application/identity/IdentityService.js";
 import { GUIDE_STEPS, guideFor } from "../../application/onboarding/OnboardingGuide.js";
 import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -21,6 +19,7 @@ import { ChallengeCard } from "./home/ChallengeCard.js";
 import { HEADLINE_HEIGHT, HeadlineCard } from "./home/HeadlineCard.js";
 import { STEP_NAMES, stepCopy } from "./home/nextStep.js";
 import { OnlineCard } from "./home/OnlineCard.js";
+import { PlayViews } from "./home/PlayViews.js";
 import { SeasonCard } from "./home/SeasonCard.js";
 import { hasGameInProgress, resumeGame } from "./returnToGame.js";
 import { SceneId } from "./sceneIds.js";
@@ -29,7 +28,6 @@ import { startTutorial } from "./startTutorial.js";
 
 /** The frame: margins round the cards and the gap between them. */
 const FRAME = Object.freeze({ wide: Object.freeze({ margin: 20, gap: 20 }), compact: Object.freeze({ margin: 8, gap: 8 }) });
-const OFFLINE = "Not available offline.";
 const MINUTE = 60_000;
 
 /**
@@ -49,6 +47,8 @@ export class HomeScene extends SectionScene {
   #minute = -1;
   /** Whether the player's account was ready when last looked at: becoming ready reads what Home shows of it. */
   #ready = false;
+  /** What each way to play shows. */
+  #views;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -59,6 +59,7 @@ export class HomeScene extends SectionScene {
     super(services, app, { section: SectionId.HOME, title: "Home" });
     this.#app = app;
     this.#now = now;
+    this.#views = new PlayViews({ app, hasScene: services.hasScene, now });
   }
 
   enter() {
@@ -122,13 +123,7 @@ export class HomeScene extends SectionScene {
   }
 
   #signedIn() {
-    return this.#app.account?.state.status === AccountStatus.READY;
-  }
-
-  /** Whether there is a game server (offline, only what plays in the browser is here). */
-  #server() {
-    const status = this.#app.identity?.state.status;
-    return status !== undefined && status !== IdentityStatus.OFFLINE;
+    return this.#views.signedIn;
   }
 
   #rebuild() {
@@ -145,12 +140,12 @@ export class HomeScene extends SectionScene {
       first = this.root.add(new HeadlineCard({ id: "home.headline", ...layout.headline, compact, ...headline })).action;
     }
     const primary = headline === null;
-    const challenge = this.#challengeView();
-    const online = this.#onlineView();
+    const challenge = this.#views.challenge();
+    const online = this.#views.online();
     const [left, middle, right] = layout.cards;
     this.root.add(new ChallengeCard({ id: "home.challenge", ...left, compact, view: challenge, primary: primary && challenge.kind === "next", clock: () => this.#animationMs, onFight: () => this.services.navigate(SceneId.DAILY) }));
     this.root.add(new OnlineCard({ id: "home.online", ...middle, compact, view: online, primary: primary && challenge.kind !== "next" && online.kind === "open", onPlay: (mode) => this.services.navigate(SceneId.ONLINE, { mode }) }));
-    this.#season = this.root.add(new SeasonCard({ id: "home.season", ...right, compact, view: this.#seasonView(), canOpen: this.services.hasScene(SceneId.LEADERBOARD), onOpen: () => this.services.navigate(SceneId.LEADERBOARD, { back: SceneId.HOME }) }));
+    this.#season = this.root.add(new SeasonCard({ id: "home.season", ...right, compact, view: this.#views.season(), canOpen: this.services.hasScene(SceneId.LEADERBOARD), onOpen: () => this.services.navigate(SceneId.LEADERBOARD, { back: SceneId.HOME }) }));
     this.focus(this.findNode(focusedId) ?? first ?? this.root.focusableNodes()[0] ?? null);
     this.services.requestRender();
   }
@@ -182,7 +177,7 @@ export class HomeScene extends SectionScene {
     }
     const signedIn = this.#signedIn();
     const standing = this.#app.ranking?.state.standing ?? null;
-    const guide = guideFor(progress, { server: this.#server(), account: signedIn ? (this.#app.account?.state.account ?? null) : null, needsStarter: this.#app.account?.needsStarter === true, standing });
+    const guide = guideFor(progress, { server: this.#views.server, account: signedIn ? (this.#app.account?.state.account ?? null) : null, needsStarter: this.#app.account?.needsStarter === true, standing });
     if (!guide.shown || guide.current === null) {
       return null;
     }
@@ -208,86 +203,6 @@ export class HomeScene extends SectionScene {
     }
     return { text: action.text, enabled: this.services.hasScene(action.scene), onActivate: () => this.services.navigate(action.scene, action.params ?? {}) };
   }
-
-  /** @returns {import("./home/ChallengeCard.js").ChallengeView} */
-  #challengeView() {
-    const daily = this.#app.daily;
-    if (!this.#server() || daily === undefined || this.#app.online === undefined || !this.services.hasScene(SceneId.DAILY)) {
-      return { kind: "locked", reason: OFFLINE };
-    }
-    if (!this.#signedIn()) {
-      return { kind: "locked", reason: "Sign in to take on the challenges." };
-    }
-    const { day, loading, error } = daily.state;
-    if (day === null) {
-      return { kind: "waiting", text: loading || error === null ? "Reading today's opponents…" : "Today's opponents could not be read: open the challenges to try again." };
-    }
-    const next = daily.next;
-    if (day.run?.rewarded === true || next === null) {
-      return { kind: "done", renewsIn: timeLeft(day.endsAt - this.#now()) };
-    }
-    return { kind: "next", opponent: next, stage: day.opponents.indexOf(next) };
-  }
-
-  /** @returns {import("./home/OnlineCard.js").OnlineView} */
-  #onlineView() {
-    if (!this.#server() || this.#app.online === undefined || !this.services.hasScene(SceneId.ONLINE)) {
-      return { kind: "locked", reason: OFFLINE };
-    }
-    if (!this.#signedIn()) {
-      return { kind: "locked", reason: "Sign in to play online." };
-    }
-    const standing = this.#app.ranking?.state.standing ?? null;
-    if (standing === null) {
-      return { kind: "open", rankedLock: null, note: null };
-    }
-    if (standing.season === null) {
-      return { kind: "open", rankedLock: "No ranked season is running.", note: null };
-    }
-    if (!standing.eligible) {
-      const games = standing.casualGamesNeeded;
-      return { kind: "open", rankedLock: `Ranked opens after ${games} more casual game${games === 1 ? "" : "s"}.`, note: null };
-    }
-    return { kind: "open", rankedLock: null, note: "Ranked games count for the season." };
-  }
-
-  /** @returns {import("./home/SeasonCard.js").SeasonView} */
-  #seasonView() {
-    const ranking = this.#app.ranking;
-    if (!this.#server() || ranking === undefined) {
-      return { kind: "locked", reason: OFFLINE };
-    }
-    const jackpot = this.#app.jackpot;
-    const { standing, error } = ranking.state;
-    const season = standing?.season?.name ?? jackpot?.state.jackpot?.season.name ?? null;
-    return { kind: "open", season, jackpot: jackpot?.state.jackpot ?? null, now: () => jackpot?.now() ?? this.#now(), standing: this.#signedIn() ? standingLine(standing, error) : "Sign in to take part in the season." };
-  }
-}
-
-/**
- * Where the player stands, in a line.
- * @param {import("../../application/ports/RankingApi.contract.js").Standing | null} standing
- * @param {string | null} error
- */
-function standingLine(standing, error) {
-  if (standing === null) {
-    return error === null ? "Reading your standing…" : "Your standing could not be read.";
-  }
-  if (standing.season === null) {
-    return "No ranked season is running.";
-  }
-  if (standing.games === 0) {
-    return "You: not ranked yet";
-  }
-  return standing.provisional || standing.rank === null ? `You: provisional · rating ${standing.rating}` : `You: #${standing.rank} · rating ${standing.rating}`;
-}
-
-/** "4h 12m" @param {number} ms */
-function timeLeft(ms) {
-  const left = Math.max(0, ms);
-  const hours = Math.floor(left / (60 * MINUTE));
-  const minutes = Math.floor((left % (60 * MINUTE)) / MINUTE);
-  return `${hours}h ${minutes}m`;
 }
 
 /**
