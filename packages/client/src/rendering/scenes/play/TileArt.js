@@ -1,12 +1,13 @@
 /**
  * The picture on the left of a Play screen's tile (online play, practice,
- * the tutorial): its painting (Theme.uiArt), cropped to cover the frame and
- * rimmed in the tile's colour; until the painting is ready, a glow in that
- * colour round a large emblem. Drawing only; the challenge tile shows a
+ * the tutorial): its painting (Theme.uiArt), whole, never cropped: as large
+ * as the frame allows, centred in it, and rimmed in the tile's colour (a
+ * frame of the painting's shape is filled by it); until the painting is
+ * ready, a glow in that colour round a large emblem. Drawing only; the challenge tile shows a
  * character's portrait instead.
  */
 import { drawIcon } from "../../ui/icons.js";
-import { drawImageCover, radialGradient, roundedRectPath } from "../../ui/drawing.js";
+import { radialGradient, roundedRectPath } from "../../ui/drawing.js";
 import { UiNode } from "../../ui/UiNode.js";
 import { withAlpha } from "../../theme/color.js";
 
@@ -43,13 +44,16 @@ export class TileArt extends UiNode {
     const center = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
     const painting = theme.uiArt?.imageFor(this.piece) ?? null;
     if (painting !== null) {
+      const shown = containedRect(painting, area);
       context.save();
-      roundedRectPath(context, area, theme.spacing.radius);
+      roundedRectPath(context, shown, theme.spacing.radius);
       context.clip();
-      drawImageCover(context, painting, area);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(painting.source, shown.x, shown.y, shown.width, shown.height);
       context.restore();
       context.save();
-      roundedRectPath(context, area, theme.spacing.radius);
+      roundedRectPath(context, shown, theme.spacing.radius);
       context.lineWidth = 1.5;
       context.strokeStyle = withAlpha(tones.light, 0.55);
       context.stroke();
@@ -67,4 +71,16 @@ export class TileArt extends UiNode {
     const size = Math.min(area.width, area.height) * EMBLEM_SHARE;
     drawIcon(context, this.icon, { x: center.x - size / 2, y: center.y - size / 2, size, color: tones.light });
   }
+}
+
+/**
+ * The largest box of the image's shape inside `area`, centred in it.
+ * @param {{ width: number, height: number }} image
+ * @param {{ x: number, y: number, width: number, height: number }} area
+ */
+function containedRect(image, area) {
+  const scale = Math.min(area.width / image.width, area.height / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  return { x: area.x + (area.width - width) / 2, y: area.y + (area.height - height) / 2, width, height };
 }

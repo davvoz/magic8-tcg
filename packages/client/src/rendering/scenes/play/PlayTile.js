@@ -10,10 +10,10 @@ import { HomeCard } from "../home/HomeCard.js";
 import { TileArt } from "./TileArt.js";
 
 /**
- * The picture's room: a share of the tile's width, within these bounds; the picture sits in it the same distance
- * from the tile's left, top and bottom edges, clear of the rim and its painted corners.
+ * The picture: flush with the tile's left, top and bottom edges (over its painted corners on that side), as wide as
+ * the paintings' shape asks for that height (data/art/Play_*.jpg, 620×630), up to a share of the tile's width.
  */
-const ART = Object.freeze({ share: 0.34, wide: 260, compact: 110, inset: Object.freeze({ wide: 16, compact: 8 }) });
+const ART = Object.freeze({ aspect: 620 / 630, share: 0.55 });
 /** Below this height a phone's tile has room for its name and buttons only. */
 const COMPACT_ROOMY = 150;
 
@@ -32,9 +32,9 @@ export class PlayTile extends HomeCard {
    * }} options `primary`: the tile holds the screen's gold button
    */
   constructor({ picture, kicker, kickerKey = "accent", title, text, status = null, actions, primary = false, ...frame }) {
-    const artWidth = Math.round(Math.min(frame.compact ? ART.compact : ART.wide, frame.width * ART.share));
+    const artWidth = Math.round(Math.min(frame.height * ART.aspect, frame.width * ART.share));
     super({ ...frame, lead: artWidth, glowKey: primary ? "accent" : null });
-    this.#buildPicture(picture, { id: frame.id, width: artWidth, inset: frame.compact ? ART.inset.compact : ART.inset.wide });
+    this.#buildPicture(picture, { id: frame.id, width: artWidth });
     this.#buildText({ id: frame.id, kicker, kickerKey, title, text, status, actions });
   }
 
@@ -49,7 +49,7 @@ export class PlayTile extends HomeCard {
     }
     this.addTitle(title, { id: `${id}.title` });
     if (!this.compact) {
-      this.addText(text, { id: `${id}.text` });
+      this.addText(text, { id: `${id}.text`, lines: 4 });
     }
     const note = roomy && status !== null ? status.text : null;
     this.addActions(actions, { note, noteId: `${id}.status`, noteKey: status?.colorKey ?? "textMuted" });
@@ -57,10 +57,10 @@ export class PlayTile extends HomeCard {
 
   /**
    * @param {TilePicture} picture
-   * @param {{ id: string, width: number, inset: number }} where `width`: the room kept for it on the tile's left
+   * @param {{ id: string, width: number }} where `width`: the room kept for it on the tile's left
    */
-  #buildPicture(picture, { id, width, inset }) {
-    const frame = { id: `${id}.art`, x: inset, y: inset, width: width - inset, height: this.height - 2 * inset };
+  #buildPicture(picture, { id, width }) {
+    const frame = { id: `${id}.art`, x: 0, y: 0, width, height: this.height };
     if ("portrait" in picture) {
       this.add(new CharacterPortrait({ ...frame, character: picture.portrait, layout: "stacked", clock: picture.clock }));
       return;
