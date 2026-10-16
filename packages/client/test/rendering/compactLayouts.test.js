@@ -21,6 +21,7 @@ import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { CollectionScene } from "../../src/rendering/scenes/CollectionScene.js";
 import { DeckBuilderScene } from "../../src/rendering/scenes/DeckBuilderScene.js";
+import { DecksScene } from "../../src/rendering/scenes/DecksScene.js";
 import { DeckSelectionScene } from "../../src/rendering/scenes/DeckSelectionScene.js";
 import { ErrorScene } from "../../src/rendering/scenes/ErrorScene.js";
 import { ActiveKeyPrompt } from "../../src/application/wallet/ActiveKeyPrompt.js";
@@ -36,6 +37,7 @@ import { DailyScene } from "../../src/rendering/scenes/DailyScene.js";
 import { DailyService } from "../../src/application/daily/DailyService.js";
 import { DAY } from "../application/dailyFixtures.js";
 import { NotificationsScene } from "../../src/rendering/scenes/NotificationsScene.js";
+import { SeasonScene } from "../../src/rendering/scenes/SeasonScene.js";
 import { OnlineScene } from "../../src/rendering/scenes/OnlineScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
 import { StarterScene } from "../../src/rendering/scenes/StarterScene.js";
@@ -218,6 +220,14 @@ function withRankedPlay(app, { eligible = true, auto = false } = {}) {
 /** @param {any} scene */
 const openRanked = (scene) => scene.root.findById("online.mode.ranked")?.activate();
 
+/** The season's jackpot, three places paying, the season ending in three weeks. @param {any} app */
+function withJackpot(app) {
+  const now = Date.now();
+  const places = [65, 25, 10].map((percent, index) => ({ place: index + 1, percent, amount: "100.000", account: index === 2 ? null : "alice", rating: null, paid: null }));
+  const jackpot = { season: { id: "season-1", name: "Season 1", startsAt: now - 86_400_000, endsAt: now + 21 * 86_400_000, status: "running" }, bank: "bank", asset: "STEEM", share: { numerator: 2, denominator: 3 }, jackpot: "866.666", opening: "666.666", readAt: now, places };
+  Object.assign(app, { jackpot: { state: { loading: false, loaded: true, jackpot, error: null }, subscribe: () => () => undefined, watch: () => () => undefined, now: () => Date.now() } });
+}
+
 /** The first-time guide, nothing done in this browser. @param {any} app */
 function withGuide(app) {
   const onboarding = new OnboardingProgress({ preferences: new StoredOnboarding({ store: new InMemoryStore(), logger: new MemoryLogger() }) });
@@ -251,7 +261,10 @@ const SCREENS = Object.freeze([
   { name: "main menu, account dialog", make: (s, app) => new MainMenuScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },
   { name: "main menu, settings", make: (s, app) => new MainMenuScene(s, app), before: (app) => Object.assign(app, { audio: fakeAudio() }), after: (scene) => (scene.findNode("settings")?.activate(), assert.ok(scene.overlay?.findById("audio.music.up"))) },
   { name: "deck selection", make: (s, app) => new DeckSelectionScene(s, app) },
-  { name: "deck builder library", make: (s, app) => new DeckBuilderScene(s, app) },
+  { name: "my decks", make: (s, app) => new DecksScene(s, app), after: (scene) => assert.ok(scene.findNode("shell.tab.collection")) },
+  { name: "my decks, the starter to take", make: (s, app) => new DecksScene(s, app), starter: false, after: (scene) => assert.ok(scene.root.findById("decks.starter")) },
+  { name: "my decks, a deck left open", make: (s, app) => new DecksScene(s, app), before: (app) => app.deckBuilding.startNew(), after: (scene) => assert.ok(scene.root.findById("decks.resume")) },
+  { name: "deck builder, a new deck", make: (s, app) => new DeckBuilderScene(s, app) },
   { name: "deck builder editor", make: (s, app) => new DeckBuilderScene(s, app), before: (app) => app.deckBuilding.startNew() },
   { name: "collection", make: (s, app) => new CollectionScene(s, app) },
   { name: "shop", make: (s, app) => new ShopScene(s, app) },
@@ -261,6 +274,9 @@ const SCREENS = Object.freeze([
   { name: "shop's unpaid orders", make: (s, app) => new ShopScene(s, app, BEFORE_DUE), before: withUnpaidOrders, after: (scene) => scene.root.findById("shop.orders")?.activate() },
   { name: "starter", make: (s, app) => new StarterScene(s, app), starter: false },
   { name: "notifications", make: (s, app) => new NotificationsScene(s, app) },
+  { name: "season", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => (assert.ok(scene.root.findById("season.jackpot")), assert.equal(scene.root.findById("season.play")?.isEffectivelyEnabled, true)) },
+  { name: "season, ranked locked", make: (s, app) => new SeasonScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("season.play.note")) },
+  { name: "season, how ranked works", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => (scene.root.findById("season.guide.open")?.activate(), assert.ok(scene.modal?.findById("season.guide.close"))) },
   { name: "online lobby", make: (s, app) => new OnlineScene(s, app) },
   { name: "online lobby, casual tab", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => assert.equal(scene.root.findById("online.mode.casual")?.selected, true) },
   { name: "online lobby, ranked tab", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => (openRanked(scene), assert.ok(scene.root.findById("online.tickets"))) },

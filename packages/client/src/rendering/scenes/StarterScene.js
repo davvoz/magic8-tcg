@@ -19,7 +19,6 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Panel, PANEL_INSET, SMALL_PANEL_INSET } from "../ui/Panel.js";
 import { Hotspot } from "../ui/Hotspot.js";
 import { ScrollList } from "../ui/ScrollList.js";
-import { SectionId } from "../shell/sections.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 import { unknownCard } from "../cards/unknownCard.js";
@@ -92,12 +91,13 @@ export class StarterScene extends SectionScene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services, app, { section: SectionId.DECKS, title: "Choose your starter deck" });
+    super(services, app, { scene: SceneId.STARTER, title: "Choose your starter deck" });
     this.#app = app;
-    this.setHeading({ back: () => this.services.navigate(SceneId.MAIN_MENU) });
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: where Back leads (the player's decks by default) */
+  enter(params = {}) {
+    this.routeBack(params);
     this.#claiming = null;
     this.#failure = null;
     this.#selectedId = null;
@@ -124,14 +124,6 @@ export class StarterScene extends SectionScene {
   get #choicesWidth() {
     const { panels, side } = this.#m;
     return panels.choices || Math.round((this.services.viewport.logicalWidth - 2 * side) * COMPACT_CHOICES_SHARE);
-  }
-
-  onCancel() {
-    if (this.modal === null) {
-      this.services.navigate(SceneId.MAIN_MENU);
-      return;
-    }
-    super.onCancel();
   }
 
   /** @param {CanvasRenderingContext2D} context */

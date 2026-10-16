@@ -50,7 +50,6 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
-import { SectionId } from "../shell/sections.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
 import { EntryTickets } from "./entries/EntryTickets.js";
@@ -218,8 +217,6 @@ export class ShopScene extends SectionScene {
   #filter = NO_CARD_FILTER;
   /** The selected entry of each shelf: a product id, or a card id among singles. @type {Record<string, string | null>} */
   #selected = { [ShopCategory.PACKS]: null, [ShopCategory.DECKS]: null, [ShopCategory.SINGLES]: null, [ShopCategory.RANKED]: null, [ShopCategory.OFFERS]: null };
-  /** Where Back goes: the screen that opened the shop. @type {string} */
-  #from = SceneId.MAIN_MENU;
   #quantity = 1;
   /** The list starts from the top on the next rebuild (another shelf or filter). */
   #scrollToTop = false;
@@ -240,19 +237,21 @@ export class ShopScene extends SectionScene {
    * @param {() => number} [now] the time, for how long an unpaid order has left
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services, app, { section: SectionId.MARKET, title: "Shop" });
+    super(services, app, { scene: SceneId.SHOP, title: "Shop" });
     this.#app = app;
     this.#now = now;
-    this.setHeading({ back: () => this.services.navigate(this.#from) });
   }
 
-  /** @param {{ category?: string, from?: string }} [params] `category`: the shelf to open (e.g. Ranked, from the lobby); `from`: where Back returns */
+  /**
+   * @param {{ category?: string, back?: string }} [params] `category`: the shelf to open (e.g. Ranked, from the lobby); `back`: the
+   *   screen that opened it, which Back returns to (a tab of the Market section, the shop has no Back of its own)
+   */
   enter(params = {}) {
+    this.routeBack(params);
     if (params.category !== undefined && /** @type {readonly string[]} */ (Object.values(ShopCategory)).includes(params.category)) {
       this.#category = params.category;
       this.#resetChoice();
     }
-    this.#from = params.from ?? SceneId.MAIN_MENU;
     const shop = this.#shop();
     const unsubscribe = shop.subscribe(() => this.#rebuild());
     const unwatch = this.#app.balance?.subscribe(() => this.#rebuild());
@@ -279,14 +278,6 @@ export class ShopScene extends SectionScene {
     this.#activeKey?.stop();
     this.#activeKey = null;
     super.exit();
-  }
-
-  onCancel() {
-    if (this.modal !== null) {
-      super.onCancel();
-      return;
-    }
-    this.services.navigate(this.#from);
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -369,16 +360,15 @@ export class ShopScene extends SectionScene {
   }
 
   /**
-   * The toolbar: the player's budget (or how to buy), then the orders still to pay, the player market and the cart.
+   * The toolbar: the player's budget (or how to buy), then the orders still to pay and the cart.
    * @returns {Button} the cart
    */
   #buildToolbar() {
     const { viewport } = this.services;
     const account = this.#app.account?.state.account ?? null;
     const { header } = this.#screen;
-    const market = this.services.hasScene(SceneId.MARKET);
     const unpaid = this.#shop().state.orders.open.length;
-    const cartSlot = market ? 2 : 1;
+    const cartSlot = 1;
     const buttons = unpaid > 0 ? cartSlot + 1 : cartSlot;
     const noteX = header.sideMargin;
     const noteWidth = viewport.logicalWidth - 2 * header.sideMargin - buttons * (header.backWidth + 16);
@@ -404,9 +394,6 @@ export class ShopScene extends SectionScene {
       }),
     );
     this.#buildOrdersButton(unpaid, buttons);
-    if (market) {
-      this.root.add(new Button({ keepPlate: true, id: "shop.market", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: "Market", onActivate: () => this.services.navigate(SceneId.MARKET, { from: SceneId.SHOP }) }));
-    }
     return cart;
   }
 
@@ -1054,7 +1041,7 @@ export class ShopScene extends SectionScene {
           close();
           // The cards just received are lit in the collection, as from a notification.
           const fresh = [...fulfilment.cards, ...fulfilment.packs.flatMap((pack) => pack.cards)].map((card) => Object.freeze({ definitionId: card.definitionId, count: 1, serial: card.serial }));
-          this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.SHOP });
+          this.services.navigate(SceneId.COLLECTION, { fresh, ...this.backHere() });
         },
       }),
     );

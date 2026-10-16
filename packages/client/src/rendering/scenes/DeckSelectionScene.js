@@ -29,7 +29,6 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Ornament } from "../ui/Ornament.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
-import { SectionId } from "../shell/sections.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 
@@ -38,7 +37,7 @@ import { SectionScene } from "./SectionScene.js";
  *   panel: { width: number, height: number }, inset: number, row: { height: number, gap: number },
  *   title: { y: number, height: number }, subtitle: { y: number, height: number }, ornamentY: number | null,
  *   listTop: number, listBottom: number, footer: { height: number, gap: number, oneRow: boolean },
- * }>} SelectionLayout `listBottom`: room under the list for the footer; `footer.oneRow`: Deck builder and Start side by side
+ * }>} SelectionLayout `listBottom`: room under the list for the footer; `footer.oneRow`: Edit decks and Start side by side
  */
 /** @type {SelectionLayout} */
 const WIDE = Object.freeze({
@@ -64,7 +63,7 @@ const COMPACT = Object.freeze({
   listBottom: 76,
   footer: Object.freeze({ height: 48, gap: 12, oneRow: true }),
 });
-/** In the compact footer: Opponent (when offered) and Deck builder take these widths, Start the rest. */
+/** In the compact footer: Opponent (when offered) and Edit decks take these widths, Start the rest. */
 const COMPACT_FOOTER = Object.freeze({ builder: 220 });
 const COMPACT_FOOTER_WITH_OPPONENT = Object.freeze({ opponent: 200, builder: 180 });
 /** The wide panel's margin from the content area's top and foot, when that area is shorter than the panel. */
@@ -87,12 +86,13 @@ export class DeckSelectionScene extends SectionScene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services, app, { section: SectionId.PLAY, title: "Practice vs AI" });
+    super(services, app, { scene: SceneId.DECK_SELECTION, title: "Practice vs AI" });
     this.#app = app;
-    this.setHeading({ back: () => this.services.navigate(SceneId.MAIN_MENU) });
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: where Back leads (Play by default) */
+  enter(params = {}) {
+    this.routeBack(params);
     const options = this.#app.deckSelection.listPlayableDecks();
     // The deck the player plays with, wherever they chose it; else the first.
     const chosen = this.#app.selectedDeck?.pick(options, { idOf: (option) => option.deck.id }) ?? options[0] ?? null;
@@ -184,7 +184,7 @@ export class DeckSelectionScene extends SectionScene {
     const { navigate, hasScene } = this.services;
     const width = size.width - 2 * inset;
     const startSpec = { id: "startMatch", variant: /** @type {const} */ ("primary"), enabled: this.#selectedDeckId !== null, text: "Start match", onActivate: () => this.#startMatch() };
-    const builder = { id: "editDecks", text: "Deck builder", enabled: hasScene(SceneId.DECK_BUILDER), onActivate: () => navigate(SceneId.DECK_BUILDER, { from: SceneId.DECK_SELECTION }) };
+    const builder = { id: "editDecks", text: "Edit decks", enabled: hasScene(SceneId.DECKS), onActivate: () => navigate(SceneId.DECKS, this.backHere()) };
     const opponent = this.#app.opponents === undefined ? null : { id: "opponent", text: `Opponent: ${this.#opponent().label}`, onActivate: () => this.#nextOpponent() };
     if (footer.oneRow) {
       const row =

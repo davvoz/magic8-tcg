@@ -213,7 +213,7 @@ describe("ShopScene", () => {
     click(byId(scene, "reveal.collection"));
     const { id, params } = navigated.at(-1);
     assert.equal(id, SceneId.COLLECTION);
-    assert.equal(params.from, SceneId.SHOP, "back leads to the shop");
+    assert.equal(params.back, SceneId.SHOP, "back leads to the shop");
     assert.equal(params.fresh.length, 5, "the cards received are lit in the collection");
     assert.ok(params.fresh.some((card) => card.serial === 5), "with their serials");
     assert.equal(shop.state.purchase.stage, PurchaseStage.NONE);
@@ -222,7 +222,7 @@ describe("ShopScene", () => {
   it("sells ranked entries on their own shelf, many with one transfer, and says they go into the jackpot", async () => {
     const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 2, perGame: 1, season: "season-1" }]) } });
     await entries.refresh();
-    const { scene, transfers, navigated, shop } = await harness({ listing: LISTING_WITH_ENTRIES, entries, params: { category: "ranked", from: SceneId.ONLINE } });
+    const { scene, transfers, navigated, shop } = await harness({ listing: LISTING_WITH_ENTRIES, entries, params: { category: "ranked", back: SceneId.ONLINE } });
     assert.equal(byId(scene, "shop.tab.ranked").text, "Ranked (1)");
     assert.equal(byId(scene, "shop.product.ranked_entry").subtitle, "1 ranked game · 1.000 STEEM · into the jackpot");
     const texts = rendered(scene);

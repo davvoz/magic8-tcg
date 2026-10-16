@@ -40,19 +40,19 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const TONE_KEYS = Object.freeze({ good: "success", bad: "danger", info: "accent" });
 
-/** Scene a notification's follow-up lives in. */
 /**
- * What the screen a notification leads to is told: the cards that came (the collection), the game to replay.
+ * What the screen a notification leads to is told about it: the cards that came (the collection), the game to replay.
  * @param {string} scene
  * @param {{ fresh: readonly Readonly<{ definitionId: string, count: number, serial?: number }>[], gameId?: string }} about
  */
 function paramsFor(scene, { fresh, gameId }) {
   if (scene === SceneId.COLLECTION) {
-    return { fresh, from: SceneId.NOTIFICATIONS };
+    return { fresh };
   }
-  return scene === SceneId.REPLAY ? { gameId, from: SceneId.NOTIFICATIONS } : {};
+  return scene === SceneId.REPLAY ? { gameId } : {};
 }
 
+/** Scene a notification's follow-up lives in. */
 const TARGET_SCENES = Object.freeze({
   [NotificationTarget.COLLECTION]: SceneId.COLLECTION,
   [NotificationTarget.TRADES]: SceneId.TRADES,
@@ -114,13 +114,14 @@ export class NotificationsScene extends SectionScene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services, app, { section: null, title: "Notifications" });
+    super(services, app, { scene: SceneId.NOTIFICATIONS, title: "Notifications" });
     this.#app = app;
-    this.setHeading({ back: () => this.services.navigate(SceneId.MAIN_MENU) });
     this.#now = now;
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: the screen the bell was rung from, which Back returns to (Home by default) */
+  enter(params = {}) {
+    this.routeBack(params);
     const notifications = this.#notifications();
     this.#unsubscribe = notifications.subscribe(() => this.#rebuild());
     notifications.refresh().then(() => notifications.markAllRead());
@@ -131,14 +132,6 @@ export class NotificationsScene extends SectionScene {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     super.exit();
-  }
-
-  onCancel() {
-    if (this.modal !== null) {
-      super.onCancel();
-      return;
-    }
-    this.services.navigate(SceneId.MAIN_MENU);
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -255,7 +248,8 @@ export class NotificationsScene extends SectionScene {
    */
   #open(item, text, scene) {
     const fresh = text.cards.map((card) => Object.freeze({ definitionId: card.definitionId, count: card.count ?? 1, serial: card.serial }));
-    this.services.navigate(scene, paramsFor(scene, { fresh, gameId: text.gameId }));
+    // Back from there comes back to the notifications.
+    this.services.navigate(scene, { ...paramsFor(scene, { fresh, gameId: text.gameId }), ...this.backHere() });
     // After leaving: this screen no longer listens, so it is not rebuilt under the click.
     this.#notifications().markOpened(item.id);
   }

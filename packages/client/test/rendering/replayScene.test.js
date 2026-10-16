@@ -18,7 +18,7 @@ const GAME = "01j8x3r6h2qkq4w0v7m5a9c1dz";
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** @param {(gameId: string) => Promise<unknown>} open */
-function harness(open, scenes = [SceneId.NOTIFICATIONS, SceneId.MATCH], account = "alice") {
+function harness(open, scenes = [SceneId.HOME, SceneId.NOTIFICATIONS, SceneId.MATCH], account = "alice") {
   const viewport = new Viewport(theme.layout);
   viewport.resize({ cssWidth: 1600, cssHeight: 900 });
   const navigated = [];
@@ -33,20 +33,20 @@ describe("ReplayScene", () => {
   it("hands the board the replay once it is ready; the board's Back leads where the player came from", async () => {
     const session = { stop: () => undefined };
     const { scene, navigated, asked } = harness(async () => ok({ session, replay: {} }));
-    scene.enter({ gameId: GAME, from: SceneId.NOTIFICATIONS });
+    scene.enter({ gameId: GAME, back: SceneId.NOTIFICATIONS });
     assert.match(scene.root.findById("replay.status").text, /Loading the game/);
     await flush();
     assert.deepEqual(asked, [{ gameId: GAME, options: { viewer: "alice" } }], "seen from the seat of the player looking, if it is their game");
-    assert.deepEqual(navigated, [{ id: SceneId.MATCH, params: { session, againScene: SceneId.NOTIFICATIONS } }]);
+    assert.deepEqual(navigated, [{ id: SceneId.MATCH, params: { session, againScene: SceneId.NOTIFICATIONS, againParams: {} } }]);
   });
 
   it("says why a game cannot be replayed, and Back returns", async () => {
     const { scene, navigated } = harness(async () => fail("UNREPLAYABLE", "this game was played with other cards than the ones this game knows: it cannot be replayed"));
-    scene.enter({ gameId: GAME, from: "nowhere" });
+    scene.enter({ gameId: GAME, back: "nowhere" });
     await flush();
     assert.match(scene.root.findById("replay.status").text, /cannot be replayed/);
     scene.root.findById("replay.back").activate();
-    assert.deepEqual(navigated, [{ id: SceneId.MAIN_MENU, params: undefined }], "an unknown origin leads to the menu");
+    assert.deepEqual(navigated, [{ id: SceneId.HOME, params: {} }], "an unknown origin leads Home");
   });
 
   it("opens the game for nobody in particular when nobody is signed in", async () => {

@@ -23,7 +23,6 @@ import { AccountStatus } from "../../application/account/AccountService.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
 import { contentLine, storageLine, versionLine } from "../shell/aboutLines.js";
-import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
@@ -88,11 +87,13 @@ export class MainMenuScene extends SectionScene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services, app, { section: SectionId.HOME, title: "Home" });
+    super(services, app, { scene: SceneId.MAIN_MENU, title: "Home" });
     this.#app = app;
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] */
+  enter(params = {}) {
+    this.routeBack(params);
     // The account loads after sign-in; redraw when it does (and when it fails).
     this.#unsubscribe = this.#app.account?.subscribe(() => this.#rebuild()) ?? null;
     this.#unsubscribeDaily = this.#app.daily?.subscribe(() => this.#rebuild()) ?? null;
@@ -129,7 +130,7 @@ export class MainMenuScene extends SectionScene {
       ...this.#dailyEntries(),
       { id: "play", text: this.#onlineEntries().length > 0 ? "Practice vs AI" : "Play", scene: SceneId.DECK_SELECTION, variant: this.#onlineEntries().length > 0 ? "secondary" : "primary" },
       ...this.#tutorialEntries(),
-      ...(collection.length === 0 ? [{ id: "deckBuilder", text: "Deck Builder", scene: SceneId.DECK_BUILDER, variant: "secondary" }] : collection),
+      ...(collection.length === 0 ? [{ id: "deckBuilder", text: "My decks", scene: SceneId.DECKS, variant: "secondary" }] : collection),
       ...(this.#app.shop === undefined ? [] : [{ id: "shop", text: "Shop", scene: SceneId.SHOP, variant: "secondary" }]),
     ];
     /** @type {Button | null} */
@@ -240,8 +241,8 @@ export class MainMenuScene extends SectionScene {
    */
   #buildJackpot(jackpot, { jackpot: frame }) {
     const service = /** @type {import("../../application/jackpot/JackpotService.js").JackpotService} */ (this.#app.jackpot);
-    const signedIn = this.#app.account?.state.status === AccountStatus.READY && this.services.hasScene(SceneId.LEADERBOARD);
-    const onActivate = signedIn ? () => this.services.navigate(SceneId.LEADERBOARD, { back: SceneId.MAIN_MENU }) : null;
+    const signedIn = this.#app.account?.state.status === AccountStatus.READY && this.services.hasScene(SceneId.SEASON);
+    const onActivate = signedIn ? () => this.services.navigate(SceneId.SEASON) : null;
     return this.root.add(new JackpotPanel({ ...frame, height: JACKPOT_HEIGHT[frame.layout], jackpot, now: () => service.now(), onActivate }));
   }
 

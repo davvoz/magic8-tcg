@@ -37,7 +37,6 @@
  */
 import { AUTO_STYLES, AutoListStatus, AutoStyle } from "../../application/auto/AutoListService.js";
 import { entriesNoteText, heldEntriesText, rankedFeeText } from "../../application/entries/EntryService.js";
-import { describeJackpot } from "../../application/jackpot/describeJackpot.js";
 import { ChallengeMode, PlayerActivity } from "../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
 import { ShopStatus } from "../../application/shop/ShopService.js";
@@ -52,13 +51,12 @@ import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
-import { SectionId } from "../shell/sections.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { EntryTickets } from "./entries/EntryTickets.js";
 import { PlayKind } from "./online/lobbyIcons.js";
 import { ModeTab } from "./online/ModeTab.js";
 import { Perks } from "./online/Perks.js";
-import { RankedGuide } from "./online/RankedGuide.js";
+import { rankedGuideFor, rankedPriceText } from "./online/rankedGuideFor.js";
 import { RatingCrest } from "./online/RatingCrest.js";
 import { timeAgo } from "./NotificationsScene.js";
 import { SceneId } from "./sceneIds.js";
@@ -147,7 +145,7 @@ const ACTIVITY_TEXT = Object.freeze({
 export class OnlineScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
   get #screen() {
-    return screenLayout(this.services.viewport);
+    return screenLayout(this.services.viewport, { toolbar: false });
   }
 
   /** @returns {LobbyMetrics} */
@@ -200,14 +198,17 @@ export class OnlineScene extends SectionScene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services, app, { section: SectionId.PLAY, title: "Play online" });
+    super(services, app, { scene: SceneId.ONLINE, title: "Play online" });
     this.#app = app;
     this.#now = now;
-    this.setHeading({ back: () => this.#leave() });
   }
 
-  /** @param {{ mode?: string }} [params] `mode`: "ranked" opens on the Ranked tab (the Home screen's Ranked), Casual otherwise */
+  /**
+   * @param {{ mode?: string, back?: string }} [params] `mode`: "ranked" opens on the Ranked tab (the Home screen's Ranked),
+   *   Casual otherwise; `back`: where Back leads (Play by default)
+   */
   enter(params = {}) {
+    this.routeBack(params);
     this.#mode = params.mode === QueueMode.RANKED ? this.#rankedMode : QueueMode.CASUAL;
     const online = this.#online();
     this.#unsubscribes.push(online.subscribe((state) => this.#onChange(state)));
@@ -268,14 +269,6 @@ export class OnlineScene extends SectionScene {
     super.exit();
   }
 
-  onCancel() {
-    if (this.modal !== null) {
-      super.onCancel();
-      return;
-    }
-    this.#leave();
-  }
-
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
     drawSceneBackdrop(context, this.services.theme, this.services.viewport.bounds, { seed: "online" });
@@ -304,26 +297,12 @@ export class OnlineScene extends SectionScene {
       this.closeModal();
     }
     this.root.clear();
-    this.#buildToolbar();
     const firstDeck = this.#buildDecks();
     this.#buildPlayers();
     const action = this.#buildActions();
     this.focus(this.findNode(focusedId) ?? action ?? firstDeck ?? this.backButton);
     this.#reopenDialog(focusedId);
     this.services.requestRender();
-  }
-
-  /** The toolbar, from the right: the leaderboard, and the games being played now to watch. */
-  #buildToolbar() {
-    const { viewport, hasScene, navigate } = this.services;
-    const { header } = this.#screen;
-    const buttons = [
-      ...(this.#app.ranking !== undefined && hasScene(SceneId.LEADERBOARD) ? [{ id: "online.leaderboard", text: "Leaderboard", onActivate: () => navigate(SceneId.LEADERBOARD) }] : []),
-      ...(hasScene(SceneId.LIVE_GAMES) ? [{ id: "online.watch", text: "Watch", onActivate: () => navigate(SceneId.LIVE_GAMES) }] : []),
-    ];
-    buttons.forEach((spec, index) => {
-      this.root.add(new Button({ keepPlate: true, ...spec, x: viewport.logicalWidth - header.sideMargin - (index + 1) * header.backWidth - index * header.gap, y: header.y + 4, width: header.backWidth, height: header.height - 8 }));
-    });
   }
 
   /** @returns {Button | null} */
@@ -661,15 +640,7 @@ export class OnlineScene extends SectionScene {
    * @param {{ x: number, y: number, width: number, height: number, compact: boolean }} frame
    */
   #guide(frame) {
-    const ranked = this.#app.entries?.ranked ?? null;
-    const steps = rankedSteps({ price: this.#priceText(), perGame: ranked?.perGame ?? null, places: this.#app.jackpot?.state.jackpot?.places.length ?? null });
-    return new RankedGuide({ ...frame, steps, tickets: { count: ranked === null || ranked.perGame === 0 ? null : ranked.balance, face: this.#priceText() }, jackpot: this.#jackpotAmount() });
-  }
-
-  /** What the season's jackpot holds ("866.666 STEEM"), or null when there is none or it is not known yet. */
-  #jackpotAmount() {
-    const jackpot = this.#app.jackpot?.state.jackpot ?? null;
-    return jackpot === null || jackpot.jackpot === null ? null : describeJackpot(jackpot, this.#now()).amount;
+    return rankedGuideFor(this.#app, frame, this.#now());
   }
 
   /**
@@ -1130,8 +1101,7 @@ export class OnlineScene extends SectionScene {
 
   /** What one ranked entry costs ("1.000 STEEM"), or null until the shop's listing is read. */
   #priceText() {
-    const price = this.#entryPrice();
-    return price === null ? null : `${price.amount} ${price.asset}`;
+    return rankedPriceText(this.#app);
   }
 
   /** What a ranked game costs now ("1.000 STEEM"), or null when it is free or not known yet. */
@@ -1149,9 +1119,9 @@ export class OnlineScene extends SectionScene {
     return this.#hasEntries() ? "" : " A ranked game takes a ranked entry: you have none.";
   }
 
-  /** The shop's Ranked shelf: many entries, one payment; Back comes here. */
+  /** The shop's Ranked shelf: many entries, one payment; Back comes back here, on the Ranked tab. */
   #getEntries() {
-    this.services.navigate(SceneId.SHOP, { category: ShopCategory.RANKED, from: SceneId.ONLINE });
+    this.services.navigate(SceneId.SHOP, { category: ShopCategory.RANKED, ...this.backHere({ mode: QueueMode.RANKED }) });
   }
 
   #selectedDeck() {
@@ -1176,12 +1146,13 @@ export class OnlineScene extends SectionScene {
     }
   }
 
-  #leave() {
+  /** Back: out of the queue first, when the player is in it. */
+  goBack() {
     const online = this.#online();
     if (online.state.status === OnlineStatus.SEARCHING) {
       online.leaveQueue();
     }
-    this.services.navigate(SceneId.MAIN_MENU);
+    return super.goBack();
   }
 
   #online() {
@@ -1207,25 +1178,6 @@ export function deckKey(deck) {
  */
 function withFee(text, fee) {
   return fee === null ? text : `${text} · ${fee}`;
-}
-
-/**
- * The three steps of ranked play as the guide words them: get entries, play (a game takes some), win the jackpot (which
- * every entry feeds).
- * @param {{ price: string | null, perGame: number | null, places: number | null }} facts what one entry costs ("1.000 STEEM"),
- *   how many a game takes (0: ranked is free; null: not known yet) and how many places the jackpot pays (null: not known)
- * @returns {[import("./online/RankedGuide.js").GuideStep, import("./online/RankedGuide.js").GuideStep, import("./online/RankedGuide.js").GuideStep]}
- */
-export function rankedSteps({ price, perGame, places }) {
-  const free = perGame === 0;
-  const buy = price === null ? "From the shop: buy many with one payment." : `${price} each. Buy many with one payment.`;
-  const take = perGame === null || perGame === 1 ? "A game takes 1 entry" : `A game takes ${perGame} entries`;
-  const share = places === null ? "the best of the season share it" : `the top ${places} share it`;
-  return [
-    { title: "Get entries", text: free ? "Free this season: no entry needed." : buy },
-    { title: "Play ranked", text: free ? "Win to climb the season's leaderboard." : `${take}, given back if it is called off before it starts.` },
-    { title: "Win the jackpot", text: `Every entry goes into it. When the season ends, ${share}.` },
-  ];
 }
 
 /** @param {string} style */

@@ -166,6 +166,8 @@ export class MatchScene extends Scene {
   /** Where "Play again" leads: deck selection for practice, the lobby for online games. */
   /** @type {string} */
   #againScene = SceneId.DECK_SELECTION;
+  /** What that screen is opened with again (a replay's: the games it was picked from). @type {Readonly<Record<string, unknown>>} */
+  #againParams = Object.freeze({});
   /** @type {(() => void) | null} */
   #unsubscribe = null;
   #playerId = "";
@@ -264,9 +266,13 @@ export class MatchScene extends Scene {
     return this.#session;
   }
 
-  /** @param {Readonly<Record<string, unknown>>} params `{ session: MatchSession | RemoteMatchSession, againScene?: string, coach?: TutorialCoach }`: with a coach, the match is the tutorial */
+  /**
+   * @param {Readonly<Record<string, unknown>>} params `{ session: MatchSession | RemoteMatchSession, againScene?: string, againParams?: object, coach?: TutorialCoach }`:
+   *   `againParams`, what `againScene` is opened with; with a coach, the match is the tutorial
+   */
   enter(params) {
     this.#againScene = typeof params.againScene === "string" ? params.againScene : SceneId.DECK_SELECTION;
+    this.#againParams = paramsOrNone(params.againParams);
     const session = /** @type {import("../../application/match/MatchSession.js").MatchSession | undefined} */ (params.session);
     if (session === undefined) {
       this.services.logger.error("MatchScene entered without a session");
@@ -1639,8 +1645,17 @@ export class MatchScene extends Scene {
   /** @param {string} sceneId */
   #leave(sceneId) {
     this.#session?.stop();
-    this.services.navigate(sceneId);
+    this.services.navigate(sceneId, sceneId === this.#againScene ? this.#againParams : {});
   }
+}
+
+/**
+ * What a screen is opened with, when `value` is that; nothing otherwise.
+ * @param {unknown} value
+ * @returns {Readonly<Record<string, unknown>>}
+ */
+function paramsOrNone(value) {
+  return typeof value === "object" && value !== null ? /** @type {Readonly<Record<string, unknown>>} */ (value) : Object.freeze({});
 }
 
 /**

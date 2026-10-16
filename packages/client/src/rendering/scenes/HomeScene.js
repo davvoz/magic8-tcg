@@ -13,7 +13,6 @@
  * Casual).
  */
 import { GUIDE_STEPS, guideFor } from "../../application/onboarding/OnboardingGuide.js";
-import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { ChallengeCard } from "./home/ChallengeCard.js";
 import { HEADLINE_HEIGHT, HeadlineCard } from "./home/HeadlineCard.js";
@@ -56,13 +55,15 @@ export class HomeScene extends SectionScene {
    * @param {{ now?: () => number }} [clock]
    */
   constructor(services, app, { now = () => Date.now() } = {}) {
-    super(services, app, { section: SectionId.HOME, title: "Home" });
+    super(services, app, { scene: SceneId.HOME, title: "Home" });
     this.#app = app;
     this.#now = now;
     this.#views = new PlayViews({ app, hasScene: services.hasScene, now });
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] */
+  enter(params = {}) {
+    this.routeBack(params);
     const app = this.#app;
     const rebuild = () => this.#rebuild();
     const follow = (/** @type {{ subscribe?: (listener: () => void) => () => void } | undefined} */ service) => {
@@ -143,9 +144,9 @@ export class HomeScene extends SectionScene {
     const challenge = this.#views.challenge();
     const online = this.#views.online();
     const [left, middle, right] = layout.cards;
-    this.root.add(new ChallengeCard({ id: "home.challenge", ...left, compact, view: challenge, primary: primary && challenge.kind === "next", clock: () => this.#animationMs, onFight: () => this.services.navigate(SceneId.DAILY) }));
-    this.root.add(new OnlineCard({ id: "home.online", ...middle, compact, view: online, primary: primary && challenge.kind !== "next" && online.kind === "open", onPlay: (mode) => this.services.navigate(SceneId.ONLINE, { mode }) }));
-    this.#season = this.root.add(new SeasonCard({ id: "home.season", ...right, compact, view: this.#views.season(), canOpen: this.services.hasScene(SceneId.LEADERBOARD), onOpen: () => this.services.navigate(SceneId.LEADERBOARD, { back: SceneId.HOME }) }));
+    this.root.add(new ChallengeCard({ id: "home.challenge", ...left, compact, view: challenge, primary: primary && challenge.kind === "next", clock: () => this.#animationMs, onFight: () => this.services.navigate(SceneId.DAILY, this.backHere()) }));
+    this.root.add(new OnlineCard({ id: "home.online", ...middle, compact, view: online, primary: primary && challenge.kind !== "next" && online.kind === "open", onPlay: (mode) => this.services.navigate(SceneId.ONLINE, { mode, ...this.backHere() }) }));
+    this.#season = this.root.add(new SeasonCard({ id: "home.season", ...right, compact, view: this.#views.season(), canOpen: this.services.hasScene(SceneId.SEASON), onOpen: () => this.services.navigate(SceneId.SEASON) }));
     this.focus(this.findNode(focusedId) ?? first ?? this.root.focusableNodes()[0] ?? null);
     this.services.requestRender();
   }
@@ -201,7 +202,7 @@ export class HomeScene extends SectionScene {
       const tutorial = this.#app.tutorial;
       return { text: action.text, enabled: tutorial !== undefined, onActivate: () => tutorial !== undefined && startTutorial(this.services, tutorial) };
     }
-    return { text: action.text, enabled: this.services.hasScene(action.scene), onActivate: () => this.services.navigate(action.scene, action.params ?? {}) };
+    return { text: action.text, enabled: this.services.hasScene(action.scene), onActivate: () => this.services.navigate(action.scene, { ...action.params, ...this.backHere() }) };
   }
 }
 

@@ -4,7 +4,6 @@
  * default; a leaderboard line opens that player's. Older games load a page
  * at a time from the last line. An auto game (docs/tcg/23) opens its replay.
  */
-import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { OptionRow } from "../ui/OptionRow.js";
@@ -62,8 +61,6 @@ export class GameHistoryScene extends SectionScene {
   #now;
   /** Whose games: an account, or null when nobody is signed in and none was asked for. @type {string | null} */
   #account = null;
-  /** Where Back leads, and with what. @type {{ scene: string, params?: object }} */
-  #back = { scene: SceneId.ONLINE };
   /** @type {readonly import("../../application/ports/GameHistoryApi.contract.js").PlayedGame[]} */
   #games = [];
   /** @type {string | null} */
@@ -80,16 +77,18 @@ export class GameHistoryScene extends SectionScene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services, app, { section: SectionId.PLAY, title: "Games" });
+    super(services, app, { scene: SceneId.GAME_HISTORY, title: "Games" });
     this.#app = app;
-    this.setHeading({ back: () => this.onCancel() });
     this.#now = now;
   }
 
-  /** @param {{ account?: string, back?: string, backParams?: object }} [params] `backParams` what the screen Back leads to is opened with */
-  enter(params) {
-    this.#account = params?.account ?? this.#app.identity?.state.user?.account ?? null;
-    this.#back = { scene: params?.back ?? SceneId.ONLINE, params: params?.backParams };
+  /**
+   * @param {{ account?: string, back?: string, backParams?: Readonly<Record<string, unknown>> }} [params] `account`: whose games (the
+   *   player's by default); `back`: where Back leads (Play by default), opened with `backParams`
+   */
+  enter(params = {}) {
+    this.routeBack(params);
+    this.#account = params.account ?? this.#app.identity?.state.user?.account ?? null;
     this.setHeading({ title: this.#account === null ? "Games" : `Games — @${this.#account}` });
     this.#games = [];
     this.#next = null;
@@ -97,12 +96,13 @@ export class GameHistoryScene extends SectionScene {
     this.#load(null);
   }
 
-  onCancel() {
-    this.services.navigate(this.#back.scene, this.#back.params);
-  }
-
   relayout() {
     this.#rebuild();
+  }
+
+  /** What a replay opened from here is told, so that its Back comes back to these games. */
+  #backHere() {
+    return this.backHere(this.#account === null ? {} : { account: this.#account });
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -186,7 +186,7 @@ export class GameHistoryScene extends SectionScene {
           text: playedGameTitle(game),
           subtitle: replayable ? `${playedGameSubtitle(game, now)} · click to watch` : playedGameSubtitle(game, now),
           avatar: game.opponent,
-          onActivate: replayable ? () => this.services.navigate(SceneId.REPLAY, { gameId: game.gameId, from: SceneId.GAME_HISTORY }) : () => undefined,
+          onActivate: replayable ? () => this.services.navigate(SceneId.REPLAY, { gameId: game.gameId, ...this.#backHere() }) : () => undefined,
         }),
       );
     });

@@ -97,7 +97,7 @@ export function screenLayout(viewport, { toolbar = true } = {}) {
 }
 
 /**
- * Shared shape for the deck builder's three views.
+ * What the deck builder's views are given.
  *
  * @typedef {object} BuilderHost
  * @property {import("../../../application/AppContext.js").AppContext} app
@@ -107,5 +107,6 @@ export function screenLayout(viewport, { toolbar = true } = {}) {
  * @property {() => void} rebuild re-read the service and redraw everything
  * @property {(cardId: string) => void} inspect open the card detail overlay
  * @property {(request: { title: string, message: string, confirmText: string, destructive?: boolean, onConfirm: () => void }) => void} confirm
+ * @property {() => void} closed the deck was closed (its draft discarded): leave the builder
  * @property {Record<string, number>} scroll persisted scroll offsets by list id
  */

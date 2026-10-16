@@ -154,7 +154,7 @@ describe("HomeScene, signed in", () => {
     assert.equal(byId(home.scene, "home.online.ranked").isEffectivelyEnabled, false);
     assert.equal(byId(home.scene, "home.online.note").text, "Ranked opens after 2 more casual games.");
     byId(home.scene, "home.online.casual").activate();
-    assert.deepEqual(home.navigated.at(-1), { id: SceneId.ONLINE, params: { mode: "casual" } });
+    assert.deepEqual(home.navigated.at(-1), { id: SceneId.ONLINE, params: { mode: "casual", back: SceneId.HOME, backParams: {} } }, "Back there returns Home");
   });
 
   it("hides the guide for good, and gives its gold to today's challenge", async () => {

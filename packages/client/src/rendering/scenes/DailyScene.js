@@ -23,7 +23,6 @@ import { InfoTopicId } from "../../application/info/infoTopics.js";
 import { DailyBusy } from "../../application/daily/DailyService.js";
 import { packName } from "../../application/notifications/describeNotification.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
-import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
@@ -89,13 +88,14 @@ export class DailyScene extends SectionScene {
    * @param {{ now?: () => number }} [clock]
    */
   constructor(services, app, { now = () => Date.now() } = {}) {
-    super(services, app, { section: SectionId.PLAY, title: "Challenges" });
+    super(services, app, { scene: SceneId.DAILY, title: "Challenges" });
     this.#app = app;
     this.#now = now;
-    this.setHeading({ back: () => this.services.navigate(SceneId.MAIN_MENU) });
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: where Back leads (Play by default) */
+  enter(params = {}) {
+    this.routeBack(params);
     const daily = this.#daily();
     this.#unsubscribes = [daily.subscribe(() => this.#rebuild())];
     if (this.#app.online !== undefined) {
@@ -113,14 +113,6 @@ export class DailyScene extends SectionScene {
 
   relayout() {
     this.#rebuild();
-  }
-
-  onCancel() {
-    if (this.modal === null) {
-      this.services.navigate(SceneId.MAIN_MENU);
-      return;
-    }
-    super.onCancel();
   }
 
   /** @param {number} dtMs */
@@ -202,7 +194,7 @@ export class DailyScene extends SectionScene {
     const status = this.#status(day);
     const helpX = width - m.side - m.help;
     this.root.add(new Label({ id: "daily.status", x: m.side, y: m.footer.y, width: helpX - m.side - FOOTER_GAP, height: m.footer.height, text: status.text, size: viewport.compact ? "tiny" : "small", colorKey: status.colorKey, align: "left", fit: true }));
-    return this.root.add(new Button({ id: "daily.help", x: helpX, y: m.footer.y, width: m.help, height: m.footer.height, text: viewport.compact ? "Help" : "How it works", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO, { topic: InfoTopicId.CHALLENGES, back: SceneId.DAILY }) }));
+    return this.root.add(new Button({ id: "daily.help", x: helpX, y: m.footer.y, width: m.help, height: m.footer.height, text: viewport.compact ? "Help" : "How it works", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO, { topic: InfoTopicId.CHALLENGES, ...this.backHere() }) }));
   }
 
   /** @param {DailyDay | null} day */
@@ -358,7 +350,7 @@ export class DailyScene extends SectionScene {
       return;
     }
     const fresh = reward.cards.map((card) => Object.freeze({ definitionId: card.definitionId, count: 1, serial: card.serial }));
-    this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.DAILY });
+    this.services.navigate(SceneId.COLLECTION, { fresh, ...this.backHere() });
   }
 
   /** @param {string} text the line above the actions */

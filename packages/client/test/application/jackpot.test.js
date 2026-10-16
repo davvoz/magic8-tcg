@@ -13,7 +13,7 @@ import { RankingService } from "../../src/application/ranking/RankingService.js"
 import { HttpJackpotApi } from "../../src/infrastructure/api/HttpJackpotApi.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { LeaderboardScene } from "../../src/rendering/scenes/LeaderboardScene.js";
+import { SeasonScene } from "../../src/rendering/scenes/SeasonScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { loadTheme } from "../rendering/fakes.js";
 
@@ -59,15 +59,15 @@ describe("season jackpot", () => {
     assert.deepEqual([settled.countdown, settled.growth, settled.places[0].note], ["Season over", null, "paid"]);
   });
 
-  it("heads the leaderboard with the jackpot, its countdown ticking, and goes back where it came from", async () => {
+  it("shows the season's jackpot beside the leaderboard, its countdown ticking, and goes back where it was opened from", async () => {
     let now = ENDS_AT - 90_000;
     const jackpot = new JackpotService({ api: { current: async () => ok(JACKPOT) }, scheduler: { delay: () => new Promise(() => undefined) }, now: () => now });
     const ranking = new RankingService({ api: { standing: async () => ok(null), leaderboard: async () => ok({ season: null, entries: [] }) } });
     const navigated = [];
     const theme = loadTheme();
     const services = { theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id) => navigated.push(id), hasScene: () => true };
-    const scene = new LeaderboardScene(services, /** @type {any} */ ({ ranking, jackpot }));
-    scene.enter({ back: SceneId.MAIN_MENU });
+    const scene = new SeasonScene(services, /** @type {any} */ ({ ranking, jackpot }));
+    scene.enter({ back: SceneId.HOME });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.equal(scene.root.findById("jackpot.amount")?.text, "866.666 STEEM");
@@ -77,7 +77,7 @@ describe("season jackpot", () => {
     assert.equal(scene.root.findById("jackpot.countdown")?.text, "Ends in 01m 29s");
     assert.equal(scene.update(16), false, "nothing changed within the second");
     scene.onCancel();
-    assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
+    assert.deepEqual(navigated, [SceneId.HOME]);
     scene.exit();
   });
 });

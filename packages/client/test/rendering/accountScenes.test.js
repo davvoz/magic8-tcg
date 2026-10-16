@@ -203,13 +203,13 @@ describe("StarterScene", () => {
     assert.equal(byId(scene, "starter.take.precon_verdant").enabled, true);
   });
 
-  it("disables the offer once taken, and Escape goes back to the menu", async () => {
+  it("disables the offer once taken, and Escape goes back to the player's decks", async () => {
     const { scene, navigated } = await starterScene({ claimed: true });
     assert.equal(byId(scene, "starter.take.precon_ember").enabled, false);
     assert.equal(byId(scene, "starter.status").text, "You already took your starter deck.");
     assert.equal(scene.focusedNode.id, "shell.back");
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });
-    assert.equal(navigated.at(-1).id, SceneId.MAIN_MENU);
+    assert.equal(navigated.at(-1).id, SceneId.DECKS);
   });
 });
 
@@ -224,10 +224,14 @@ describe("CollectionScene", () => {
     return { ...world, scene };
   }
 
-  it("opens the Deck Builder, which comes back to it", async () => {
+  it("is a tab of the Decks section, beside the player's decks, with no Back of its own", async () => {
     const { scene, navigated } = await collectionScene();
-    click(byId(scene, "collection.decks"));
-    assert.deepEqual(navigated.at(-1), { id: SceneId.DECK_BUILDER, params: { from: SceneId.COLLECTION } });
+    assert.equal(byId(scene, "shell.tab.collection").selected, true);
+    assert.equal(byId(scene, "shell.back"), null);
+    scene.onKey({ type: "keydown", key: "Escape", repeat: false });
+    assert.equal(navigated.length, 0);
+    click(byId(scene, "shell.tab.decks"));
+    assert.deepEqual(navigated.at(-1), { id: SceneId.DECKS, params: {} });
     scene.exit();
   });
 
@@ -263,7 +267,7 @@ describe("CollectionScene", () => {
     const [cheap, dear] = [owned[0], owned.at(-1)];
     const serial = dear.copies[0].serial;
     probe.scene.exit();
-    probe.scene.enter({ fresh: [{ definitionId: dear.definitionId, count: 1, serial }, { definitionId: cheap.definitionId, count: 2 }, { definitionId: "not_owned", count: 1 }], from: SceneId.NOTIFICATIONS });
+    probe.scene.enter({ fresh: [{ definitionId: dear.definitionId, count: 1, serial }, { definitionId: cheap.definitionId, count: 2 }, { definitionId: "not_owned", count: 1 }], back: SceneId.NOTIFICATIONS });
     const { scene, navigated } = probe;
     assert.deepEqual(scene.ownedCards().slice(0, 2).map((card) => card.definitionId), [cheap.definitionId, dear.definitionId], "the fresh cards come first");
     assert.equal(byId(scene, "collection.status").text, "3 new cards: lit at the top of the list.");

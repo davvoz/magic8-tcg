@@ -3,7 +3,6 @@
  * (docs/tcg/10-spettatori.md). The list is a snapshot; "Refresh" (in the
  * toolbar) asks again.
  */
-import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { OptionRow } from "../ui/OptionRow.js";
@@ -34,8 +33,6 @@ export class LiveGamesScene extends SectionScene {
   #loading = false;
   /** @type {string | null} */
   #error = null;
-  /** Where Back leads. @type {string} */
-  #back = SceneId.ONLINE;
   /** Bumped on every load: an answer to an older request is dropped. */
   #generation = 0;
 
@@ -44,20 +41,15 @@ export class LiveGamesScene extends SectionScene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services, app, { section: SectionId.PLAY, title: "Watch a game" });
+    super(services, app, { scene: SceneId.LIVE_GAMES, title: "Watch a game" });
     this.#app = app;
-    this.setHeading({ back: () => this.onCancel() });
   }
 
-  /** @param {{ back?: string }} [params] `back`: where Back leads (the lobby by default) */
+  /** @param {{ back?: string }} [params] `back`: where Back leads (Play by default) */
   enter(params = {}) {
-    this.#back = typeof params.back === "string" && this.services.hasScene(params.back) ? params.back : SceneId.ONLINE;
+    this.routeBack(params);
     this.#error = null;
     this.#load();
-  }
-
-  onCancel() {
-    this.services.navigate(this.#back);
   }
 
   relayout() {

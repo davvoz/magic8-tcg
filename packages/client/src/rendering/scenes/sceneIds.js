@@ -7,13 +7,16 @@ export const SceneId = Object.freeze({
   PLAY: "play",
   LOGIN: "login",
   DECK_SELECTION: "deckSelection",
+  /** The Decks section: the player's decks. */
+  DECKS: "decks",
   DECK_BUILDER: "deckBuilder",
   STARTER: "starter",
   COLLECTION: "collection",
   SHOP: "shop",
   ONLINE: "online",
   DAILY: "daily",
-  LEADERBOARD: "leaderboard",
+  /** The Season section: the leaderboard, the jackpot, how ranked works. */
+  SEASON: "season",
   GAME_HISTORY: "gameHistory",
   LIVE_GAMES: "liveGames",
   REPLAY: "replay",

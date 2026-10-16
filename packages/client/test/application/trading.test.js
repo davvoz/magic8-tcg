@@ -172,11 +172,15 @@ describe("TradesScene", () => {
     assert.equal(byId(scene, `trades.row.${uuid(2)}`).text, "to @carol");
   });
 
-  it("describes closed trades and leaves on Escape", () => {
+  it("describes closed trades; a tab of the Market, it goes back only where it was opened from", () => {
     assert.equal(tradeSubtitle({ ...TRADE, status: "EXPIRED" }, NOW), "expired · gives 1 · asks 2");
     const { scene, navigated } = screen();
     scene.enter({});
     scene.onCancel();
-    assert.deepEqual(navigated, ["collection"]);
+    assert.deepEqual(navigated, []);
+    const opened = screen();
+    opened.scene.enter({ back: "notifications" });
+    opened.scene.onCancel();
+    assert.deepEqual(opened.navigated, ["notifications"]);
   });
 });

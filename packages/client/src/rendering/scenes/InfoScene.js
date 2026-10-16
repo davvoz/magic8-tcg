@@ -47,8 +47,6 @@ export class InfoScene extends SectionScene {
   #topics;
   /** @type {string} */
   #topicId = InfoTopicId.MECHANICS;
-  /** Where Back leads. @type {string} */
-  #back = SceneId.MAIN_MENU;
   /** How far each topic was read, kept across rebuilds and tab switches. @type {Record<string, number>} */
   #scroll = {};
   /** @type {InfoArticle | null} */
@@ -61,17 +59,16 @@ export class InfoScene extends SectionScene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services, app, { section: null, title: "Info" });
-    this.setHeading({ back: () => this.onCancel() });
+    super(services, app, { scene: SceneId.INFO, title: "Info" });
     this.#topics = infoTopics(app.content);
     this.#tutorial = app.tutorial;
   }
 
-  /** @param {{ topic?: string, back?: string }} [params] `topic`: the one shown first; `back`: where Back leads */
-  enter(params) {
-    const asked = params?.topic;
+  /** @param {{ topic?: string, back?: string }} [params] `topic`: the one shown first; `back`: where Back leads (Home by default) */
+  enter(params = {}) {
+    this.routeBack(params);
+    const asked = params.topic;
     this.#topicId = this.#topics.some((topic) => topic.id === asked) ? /** @type {string} */ (asked) : InfoTopicId.MECHANICS;
-    this.#back = params?.back ?? SceneId.MAIN_MENU;
     this.#scroll = {};
     this.#rebuild();
     this.focus(this.root.findById(`info.tab.${this.#topicId}`));
@@ -80,10 +77,6 @@ export class InfoScene extends SectionScene {
   exit() {
     this.#article = null;
     super.exit();
-  }
-
-  onCancel() {
-    this.services.navigate(this.#back);
   }
 
   relayout() {

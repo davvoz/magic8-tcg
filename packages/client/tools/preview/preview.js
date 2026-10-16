@@ -10,8 +10,10 @@
  *   /tools/preview/?scene=home&done=2        ...with that many of the guide's milestones kept here (tutorial, challenge, online game)
  *   /tools/preview/?scene=home&hidden=1      ...with the guide hidden
  *   /tools/preview/?scene=play               Play, in the same world as Home
- *   /tools/preview/?scene=decks
- *   /tools/preview/?scene=builder            deck builder, library view
+ *   /tools/preview/?scene=season             Season (the leaderboard, the jackpot, how ranked works), in the same world as Home
+ *   /tools/preview/?scene=mydecks            the player's decks (the Decks section)
+ *   /tools/preview/?scene=decks              practice: choose a deck
+ *   /tools/preview/?scene=builder            deck builder, on a new deck
  *   /tools/preview/?scene=editor             deck builder, editing a copy of the first deck
  *   /tools/preview/?scene=editor&inspect=1   plus the inspect overlay
  *   /tools/preview/?scene=starter            the starter offer (data/economy/starter-offer.json), signed in as a stand-in
@@ -351,7 +353,7 @@ function inspectFirstCard(sceneManager) {
 }
 
 /** Screens shown as they open, with nothing to set up. */
-const PLAIN_SCENES = Object.freeze({ home: SceneId.HOME, play: SceneId.PLAY, daily: SceneId.DAILY, decks: SceneId.DECK_SELECTION, starter: SceneId.STARTER, builder: SceneId.DECK_BUILDER });
+const PLAIN_SCENES = Object.freeze({ home: SceneId.HOME, play: SceneId.PLAY, season: SceneId.SEASON, daily: SceneId.DAILY, mydecks: SceneId.DECKS, decks: SceneId.DECK_SELECTION, starter: SceneId.STARTER, builder: SceneId.DECK_BUILDER });
 
 /**
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
@@ -515,7 +517,7 @@ async function appFor(request, content) {
     // The lobby's services stand in for a server: casting them is the harness's business.
     return Object.freeze({ ...app, .../** @type {any} */ (onlineServices(content, request.online, logger)) });
   }
-  if (request.scene === "home" || request.scene === "play") {
+  if (request.scene === "home" || request.scene === "play" || request.scene === "season") {
     const lobby = /** @type {any} */ (onlineServices(content, request.online, logger));
     const { daily } = await dailyServices(content, request.daily);
     const onboarding = new OnboardingProgress({ preferences: { load: () => null, save: () => undefined } });

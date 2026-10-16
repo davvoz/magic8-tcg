@@ -20,7 +20,6 @@ import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
-import { SectionId } from "../shell/sections.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
@@ -95,13 +94,14 @@ export class TradesScene extends SectionScene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services, app, { section: SectionId.MARKET, title: "Trades" });
+    super(services, app, { scene: SceneId.TRADES, title: "Trades" });
     this.#app = app;
     this.#now = now;
-    this.setHeading({ back: () => this.services.navigate(SceneId.COLLECTION) });
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: opened from a screen that said so (a notification), Back leads there */
+  enter(params = {}) {
+    this.routeBack(params);
     const trading = this.#trading();
     this.#unsubscribe = trading.subscribe(() => this.#rebuild());
     trading.refresh();
@@ -116,12 +116,12 @@ export class TradesScene extends SectionScene {
   }
 
   onCancel() {
-    if (this.#composing) {
+    if (this.#composing && this.modal === null) {
       this.#composing = false;
       this.#rebuild();
       return;
     }
-    this.services.navigate(SceneId.COLLECTION);
+    super.onCancel();
   }
 
   /** @param {CanvasRenderingContext2D} context */

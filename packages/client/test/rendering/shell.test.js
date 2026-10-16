@@ -16,6 +16,7 @@ import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
 import { SectionScene } from "../../src/rendering/scenes/SectionScene.js";
 import { ContentViewport } from "../../src/rendering/shell/ContentViewport.js";
+import { backTarget, returnTo } from "../../src/rendering/shell/navigation.js";
 import { SECTIONS, SectionId, sectionById } from "../../src/rendering/shell/sections.js";
 import { shellLayout } from "../../src/rendering/shell/ShellLayout.js";
 import { TopBar } from "../../src/rendering/shell/TopBar.js";
@@ -43,8 +44,12 @@ class ProbeScene extends SectionScene {
   button = null;
   pressed = 0;
 
-  constructor(services, app, heading = { section: SectionId.DECKS, title: "Probe" }) {
-    super(services, app, heading);
+  /** @param {{ scene?: string, title?: string, back?: (() => void) | null }} [heading] a screen of the Decks section by default (not one of its own) */
+  constructor(services, app, { scene = SceneId.DECK_BUILDER, title = "Probe", back = null } = {}) {
+    super(services, app, { scene, title });
+    if (back !== null) {
+      this.setHeading({ back });
+    }
   }
 
   enter() {
@@ -137,7 +142,7 @@ describe("SceneManager and a scene in a frame", () => {
     const { app, viewport } = world();
     const manager = new SceneManager({ theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined });
     manager.register(SceneId.COLLECTION, (services) => new ProbeScene(services, app));
-    manager.register(SceneId.HOME, (services) => new ProbeScene(services, app, { section: SectionId.HOME, title: "Home" }));
+    manager.register(SceneId.HOME, (services) => new ProbeScene(services, app, { scene: SceneId.HOME, title: "Home" }));
     manager.navigate(SceneId.COLLECTION);
     const scene = /** @type {ProbeScene} */ (manager.current);
     const { content: area } = shellLayout(viewport);
@@ -176,7 +181,7 @@ describe("The rail", () => {
     for (const section of SECTIONS) {
       scene.findNode(`shell.nav.${section.id}`).activate();
     }
-    assert.deepEqual(navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.PLAY, SceneId.DECK_BUILDER, SceneId.SHOP, SceneId.LEADERBOARD], "signed out: every way to play, and the Deck Builder");
+    assert.deepEqual(navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.PLAY, SceneId.DECKS, SceneId.SHOP, SceneId.SEASON]);
   });
 
   it("keeps a section it cannot open in its place, locked, and says why", () => {
@@ -198,15 +203,14 @@ describe("The rail", () => {
 describe("Sections", () => {
   const context = (app, scenes = Object.values(SceneId)) => ({ app, hasScene: (id) => scenes.includes(id) });
 
-  it("lead to every way to play, to the starter deck until it is taken, then to the collection", async () => {
-    const { app, identity, account } = world({ app: { online: {} } });
+  it("lead to every way to play, and to the player's decks (where the starter deck is offered)", async () => {
+    const { app, identity } = world({ app: { online: {} } });
     identity.become(ALICE);
     await settle();
     assert.deepEqual(sectionById(SectionId.PLAY).destination(context(app)), { scene: SceneId.PLAY });
     assert.deepEqual(sectionById(SectionId.PLAY).destination(context(app, Object.values(SceneId).filter((id) => id !== SceneId.PLAY))), { scene: SceneId.ONLINE }, "without that screen, online play");
-    assert.deepEqual(sectionById(SectionId.DECKS).destination(context(app)), { scene: SceneId.STARTER });
-    await account.claimStarter("precon_ember");
-    assert.deepEqual(sectionById(SectionId.DECKS).destination(context(app)), { scene: SceneId.COLLECTION });
+    assert.deepEqual(sectionById(SectionId.DECKS).destination(context(app)), { scene: SceneId.DECKS });
+    assert.deepEqual(sectionById(SectionId.DECKS).destination(context(app, [SceneId.DECK_BUILDER])), { scene: SceneId.DECK_BUILDER }, "without it, the Deck Builder");
   });
 
   it("fall back on what there is, and are locked only with nothing at all", () => {
@@ -271,7 +275,7 @@ describe("The top bar", () => {
     const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 3, perGame: 1, season: "s" }]) } });
     const notifications = { state: { unread: 0 }, subscribe: () => () => undefined };
     const { app, services, identity } = world({ size: IPHONE_SE, app: { balance, entries, notifications } });
-    const scene = new ProbeScene(services, app, { section: SectionId.DECKS, title: "Collection", back: () => undefined });
+    const scene = new ProbeScene(services, app, { title: "Collection", back: () => undefined });
     identity.become(ALICE);
     await settle();
     await settle();
@@ -338,3 +342,92 @@ function rendered(scene) {
   scene.render(context);
   return context.texts;
 }
+
+describe("Back, by one rule", () => {
+  const context = (app, scenes = Object.values(SceneId)) => ({ app, hasScene: (id) => scenes.includes(id) });
+
+  it("leads a screen to its section's own, which has none: the rail and the tabs are the way around", () => {
+    const { app } = world();
+    assert.deepEqual(backTarget(SceneId.DAILY, {}, context(app)), { scene: SceneId.PLAY, params: {} });
+    assert.deepEqual(backTarget(SceneId.DECK_BUILDER, {}, context(app)), { scene: SceneId.DECKS, params: {} });
+    assert.deepEqual(backTarget(SceneId.NOTIFICATIONS, {}, context(app)), { scene: SceneId.HOME, params: {} }, "a screen of no section goes Home");
+    for (const own of [SceneId.HOME, SceneId.PLAY, SceneId.DECKS, SceneId.COLLECTION, SceneId.SHOP, SceneId.MARKET, SceneId.TRADES, SceneId.SEASON]) {
+      assert.equal(backTarget(own, {}, context(app)), null, `${own} has no Back`);
+    }
+  });
+
+  it("leads back to the screen that opened it, when that one said so, opened as it was", () => {
+    const { app } = world();
+    assert.deepEqual(backTarget(SceneId.COLLECTION, { back: SceneId.DAILY }, context(app)), { scene: SceneId.DAILY, params: {} }, "even a tab, when it was opened from elsewhere");
+    assert.deepEqual(backTarget(SceneId.REPLAY, { back: SceneId.GAME_HISTORY, backParams: { account: "dave" } }, context(app)), { scene: SceneId.GAME_HISTORY, params: { account: "dave" } });
+    assert.deepEqual(backTarget(SceneId.DAILY, { back: SceneId.DAILY }, context(app)), { scene: SceneId.PLAY, params: {} }, "never to itself");
+    assert.deepEqual(backTarget(SceneId.DAILY, { back: SceneId.SHOP }, context(app, [SceneId.PLAY, SceneId.DAILY])), { scene: SceneId.PLAY, params: {} }, "nor to a screen that is not there");
+  });
+
+  it("hands the next screen the way back here, with this screen's own Back, the trail kept short", () => {
+    assert.deepEqual(returnTo(SceneId.GAME_HISTORY, { account: "dave" }), { back: SceneId.GAME_HISTORY, backParams: { account: "dave" } });
+    assert.deepEqual(returnTo(SceneId.COLLECTION, {}, { scene: SceneId.DAILY, params: {} }), { back: SceneId.COLLECTION, backParams: { back: SceneId.DAILY, backParams: {} } });
+    let trail = returnTo(SceneId.DAILY);
+    for (let step = 0; step < 20; step += 1) {
+      trail = returnTo(SceneId.INFO, {}, { scene: trail.back, params: trail.backParams });
+    }
+    let depth = 0;
+    for (let at = trail; typeof at?.back === "string"; at = at.backParams) {
+      depth += 1;
+    }
+    assert.ok(depth <= 6, `the trail stays short (${depth})`);
+  });
+
+  it("is what the bar's Back and Escape follow, and what the bell hands the notifications", () => {
+    const { app, services, navigated } = world({ app: { notifications: { state: { unread: 2 }, subscribe: () => () => undefined } } });
+    const scene = new ProbeScene(services, app, { scene: SceneId.DAILY });
+    scene.routeBack({});
+    assert.equal(scene.backButton?.caption, "Back");
+    scene.onKey({ type: "keydown", key: "Escape", repeat: false });
+    assert.deepEqual(navigated.at(-1), { id: SceneId.PLAY, params: {} });
+    scene.routeBack({ back: SceneId.HOME });
+    assert.deepEqual(scene.backHere({ stage: 1 }), { back: SceneId.DAILY, backParams: { stage: 1, back: SceneId.HOME, backParams: {} } });
+  });
+});
+
+describe("A section's tabs", () => {
+  it("name the section's own screens in the bar, the one on show lit, and open the others", () => {
+    const { app, services, navigated } = world();
+    const scene = new ProbeScene(services, app, { scene: SceneId.SHOP, title: "Shop" });
+    assert.deepEqual(["shop", "market", "trades"].map((id) => scene.findNode(`shell.tab.${id}`)?.label), ["Shop", "Player market", "Trades"]);
+    assert.equal(scene.findNode("shell.tab.shop").selected, true);
+    assert.equal(scene.findNode("shell.title").text, "Market", "the section's name before them");
+    scene.findNode("shell.tab.market").activate();
+    assert.deepEqual(navigated, [{ id: SceneId.MARKET, params: {} }]);
+    scene.findNode("shell.tab.shop").activate();
+    assert.equal(navigated.length, 1, "the tab on show opens nothing");
+  });
+
+  it("keep a tab that cannot be opened in its place, locked, and say why", () => {
+    const { app, services, navigated } = world({ scenes: [SceneId.SHOP, SceneId.TRADES] });
+    const scene = new ProbeScene(services, app, { scene: SceneId.SHOP, title: "Shop" });
+    assert.equal(scene.findNode("shell.tab.trades").locked, true, "signed out");
+    assert.equal(scene.findNode("shell.tab.market").locked, true, "not here");
+    scene.findNode("shell.tab.trades").activate();
+    assert.deepEqual(navigated, []);
+    assert.ok(rendered(scene).some((text) => text.includes("Sign in to trade cards with other players.")));
+  });
+
+  it("unlock once the player signs in", async () => {
+    const { app, services, identity } = world();
+    const scene = new ProbeScene(services, app, { scene: SceneId.SHOP, title: "Shop" });
+    identity.become(ALICE);
+    await settle();
+    assert.equal(scene.findNode("shell.tab.trades").locked, false);
+  });
+
+  it("fit a phone's bar, without the section's name, tall enough for a finger", () => {
+    const { app, services } = world({ size: IPHONE_SE });
+    const scene = new ProbeScene(services, app, { scene: SceneId.MARKET, title: "Player market" });
+    assert.equal(scene.findNode("shell.title"), null);
+    assert.deepEqual(["shop", "market", "trades"].map((id) => scene.findNode(`shell.tab.${id}`)?.label), ["Shop", "Market", "Trades"], "their short names");
+    const tabs = scene.findNode("shell.tabs");
+    assert.ok(tabs.height >= 46);
+    assert.ok(scene.findNode("settings").bounds.x >= tabs.bounds.x + tabs.bounds.width, "the controls after them");
+  });
+});

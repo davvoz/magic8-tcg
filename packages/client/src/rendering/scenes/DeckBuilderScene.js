@@ -1,17 +1,17 @@
 /**
- * Deck builder: the library view when no draft is open, the editor view
- * otherwise. The draft lives in DeckBuildingService, so leaving and coming
- * back resumes editing. The scene keeps only presentation state (scroll
- * offsets, the inspected card, focus) and rebuilds its whole widget tree
- * after every change; the trees are small and this keeps the views free
- * of incremental-update bugs. Its title (in the top bar) says whether a
- * deck is being edited.
+ * Deck builder: the deck being edited (the draft, which lives in
+ * DeckBuildingService, so leaving and coming back resumes editing). The
+ * player's decks are listed on their own screen (DecksScene, which opens
+ * the one to edit); opened with no draft, the builder starts a new deck.
+ * Closing the deck goes Back (to the player's decks, unless the builder
+ * was opened from elsewhere). The scene keeps only presentation state
+ * (scroll offsets, the inspected card, focus) and rebuilds its whole widget
+ * tree after every change; the trees are small and this keeps the view
+ * free of incremental-update bugs.
  */
-import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { EditorView } from "./deckBuilder/EditorView.js";
-import { LibraryView } from "./deckBuilder/LibraryView.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { buildInspectModal } from "./deckBuilder/modals.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
@@ -25,23 +25,19 @@ export class DeckBuilderScene extends SectionScene {
   }
 
   #app;
-  #library;
   #editor;
   /** Scroll offsets by list id, kept across rebuilds. @type {Record<string, number>} */
   #scroll = {};
   /** Card shown in the inspect overlay, if any. @type {string | null} */
   #inspecting = null;
-  /** Where Back leads: the scene the player came from. @type {string} */
-  #from = SceneId.MAIN_MENU;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services, app, { section: SectionId.DECKS, title: "Deck Builder" });
+    super(services, app, { scene: SceneId.DECK_BUILDER, title: "Deck Builder" });
     this.#app = app;
-    this.setHeading({ back: () => this.#leave() });
     /** @type {import("./deckBuilder/layout.js").BuilderHost} */
     const host = {
       app,
@@ -51,15 +47,21 @@ export class DeckBuilderScene extends SectionScene {
       rebuild: () => this.#rebuild(),
       inspect: (cardId) => this.#inspect(cardId),
       confirm: (request) => this.#confirm(request),
+      closed: () => this.goBack(),
       scroll: this.#scroll,
     };
-    this.#library = new LibraryView(host);
     this.#editor = new EditorView(host);
   }
 
-  /** @param {Readonly<Record<string, unknown>>} [params] `{ from?: string }`: where Back leads (the collection, deck selection), the menu by default */
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: where Back leads (the player's decks by default) */
   enter(params = {}) {
-    this.#from = typeof params.from === "string" && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
+    this.routeBack(params);
+    if (this.#app.deckBuilding.draft === null) {
+      const started = this.#app.deckBuilding.startNew();
+      if (!started.ok) {
+        this.#app.logger.warn("could not start a deck", started.error);
+      }
+    }
     this.#rebuild();
   }
 
@@ -74,18 +76,18 @@ export class DeckBuilderScene extends SectionScene {
     this.#rebuild();
   }
 
-  get isEditing() {
-    return this.#app.deckBuilding.draft !== null;
-  }
-
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.#rememberScroll();
     this.closeModal();
     this.root.clear();
-    this.setHeading({ title: this.isEditing ? "Deck Builder · editing" : "Deck Builder" });
-    const view = this.isEditing ? this.#editor : this.#library;
-    const initialFocus = view.build(this.root);
+    if (this.#app.deckBuilding.draft === null) {
+      // No deck to edit (it could not be started): nothing but the way back.
+      this.focus(this.backButton);
+      this.services.requestRender();
+      return;
+    }
+    const initialFocus = this.#editor.build(this.root);
     if (this.#inspecting !== null) {
       this.#openInspect(this.#inspecting);
     }
@@ -162,9 +164,5 @@ export class DeckBuilderScene extends SectionScene {
         onCancel: () => this.closeModal(),
       }),
     );
-  }
-
-  #leave() {
-    this.services.navigate(this.#from);
   }
 }

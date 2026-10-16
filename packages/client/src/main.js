@@ -104,6 +104,7 @@ import { SceneManager } from "./rendering/scenes/SceneManager.js";
 import { registerScenes } from "./rendering/scenes/registerScenes.js";
 import { GAME_TOAST_KEY, returnToGame } from "./rendering/scenes/returnToGame.js";
 import { SceneId } from "./rendering/scenes/sceneIds.js";
+import { SectionScene } from "./rendering/scenes/SectionScene.js";
 import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
 import { CoinArt } from "./rendering/board/CoinArt.js";
 import { TableArt, TablePiece } from "./rendering/images/TableArt.js";
@@ -629,10 +630,12 @@ async function boot() {
   soundShop(shop, audio);
   soundSales(sales, audio);
   soundOnline(online, audio);
+  // What a screen opened from a toast is told, so that its Back returns to the screen the player was on (from a match or a replay, which are over by then, its own way back).
+  const backFromToast = () => (sceneManager.current instanceof SectionScene ? sceneManager.current.backHere() : {});
   // A notification that arrives shows as a toast on any screen; a click opens the feed (or the lobby, for a challenge).
   const toasts = new ToastLayer({
     viewport,
-    onOpen: (message) => (message.key === GAME_TOAST_KEY ? gameReturn.open() : sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS, message.params ?? {})),
+    onOpen: (message) => (message.key === GAME_TOAST_KEY ? gameReturn.open() : sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS, { ...message.params, ...backFromToast() })),
     requestRender: () => loop.requestRender(),
     sound: audio,
   });
@@ -651,9 +654,8 @@ async function boot() {
   });
   notifications.onArrival((notification) => {
     const described = describeNotification(notification, content.value.catalog);
-    // An auto game played: a click watches it, then comes back here (not to a match, which is over by then).
-    const here = sceneManager.currentId === SceneId.MATCH || sceneManager.currentId === SceneId.REPLAY ? SceneId.HOME : sceneManager.currentId;
-    toasts.show(described.gameId === undefined ? described : { ...described, opens: SceneId.REPLAY, params: { gameId: described.gameId, from: here } });
+    // An auto game played: a click watches it, then comes back to the screen it was clicked on.
+    toasts.show(described.gameId === undefined ? described : { ...described, opens: SceneId.REPLAY, params: { gameId: described.gameId } });
     if (notification.kind === "auto.finished" || notification.kind === "auto.refunded") {
       void autoList.refresh();
       ranking.refresh();

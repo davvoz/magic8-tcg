@@ -37,7 +37,6 @@ import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
-import { SectionId } from "../shell/sections.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
 import { SceneId } from "./sceneIds.js";
@@ -211,8 +210,6 @@ export class MarketScene extends SectionScene {
   #boardFilter = NO_CARD_FILTER;
   /** Copies offered for sale. @type {import("../../application/content/CardFilter.js").CardFilter} */
   #sellFilter = NO_CARD_FILTER;
-  /** Where Back leads: the scene the player came from. @type {string} */
-  #from = SceneId.MAIN_MENU;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -220,15 +217,14 @@ export class MarketScene extends SectionScene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services, app, { section: SectionId.MARKET, title: "Market" });
+    super(services, app, { scene: SceneId.MARKET, title: "Market" });
     this.#app = app;
     this.#now = now;
-    this.setHeading({ back: () => this.services.navigate(this.#from) });
   }
 
-  /** @param {{ from?: string }} [params] */
+  /** @param {{ back?: string }} [params] `back`: the screen that opened it (a notification), which Back returns to; none of its own */
   enter(params = {}) {
-    this.#from = params.from !== undefined && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
+    this.routeBack(params);
     const sales = this.#sales();
     const unsubscribe = sales.subscribe(() => this.#rebuild());
     // What other players list, buy or withdraw shows up while the board is on screen.
@@ -272,7 +268,7 @@ export class MarketScene extends SectionScene {
       this.#rebuild();
       return;
     }
-    this.services.navigate(this.#from);
+    this.goBack();
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -680,7 +676,7 @@ export class MarketScene extends SectionScene {
     const fresh = [Object.freeze({ definitionId: purchase.card.definitionId, count: 1, serial: purchase.card.serial })];
     const view = () => {
       sales.dismiss();
-      this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.MARKET });
+      this.services.navigate(SceneId.COLLECTION, { fresh, ...this.backHere() });
     };
     panel.add(new Button({ keepPlate: true, id: "market.buying.collection", x: this.#screen.inset, y, width: half, height: this.#m.button, text: "View collection", variant: "primary", onActivate: view }));
     panel.add(new Button({ keepPlate: true, id: "market.buying.close", x: this.#screen.inset + half + 16, y, width: half, height: this.#m.button, text: "Done", onActivate: () => sales.dismiss() }));

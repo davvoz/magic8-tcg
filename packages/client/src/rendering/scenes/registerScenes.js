@@ -9,12 +9,12 @@ import { CollectionScene } from "./CollectionScene.js";
 import { DailyScene } from "./DailyScene.js";
 import { DeckBuilderScene } from "./DeckBuilderScene.js";
 import { DeckSelectionScene } from "./DeckSelectionScene.js";
+import { DecksScene } from "./DecksScene.js";
 import { ErrorScene } from "./ErrorScene.js";
 import { GameHistoryScene } from "./GameHistoryScene.js";
 import { HomeScene } from "./HomeScene.js";
 import { PlayScene } from "./PlayScene.js";
 import { InfoScene } from "./InfoScene.js";
-import { LeaderboardScene } from "./LeaderboardScene.js";
 import { LiveGamesScene } from "./LiveGamesScene.js";
 import { LoginScene } from "./LoginScene.js";
 import { MarketScene } from "./MarketScene.js";
@@ -24,6 +24,7 @@ import { NotificationsScene } from "./NotificationsScene.js";
 import { OnlineScene } from "./OnlineScene.js";
 import { ReplayScene } from "./ReplayScene.js";
 import { SceneId } from "./sceneIds.js";
+import { SeasonScene } from "./SeasonScene.js";
 import { ShopScene } from "./ShopScene.js";
 import { StarterScene } from "./StarterScene.js";
 import { TradesScene } from "./TradesScene.js";
@@ -38,6 +39,7 @@ export function registerScenes(sceneManager, app) {
     .register(SceneId.MAIN_MENU, (services) => new MainMenuScene(services, app))
     .register(SceneId.PLAY, (services) => new PlayScene(services, app))
     .register(SceneId.DECK_SELECTION, (services) => new DeckSelectionScene(services, app))
+    .register(SceneId.DECKS, (services) => new DecksScene(services, app))
     .register(SceneId.DECK_BUILDER, (services) => new DeckBuilderScene(services, app))
     .register(SceneId.MATCH, (services) => new MatchScene(services, { rarityOf: (cardId) => app.rarities?.of(cardId) ?? null, audio: app.audio, help: app.help, characterName: (account) => app.daily?.characterOf(account)?.name ?? null, challengeStep: (account, outcome) => challengeStep(app, account, outcome), voice: app.voice, sharing: app.sharing }))
     .register(SceneId.LOGIN, (services) => new LoginScene(services, app))
@@ -50,7 +52,7 @@ export function registerScenes(sceneManager, app) {
   }
   registerOnlineScenes(sceneManager, app);
   if (app.ranking !== undefined) {
-    sceneManager.register(SceneId.LEADERBOARD, (services) => new LeaderboardScene(services, app));
+    sceneManager.register(SceneId.SEASON, (services) => new SeasonScene(services, app));
   }
   if (app.gameHistory !== undefined) {
     sceneManager.register(SceneId.GAME_HISTORY, (services) => new GameHistoryScene(services, app));

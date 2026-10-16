@@ -8,8 +8,9 @@
  * whose serial is known lit in its details.
  * On a compact screen the filter is one button beside the list's title and
  * a card is picked by tapping its strip.
- * The toolbar opens the Deck Builder (which comes back here), the market and
- * the trades; Back (in the top bar) leads where the player came from.
+ * A tab of the Decks section (beside My decks); opened from elsewhere (the
+ * cards a challenge or a purchase brought), Back leads back there. The
+ * toolbar says whose cards they are and how many.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
@@ -29,18 +30,17 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { SectionScene } from "./SectionScene.js";
 import { SceneId } from "./sceneIds.js";
-import { SectionId } from "../shell/sections.js";
 
 const LIST_ID = "collection.cards";
 const COPIES_ID = "collection.copies";
 /**
- * @typedef {Readonly<{ filterTop: number, listTop: number, filterButton: boolean, titleWidth: number, detail: { width: number, height: number }, copyRow: number, copiesHeader: { title: number, hint: number, hintSize: import("../theme/Theme.js").FontSize, gap: number }, statusOffset: number }>} CollectionMetrics
- *   `filterButton`: the filter as one button beside the list's title; `copiesHeader`: the "Your copies" title and its hint (two wrapped lines) above the copies; `statusOffset`: where the toolbar's status line starts
+ * @typedef {Readonly<{ filterTop: number, listTop: number, filterButton: boolean, titleWidth: number, detail: { width: number, height: number }, copyRow: number, copiesHeader: { title: number, hint: number, hintSize: import("../theme/Theme.js").FontSize, gap: number } }>} CollectionMetrics
+ *   `filterButton`: the filter as one button beside the list's title; `copiesHeader`: the "Your copies" title and its hint (two wrapped lines) above the copies
  */
 /** @type {CollectionMetrics} */
-const WIDE = Object.freeze({ filterTop: 60, listTop: 60 + CARD_FILTER_BAR_HEIGHT + 12, filterButton: false, titleWidth: 0, detail: Object.freeze({ width: 380, height: 560 }), copyRow: 30, copiesHeader: Object.freeze({ title: 26, hint: 44, hintSize: "small", gap: 4 }), statusOffset: 0 });
+const WIDE = Object.freeze({ filterTop: 60, listTop: 60 + CARD_FILTER_BAR_HEIGHT + 12, filterButton: false, titleWidth: 0, detail: Object.freeze({ width: 380, height: 560 }), copyRow: 30, copiesHeader: Object.freeze({ title: 26, hint: 44, hintSize: "small", gap: 4 }) });
 /** @type {CollectionMetrics} */
-const COMPACT = Object.freeze({ filterTop: 12, listTop: 12 + CARD_FILTER_BUTTON_HEIGHT + 10, filterButton: true, titleWidth: 150, detail: Object.freeze({ width: 182, height: 254 }), copyRow: 26, copiesHeader: Object.freeze({ title: 22, hint: 34, hintSize: "tiny", gap: 2 }), statusOffset: 0 });
+const COMPACT = Object.freeze({ filterTop: 12, listTop: 12 + CARD_FILTER_BUTTON_HEIGHT + 10, filterButton: true, titleWidth: 150, detail: Object.freeze({ width: 182, height: 254 }), copyRow: 26, copiesHeader: Object.freeze({ title: 22, hint: 34, hintSize: "tiny", gap: 2 }) });
 /** What a copy's status (and tradeability) means to its owner, shown after its name. */
 const STATUS_NOTES = new Map([["locked", "in a trade"], ["burned", "burned"]]);
 /** Room for the "New: …" line above the copies of a fresh card. */
@@ -51,9 +51,6 @@ const FRESH_LINE = 30;
  * @typedef {Readonly<{ count: number, serials: ReadonlySet<number> }>} Freshness how many copies of a card are new, and the serials known
  * @typedef {Readonly<{ definitionId: string, card: import("../cards/CardDetail.js").CardLike | undefined, copies: readonly import("../../application/ports/CollectionApi.contract.js").OwnedCopy[] }>} OwnedCard
  */
-
-/** The narrowest the toolbar's status line is worth showing at. */
-const MIN_STATUS_WIDTH = 80;
 
 export class CollectionScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
@@ -77,8 +74,6 @@ export class CollectionScene extends SectionScene {
   #notice = null;
   /** Cards just received, by definition id. @type {ReadonlyMap<string, Freshness>} */
   #fresh = new Map();
-  /** Where Back leads: the scene the player came from. @type {string} */
-  #from = SceneId.MAIN_MENU;
   #scrollY = 0;
 
   /**
@@ -86,16 +81,15 @@ export class CollectionScene extends SectionScene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services, app, { section: SectionId.DECKS, title: "Collection" });
+    super(services, app, { scene: SceneId.COLLECTION, title: "Collection" });
     this.#app = app;
   }
 
-  /** @param {Readonly<Record<string, unknown>>} params `{ notice?: string, fresh?: FreshCard[], from?: string }` */
+  /** @param {Readonly<Record<string, unknown>>} params `{ notice?: string, fresh?: FreshCard[], back?: string }` */
   enter(params = {}) {
     this.#notice = typeof params.notice === "string" ? params.notice : null;
     this.#fresh = freshness(params.fresh);
-    this.#from = typeof params.from === "string" && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
-    this.setHeading({ back: () => this.services.navigate(this.#from) });
+    this.routeBack(params);
     this.#filter = NO_CARD_FILTER;
     this.#selectedId = null;
     this.#scrollY = 0;
@@ -107,14 +101,6 @@ export class CollectionScene extends SectionScene {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     super.exit();
-  }
-
-  onCancel() {
-    if (this.modal !== null) {
-      super.onCancel();
-      return;
-    }
-    this.services.navigate(this.#from);
   }
 
   relayout() {
@@ -142,7 +128,7 @@ export class CollectionScene extends SectionScene {
     const focusedId = this.focusedNode?.id ?? "";
     this.#scrollY = this.#listScroll() ?? this.#scrollY;
     this.root.clear();
-    const firstTool = this.#buildToolbar();
+    this.#buildToolbar();
     const cards = this.ownedCards();
     if (!cards.some((owned) => owned.definitionId === this.#selectedId)) {
       this.#selectedId = cards[0]?.definitionId ?? null;
@@ -152,31 +138,16 @@ export class CollectionScene extends SectionScene {
     const firstRow = this.#buildList(listPanel, cards);
     const detailPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
     this.#buildDetail(detailPanel, cards.find((owned) => owned.definitionId === this.#selectedId));
-    this.focus(this.findNode(focusedId) ?? firstRow ?? firstFilter ?? firstTool ?? this.backButton);
+    this.focus(this.findNode(focusedId) ?? firstRow ?? firstFilter ?? this.backButton);
     this.services.requestRender();
   }
 
-  /** @returns {Button | null} the toolbar's first button */
+  /** The toolbar: whose cards these are, how many, and what is new. */
   #buildToolbar() {
-    const { viewport, hasScene, navigate } = this.services;
+    const { viewport } = this.services;
     const { header } = this.#screen;
-    const { statusOffset } = this.#metrics;
-    const statusX = header.sideMargin + statusOffset;
-    // Right to left from the edge: the other screens.
-    const buttons = [
-      ...(hasScene(SceneId.TRADES) ? [{ id: "collection.trades", text: "Trades", onActivate: () => navigate(SceneId.TRADES) }] : []),
-      ...(hasScene(SceneId.MARKET) ? [{ id: "collection.market", text: "Market", onActivate: () => navigate(SceneId.MARKET, { from: SceneId.COLLECTION }) }] : []),
-      ...(hasScene(SceneId.DECK_BUILDER) ? [{ id: "collection.decks", text: "Deck Builder", onActivate: () => navigate(SceneId.DECK_BUILDER, { from: SceneId.COLLECTION }) }] : []),
-    ];
-    const step = header.backWidth + header.gap;
-    const nodes = buttons.map((spec, index) => this.root.add(new Button({ keepPlate: true, ...spec, x: viewport.logicalWidth - header.sideMargin - header.backWidth - index * step, y: header.y + 4, width: header.backWidth, height: header.height - 8 })));
-    // The status takes what the buttons leave; on a phone that may be nothing.
-    const statusWidth = viewport.logicalWidth - header.sideMargin - buttons.length * step - this.#screen.inset - statusX;
-    if (statusWidth >= MIN_STATUS_WIDTH) {
-      const status = this.#status();
-      this.root.add(new Label({ id: "collection.status", x: statusX, y: header.y, width: statusWidth, height: header.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
-    }
-    return nodes.at(-1) ?? null;
+    const status = this.#status();
+    this.root.add(new Label({ id: "collection.status", x: header.sideMargin, y: header.y, width: viewport.logicalWidth - 2 * header.sideMargin, height: header.height, text: status.text, size: "small", align: "left", colorKey: status.colorKey, fit: true }));
   }
 
   /** @returns {{ text: string, colorKey: string }} */
@@ -264,7 +235,7 @@ export class CollectionScene extends SectionScene {
 
   /** @param {ScrollList} list */
   #buildStarterLink(list) {
-    return list.add(new Button({ id: "collection.starter", x: 0, y: this.#screen.row.height + this.#screen.row.gap, width: list.rowWidth, height: this.#screen.row.height, text: "Take your free starter deck", variant: "primary", enabled: this.services.hasScene(SceneId.STARTER), onActivate: () => this.services.navigate(SceneId.STARTER) }));
+    return list.add(new Button({ id: "collection.starter", x: 0, y: this.#screen.row.height + this.#screen.row.gap, width: list.rowWidth, height: this.#screen.row.height, text: "Take your free starter deck", variant: "primary", enabled: this.services.hasScene(SceneId.STARTER), onActivate: () => this.services.navigate(SceneId.STARTER, this.backHere()) }));
   }
 
   /**

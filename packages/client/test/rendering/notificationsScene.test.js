@@ -121,14 +121,14 @@ describe("NotificationsScene", () => {
     assert.equal(byId(scene, "notifications.open.1").variant, "secondary");
 
     byId(scene, "notifications.entry.4").activate();
-    assert.deepEqual(h.navigated.at(-1), { id: SceneId.COLLECTION, params: { fresh: [{ definitionId: "ember_imp", count: 2, serial: undefined }, { definitionId: "pyre_drake", count: 1, serial: undefined }], from: SceneId.NOTIFICATIONS } });
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.COLLECTION, params: { fresh: [{ definitionId: "ember_imp", count: 2, serial: undefined }, { definitionId: "pyre_drake", count: 1, serial: undefined }], back: SceneId.NOTIFICATIONS, backParams: {} } });
     scene.exit();
 
     scene.enter({});
     await settle();
     assert.deepEqual(lit(), [3, 2], "the one opened is no longer lit, the others still are");
     byId(scene, "notifications.open.3").activate();
-    assert.deepEqual(h.navigated.at(-1), { id: SceneId.MARKET, params: {} });
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.MARKET, params: { back: SceneId.NOTIFICATIONS, backParams: {} } });
     scene.exit();
   });
 
@@ -146,7 +146,7 @@ describe("NotificationsScene", () => {
     scene.enter({});
     await settle();
     byId(scene, "notifications.entry.9").activate();
-    assert.deepEqual(h.navigated.at(-1), { id: SceneId.REPLAY, params: { gameId: "01j8x3r6h2qkq4w0v7m5a9c1dz", from: SceneId.NOTIFICATIONS } });
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.REPLAY, params: { gameId: "01j8x3r6h2qkq4w0v7m5a9c1dz", back: SceneId.NOTIFICATIONS, backParams: {} } });
     scene.exit();
   });
 

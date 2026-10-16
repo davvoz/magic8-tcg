@@ -11,7 +11,7 @@ import { RankingService } from "../../src/application/ranking/RankingService.js"
 import { HttpRankingApi } from "../../src/infrastructure/api/HttpRankingApi.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { LeaderboardScene } from "../../src/rendering/scenes/LeaderboardScene.js";
+import { SeasonScene } from "../../src/rendering/scenes/SeasonScene.js";
 import { OnlineScene, standingText } from "../../src/rendering/scenes/OnlineScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
@@ -98,6 +98,9 @@ describe("RankingService (client)", () => {
   });
 });
 
+/** A signed-in account, as the season's Play ranked reads it. */
+const SIGNED_IN = { state: { status: "ready", account: "alice" }, subscribe: () => () => undefined };
+
 function screens(ranking, requests = []) {
   const connection = {
     connect: () => undefined,
@@ -129,8 +132,7 @@ describe("ranked screens", () => {
     scene.root.findById("online.find").activate();
     await flush();
     assert.deepEqual(requests.at(-1).d, { mode: "ranked", deckId: "11111111-1111-4111-8111-111111111111" });
-    scene.root.findById("online.leaderboard").activate();
-    assert.equal(navigated.at(-1), SceneId.LEADERBOARD);
+    assert.equal(navigated.length, 0);
 
     const newcomer = new RankingService({ api: fakeApi({ ...STANDING, eligible: false, casualGamesNeeded: 3, practiceGamesNeeded: 3 }) });
     const other = screens(newcomer);
@@ -143,19 +145,33 @@ describe("ranked screens", () => {
     assert.equal(lobby.root.findById("online.standing").text, "Ranked opens after 3 more casual game(s), or 3 more practice game(s) vs AI.");
   });
 
-  it("shows the leaderboard with the player's own line selected", async () => {
+  it("shows the season: the leaderboard with the player's own line selected, how ranked works, and Play ranked", async () => {
     const { services, app, navigated } = screens(new RankingService({ api: fakeApi() }));
-    const scene = new LeaderboardScene(services, app);
+    const scene = new SeasonScene(services, /** @type {any} */ ({ ...app, account: SIGNED_IN }));
     scene.enter({});
     await flush();
     const context = new FakeContext2D();
     scene.render(context);
-    assert.ok(context.texts.includes("Leaderboard — Season 1"));
-    assert.equal(scene.root.findById("leaderboard.row.2").selected, true, "alice is highlighted");
-    assert.equal(scene.root.findById("leaderboard.row.1").selected, false);
-    assert.equal(scene.root.findById("leaderboard.row.3").text, "—  @dave", "a provisional player is listed with no rank");
-    assert.equal(scene.root.findById("leaderboard.standing").text, "Season 1: rating 1612 (#4), 8–4 in 12 game(s).");
+    assert.ok(context.texts.includes("Season 1"), "the season names the screen");
+    assert.equal(scene.root.findById("season.row.2").selected, true, "alice is highlighted");
+    assert.equal(scene.root.findById("season.row.1").selected, false);
+    assert.equal(scene.root.findById("season.row.3").text, "—  @dave", "a provisional player is listed with no rank");
+    assert.equal(scene.root.findById("season.standing").text, "Season 1: rating 1612 (#4), 8–4 in 12 game(s).");
+    assert.ok(scene.root.findById("season.guide.steps"), "how ranked works");
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });
+    assert.equal(navigated.length, 0, "the section's own screen has no Back");
+    assert.equal(scene.root.findById("season.play").variant, "primary");
+    scene.root.findById("season.play").activate();
     assert.equal(navigated.at(-1), SceneId.ONLINE);
+  });
+
+  it("keeps Play ranked locked, with what it waits for, until ranked opens", async () => {
+    const newcomer = new RankingService({ api: fakeApi({ ...STANDING, eligible: false, casualGamesNeeded: 2, practiceGamesNeeded: 2 }) });
+    const { services, app } = screens(newcomer);
+    const scene = new SeasonScene(services, /** @type {any} */ ({ ...app, account: SIGNED_IN }));
+    scene.enter({});
+    await flush();
+    assert.equal(scene.root.findById("season.play").isEffectivelyEnabled, false);
+    assert.equal(scene.root.findById("season.play.note").text, "Ranked unlocks after 2 more casual games.");
   });
 });

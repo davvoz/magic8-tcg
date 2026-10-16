@@ -27,7 +27,7 @@ import { buildAccountDialog } from "./AccountDialog.js";
 import { Chip } from "./Chip.js";
 import { NavRail } from "./NavRail.js";
 import { ProfileButton } from "./ProfileButton.js";
-import { SECTIONS } from "./sections.js";
+import { SECTIONS, sectionById, sectionTabs } from "./sections.js";
 import { buildSettingsDialog } from "./SettingsDialog.js";
 import { TopBar } from "./TopBar.js";
 
@@ -50,7 +50,9 @@ const NOTICE = Object.freeze({ width: 520, height: 230, button: 48 });
  *   focus: (node: UiNode | null) => void,
  *   showOverlay: (modal: Modal) => void,
  *   hideOverlay: () => void,
- * }} ShellHost `services.viewport` is the scene's ContentViewport
+ *   backHere: () => Readonly<Record<string, unknown>>,
+ * }} ShellHost `services.viewport` is the scene's ContentViewport; `backHere`: what a screen opened from the bar (the
+ *   notifications, Info) is told so that its Back comes back to this one
  */
 
 export class Shell {
@@ -58,6 +60,8 @@ export class Shell {
   node = new UiNode({ id: "shell" });
   #host;
   #app;
+  /** The screen's SceneId. */
+  #scene;
   /** @type {string | null} */
   #section;
   /** @type {import("./TopBar.js").Heading} */
@@ -74,12 +78,13 @@ export class Shell {
   #unfollowSound = null;
 
   /**
-   * @param {{ host: ShellHost, app: import("../../application/AppContext.js").AppContext, section: string | null, heading: import("./TopBar.js").Heading }} options
-   *   `section`: the one the screen belongs to (SectionId), lit on the rail; null for none
+   * @param {{ host: ShellHost, app: import("../../application/AppContext.js").AppContext, scene: string, section: string | null, heading: import("./TopBar.js").Heading }} options
+   *   `scene`: the screen's SceneId; `section`: the one it belongs to (SectionId), lit on the rail; null for none
    */
-  constructor({ host, app, section, heading }) {
+  constructor({ host, app, scene, section, heading }) {
     this.#host = host;
     this.#app = app;
+    this.#scene = scene;
     this.#section = section;
     this.#heading = heading;
     this.node.unbounded = true;
@@ -148,7 +153,7 @@ export class Shell {
     const context = { hasScene: this.#host.services.hasScene, app: this.#app };
     const entries = SECTIONS.map((section) => Object.freeze({ section, destination: section.destination(context) }));
     this.node.add(new NavRail({ layout, origin, screen, entries, current: this.#section, onOpen: (entry) => this.#open(entry) }));
-    this.#bar = this.node.add(new TopBar({ layout, origin, screen, heading: this.#heading, controls: this.#controls(layout.compact) }));
+    this.#bar = this.node.add(new TopBar({ layout, origin, screen, heading: this.#heading, controls: this.#controls(layout.compact), tabs: this.#tabs(context) }));
     if (focusedId.length > 0) {
       this.#host.focus(this.node.findById(focusedId));
     }
@@ -179,6 +184,40 @@ export class Shell {
     this.#host.services.navigate(destination.scene, destination.params ?? {});
   }
 
+  /**
+   * The section's tabs, when the screen is one of them.
+   * @param {import("./sections.js").SectionContext} context
+   * @returns {import("./TopBar.js").BarTabs | null}
+   */
+  #tabs(context) {
+    const section = this.#section === null ? undefined : sectionById(this.#section);
+    if (section === undefined || !section.tabs.some((tab) => tab.scene === this.#scene)) {
+      return null;
+    }
+    return Object.freeze({ title: section.label, entries: sectionTabs(section, context), current: this.#scene, onOpen: (/** @type {import("./sections.js").TabEntry} */ tab) => this.#openTab(tab) });
+  }
+
+  /** @param {import("./sections.js").TabEntry} tab */
+  #openTab(tab) {
+    if (tab.locked !== null) {
+      this.#showNotice(tab.label, tab.locked);
+      return;
+    }
+    if (tab.scene !== this.#scene) {
+      this.#host.services.navigate(tab.scene, {});
+    }
+  }
+
+  /**
+   * A screen the bar opens (the notifications, Info), its Back leading back here; nothing when it is the one on show.
+   * @param {string} sceneId
+   */
+  #openFromBar(sceneId) {
+    if (sceneId !== this.#scene) {
+      this.#host.services.navigate(sceneId, this.#host.backHere());
+    }
+  }
+
   /** Whether the player is signed in and their account is loaded. */
   #signedIn() {
     return this.#app.account?.state?.status === AccountStatus.READY;
@@ -205,7 +244,7 @@ export class Shell {
     }
     if (signedIn && notifications?.state !== undefined) {
       const badge = unreadBadge(notifications.state.unread);
-      controls.push({ id: "notifications", width: square, drop: Infinity, make: (box) => new IconButton({ id: "notifications", ...box, icon: Icon.BELL, badge, enabled: this.#host.services.hasScene(SceneId.NOTIFICATIONS), onActivate: () => this.#host.services.navigate(SceneId.NOTIFICATIONS) }) });
+      controls.push({ id: "notifications", width: square, drop: Infinity, make: (box) => new IconButton({ id: "notifications", ...box, icon: Icon.BELL, badge, enabled: this.#host.services.hasScene(SceneId.NOTIFICATIONS), onActivate: () => this.#openFromBar(SceneId.NOTIFICATIONS) }) });
     }
     controls.push({ id: "settings", width: square, drop: Infinity, make: (box) => new IconButton({ id: "settings", ...box, icon: Icon.SETTINGS, onActivate: () => this.#showSettings() }) });
     controls.push(...this.#accountControls(widths, square, compact));
@@ -242,7 +281,7 @@ export class Shell {
     const openInfo = services.hasScene(SceneId.INFO)
       ? () => {
           close();
-          services.navigate(SceneId.INFO, { back: services.currentScene?.() ?? SceneId.MAIN_MENU });
+          this.#openFromBar(SceneId.INFO);
         }
       : null;
     const { modal, refresh } = buildSettingsDialog({ viewport: services.viewport, app: this.#app, openInfo, onClose: close, requestRender: services.requestRender });

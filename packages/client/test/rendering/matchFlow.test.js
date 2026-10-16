@@ -71,17 +71,21 @@ describe("registerScenes", () => {
   it("registers every scene and the menu can reach them all", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     registerScenes(manager, appContext());
-    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.DAILY, SceneId.LEADERBOARD, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
+    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.DAILY, SceneId.SEASON, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
     assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map((id) => !accountScenes.includes(id)), "account scenes need a game server");
     assert.equal(manager.navigate(SceneId.MAIN_MENU), true);
-    assert.equal(buttonNamed(manager.current, "Deck Builder").enabled, true);
+    assert.equal(buttonNamed(manager.current, "My decks").enabled, true);
     assert.equal(buttonNamed(manager.current, "Play").enabled, true);
-    buttonNamed(manager.current, "Deck Builder").activate();
+    buttonNamed(manager.current, "My decks").activate();
+    assert.equal(manager.currentId, SceneId.DECKS);
+    assert.equal(manager.current.findNode("shell.back"), null, "a section's own screen has no Back");
+    manager.current.findNode("decks.new").activate();
     assert.equal(manager.currentId, SceneId.DECK_BUILDER);
     manager.current.findNode("shell.back").activate();
-    assert.equal(manager.currentId, SceneId.MAIN_MENU);
+    assert.equal(manager.currentId, SceneId.DECKS, "Back goes to the section's screen, not to the menu");
+    manager.current.findNode("shell.nav.home").activate();
     manager.current.findNode("shell.nav.decks").activate();
-    assert.equal(manager.currentId, SceneId.DECK_BUILDER, "offline, the rail's Decks opens the Deck Builder");
+    assert.equal(manager.currentId, SceneId.DECKS, "offline too, the rail's Decks opens the player's decks");
     manager.current.findNode("shell.nav.play").activate();
     assert.equal(manager.currentId, SceneId.PLAY, "and Play every way to play");
     manager.current.findNode("shell.nav.home").activate();
@@ -185,12 +189,12 @@ describe("DeckSelectionScene", () => {
     builder.startNew("Work in progress");
     builder.addCard("iron_watcher");
     assert.equal((await builder.save()).ok, true);
-    const scene = new DeckSelectionScene(services({ hasScene: (id) => id === SceneId.DECK_BUILDER }), real);
+    const scene = new DeckSelectionScene(services({ hasScene: (id) => id === SceneId.DECKS }), real);
     scene.enter({});
     const wip = buttons(scene).find((node) => node.id === "deck-custom_1");
     assert.equal(wip.enabled, false);
     assert.match(wip.subtitle, /not playable: deck has 1 cards; minimum is 30/);
-    assert.equal(buttonNamed(scene, "Deck builder").enabled, true);
+    assert.equal(buttonNamed(scene, "Edit decks").enabled, true);
   });
 
   it("scrolls a long deck list with the wheel and keeps the selection reachable", async () => {

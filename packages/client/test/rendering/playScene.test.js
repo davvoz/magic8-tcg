@@ -116,7 +116,7 @@ describe("PlayScene", () => {
     byId(scene, "play.online.ranked").activate();
     assert.deepEqual(play.navigated.at(-1), { id: SceneId.ONLINE, params: { mode: "ranked" } });
     byId(scene, "play.history").activate();
-    assert.deepEqual(play.navigated.at(-1), { id: SceneId.GAME_HISTORY, params: { back: SceneId.PLAY } });
+    assert.deepEqual(play.navigated.at(-1), { id: SceneId.GAME_HISTORY, params: { back: SceneId.PLAY, backParams: {} } });
   });
 
   it("shows the deck the player plays with, changes it, and practice starts on it", async () => {

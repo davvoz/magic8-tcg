@@ -103,7 +103,7 @@ describe("InfoScene", () => {
     assert.equal(article().scrollY, read, "back where the reader was");
   });
 
-  it("goes back to the menu, or where it was opened from", () => {
+  it("goes back Home, or where it was opened from", () => {
     const svc = services();
     const scene = new InfoScene(svc, app());
     scene.enter({});
@@ -111,7 +111,7 @@ describe("InfoScene", () => {
     scene.onKey(key("Escape"));
     scene.enter({ back: SceneId.ONLINE });
     scene.findNode("shell.back").activate();
-    assert.deepEqual(svc.navigated.map((entry) => entry.id), [SceneId.MAIN_MENU, SceneId.ONLINE]);
+    assert.deepEqual(svc.navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.ONLINE]);
   });
 });
 

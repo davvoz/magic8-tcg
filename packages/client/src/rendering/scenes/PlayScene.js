@@ -12,7 +12,6 @@
  */
 import { deckMix } from "../../application/decks/deckMix.js";
 import { deckSummary, mixBands } from "../cards/deckStripe.js";
-import { SectionId } from "../shell/sections.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Icon } from "../ui/icons.js";
 import { IconButton } from "../ui/IconButton.js";
@@ -57,13 +56,15 @@ export class PlayScene extends SectionScene {
    * @param {{ now?: () => number }} [clock]
    */
   constructor(services, app, { now = () => Date.now() } = {}) {
-    super(services, app, { section: SectionId.PLAY, title: "Play" });
+    super(services, app, { scene: SceneId.PLAY, title: "Play" });
     this.#app = app;
     this.#now = now;
     this.#views = new PlayViews({ app, hasScene: services.hasScene, now });
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] */
+  enter(params = {}) {
+    this.routeBack(params);
     const app = this.#app;
     const rebuild = () => this.#rebuild();
     for (const service of [app.daily, app.ranking, app.online, app.onboarding, app.selectedDeck]) {
@@ -153,10 +154,10 @@ export class PlayScene extends SectionScene {
     let action = { id: "play.deck.change", text: "Change", enabled: decks.length > 0, onActivate: () => this.#showPicker() };
     let empty = "No deck to play yet";
     if (chosen === null && account?.needsStarter === true) {
-      action = { id: "play.deck.starter", text: compact ? "Get one" : "Get your starter deck", enabled: this.services.hasScene(SceneId.STARTER), onActivate: () => this.services.navigate(SceneId.STARTER) };
+      action = { id: "play.deck.starter", text: compact ? "Get one" : "Get your starter deck", enabled: this.services.hasScene(SceneId.STARTER), onActivate: () => this.services.navigate(SceneId.STARTER, this.backHere()) };
       empty = "No deck yet: your starter deck is free";
     } else if (chosen === null) {
-      action = { id: "play.deck.build", text: compact ? "Build" : "Build a deck", enabled: this.services.hasScene(SceneId.DECK_BUILDER), onActivate: () => this.services.navigate(SceneId.DECK_BUILDER, { from: SceneId.PLAY }) };
+      action = { id: "play.deck.build", text: compact ? "Build" : "Build a deck", enabled: this.services.hasScene(SceneId.DECK_BUILDER), onActivate: () => this.services.navigate(SceneId.DECK_BUILDER, this.backHere()) };
     }
     const deck = chosen === null ? null : this.#shown(chosen);
     this.root.add(new DeckBar({ id: "play.deck", ...frame, compact, deck, empty, action }));
@@ -275,7 +276,7 @@ export class PlayScene extends SectionScene {
     ];
     links.forEach((link, index) => {
       const frame = frames[index];
-      this.root.add(new IconButton({ id: link.id, ...frame, icon: link.icon, caption: compact ? "" : link.caption, enabled: signedIn && this.services.hasScene(link.scene), onActivate: () => this.services.navigate(link.scene, { back: SceneId.PLAY }) }));
+      this.root.add(new IconButton({ id: link.id, ...frame, icon: link.icon, caption: compact ? "" : link.caption, enabled: signedIn && this.services.hasScene(link.scene), onActivate: () => this.services.navigate(link.scene, this.backHere()) }));
     });
   }
 }
