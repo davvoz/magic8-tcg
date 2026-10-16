@@ -144,7 +144,7 @@ export class HomeScene extends SectionScene {
     const challenge = this.#views.challenge();
     const online = this.#views.online();
     const [left, middle, right] = layout.cards;
-    this.root.add(new ChallengeCard({ id: "home.challenge", ...left, compact, view: challenge, primary: primary && challenge.kind === "next", clock: () => this.#animationMs, onFight: () => this.services.navigate(SceneId.DAILY, this.backHere()) }));
+    this.root.add(new ChallengeCard({ id: "home.challenge", ...left, compact, view: challenge, challenger: this.#views.challenger(challenge), primary: primary && challenge.kind === "next", clock: () => this.#animationMs, onFight: () => this.services.navigate(SceneId.DAILY, this.backHere()) }));
     this.root.add(new OnlineCard({ id: "home.online", ...middle, compact, view: online, primary: primary && challenge.kind !== "next" && online.kind === "open", onPlay: (mode) => this.services.navigate(SceneId.ONLINE, { mode, ...this.backHere() }) }));
     this.#season = this.root.add(new SeasonCard({ id: "home.season", ...right, compact, view: this.#views.season(), canOpen: this.services.hasScene(SceneId.SEASON), onOpen: () => this.services.navigate(SceneId.SEASON) }));
     this.focus(this.findNode(focusedId) ?? first ?? this.root.focusableNodes()[0] ?? null);

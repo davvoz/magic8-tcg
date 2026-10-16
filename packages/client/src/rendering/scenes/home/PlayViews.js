@@ -12,6 +12,8 @@ import { SceneId } from "../sceneIds.js";
 /** Why what needs the game server is locked. */
 export const OFFLINE_REASON = "Not available offline.";
 const MINUTE = 60_000;
+/** Who stands for the challenges before today's opponents are known: the Archmage, veiled. */
+const STAND_IN_CHALLENGER = Object.freeze({ id: "archmage", name: "The Archmage", faction: "arcane", boss: false, state: /** @type {const} */ ("locked") });
 
 export class PlayViews {
   #app;
@@ -61,6 +63,20 @@ export class PlayViews {
       return { kind: "done", renewsIn: timeLeft(day.endsAt - this.#now()) };
     }
     return { kind: "next", opponent: next, stage: day.opponents.indexOf(next) };
+  }
+
+  /**
+   * The character that stands for today's challenge: the next opponent to beat; once the day is won, its boss; before
+   * the day is known (signed out, offline, still reading), the Archmage, veiled.
+   * @param {import("./ChallengeCard.js").ChallengeView} view
+   * @returns {import("../daily/CharacterPortrait.js").PortraitCharacter}
+   */
+  challenger(view) {
+    if (view.kind === "next") {
+      return view.opponent;
+    }
+    const boss = view.kind === "done" ? (this.#app.daily?.state.day?.opponents.at(-1) ?? null) : null;
+    return boss ?? STAND_IN_CHALLENGER;
   }
 
   /** @returns {import("./OnlineCard.js").OnlineView} */

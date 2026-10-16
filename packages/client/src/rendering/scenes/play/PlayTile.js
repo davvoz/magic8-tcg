@@ -9,8 +9,11 @@ import { CharacterPortrait } from "../daily/CharacterPortrait.js";
 import { HomeCard } from "../home/HomeCard.js";
 import { TileArt } from "./TileArt.js";
 
-/** The picture's width: a share of the tile's, within these bounds. */
-const ART = Object.freeze({ share: 0.34, wide: 260, compact: 110, inset: 6 });
+/**
+ * The picture's room: a share of the tile's width, within these bounds; the picture sits in it the same distance
+ * from the tile's left, top and bottom edges, clear of the rim and its painted corners.
+ */
+const ART = Object.freeze({ share: 0.34, wide: 260, compact: 110, inset: Object.freeze({ wide: 16, compact: 8 }) });
 /** Below this height a phone's tile has room for its name and buttons only. */
 const COMPACT_ROOMY = 150;
 
@@ -31,7 +34,7 @@ export class PlayTile extends HomeCard {
   constructor({ picture, kicker, kickerKey = "accent", title, text, status = null, actions, primary = false, ...frame }) {
     const artWidth = Math.round(Math.min(frame.compact ? ART.compact : ART.wide, frame.width * ART.share));
     super({ ...frame, lead: artWidth, glowKey: primary ? "accent" : null });
-    this.#buildPicture(picture, { id: frame.id, width: artWidth });
+    this.#buildPicture(picture, { id: frame.id, width: artWidth, inset: frame.compact ? ART.inset.compact : ART.inset.wide });
     this.#buildText({ id: frame.id, kicker, kickerKey, title, text, status, actions });
   }
 
@@ -54,10 +57,10 @@ export class PlayTile extends HomeCard {
 
   /**
    * @param {TilePicture} picture
-   * @param {{ id: string, width: number }} where
+   * @param {{ id: string, width: number, inset: number }} where `width`: the room kept for it on the tile's left
    */
-  #buildPicture(picture, { id, width }) {
-    const frame = { id: `${id}.art`, x: ART.inset, y: ART.inset, width: width - ART.inset, height: this.height - 2 * ART.inset };
+  #buildPicture(picture, { id, width, inset }) {
+    const frame = { id: `${id}.art`, x: inset, y: inset, width: width - inset, height: this.height - 2 * inset };
     if ("portrait" in picture) {
       this.add(new CharacterPortrait({ ...frame, character: picture.portrait, layout: "stacked", clock: picture.clock }));
       return;

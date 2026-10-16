@@ -98,6 +98,22 @@ export class HomeCard extends Panel {
   }
 
   /**
+   * The room left above the foot, for a picture across the card's width; null when there is less than `least`.
+   * Taking it moves the next part under it.
+   * @param {number} least the least height the picture is worth showing at
+   * @returns {{ x: number, y: number, width: number, height: number } | null}
+   */
+  takePictureRoom(least) {
+    const height = this.footTop - this.#cursor - this.metrics.gap;
+    if (height < least) {
+      return null;
+    }
+    const room = { x: this.left, y: this.#cursor, width: this.inner, height };
+    this.advance(height + this.metrics.gap);
+    return room;
+  }
+
+  /**
    * The buttons side by side along the foot, the note (when there is one) over them.
    * @param {readonly CardAction[]} actions
    * @param {{ note?: string | null, noteId?: string, noteKey?: string }} [options]

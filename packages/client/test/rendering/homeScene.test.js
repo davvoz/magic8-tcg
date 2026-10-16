@@ -1,7 +1,8 @@
 /**
  * The Home screen: the guide's next step (and hiding it), a game in progress
  * to resume, today's challenge, online play and the season, each locked
- * with its reason where it cannot be used, and one gold button.
+ * with its reason where it cannot be used (a picture in its place all the
+ * same), and one gold button.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -16,6 +17,8 @@ import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStore.js";
 import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnboarding.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
+import { UiPiece } from "../../src/rendering/images/UiArt.js";
+import { CharacterPortrait } from "../../src/rendering/scenes/daily/CharacterPortrait.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
@@ -105,6 +108,8 @@ describe("HomeScene, signed out", () => {
     assert.equal(byId(home.scene, "home.challenge.note").text, "Sign in to take on the challenges.");
     assert.equal(byId(home.scene, "home.online.casual").isEffectivelyEnabled, false);
     assert.equal(byId(home.scene, "home.online.note").text, "Sign in to play online.");
+    assert.ok(byId(home.scene, "home.challenge.portrait") instanceof CharacterPortrait, "the challenges show a character before today's are known");
+    assert.equal(byId(home.scene, "home.online.art")?.piece, UiPiece.PLAY_ONLINE, "online play shows its painting");
     assert.equal(byId(home.scene, "home.season.standing").text, "Sign in to take part in the season.");
     assert.ok(byId(home.scene, "home.season.jackpot"), "the jackpot is for everyone to see");
     assert.deepEqual(golden(home.scene), ["home.next"], "one gold button");
@@ -172,6 +177,7 @@ describe("HomeScene, signed in", () => {
     home.scene.enter({});
     await signIn(home);
     assert.ok(rendered(home.scene).includes("New opponents in 2h 5m."));
+    assert.ok(byId(home.scene, "home.challenge.portrait"), "the day's boss stands for the challenges once they are won");
   });
 
   it("puts a game in progress first, to resume", async () => {

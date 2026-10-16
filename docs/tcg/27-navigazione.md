@@ -25,13 +25,13 @@ La cornice è il `chrome` della scena (`Scene.js`): disegnata sotto, raggiunta d
 
 | Sezione | Schermata | Cosa c'è |
 |---|---|---|
-| **Home** | `HomeScene` | *Prossimo passo* per i nuovi (tutorial → starter → prima sfida → prima partita online → classificata; si nasconde, e sparisce a percorso finito), la sfida del giorno, il gioco online, la stagione con il jackpot; la partita in corso si riprende da qui (e da un toast ovunque). |
-| **Play** | `PlayScene` | Il mazzo con cui si gioca (*Change*), quattro riquadri: *Daily challenges*, *Online* (*Casual* · *Ranked*), *Practice vs AI*, *Tutorial*; sotto, *Watch live games* e *My games and replays*. |
+| **Home** | `HomeScene` | *Prossimo passo* per i nuovi (tutorial → starter → prima sfida → prima partita online → classificata; si nasconde, e sparisce a percorso finito), la sfida del giorno (sempre con un personaggio: il prossimo avversario, il boss a giornata vinta, l'Arcimago velato finché il giorno non è noto), il gioco online (con il suo dipinto), la stagione con il jackpot; la partita in corso si riprende da qui (e da un toast ovunque). |
+| **Play** | `PlayScene` | Quattro riquadri, ciascuno con il suo dipinto (le Sfide con il personaggio del giorno): *Daily challenges*, *Online* (*Casual* · *Ranked*), *Practice vs AI*, *Tutorial*; sotto, *Watch live games* e *My games and replays*. |
 | **Decks** | `DecksScene` · `CollectionScene` | I mazzi del giocatore al centro (quello con cui gioca illuminato: un clic ne sceglie un altro), *Edit*/*Copy* e *Delete*; lo starter gratuito finché non lo prende, il mazzo lasciato aperto nel Deck Builder, *New deck*. Scheda *Collection*: le carte possedute. Il Deck Builder serve solo a modificare un mazzo. |
 | **Market** | `ShopScene` · `MarketScene` · `TradesScene` | Negozio (pacchetti, singole, mazzi, ingressi ranked; ordini da pagare), bacheca dei giocatori (con *My sales & purchases*), scambi. |
 | **Season** | `SeasonScene` | Classifica con la propria riga e posizione, jackpot e premi, come funziona la classificata, *Play ranked* (bloccato con ciò che manca). Le stagioni passate non ci sono ancora: il server non le espone. |
 
-Il mazzo con cui si gioca è uno solo per tutto il gioco (`application/decks/SelectedDeck.js`, salvato nel browser): lo usano Practice, Online e le Sfide, e cambiarlo in una di queste schermate vale anche per le altre.
+Il mazzo con cui si gioca è uno solo per tutto il gioco (`application/decks/SelectedDeck.js`, salvato nel browser): lo usano Practice, Online e le Sfide, e si sceglie lì, prima di giocare (Play non ha una barra del mazzo); cambiarlo in una di queste schermate vale anche per le altre.
 
 Il percorso del *Prossimo passo* (`application/onboarding/`) conosce lo starter dall'account e la classificata dalla posizione in stagione; tutorial finito, prima sfida vinta e prima partita online sono ricordati nel browser, per account.
 

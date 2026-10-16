@@ -252,7 +252,6 @@ const withDailyRun = (run) => (app) => Object.assign(app, { daily: dailyService(
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
   { name: "play", make: (s, app) => new PlayScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("play.daily.play")) },
-  { name: "play, choosing the deck", make: (s, app) => new PlayScene(s, app), after: (scene) => (scene.root.findById("play.deck.change")?.activate(), assert.ok(scene.modal?.findById("deckPicker.close"))) },
   { name: "home, with the guide", make: (s, app) => new HomeScene(s, app), before: (app) => withGuide(app), after: (scene) => assert.ok(scene.root.findById("home.next")) },
   { name: "home, without the guide", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app), withGuide(app).dismiss()), after: (scene) => assert.equal(scene.root.findById("home.next"), null) },
   { name: "home, account dialog", make: (s, app) => new HomeScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },

@@ -1,6 +1,5 @@
 /**
- * The Play screen: the deck the player plays with (and changing it), the
- * four ways to play with where the player stands, locked with their reason
+ * The Play screen: the four ways to play with where the player stands, locked with their reason
  * where they cannot be used, the links to live games and to the player's
  * own, and one gold button.
  */
@@ -19,15 +18,14 @@ import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStor
 import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnboarding.js";
 import { StoredSelectedDeck } from "../../src/infrastructure/persistence/StoredSelectedDeck.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { DeckSelectionScene } from "../../src/rendering/scenes/DeckSelectionScene.js";
 import { UiPiece } from "../../src/rendering/images/UiArt.js";
 import { CharacterPortrait } from "../../src/rendering/scenes/daily/CharacterPortrait.js";
-import { PlayScene } from "../../src/rendering/scenes/PlayScene.js";
+import { PlayScene, playLayout } from "../../src/rendering/scenes/PlayScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
 import { DAY } from "../application/dailyFixtures.js";
 import { loadBundledContent } from "../application/fixtures.js";
-import { FakeContext2D, loadTheme } from "./fakes.js";
+import { loadTheme } from "./fakes.js";
 
 const theme = loadTheme();
 const content = await loadBundledContent();
@@ -63,11 +61,6 @@ function world({ size = { cssWidth: 1600, cssHeight: 900 } } = {}) {
 }
 
 const byId = (scene, id) => scene.findNode(id);
-const rendered = (scene) => {
-  const context = new FakeContext2D();
-  scene.render(context);
-  return context.texts;
-};
 const golden = (scene) => {
   const found = [];
   const visit = (node) => {
@@ -123,21 +116,12 @@ describe("PlayScene", () => {
     assert.deepEqual(play.navigated.at(-1), { id: SceneId.GAME_HISTORY, params: { back: SceneId.PLAY, backParams: {} } });
   });
 
-  it("shows the deck the player plays with, changes it, and practice starts on it", async () => {
+  it("leaves the deck to where each way to play starts", () => {
     const play = world();
     const scene = new PlayScene(play.services, play.app);
     scene.enter({});
-    const decks = play.app.deckSelection.listPlayableDecks();
-    assert.equal(byId(scene, "play.deck.name").text, decks[0].deck.name, "nothing chosen yet: the first deck");
-    byId(scene, "play.deck.change").activate();
-    assert.equal(scene.modal?.id, "deckPicker");
-    scene.modal.findById(`deckPicker.deck.${decks[2].deck.id}`).activate();
-    assert.equal(scene.modal, null);
-    assert.equal(play.selectedDeck.deckId, decks[2].deck.id);
-    assert.equal(byId(scene, "play.deck.name").text, decks[2].deck.name);
-    assert.ok(rendered(scene).some((text) => text.startsWith("30 cards")));
-    const practice = new DeckSelectionScene(play.services, play.app);
-    practice.enter({});
-    assert.equal(practice.root.findById(`deck-${decks[2].deck.id}`).selected, true, "practice starts on the deck chosen in Play");
+    assert.equal(byId(scene, "play.deck"), null, "no deck bar");
+    const [top] = playLayout(play.services.viewport).tiles;
+    assert.equal(top.y, byId(scene, "play.daily").y, "the tiles start at the top");
   });
 });

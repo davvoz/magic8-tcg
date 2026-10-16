@@ -1,41 +1,35 @@
 /**
- * Play: every way to play, in one place. Across the top, the deck the
- * player plays with (SelectedDeck), and Change. Then four tiles, each with
- * what it is for and where the player stands with it: the daily challenges
- * (today's opponent in their portrait), online play (Casual, and Ranked
+ * Play: every way to play, in one place: four tiles, each with what it is
+ * for and where the player stands with it: the daily challenges (today's
+ * opponent in their portrait), online play (Casual, and Ranked
  * locked until the player may play it), practice against the AI (offline
  * too) and the tutorial. At the foot, the games being played now to watch,
  * and the player's own games and replays. What needs an account or the
- * game server stays in its place, locked, saying why.
+ * game server stays in its place, locked, saying why. The deck is chosen
+ * where each way to play starts (the challenges, the lobby, practice).
  *
  * One gold button: the challenge's while one is to fight, else Casual, else Practice.
  */
-import { deckMix } from "../../application/decks/deckMix.js";
-import { deckSummary, mixBands } from "../cards/deckStripe.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { UiPiece } from "../images/UiArt.js";
 import { Icon } from "../ui/icons.js";
 import { IconButton } from "../ui/IconButton.js";
 import { PlayViews } from "./home/PlayViews.js";
-import { DeckBar } from "./play/DeckBar.js";
-import { buildDeckPicker } from "./play/DeckPicker.js";
 import { PlayTile } from "./play/PlayTile.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 import { startTutorial } from "./startTutorial.js";
 
-/** The frame: margins, gaps, the deck's bar and the links at the foot (a phone puts the links beside the bar). */
+/** The frame: margins, gaps, and the links at the foot (a phone's are icons only). */
 const FRAME = Object.freeze({
-  wide: Object.freeze({ margin: 20, gap: 20, bar: 64, links: 56, link: 300 }),
-  compact: Object.freeze({ margin: 8, gap: 8, bar: 46, links: 0, link: 46 }),
+  wide: Object.freeze({ margin: 20, gap: 20, links: 56, link: 300, linkGap: 16 }),
+  compact: Object.freeze({ margin: 8, gap: 8, links: 46, link: 56, linkGap: 8 }),
 });
 const MINUTE = 60_000;
-/** Who stands for the challenges on their tile before today's opponents are known: the Archmage, veiled. */
-const STAND_IN_CHALLENGER = Object.freeze({ id: "archmage", name: "The Archmage", faction: "arcane", boss: false, state: /** @type {const} */ ("locked") });
 
 /**
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
- * @typedef {Readonly<{ bar: Rect, tiles: readonly Rect[], links: readonly Rect[] }>} PlayLayout
+ * @typedef {Readonly<{ tiles: readonly Rect[], links: readonly Rect[] }>} PlayLayout
  */
 
 export class PlayScene extends SectionScene {
@@ -50,8 +44,6 @@ export class PlayScene extends SectionScene {
   #minute = -1;
   /** Whether the account was ready when last looked at: becoming ready reads what the tiles show of it. */
   #ready = false;
-  /** Whether the deck picker is open: it stays open while the screen is built again (a service changed). */
-  #picking = false;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -70,7 +62,7 @@ export class PlayScene extends SectionScene {
     this.routeBack(params);
     const app = this.#app;
     const rebuild = () => this.#rebuild();
-    for (const service of [app.daily, app.ranking, app.online, app.onboarding, app.selectedDeck]) {
+    for (const service of [app.daily, app.ranking, app.online, app.onboarding]) {
       if (typeof service?.subscribe === "function") {
         this.#unsubscribes.push(service.subscribe(rebuild));
       }
@@ -121,13 +113,11 @@ export class PlayScene extends SectionScene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
-    this.closeModal();
     this.root.clear();
     this.#minute = Math.floor(this.#now() / MINUTE);
     const { viewport } = this.services;
     const compact = viewport.compact === true;
     const layout = playLayout(viewport);
-    this.#buildDeckBar(layout.bar, compact);
     const challenge = this.#views.challenge();
     const online = this.#views.online();
     const gold = goldTile(challenge, online);
@@ -139,61 +129,7 @@ export class PlayScene extends SectionScene {
     this.#buildLinks(layout.links, compact);
     const goldId = { daily: "play.daily.play", online: "play.online.casual", practice: "play.practice.play" }[gold];
     this.focus(this.findNode(focusedId) ?? this.root.findById(goldId) ?? null);
-    if (this.#picking) {
-      this.#showPicker();
-    }
     this.services.requestRender();
-  }
-
-  /**
-   * @param {Rect} frame
-   * @param {boolean} compact
-   */
-  #buildDeckBar(frame, compact) {
-    const decks = this.#app.deckSelection.listDecks();
-    const chosen = this.#chosenDeck(decks);
-    const account = this.#app.account;
-    /** @type {import("./play/DeckBar.js").DeckBarAction} */
-    let action = { id: "play.deck.change", text: "Change", enabled: decks.length > 0, onActivate: () => this.#showPicker() };
-    let empty = "No deck to play yet";
-    if (chosen === null && account?.needsStarter === true) {
-      action = { id: "play.deck.starter", text: compact ? "Get one" : "Get your starter deck", enabled: this.services.hasScene(SceneId.STARTER), onActivate: () => this.services.navigate(SceneId.STARTER, this.backHere()) };
-      empty = "No deck yet: your starter deck is free";
-    } else if (chosen === null) {
-      action = { id: "play.deck.build", text: compact ? "Build" : "Build a deck", enabled: this.services.hasScene(SceneId.DECK_BUILDER), onActivate: () => this.services.navigate(SceneId.DECK_BUILDER, this.backHere()) };
-    }
-    const deck = chosen === null ? null : this.#shown(chosen);
-    this.root.add(new DeckBar({ id: "play.deck", ...frame, compact, deck, empty, action }));
-  }
-
-  /**
-   * The deck the player plays with, among the decks here: the one chosen while it can be played, else the first that can.
-   * @param {readonly import("../../application/decks/DeckSelectionService.js").DeckOption[]} decks
-   */
-  #chosenDeck(decks) {
-    const playable = (/** @type {import("../../application/decks/DeckSelectionService.js").DeckOption} */ option) => option.report.valid;
-    return this.#app.selectedDeck?.pick(decks, { idOf: (option) => option.deck.id, playable }) ?? decks.find(playable) ?? null;
-  }
-
-  /** @param {import("../../application/decks/DeckSelectionService.js").DeckOption} option */
-  #shown(option) {
-    const mix = deckMix(this.#app.content, option.deck.entries);
-    return Object.freeze({ name: option.deck.name, summary: deckSummary(option.deck.totalCards, mix), bands: mixBands(this.services.theme, mix) });
-  }
-
-  #showPicker() {
-    const decks = this.#app.deckSelection.listDecks();
-    this.#picking = true;
-    const close = () => {
-      this.#picking = false;
-      this.closeModal();
-    };
-    const onChoose = (/** @type {string} */ deckId) => {
-      close();
-      this.#app.selectedDeck?.choose(deckId);
-      this.#rebuild();
-    };
-    this.openModal(buildDeckPicker({ viewport: this.services.viewport, theme: this.services.theme, content: this.#app.content, decks, selectedId: this.#chosenDeck(decks)?.deck.id ?? null, onChoose, onClose: close }));
   }
 
   /**
@@ -201,7 +137,7 @@ export class PlayScene extends SectionScene {
    * @param {boolean} primary
    */
   #dailyTile(view, primary) {
-    const picture = { portrait: this.#challenger(view), clock: () => this.#animationMs };
+    const picture = { portrait: this.#views.challenger(view), clock: () => this.#animationMs };
     const status = dailyStatus(view);
     return {
       picture,
@@ -213,20 +149,6 @@ export class PlayScene extends SectionScene {
       primary,
       actions: [{ id: "play.daily.play", text: view.kind === "done" ? "See the challenges" : "Play the challenge", locked: view.kind === "locked", variant: variantOf(primary), onActivate: () => this.services.navigate(SceneId.DAILY) }],
     };
-  }
-
-  /**
-   * The character the challenge tile shows: the next opponent to beat; once the day is won, its boss; before the day is
-   * known (signed out, offline, still reading), the one who stands for the challenges, veiled.
-   * @param {import("./home/ChallengeCard.js").ChallengeView} view
-   * @returns {import("./daily/CharacterPortrait.js").PortraitCharacter}
-   */
-  #challenger(view) {
-    if (view.kind === "next") {
-      return view.opponent;
-    }
-    const boss = view.kind === "done" ? (this.#app.daily?.state.day?.opponents.at(-1) ?? null) : null;
-    return boss ?? STAND_IN_CHALLENGER;
   }
 
   /**
@@ -339,25 +261,17 @@ function dailyStatus(view) {
 }
 
 /**
- * The deck's bar across the top, the four tiles two by two, the links at the foot (on a phone, beside the bar).
+ * The four tiles two by two, the links at the foot.
  * @param {{ compact?: boolean, logicalWidth: number, logicalHeight: number }} viewport the content area
  * @returns {PlayLayout}
  */
 export function playLayout(viewport) {
-  const compact = viewport.compact === true;
-  const f = compact ? FRAME.compact : FRAME.wide;
+  const f = viewport.compact === true ? FRAME.compact : FRAME.wide;
   const width = viewport.logicalWidth - 2 * f.margin;
-  const linkGap = compact ? f.gap : 16;
-  const barWidth = compact ? width - 2 * (f.link + linkGap) : width;
-  const bar = Object.freeze({ x: f.margin, y: f.margin, width: barWidth, height: f.bar });
-  const tilesTop = f.margin + f.bar + f.gap;
-  const linksY = compact ? f.margin : viewport.logicalHeight - f.margin - f.links;
-  const tilesBottom = compact ? viewport.logicalHeight - f.margin : linksY - f.gap;
+  const linksY = viewport.logicalHeight - f.margin - f.links;
   const tileWidth = Math.floor((width - f.gap) / 2);
-  const tileHeight = Math.floor((tilesBottom - tilesTop - f.gap) / 2);
-  const tiles = [0, 1, 2, 3].map((index) => Object.freeze({ x: f.margin + (index % 2) * (tileWidth + f.gap), y: tilesTop + Math.floor(index / 2) * (tileHeight + f.gap), width: tileWidth, height: tileHeight }));
-  const links = compact
-    ? [0, 1].map((index) => Object.freeze({ x: f.margin + barWidth + linkGap + index * (f.link + linkGap), y: linksY, width: f.link, height: f.bar }))
-    : [0, 1].map((index) => Object.freeze({ x: f.margin + index * (f.link + linkGap), y: linksY, width: f.link, height: f.links }));
-  return Object.freeze({ bar, tiles: Object.freeze(tiles), links: Object.freeze(links) });
+  const tileHeight = Math.floor((linksY - f.gap - f.margin - f.gap) / 2);
+  const tiles = [0, 1, 2, 3].map((index) => Object.freeze({ x: f.margin + (index % 2) * (tileWidth + f.gap), y: f.margin + Math.floor(index / 2) * (tileHeight + f.gap), width: tileWidth, height: tileHeight }));
+  const links = [0, 1].map((index) => Object.freeze({ x: f.margin + index * (f.link + f.linkGap), y: linksY, width: f.link, height: f.links }));
+  return Object.freeze({ tiles: Object.freeze(tiles), links: Object.freeze(links) });
 }
