@@ -2,8 +2,9 @@
  * What a browser signing with the player's own keys needs from the game
  * server (docs/tcg/20-chiavi.md): which authorities of an account a key
  * controls, the block a transaction must reference, and the relay of a
- * signed transfer. No private key is ever sent: only public keys and
- * signed transactions.
+ * signed transfer or ping (a comment on cur8.fun, signed with the posting
+ * key). No private key is ever sent: only public keys and signed
+ * transactions.
  *
  * @typedef {Readonly<{ blockNum: number, blockId: string, time: number }>} BlockReference
  */
@@ -54,11 +55,26 @@ export class HttpWalletApi {
    * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>} the transaction id
    */
   async broadcastTransfer(transaction) {
-    const response = await this.#transport.request("POST", "/api/wallet/transfers", { body: { transaction } });
-    if (!response.ok) {
-      return response;
-    }
-    const txId = /** @type {any} */ (response.value)?.txId;
-    return typeof txId === "string" && TX_ID_PATTERN.test(txId) ? ok(txId) : fail(ApiFailure.BAD_RESPONSE, UNEXPECTED);
+    return txIdOf(await this.#transport.request("POST", "/api/wallet/transfers", { body: { transaction } }));
   }
+
+  /**
+   * @param {Readonly<Record<string, unknown>>} transaction a ping, signed, in the node's JSON form
+   * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>} the transaction id
+   */
+  async broadcastPing(transaction) {
+    return txIdOf(await this.#transport.request("POST", "/api/pings", { body: { transaction } }));
+  }
+}
+
+/**
+ * @param {import("@magic8/engine/shared/Result.js").Ok<unknown> | import("@magic8/engine/shared/Result.js").Fail} response a relay's answer
+ * @returns {import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail}
+ */
+function txIdOf(response) {
+  if (!response.ok) {
+    return response;
+  }
+  const txId = /** @type {any} */ (response.value)?.txId;
+  return typeof txId === "string" && TX_ID_PATTERN.test(txId) ? ok(txId) : fail(ApiFailure.BAD_RESPONSE, UNEXPECTED);
 }

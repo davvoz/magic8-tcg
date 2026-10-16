@@ -15,6 +15,9 @@
  *   /tools/preview/?scene=match&inspect=1    plus the inspect overlay on a hand card
  *   /tools/preview/?scene=match&help=0       with the match help off (it is on, as for a new player)
  *   /tools/preview/?scene=match&say=Kneel.   the opponent speaks, as a daily challenge's character does (a bubble by its seat)
+ *   /tools/preview/?scene=match&share=1      the match conceded, its result shared as a ping on cur8.fun (the dialog; nothing is posted)
+ *   /tools/preview/?scene=match&over=1       the match conceded, its result closed: the board, with See result
+ *   /tools/preview/?scene=sharecard          the picture a shared game carries, as the JPEG it is saved to
  *   /tools/preview/?scene=info&topic=ranked  the Info screen on a topic (default: how to play)
  *   /tools/preview/?scene=tutorial&next=5    the tutorial, after N clicks as the coach asks (Next, or what it points at)
  *   /tools/preview/?scene=online&tab=ranked  the online lobby against a scripted server (onlineWorld.js lists its options)
@@ -36,6 +39,9 @@ import { BasicAiController } from "../../src/application/match/BasicAiController
 import { TutorialService } from "../../src/application/tutorial/TutorialService.js";
 import { HelpSettings } from "../../src/application/help/HelpSettings.js";
 import { CharacterVoice } from "../../src/application/daily/CharacterVoice.js";
+import { pingText } from "../../src/application/social/pingText.js";
+import { shareCardOf } from "../../src/application/social/shareCard.js";
+import { CanvasShareImage } from "../../src/rendering/share/ShareCard.js";
 import { humanController } from "../../src/application/match/HumanController.js";
 import { MatchSetupService } from "../../src/application/match/MatchSetupService.js";
 import { declareAttackers, declareBlockers, endTurn, playCard } from "@magic8/engine/domain/commands/commandFactories.js";
@@ -110,6 +116,13 @@ function buildApp(content, help) {
     environment: Object.freeze({ version: "preview", storage: "memory" }),
     help: new HelpSettings({ preferences: { load: () => ({ enabled: help }), save: () => undefined } }),
     voice: new CharacterVoice({ now: () => Date.now() }),
+    // Shares nothing: the dialog is shown, Post answers after a moment.
+    sharing: {
+      canShare: () => true,
+      textFor: (_gameId, game) => pingText({ ...game, mode: "ranked", url: window.location.origin }),
+      cardFor: (_gameId, game) => shareCardOf({ ...game, mode: "ranked", url: window.location.origin }, { name: "@alice", account: "alice" }),
+      share: () => new Promise((resolve) => window.setTimeout(() => resolve({ ok: true, value: "" }), 1500)),
+    },
   });
 }
 
@@ -248,6 +261,53 @@ async function createMatch(app, { turns, deckId }) {
 }
 
 /**
+ * The picture of a won boss challenge, saved as a JPEG and shown as an image in place of the game.
+ * @param {import("../../src/rendering/theme/Theme.js").Theme} theme
+ */
+async function showShareCard(theme) {
+  const game = { outcome: /** @type {const} */ ("win"), opponent: { name: "The Gravelord", account: "ai_gravelord", character: true }, turns: 14, myLife: 7, theirLife: 0, mode: "daily", challenge: { boss: true, track: "Hard" }, url: window.location.origin };
+  await characterPortrait(theme, "gravelord");
+  const painted = await new CanvasShareImage({ theme, createCanvas: () => document.createElement("canvas") }).render(shareCardOf(game, { name: "@alice", account: "alice" }));
+  if (!painted.ok) {
+    throw new Error(painted.error.message);
+  }
+  const image = document.createElement("img");
+  image.src = `data:image/jpeg;base64,${painted.value}`;
+  image.style.cssText = "display:block;width:1200px;height:630px";
+  document.body.replaceChildren(image);
+  document.body.style.overflow = "auto";
+}
+
+/**
+ * Waits until a character's portrait is loaded (asked for, then given time).
+ * @param {import("../../src/rendering/theme/Theme.js").Theme} theme
+ * @param {string} id
+ */
+async function characterPortrait(theme, id) {
+  for (let attempt = 0; attempt < 50 && theme.characterArt?.imageFor(id) === null; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
+}
+
+/**
+ * Concedes the match, then once its result is offered does `then` with the scene (share it, close it).
+ * @param {SceneManager} sceneManager
+ * @param {any} session
+ * @param {(scene: any) => void} then
+ */
+function endMatch(sceneManager, session, then) {
+  session.submit({ type: CommandType.CONCEDE, playerId: session.humanPlayerIds[0] });
+  const wait = () => {
+    if (sceneManager.current?.modal?.id !== "gameOver") {
+      window.setTimeout(wait, 200);
+      return;
+    }
+    then(sceneManager.current);
+  };
+  wait();
+}
+
+/**
  * Opens the inspect overlay on the first card node of the current scene.
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
  */
@@ -275,9 +335,10 @@ const PLAIN_SCENES = Object.freeze({ daily: SceneId.DAILY, decks: SceneId.DECK_S
 /**
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
  * @param {import("../../src/application/AppContext.js").AppContext} app
- * @param {{ scene: string, turns: number, inspect: boolean, deckId: string | null, topic: string | null, say: string | null }} request
+ * @param {{ scene: string, turns: number, inspect: boolean, deckId: string | null, topic: string | null, say: string | null, share: boolean, over: boolean }} request
  */
-async function show(sceneManager, app, { scene, turns, inspect, deckId, topic, say }) {
+async function show(sceneManager, app, request) {
+  const { scene, inspect, topic } = request;
   const plain = PLAIN_SCENES[/** @type {keyof typeof PLAIN_SCENES} */ (scene)];
   if (plain !== undefined) {
     sceneManager.navigate(plain);
@@ -290,21 +351,34 @@ async function show(sceneManager, app, { scene, turns, inspect, deckId, topic, s
       sceneManager.current?.root.findById(`catalog.info.${app.content.catalog.all()[0].id}`)?.activate();
     }
   } else if (scene === "match") {
-    const session = await createMatch(app, { turns, deckId });
-    // The game stands for an online one (a challenge's), so the character's line is heard at its table.
-    Object.defineProperty(session, "gameId", { value: "preview" });
-    sceneManager.navigate(SceneId.MATCH, { session });
-    if (say !== null) {
-      // Said again every few seconds, so a screenshot taken whenever catches it.
-      const speak = () => app.voice?.say({ opponent: /** @type {any} */ ({ name: "The Gravelord" }), kind: "intro", line: say, gameId: "preview" });
-      speak();
-      window.setInterval(speak, 4000);
-    }
-    if (inspect) {
-      inspectFirstCard(sceneManager);
-    }
+    await showMatch(sceneManager, app, request);
   } else {
     sceneManager.navigate(SceneId.MAIN_MENU);
+  }
+}
+
+/**
+ * A match after a few turns, with what the request adds: the opponent speaking, a card inspected, the match ended and its result shared or closed.
+ * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
+ * @param {import("../../src/application/AppContext.js").AppContext} app
+ * @param {{ turns: number, inspect: boolean, deckId: string | null, say: string | null, share: boolean, over: boolean }} request
+ */
+async function showMatch(sceneManager, app, { turns, inspect, deckId, say, share, over }) {
+  const session = await createMatch(app, { turns, deckId });
+  // The game stands for an online one (a challenge's), so the character's line is heard at its table.
+  Object.defineProperty(session, "gameId", { value: "preview" });
+  sceneManager.navigate(SceneId.MATCH, { session });
+  if (say !== null) {
+    // Said again every few seconds, so a screenshot taken whenever catches it.
+    const speak = () => app.voice?.say({ opponent: /** @type {any} */ ({ name: "The Gravelord" }), kind: "intro", line: say, gameId: "preview" });
+    speak();
+    window.setInterval(speak, 4000);
+  }
+  if (inspect) {
+    inspectFirstCard(sceneManager);
+  }
+  if (share || over) {
+    endMatch(sceneManager, session, (board) => (share ? board.modal?.findById("gameOver.share")?.activate() : board.onCancel()));
   }
 }
 
@@ -430,6 +504,8 @@ async function boot() {
     turns: countParam(query, "turns", 6),
     inspect: query.get("inspect") === "1",
     say: query.get("say"),
+    share: query.get("share") === "1",
+    over: query.get("over") === "1",
     deckId: query.get("deck"),
     topic: query.get("topic"),
     next: countParam(query, "next", 0),
@@ -454,7 +530,22 @@ async function boot() {
   const uiArt = paintedMenus();
   // The title face too, so the menu's name is never caught in the fallback one.
   await document.fonts.load(`900 72px ${theme.value.fonts.titleFamily}`);
-  const sceneManager = buildPresentation(Object.freeze({ ...theme.value, illustrations, characterArt, tableArt, uiArt }));
+  await present(Object.freeze({ ...theme.value, illustrations, characterArt, tableArt, uiArt }), app, request);
+  document.title = `KIJAM preview: ${request.scene}`;
+}
+
+/**
+ * The screen the request asks for: the share card alone, or the game on a scene.
+ * @param {import("../../src/rendering/theme/Theme.js").Theme} theme
+ * @param {import("../../src/application/AppContext.js").AppContext} app
+ * @param {any} request
+ */
+async function present(theme, app, request) {
+  if (request.scene === "sharecard") {
+    await showShareCard(theme);
+    return;
+  }
+  const sceneManager = buildPresentation(theme);
   registerScenes(sceneManager, app);
   if (request.scene === "tutorial") {
     await showTutorial(sceneManager, app, request.next);
@@ -463,7 +554,6 @@ async function boot() {
   } else {
     await show(sceneManager, app, request);
   }
-  document.title = `KIJAM preview: ${request.scene}`;
 }
 
 /**

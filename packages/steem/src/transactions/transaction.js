@@ -1,20 +1,22 @@
 /**
- * STEEM transactions carrying `custom_json` and `transfer` operations: binary
+ * STEEM transactions carrying `custom_json`, `transfer` and `comment` operations: binary
  * serialization (the bytes the chain hashes and signs), transaction id,
  * signature, and the JSON form a node accepts in
  * `condenser_api.broadcast_transaction`.
  *
  * Only what the game needs is supported, on purpose: a `custom_json` signed
  * with posting authority (or active, for the manifest, which is signed by
- * Keychain and never here), and a player's `transfer` of STEEM or SBD,
- * signed in their browser with their active key. Anything else is refused
- * rather than half-serialized.
+ * Keychain and never here), a player's `transfer` of STEEM or SBD,
+ * signed in their browser with their active key, and a player's `comment`
+ * (a ping on cur8.fun, sharing a game), signed with their posting key.
+ * Anything else is refused rather than half-serialized.
  *
  * Layout (little endian, as the chain's fc::raw):
  *   ref_block_num u16 ‖ ref_block_prefix u32 ‖ expiration u32 (Unix seconds)
  *   ‖ varint(#ops) ‖ { varint(op id) ‖ op fields }* ‖ varint(#extensions = 0)
  *   custom_json (id 18): flat_set<account> required_auths ‖ flat_set<account> required_posting_auths ‖ string id ‖ string json
  *   transfer (id 2): string from ‖ string to ‖ asset amount ‖ string memo
+ *   comment (id 1): string parent_author ‖ string parent_permlink ‖ string author ‖ string permlink ‖ string title ‖ string body ‖ string json_metadata
  *   string = varint(byte length) ‖ UTF-8 bytes; flat_set = varint(count) ‖ sorted items
  *   asset (legacy) = int64 amount ‖ u8 precision ‖ symbol, 7 bytes zero-padded ("STEEM", "SBD")
  *
@@ -34,6 +36,12 @@ export const STEEM_CHAIN_ID = new Uint8Array(32);
 
 const CUSTOM_JSON_OPERATION = 18;
 const TRANSFER_OPERATION = 2;
+const COMMENT_OPERATION = 1;
+/** A permlink (and a parent's, the category of a root post): lowercase letters, digits and dashes. */
+const PERMLINK_PATTERN = /^[a-z0-9-]{1,256}$/;
+const MAX_TITLE_BYTES = 256;
+const MAX_BODY_BYTES = 65_536;
+const MAX_JSON_METADATA_BYTES = 8192;
 /** STEEM_MAX_MEMO_SIZE */
 const MAX_MEMO_BYTES = 2048;
 const ASSET_SYMBOL_BYTES = 7;
@@ -51,7 +59,9 @@ const encoder = new TextEncoder();
  * @typedef {Readonly<{ type: "custom_json", requiredAuths: readonly string[], requiredPostingAuths: readonly string[], id: string, json: string }>} CustomJsonOperation
  * @typedef {Readonly<{ type: "transfer", from: string, to: string, amount: number, asset: string, memo: string }>} TransferOperation
  *   `amount` in thousandths ("1.500 STEEM" is 1500), `asset` "STEEM" or "SBD"
- * @typedef {CustomJsonOperation | TransferOperation} Operation
+ * @typedef {Readonly<{ type: "comment", parentAuthor: string, parentPermlink: string, author: string, permlink: string, title: string, body: string, jsonMetadata: string }>} CommentOperation
+ *   `parentAuthor` "" for a root post, whose `parentPermlink` is its category
+ * @typedef {CustomJsonOperation | TransferOperation | CommentOperation} Operation
  * @typedef {Readonly<{ refBlockNum: number, refBlockPrefix: number, expiration: number, operations: readonly Operation[] }>} UnsignedTransaction
  *   expiration in Unix seconds
  */
@@ -162,13 +172,29 @@ function checkTransfer({ from, to, amount, asset, memo }) {
 }
 
 /**
+ * @param {CommentOperation} operation
+ */
+function checkComment({ parentAuthor, parentPermlink, author, permlink, title, body, jsonMetadata }) {
+  if (!isValidAccountName(author) || (parentAuthor !== "" && !isValidAccountName(parentAuthor))) {
+    throw new TypeError("comment: expected valid account names");
+  }
+  if (typeof permlink !== "string" || !PERMLINK_PATTERN.test(permlink) || typeof parentPermlink !== "string" || !PERMLINK_PATTERN.test(parentPermlink)) {
+    throw new TypeError("comment: permlinks are lowercase letters, digits and dashes");
+  }
+  const bytes = (/** @type {unknown} */ text) => (typeof text === "string" ? encoder.encode(text).length : Number.POSITIVE_INFINITY);
+  if (bytes(title) > MAX_TITLE_BYTES || bytes(body) > MAX_BODY_BYTES || bytes(body) === 0 || bytes(jsonMetadata) > MAX_JSON_METADATA_BYTES) {
+    throw new TypeError("comment: a title, a body and json metadata within the chain's limits");
+  }
+}
+
+/**
  * @param {unknown} operation
  * @returns {Operation}
  */
 function checkOperationType(operation) {
   const type = /** @type {any} */ (operation)?.type;
-  if (type !== "custom_json" && type !== "transfer") {
-    throw new TypeError("only custom_json and transfer operations are supported");
+  if (!Object.hasOwn(WRITERS, type)) {
+    throw new TypeError("only custom_json, transfer and comment operations are supported");
   }
   return /** @type {Operation} */ (operation);
 }
@@ -207,6 +233,21 @@ function writeCustomJson(writer, operation) {
 }
 
 /**
+ * @param {ByteWriter} writer
+ * @param {CommentOperation} operation
+ */
+function writeComment(writer, operation) {
+  checkComment(operation);
+  writer.varint(COMMENT_OPERATION);
+  for (const field of [operation.parentAuthor, operation.parentPermlink, operation.author, operation.permlink, operation.title, operation.body, operation.jsonMetadata]) {
+    writer.string(field);
+  }
+}
+
+/** How each supported operation is written. @type {Readonly<Record<string, (writer: ByteWriter, operation: any) => void>>} */
+const WRITERS = Object.freeze({ custom_json: writeCustomJson, transfer: writeTransfer, comment: writeComment });
+
+/**
  * @param {UnsignedTransaction} transaction
  */
 function checkHeader({ refBlockNum, refBlockPrefix, expiration, operations }) {
@@ -237,11 +278,7 @@ export function serializeTransaction(transaction) {
   writer.varint(transaction.operations.length);
   for (const operation of transaction.operations) {
     const checked = checkOperationType(operation);
-    if (checked.type === "transfer") {
-      writeTransfer(writer, checked);
-    } else {
-      writeCustomJson(writer, checked);
-    }
+    WRITERS[checked.type](writer, checked);
   }
   writer.varint(0);
   return writer.toBytes();
@@ -314,14 +351,49 @@ export function toBroadcastJson(transaction, signatures) {
     ref_block_num: transaction.refBlockNum,
     ref_block_prefix: transaction.refBlockPrefix,
     expiration: chainTime(transaction.expiration),
-    operations: transaction.operations.map((operation) =>
-      operation.type === "transfer"
-        ? ["transfer", { from: operation.from, to: operation.to, amount: formatSteemAsset(operation.amount, operation.asset), memo: operation.memo }]
-        : ["custom_json", { required_auths: [...operation.requiredAuths].sort(), required_posting_auths: [...operation.requiredPostingAuths].sort(), id: operation.id, json: operation.json }],
-    ),
+    operations: transaction.operations.map(operationJson),
     extensions: [],
     signatures: [...signatures],
   };
+}
+
+/**
+ * An operation as a node writes it: [name, fields].
+ * @param {Operation} operation
+ * @returns {[string, Record<string, unknown>]}
+ */
+function operationJson(operation) {
+  switch (operation.type) {
+    case "transfer":
+      return ["transfer", { from: operation.from, to: operation.to, amount: formatSteemAsset(operation.amount, operation.asset), memo: operation.memo }];
+    case "comment":
+      return ["comment", { parent_author: operation.parentAuthor, parent_permlink: operation.parentPermlink, author: operation.author, permlink: operation.permlink, title: operation.title, body: operation.body, json_metadata: operation.jsonMetadata }];
+    default:
+      return ["custom_json", { required_auths: [...operation.requiredAuths].sort(), required_posting_auths: [...operation.requiredPostingAuths].sort(), id: operation.id, json: operation.json }];
+  }
+}
+
+/**
+ * The operation a node's [name, fields] pair stands for.
+ * @param {unknown} pair
+ * @returns {Operation}
+ */
+function operationOf(pair) {
+  if (!Array.isArray(pair) || !Object.hasOwn(WRITERS, pair[0]) || pair[1] === null || typeof pair[1] !== "object") {
+    throw new TypeError("only custom_json, transfer and comment operations are supported");
+  }
+  const data = pair[1];
+  if (pair[0] === "transfer") {
+    const amount = parseSteemAsset(data.amount);
+    if (amount === null) {
+      throw new TypeError("transfer amount: expected a STEEM or SBD amount");
+    }
+    return /** @type {Operation} */ ({ type: "transfer", from: data.from, to: data.to, amount: amount.amount, asset: amount.asset, memo: data.memo });
+  }
+  if (pair[0] === "comment") {
+    return /** @type {Operation} */ ({ type: "comment", parentAuthor: data.parent_author, parentPermlink: data.parent_permlink, author: data.author, permlink: data.permlink, title: data.title, body: data.body, jsonMetadata: data.json_metadata });
+  }
+  return /** @type {Operation} */ ({ type: "custom_json", requiredAuths: data.required_auths, requiredPostingAuths: data.required_posting_auths, id: data.id, json: data.json });
 }
 
 /**
@@ -338,7 +410,7 @@ export function blockReference(blockNum, blockId) {
 }
 
 /**
- * The inverse of toBroadcastJson (test chains, audits, a player's signed transfer relayed by the server).
+ * The inverse of toBroadcastJson (test chains, audits, a player's signed transfer or ping relayed by the server).
  * @param {any} json
  * @returns {{ transaction: UnsignedTransaction, signatures: readonly string[] }}
  */
@@ -347,20 +419,7 @@ export function fromBroadcastJson(json) {
     throw new TypeError("not a broadcast transaction");
   }
   const expiration = Date.parse(`${json.expiration}Z`) / 1000;
-  const operations = json.operations.map((pair) => {
-    if (!Array.isArray(pair) || (pair[0] !== "custom_json" && pair[0] !== "transfer") || pair[1] === null || typeof pair[1] !== "object") {
-      throw new TypeError("only custom_json and transfer operations are supported");
-    }
-    const data = pair[1];
-    if (pair[0] === "transfer") {
-      const amount = parseSteemAsset(data.amount);
-      if (amount === null) {
-        throw new TypeError("transfer amount: expected a STEEM or SBD amount");
-      }
-      return /** @type {Operation} */ ({ type: "transfer", from: data.from, to: data.to, amount: amount.amount, asset: amount.asset, memo: data.memo });
-    }
-    return /** @type {Operation} */ ({ type: "custom_json", requiredAuths: data.required_auths, requiredPostingAuths: data.required_posting_auths, id: data.id, json: data.json });
-  });
+  const operations = json.operations.map(operationOf);
   return { transaction: { refBlockNum: json.ref_block_num, refBlockPrefix: json.ref_block_prefix, expiration, operations }, signatures: json.signatures };
 }
 

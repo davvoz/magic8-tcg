@@ -37,3 +37,17 @@ export function lineFor(lines, key) {
   }
   return lines[hashString(key) % lines.length];
 }
+
+/**
+ * What the result of a challenge offers next, as the button back to the
+ * challenges says it: the next challenge after a character is beaten, the
+ * pack after the boss, another try after a defeat (or a draw).
+ * @param {"win" | "loss" | "draw"} outcome the player's
+ * @param {boolean} boss whether the opponent was the day's boss
+ */
+export function nextStepAfter(outcome, boss) {
+  if (outcome !== "win") {
+    return "Try again";
+  }
+  return boss ? "See your prize" : "Next challenge";
+}

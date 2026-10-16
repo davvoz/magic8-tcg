@@ -116,10 +116,16 @@ export class MatchPresenter {
    */
   #moments = [];
   #animation;
+  #playerName;
 
-  /** @param {Readonly<Record<string, number>>} animation theme durations (shortMs, mediumMs, longMs) */
-  constructor(animation) {
+  /**
+   * @param {Readonly<Record<string, number>>} animation theme durations (shortMs, mediumMs, longMs)
+   * @param {{ playerName?: (player: { id: string, name: string }) => string }} [names] what a player is called on the board
+   *   (a daily challenge's character by its name, not its seat's account)
+   */
+  constructor(animation, { playerName = (player) => player.name } = {}) {
     this.#animation = animation;
+    this.#playerName = playerName;
   }
 
   /** @returns {readonly CardVisual[]} visuals still on their way out, drawn above the board */
@@ -543,7 +549,7 @@ export class MatchPresenter {
     let hold = queued === 0 ? HOLD.alone : HOLD.queued;
     hold = faceUp ? HOLD.own : hold;
     const { targets, roulette } = this.#aimedAt(card.instanceId, aimOf(card.instanceId, events), { snapshot, layout, outcome });
-    const caption = faceUp ? "You cast" : `${caster.name} casts`;
+    const caption = faceUp ? "You cast" : `${this.#playerName(caster)} casts`;
     this.#moments.push(new CastReveal({ card, caption, targets, roulette, from, at: centredOn(layout.banner, layout.sizes.reveal), to: seat.hud, faceUp, animation: this.#animation, holdMs: this.#animation.longMs * hold }));
     return card.instanceId;
   }
@@ -611,7 +617,7 @@ export class MatchPresenter {
   #targetsOf(targetIds, snapshot, layout) {
     return targetIds.flatMap((id) => {
       const anchor = this.#anchorFor(id, layout, CENTRE);
-      const name = nameOf(id, snapshot);
+      const name = nameOf(id, snapshot, this.#playerName);
       return anchor === null || name === null ? [] : [Object.freeze({ ...anchor, name })];
     });
   }
@@ -648,7 +654,7 @@ export class MatchPresenter {
     if (seat === null || player === undefined) {
       return { targets: [], roulette: null };
     }
-    const label = `${player.name}'s ${pile}`;
+    const label = `${this.#playerName(player)}'s ${pile}`;
     const hidden = seat.handSlots.length > 0;
     const hand = hidden ? [] : (player.hand ?? []).filter((card) => layout.cards[card.instanceId] !== undefined);
     const slots = hidden ? seat.handSlots : hand.map((card) => layout.cards[card.instanceId]);
@@ -871,11 +877,12 @@ function pointAt(point) {
  * What to call a target: a player by name, a card by its printed name.
  * @param {string} id
  * @param {Snapshot} snapshot
+ * @param {(player: { id: string, name: string }) => string} playerName
  * @returns {string | null}
  */
-function nameOf(id, snapshot) {
+function nameOf(id, snapshot, playerName) {
   const player = snapshot.players.find((candidate) => candidate.id === id);
-  return player?.name ?? findCard(snapshot, id)?.name ?? null;
+  return player === undefined ? findCard(snapshot, id)?.name ?? null : playerName(player);
 }
 
 /**

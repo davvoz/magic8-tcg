@@ -35,6 +35,10 @@ export function loadConfig(env) {
     secure,
     trustProxy: parseBoolean(env.M8_TRUST_PROXY ?? "false", "M8_TRUST_PROXY"),
     appName: env.M8_APP_NAME ?? "verdu.green",
+    // cur8.fun's Pings: the account whose daily wall players share their games under ("" turns sharing off).
+    pingsWallAccount: parsePingsWall(env.M8_PINGS_WALL),
+    // Where the pictures of shared games are hosted (cur8.fun's image service); "" sends pings without one.
+    pingImageHost: parsePingImageHost(env.M8_PING_IMAGE_HOST),
     // The version being served (deploy.sh: the commit), so open tabs can tell a newer one went live.
     build: parseBuild(env.M8_BUILD),
     ...parseLogSettings(env),
@@ -253,6 +257,31 @@ function parseAckKey(env, secure) {
     throw new ConfigError("M8_ACK_KEY: must not be a broadcaster key");
   }
   return value;
+}
+
+/**
+ * M8_PING_IMAGE_HOST: the upload endpoint of the image service cur8.fun uses; "" for none.
+ * @param {string | undefined} value
+ * @returns {string | null}
+ */
+function parsePingImageHost(value) {
+  if (value === "") {
+    return null;
+  }
+  const url = new URL(value ?? "https://imridd.eu.pythonanywhere.com/api/steem/free_upload_image");
+  if (url.protocol !== "https:") {
+    throw new ConfigError("M8_PING_IMAGE_HOST: expected an https address");
+  }
+  return url.href;
+}
+
+/**
+ * M8_PINGS_WALL: the account publishing cur8.fun's daily Pings wall; micro.cur8 unless set, "" for none.
+ * @param {string | undefined} value
+ * @returns {string | null}
+ */
+function parsePingsWall(value) {
+  return value === "" ? null : parseAccount(value ?? "micro.cur8", "M8_PINGS_WALL");
 }
 
 /**

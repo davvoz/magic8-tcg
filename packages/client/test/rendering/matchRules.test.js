@@ -7,7 +7,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { CharacterVoice, LATE_HEARING_MS } from "../../src/application/daily/CharacterVoice.js";
+import { nextStepAfter } from "../../src/application/daily/characters.js";
+import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { BasicAiController } from "../../src/application/match/BasicAiController.js";
 import { humanController } from "../../src/application/match/HumanController.js";
 import { MatchSession } from "../../src/application/match/MatchSession.js";
@@ -22,9 +25,9 @@ import { FakeContext2D, loadTheme } from "./fakes.js";
 const theme = loadTheme();
 
 /**
- * @param {{ compact?: boolean, conditions?: readonly Record<string, unknown>[], voice?: CharacterVoice, gameId?: string }} [options] `gameId`: the game the board stands for (an online one has one)
+ * @param {{ compact?: boolean, conditions?: readonly Record<string, unknown>[], voice?: CharacterVoice, gameId?: string, sharing?: any, againScene?: string }} [options] `gameId`: the game the board stands for (an online one has one)
  */
-async function board({ compact = false, conditions = [], voice, gameId } = {}) {
+async function board({ compact = false, conditions = [], voice, gameId, sharing, againScene } = {}) {
   const { engine } = createScenario({ p1: { hand: ["ember_bolt"], resources: 2 }, conditions });
   const session = new MatchSession({
     engine,
@@ -46,8 +49,8 @@ async function board({ compact = false, conditions = [], voice, gameId } = {}) {
   await session.whenIdle();
   const viewport = new Viewport(theme.layout);
   viewport.resize(compact ? { cssWidth: 667, cssHeight: 375 } : { cssWidth: 1600, cssHeight: 900 });
-  const scene = new MatchScene({ theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: () => undefined, hasScene: () => true }, { characterName: (account) => (account === "ai_gravelord" ? "The Gravelord" : null), voice });
-  scene.enter({ session });
+  const scene = new MatchScene({ theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: () => undefined, hasScene: () => true }, { characterName: (account) => (account === "ai_gravelord" ? "The Gravelord" : null), challengeStep: (account, outcome) => (account === "ai_gravelord" ? nextStepAfter(outcome, true) : null), voice, sharing });
+  scene.enter({ session, againScene });
   return scene;
 }
 
@@ -58,12 +61,45 @@ const rendered = (scene) => {
 };
 const find = (scene, id) => (scene.modal ?? scene.root).findById(id) ?? scene.root.findById(id);
 
+/**
+ * Concedes the game and plays its end out until the result is offered.
+ * @returns {Promise<string>} the outcome, as a ping tells it
+ */
+async function finished(scene) {
+  find(scene, "leave").activate();
+  find(scene, "confirm.ok").activate();
+  for (let frame = 0; frame < 2000 && scene.modal?.id !== "gameOver"; frame += 1) {
+    scene.update(40);
+  }
+  assert.equal(scene.modal?.id, "gameOver", "the result is offered");
+  return "loss";
+}
+
 describe("MatchScene — a daily challenge's table", () => {
   it("names the character as itself, never as an account", async () => {
     const scene = await board();
     const texts = rendered(scene);
     assert.ok(texts.some((text) => text.includes("The Gravelord")), texts.filter((text) => /grave/i.test(text)).join(" | "));
     assert.ok(!texts.some((text) => text.includes("@ai_gravelord")));
+  });
+
+  it("names the character in the battle log and over the board too, never by its seat's account", async () => {
+    const scene = await board();
+    await finished(scene);
+    scene.onCancel();
+    const texts = rendered(scene);
+    assert.ok(texts.some((text) => text.includes("The Gravelord wins")), texts.join(" | "));
+    assert.ok(!texts.some((text) => text.includes("ai_gravelord")));
+    assert.ok(find(scene, "result") !== null, "See result brings the result back");
+  });
+
+  it("after a challenge, offers its next step back at the challenges rather than another game", async () => {
+    const challenge = await board({ againScene: SceneId.DAILY });
+    await finished(challenge);
+    assert.equal(find(challenge, "gameOver.again").text, "Try again", "a defeat: another try");
+    const practice = await board();
+    await finished(practice);
+    assert.equal(find(practice, "gameOver.again").text, "Play again");
   });
 
   it("offers the game's rules in words when it has some, and nothing otherwise", async () => {
@@ -99,6 +135,38 @@ describe("MatchScene — a daily challenge's table", () => {
     now += LATE_HEARING_MS + 1;
     const late = await board({ voice, gameId: "g-1" });
     assert.ok(!rendered(late).includes("“Every throne needs a floor.”"), "an old line is not said again to a board opened later");
+  });
+
+  it("shares a finished online game as a ping: the text first, then Post, once", async () => {
+    const shared = [];
+    let answer = ok("t".repeat(40));
+    const card = { outcome: "loss", title: "Defeat", kind: "Challenges", me: { name: "@alice", account: "alice", life: 20 }, opponent: { name: "The Gravelord", account: "ai_gravelord", life: 20 }, turns: 1, site: "play.example" };
+    const sharing = { canShare: (id) => id === "g-1", textFor: (_id, game) => `${game.outcome} vs ${game.opponent.name}`, cardFor: () => card, share: async (_id, game) => (shared.push(game), answer) };
+    const scene = await board({ gameId: "g-1", sharing });
+    const over = await finished(scene);
+    find(scene, "gameOver.share").activate();
+    assert.equal(scene.modal?.id, "share");
+    const texts = rendered(scene);
+    assert.ok(texts.includes(`${over} vs The Gravelord`), "the ping as it will read, the character by name");
+    assert.ok(texts.includes("DEFEAT") && texts.includes("20 life"), "and the picture of the result");
+    answer = fail("PING_REJECTED", "not enough Resource Credits");
+    find(scene, "share.post").activate();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(rendered(scene).some((text) => text.includes("not enough Resource Credits")), "a failure is told, and Post works again");
+    answer = ok("t".repeat(40));
+    find(scene, "share.post").activate();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(scene.modal?.id, "gameOver", "back to the result");
+    assert.equal(find(scene, "gameOver.share").text, "Shared");
+    assert.equal(find(scene, "gameOver.share").enabled, false);
+    assert.equal(shared.length, 2);
+    assert.deepEqual({ ...shared[0], opponent: shared[0].opponent.name }, { outcome: "loss", opponent: "The Gravelord", turns: shared[0].turns, myLife: 20, theirLife: 20 }, "what the game was, from the player's seat");
+  });
+
+  it("offers no sharing for a local game", async () => {
+    const scene = await board({ sharing: { canShare: () => true, textFor: () => "", cardFor: () => null, share: async () => ok("") } });
+    await finished(scene);
+    assert.equal(find(scene, "gameOver.share"), null);
   });
 
   it("puts the rules in the log dialog on a phone", async () => {

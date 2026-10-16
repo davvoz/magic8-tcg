@@ -4,8 +4,9 @@
  *
  * - Posting key: checked against the account on the chain (it must be a
  *   posting key and nothing more), saved with the vault's device key, loaded
- *   at start-up. It signs messages: the login challenge, each online
- *   game's key.
+ *   at start-up. It signs messages (the login challenge, each online game's
+ *   key) and pings (a comment on cur8.fun sharing a game), which the game
+ *   server relays.
  * - Active key: asked for (ActiveKeyPrompt) the first time a transfer needs
  *   it, checked against the account, optionally saved under a PIN, then held
  *   in memory until the page closes. A transfer is built here from the
@@ -45,7 +46,7 @@ export class LocalKeyWallet {
   /**
    * @param {{
    *   vault: import("./KeyVault.js").KeyVault,
-   *   api: Pick<import("../api/HttpWalletApi.js").HttpWalletApi, "keyRoles" | "reference" | "broadcastTransfer">,
+   *   api: Pick<import("../api/HttpWalletApi.js").HttpWalletApi, "keyRoles" | "reference" | "broadcastTransfer" | "broadcastPing">,
    *   prompt: Pick<import("../../application/wallet/ActiveKeyPrompt.js").ActiveKeyPrompt, "ask" | "close">,
    *   expirationSeconds?: number,
    * }} deps
@@ -173,6 +174,29 @@ export class LocalKeyWallet {
       return this.#transferFailure(sent.error);
     }
     return ok(signed.txId);
+  }
+
+  /**
+   * Publishes a ping signed with the posting key, relayed by the game server.
+   * @param {import("../../application/ports/WalletConnector.contract.js").CommentRequest} request
+   */
+  async postComment({ author, parentAuthor, parentPermlink, permlink, title, body, jsonMetadata }) {
+    if (this.#posting === null || this.#posting.account !== author) {
+      return fail(WalletFailure.NOT_INSTALLED, `no posting key of @${author} in this browser`);
+    }
+    const reference = await this.#api.reference();
+    if (!reference.ok) {
+      return fail(WalletFailure.UNAVAILABLE, "the chain cannot be reached right now; nothing was sent");
+    }
+    let signed;
+    try {
+      const { blockNum, blockId, time } = reference.value;
+      const transaction = { ...blockReference(blockNum, blockId), expiration: Math.floor(time / 1000) + this.#expirationSeconds, operations: [{ type: /** @type {const} */ ("comment"), parentAuthor, parentPermlink, author, permlink, title, body, jsonMetadata }] };
+      signed = toBroadcastJson(transaction, [signDigest(transactionDigest(serializeTransaction(transaction)), this.#posting.key)]);
+    } catch {
+      return fail(WalletFailure.BAD_RESPONSE, "the ping could not be signed");
+    }
+    return this.#api.broadcastPing(signed);
   }
 
   /**

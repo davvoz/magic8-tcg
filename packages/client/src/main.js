@@ -6,6 +6,7 @@
  * loop. Nothing here contains game logic; if the content or the theme fails
  * validation the ErrorScene explains why instead of a broken screen.
  */
+import { fail } from "@magic8/engine/shared/Result.js";
 import { ContentResource } from "./application/ports/ContentSource.contract.js";
 import { AudioService } from "./application/audio/AudioService.js";
 import { HelpSettings } from "./application/help/HelpSettings.js";
@@ -41,6 +42,9 @@ import { IdentityService } from "./application/identity/IdentityService.js";
 import { CoinFace } from "./application/match/CoinToss.js";
 import { AiOpponentFactory } from "./application/match/AiOpponents.js";
 import { CharacterVoice } from "./application/daily/CharacterVoice.js";
+import { GameSharing } from "./application/social/GameSharing.js";
+import { HttpPingsApi } from "./infrastructure/api/HttpPingsApi.js";
+import { CanvasShareImage } from "./rendering/share/ShareCard.js";
 import { DailyCompanion } from "./application/daily/DailyCompanion.js";
 import { DailyService } from "./application/daily/DailyService.js";
 import { HttpDailyApi } from "./infrastructure/api/HttpDailyApi.js";
@@ -514,6 +518,21 @@ async function boot() {
   const daily = new DailyService({ api: new HttpDailyApi({ fetch: httpFetch }) });
   // What the characters say during their games: the match shows it by their seat.
   const voice = new CharacterVoice({ now: () => Date.now() });
+  // A finished online game shared as a ping on cur8.fun, with the wallet the player signed in with,
+  // and a picture of the result (painted once the screen's art is ready).
+  const sharePictures = new LateShareImage();
+  const pingsApi = new HttpPingsApi({ fetch: httpFetch });
+  const sharing = new GameSharing({
+    api: pingsApi,
+    wallet,
+    image: sharePictures,
+    challenge: (seat) => challengeOf(daily, seat),
+    account: () => identity.state.user?.account ?? null,
+    mode: (gameId) => (online.state.session?.gameId === gameId ? online.state.mode : null),
+    randomHex,
+    url: window.location.origin,
+    version: RELEASE.version,
+  });
   // What happened to the player's orders, trades and sales: read at sign-in, pushed while here.
   const notifications = new NotificationService({ api: new HttpNotificationsApi({ fetch: httpFetch }), connection: realtime, logger });
   account.subscribe((state) => {
@@ -562,6 +581,7 @@ async function boot() {
     online,
     daily,
     voice,
+    sharing,
     lobby,
     autoList,
     autoReplays,
@@ -585,7 +605,10 @@ async function boot() {
     new Glimmer({ figures: GLIMMER_FIGURES, seed: createSeed() }),
     new Storm({ cells: STORM_CELLS, figures: STORM_FIGURES, seed: createSeed() }),
   ]);
-  const { sceneManager, loop, viewport } = buildPresentation(Object.freeze({ ...theme.value, illustrations, characterArt, coinArt, tableArt, uiArt, avatars, ambience }), audio);
+  const presentationTheme = Object.freeze({ ...theme.value, illustrations, characterArt, coinArt, tableArt, uiArt, avatars, ambience });
+  // The picture of a shared game is painted with the same art as the screen.
+  sharePictures.use(new CanvasShareImage({ theme: presentationTheme, createCanvas: () => document.createElement("canvas"), pictureOf: (player) => profilePicture(pingsApi, player) }));
+  const { sceneManager, loop, viewport } = buildPresentation(presentationTheme, audio);
   registerScenes(sceneManager, app);
   redrawWithTitleFont(theme.value.fonts.titleFamily, () => loop.requestRender());
   // The menus have their music, a match its own; what the services do is heard on any screen.
@@ -801,6 +824,50 @@ function buildCharacterArt(raw) {
     logger,
     subject: "character portrait",
   });
+}
+
+/**
+ * A player's profile picture through the game server, decoded; null when they have none or it cannot be had.
+ * @param {HttpPingsApi} api
+ * @param {string} account
+ */
+async function profilePicture(api, account) {
+  const picture = await api.avatar(account);
+  return picture.ok ? loadBrowserImage(picture.value).catch(() => null) : null;
+}
+
+/**
+ * A challenge character's place in the player's day, as a shared game tells it: the boss or not, the day's track.
+ * @param {DailyService} daily
+ * @param {string} seat the character's seat account ("ai_kael")
+ * @returns {import("./application/social/pingText.js").SharedChallenge | null}
+ */
+function challengeOf(daily, seat) {
+  const opponent = daily.characterOf(seat);
+  if (opponent === null) {
+    return null;
+  }
+  const day = daily.state.day;
+  const track = day?.tracks.find((candidate) => candidate.id === day.run?.track)?.name ?? null;
+  return Object.freeze({ boss: opponent.boss, track });
+}
+
+/**
+ * The picture painter of shared games, set once the screen's art is ready (none before: pings go without a picture).
+ */
+class LateShareImage {
+  /** @type {import("./application/ports/ShareImage.contract.js").ShareImage | null} */
+  #painter = null;
+
+  /** @param {import("./application/ports/ShareImage.contract.js").ShareImage} painter */
+  use(painter) {
+    this.#painter = painter;
+  }
+
+  /** @param {import("./application/social/shareCard.js").ShareCard} card */
+  render(card) {
+    return this.#painter === null ? Promise.resolve(fail("IMAGE_FAILED", "the game is still loading")) : this.#painter.render(card);
+  }
 }
 
 /**

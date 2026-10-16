@@ -218,7 +218,7 @@ describe("MatchScene on a phone", () => {
     const { viewport } = scene.services;
     const panel = scene.modal.panel.bounds;
     assert.ok(inside(panel, { x: 0, y: 0, width: viewport.logicalWidth, height: viewport.logicalHeight }));
-    for (const id of ["gameOver.title", "gameOver.duel", "gameOver.again", "gameOver.menu", "gameOver.board"]) {
+    for (const id of ["gameOver.title", "gameOver.duel", "gameOver.again", "gameOver.menu"]) {
       assert.ok(inside(scene.modal.findById(id).bounds, panel), `${id} inside the dialog`);
     }
     assert.ok(scene.modal.findById("gameOver.duel").bounds.y + scene.modal.findById("gameOver.duel").bounds.height <= scene.modal.findById("gameOver.again").bounds.y, "the duel above the buttons");

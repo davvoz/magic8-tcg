@@ -1,8 +1,8 @@
 /**
  * WalletConnector for the Steem Keychain browser extension, which injects
- * `window.steem_keychain`. `requestSignBuffer` signs the login message and
- * `requestTransfer` pays an order; the user's keys never leave the
- * extension. We receive a signature or a transaction id, validated for shape
+ * `window.steem_keychain`. `requestSignBuffer` signs the login message,
+ * `requestTransfer` pays an order and `requestPost` publishes a comment (a
+ * ping sharing a game); the user's keys never leave the extension. We receive a signature or a transaction id, validated for shape
  * before it goes anywhere.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
@@ -18,6 +18,7 @@ const MAX_REASON_LENGTH = 200;
  * @typedef {{
  *   requestSignBuffer: (account: string, message: string, keyRole: string, callback: (response: any) => void) => void,
  *   requestTransfer: (account: string, to: string, amount: string, memo: string, currency: string, callback: (response: any) => void, enforce: boolean) => void,
+ *   requestPost?: (account: string, title: string, body: string, parentPermlink: string, parentAuthor: string, jsonMetadata: string, permlink: string, commentOptions: string, callback: (response: any) => void) => void,
  * }} SteemKeychain
  */
 
@@ -70,6 +71,18 @@ export class KeychainWalletConnector {
       return Promise.resolve(fail(WalletFailure.NOT_INSTALLED, "this version of Steem Keychain cannot send transfers"));
     }
     return this.#request((keychain, callback) => keychain.requestTransfer(from, to, amount, memo, asset, callback, true), interpretTransfer);
+  }
+
+  /**
+   * Publishes a comment with the account's posting key, as Keychain shows it to the user first.
+   * @param {import("../../application/ports/WalletConnector.contract.js").CommentRequest} request
+   */
+  postComment({ author, parentAuthor, parentPermlink, permlink, title, body, jsonMetadata }) {
+    const extension = this.#keychain();
+    if (extension !== null && typeof extension.requestPost !== "function") {
+      return Promise.resolve(fail(WalletFailure.NOT_INSTALLED, "this version of Steem Keychain cannot publish comments"));
+    }
+    return this.#request((keychain, callback) => /** @type {NonNullable<SteemKeychain["requestPost"]>} */ (keychain.requestPost)(author, title, body, parentPermlink, parentAuthor, jsonMetadata, permlink, "", callback), interpretPost);
   }
 
   /**
@@ -130,6 +143,19 @@ function interpretTransfer(response) {
   }
   const txId = response.result?.id ?? response.result?.tx_id;
   return typeof txId === "string" && TX_ID_PATTERN.test(txId) ? ok(txId) : fail(WalletFailure.BAD_RESPONSE, "Keychain did not return a transaction id");
+}
+
+/**
+ * A published comment: its transaction id when Keychain tells it, "" otherwise.
+ * @param {any} response
+ */
+function interpretPost(response) {
+  const refused = refusal(response);
+  if (refused !== null) {
+    return refused;
+  }
+  const txId = response.result?.id ?? response.result?.tx_id;
+  return ok(typeof txId === "string" && TX_ID_PATTERN.test(txId) ? txId : "");
 }
 
 /** @param {any} response */

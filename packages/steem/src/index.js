@@ -13,3 +13,4 @@ export { Confirmation, SteemTransferPaymentProvider } from "./providers/SteemTra
 export { MAX_EXPIRATION_SECONDS, STEEM_CHAIN_ID, blockReference, fromBroadcastJson, isCanonicalSignature, recoverSignerKeys, serializeTransaction, signDigest, toBroadcastJson, transactionDigest, transactionId } from "./transactions/transaction.js";
 export { SignerError, SteemTransactionProvider } from "./providers/SteemTransactionProvider.js";
 export { SteemPublicationReader, customJsonOperation } from "./providers/SteemPublicationReader.js";
+export { SteemPingWall } from "./providers/SteemPingWall.js";

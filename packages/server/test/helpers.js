@@ -139,7 +139,7 @@ const signedMovesSetting = (options) => String(options.signedMoves === true);
  * The application on an emptied test database. Everything the server keeps
  * lives in `database`: building a second app on it is a server restart.
  * A restarted app needs its own `random` label, or it would mint the same ids again.
- * @param {{ policy?: object, env?: Record<string, string>, database?: import("../src/platform/db/Database.js").Database, clock?: ManualClock, chain?: FakeChain, random?: ReturnType<typeof deterministicRandom>, version?: string }} [options] `version`: the product version /api/maintenance names
+ * @param {{ policy?: object, env?: Record<string, string>, database?: import("../src/platform/db/Database.js").Database, clock?: ManualClock, chain?: FakeChain, random?: ReturnType<typeof deterministicRandom>, version?: string, pingWall?: object, pingImages?: object, pingAvatars?: object }} [options] `version`: the product version /api/maintenance names; `pingWall`: cur8.fun's Pings walls (none: sharing is not offered); `pingImages`: where their pictures go; `pingAvatars`: the players' profile pictures
  */
 export async function buildTestApp(options = {}) {
   const { policy = {}, marketplacePolicy = {}, timePolicy = {}, publishing = null, chainPolicies = {}, env = {}, database, content } = options;
@@ -169,6 +169,9 @@ export async function buildTestApp(options = {}) {
     ackSigner: options.ackSigner === undefined ? testAckSigner : options.ackSigner,
     verifyMoveSignature: verifySessionSignature,
     version: options.version ?? null,
+    pingWall: options.pingWall,
+    pingImages: options.pingImages,
+    pingAvatars: options.pingAvatars,
   });
   return { app, clock, chain, ledger, users: app.users, sessions: app.sessions, challenges: app.challenges, logger, config, database: db };
 }

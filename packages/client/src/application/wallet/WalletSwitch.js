@@ -50,6 +50,11 @@ export class WalletSwitch {
     return this.#current().requestTransfer(request);
   }
 
+  /** @param {import("../ports/WalletConnector.contract.js").CommentRequest} request */
+  postComment(request) {
+    return this.#current().postComment(request);
+  }
+
   #current() {
     return this.usesKeys ? this.#keys : this.#keychain;
   }

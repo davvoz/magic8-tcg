@@ -7,8 +7,9 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
-import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, signMessage } from "@magic8/steem";
+import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemPingWall, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, signMessage } from "@magic8/steem";
 import { createServerApp } from "./app.js";
+import { ImriddImageHost, SteemitAvatars } from "./modules/pings/index.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { readServerContent } from "./contentFiles.js";
 import { verifySessionSignature } from "./kernel/crypto/sessionSignatures.js";
@@ -97,6 +98,9 @@ async function main() {
     ackSigner: ackSignerFrom(config, logger),
     verifyMoveSignature: verifySessionSignature,
     version,
+    pingWall: config.pingsWallAccount === null ? null : new SteemPingWall({ rpc, account: config.pingsWallAccount }),
+    pingImages: config.pingImageHost === null ? null : new ImriddImageHost({ url: config.pingImageHost, fetch: globalThis.fetch }),
+    pingAvatars: new SteemitAvatars({ fetch: globalThis.fetch }),
   });
 
   const restored = await app.games.restoreAll();

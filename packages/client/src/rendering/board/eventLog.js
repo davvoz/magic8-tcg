@@ -79,23 +79,23 @@ const DESCRIBERS = Object.freeze({
  * @param {Snapshot} snapshot
  * @returns {LogEntry | null} null for events that are not worth a log line
  */
-export function describeEvent(event, snapshot) {
+export function describeEvent(event, snapshot, playerName = (player) => player.name) {
   const type = /** @type {string} */ (event.type);
   const describe = DESCRIBERS[type];
   if (describe === undefined) {
     return null;
   }
-  return Object.freeze({ text: describe(event, (id) => nameOf(id, snapshot)), kind: KINDS[type] });
+  return Object.freeze({ text: describe(event, (id) => nameOf(id, snapshot, playerName)), kind: KINDS[type] });
 }
 
 /**
  * @param {unknown} id
  * @param {Snapshot} snapshot
  */
-function nameOf(id, snapshot) {
+function nameOf(id, snapshot, playerName) {
   const player = snapshot.players.find((candidate) => candidate.id === id);
   if (player !== undefined) {
-    return player.name;
+    return playerName(player);
   }
   const card = snapshot.players.flatMap((candidate) => [...candidate.battlefield, ...candidate.graveyard, ...(candidate.hand ?? [])]).find((candidate) => candidate.instanceId === id);
   return card?.name ?? String(id);

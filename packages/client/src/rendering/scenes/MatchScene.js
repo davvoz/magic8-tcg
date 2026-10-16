@@ -100,6 +100,7 @@ import { MatchSoundscape } from "../board/MatchSoundscape.js";
 import { PickedCardNode } from "../board/PickedCardNode.js";
 import { PlayerNode, lifeCrystalCentre, resourceRects } from "../board/PlayerNode.js";
 import { SpeechBubble } from "../board/SpeechBubble.js";
+import { buildShareDialog } from "../board/ShareDialog.js";
 import { boardFaceProfile } from "../cards/CardRenderer.js";
 import { cardFaceLayout } from "../cards/CardFace.js";
 import { splitIntoBeats } from "../board/StepBeats.js";
@@ -218,6 +219,8 @@ export class MatchScene extends Scene {
   #help;
   /** A seat's name when it is a daily challenge's character, not a STEEM account. @type {(account: string) => string | null} */
   #characterName;
+  /** After a daily challenge, what the way back to the challenges offers. @type {(account: string, outcome: "win" | "loss" | "draw") => string | null} */
+  #challengeStep;
   /** @type {(() => void) | null} */
   #unsubscribeHelp = null;
   /** What a daily challenge's character says, when the game has characters. @type {Pick<import("../../application/daily/CharacterVoice.js").CharacterVoice, "subscribe" | "justSaidIn"> | undefined} */
@@ -226,23 +229,32 @@ export class MatchScene extends Scene {
   #unsubscribeVoice = null;
   /** The character's line showing by its seat. */
   #speech = new SpeechBubble();
+  /** The online game on the board (null: a local one). @type {string | null} */
+  #gameId = null;
+  /** Sharing a finished online game as a ping on cur8.fun, when the game offers it. @type {Pick<import("../../application/social/GameSharing.js").GameSharing, "canShare" | "textFor" | "cardFor" | "share"> | undefined} */
+  #sharing;
+  /** Whether this game has been shared already. */
+  #shared = false;
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
    * @param {import("./Scene.js").SceneServices} services
-   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"], help?: import("../../application/help/HelpSettings.js").HelpSettings, characterName?: (account: string) => string | null, voice?: MatchScene["voice"] }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
+   * @param {{ rarityOf?: (cardId: string) => string | null, now?: () => number, audio?: MatchScene["audio"], help?: import("../../application/help/HelpSettings.js").HelpSettings, characterName?: (account: string) => string | null, challengeStep?: (account: string, outcome: "win" | "loss" | "draw") => string | null, voice?: MatchScene["voice"], sharing?: MatchScene["sharing"] }} [cards] how rare a card is, for the inspect view; `now`: for the decision clock;
    *   `audio`: the sound settings (AudioService), opened from the battle log; `help`: whether the match help is on; `characterName`: a daily challenge's character's name, from its seat;
-   *   `voice`: what the character says, shown as a bubble by its seat
+   *   `challengeStep`: after a daily challenge, what going back to the challenges offers ("Next challenge"), from the character's seat;
+   *   `voice`: what the character says, shown as a bubble by its seat; `sharing`: posting the result as a ping on cur8.fun
    */
-  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio, help, characterName = () => null, voice } = {}) {
+  constructor(services, { rarityOf = () => null, now = () => Date.now(), audio, help, characterName = () => null, challengeStep = () => null, voice, sharing } = {}) {
     super(services);
     this.#characterName = characterName;
+    this.#challengeStep = challengeStep;
     this.#voice = voice;
+    this.#sharing = sharing;
     this.#rarityOf = rarityOf;
     this.#now = now;
     this.#audio = audio;
     this.#help = help;
-    this.#presenter = new MatchPresenter(services.theme.animation);
+    this.#presenter = new MatchPresenter(services.theme.animation, { playerName: (player) => this.#hudName(player) });
   }
 
   /** The match on screen (null before the scene is entered). */
@@ -284,7 +296,9 @@ export class MatchScene extends Scene {
       this.services.requestRender();
     }) ?? null;
     this.#unsubscribeHelp = this.#help?.subscribe(() => this.#rebuild()) ?? null;
-    this.#listenToCharacter(session);
+    this.#gameId = gameIdOf(session);
+    this.#shared = false;
+    this.#listenToCharacter();
     this.#taken = session.snapshotFor(this.#playerId);
     this.#show({ snapshot: this.#taken, events: [], chained: false }, false);
     if (this.#coinFlip === null) {
@@ -322,15 +336,17 @@ export class MatchScene extends Scene {
     return this.#voice;
   }
 
-  /**
-   * Hears the character of this game: the line just said as the board opened, then each new one.
-   * @param {object} session the match: an online one has a game id
-   */
-  #listenToCharacter(session) {
+  /** Sharing finished games as pings, if the scene offers it. */
+  get sharing() {
+    return this.#sharing;
+  }
+
+  /** Hears the character of this game: the line just said as the board opened, then each new one. */
+  #listenToCharacter() {
     this.#speech = new SpeechBubble();
     const voice = this.#voice;
-    const gameId = "gameId" in session && typeof session.gameId === "string" ? session.gameId : undefined;
-    if (voice === undefined || gameId === undefined) {
+    const gameId = this.#gameId;
+    if (voice === undefined || gameId === null) {
       return;
     }
     /** @param {import("../../application/daily/DailyCompanion.js").Speech} speech */
@@ -636,7 +652,7 @@ export class MatchScene extends Scene {
     if (animate) {
       this.#soundscape?.beat(events, { presenter: this.#presenter, layout: this.#layout });
     }
-    const entries = events.map((event) => describeEvent(event, snapshot)).filter((entry) => entry !== null);
+    const entries = events.map((event) => describeEvent(event, snapshot, (player) => this.#hudName(player))).filter((entry) => entry !== null);
     this.#log = [...this.#log, ...entries].slice(-MAX_LOG_ENTRIES);
     this.#interaction.sync(snapshot);
     this.#coach?.sync(snapshot);
@@ -661,6 +677,8 @@ export class MatchScene extends Scene {
     if (this.#ending.isDone) {
       this.#gameOverShown = true;
       this.#resultSinceMs = this.#elapsedMs;
+      // The board now offers the result again (See result), for when it is closed to look at the table.
+      this.#rebuild();
       this.#showGameOver(snapshot);
     }
   }
@@ -866,6 +884,21 @@ export class MatchScene extends Scene {
   }
 
   /**
+   * The sidebar's heading: the turn and its phase, or once the match is over just that.
+   * @param {Panel} panel
+   * @param {Snapshot} snapshot
+   * @param {{ metrics: { inset: number, titleHeight: number, phaseHeight: number }, width: number, compact: boolean }} where
+   */
+  #sidebarHeading(panel, snapshot, { metrics, width, compact }) {
+    if (snapshot.isOver) {
+      panel.add(new Label({ x: metrics.inset, y: metrics.inset, width, height: metrics.titleHeight, text: "Match over", size: compact ? "body" : "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+      return;
+    }
+    panel.add(new Label({ x: metrics.inset, y: metrics.inset, width, height: metrics.titleHeight, text: `Turn ${snapshot.turnNumber}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Label({ x: metrics.inset, y: metrics.inset + metrics.titleHeight, width, height: metrics.phaseHeight, text: phaseName(snapshot.phase), size: "small", colorKey: "textMuted", align: "left", fit: true }));
+  }
+
+  /**
    * @param {Snapshot} snapshot
    * @param {import("../board/BoardLayout.js").BoardLayout} layout
    * @param {MatchInteraction} interaction
@@ -875,8 +908,7 @@ export class MatchScene extends Scene {
     const metrics = layout.compact ? COMPACT_SIDEBAR : SIDEBAR;
     const panel = this.root.add(new Panel({ id: "sidebar", ...sidebar, textured: true }));
     const width = sidebar.width - 2 * metrics.inset;
-    panel.add(new Label({ x: metrics.inset, y: metrics.inset, width, height: metrics.titleHeight, text: snapshot.isOver ? "Match over" : `Turn ${snapshot.turnNumber}`, size: layout.compact && snapshot.isOver ? "body" : "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    panel.add(new Label({ x: metrics.inset, y: metrics.inset + metrics.titleHeight, width, height: metrics.phaseHeight, text: phaseName(snapshot.phase), size: "small", colorKey: "textMuted", align: "left", fit: true }));
+    this.#sidebarHeading(panel, snapshot, { metrics, width, compact: layout.compact });
     const prompt = this.#promptFor(snapshot, interaction);
     const promptArea = { id: "prompt", x: metrics.inset, y: metrics.promptTop, width, height: metrics.promptHeight, text: prompt, size: /** @type {const} */ ("small"), colorKey: "accent" };
     // The tutorial's lines name cards and buttons in colour.
@@ -919,7 +951,7 @@ export class MatchScene extends Scene {
       return "Tossing a coin for the first turn…";
     }
     if (this.#spectating || this.#watching) {
-      const players = snapshot.players.map((player) => nameOf(snapshot, player.id)).join(" vs ");
+      const players = snapshot.players.map((player) => this.#displayName(snapshot, player.id)).join(" vs ");
       return this.#pace === null ? `Watching ${players}` : `Replay of ${players}: the AI plays both decks. How fast:`;
     }
     const coach = this.#coach;
@@ -1208,15 +1240,24 @@ export class MatchScene extends Scene {
     const confirmLabel = interaction.confirmLabel;
     const playing = !snapshot.isOver && !this.#spectating;
     if (this.#spectating || this.#watching) {
-      return [...this.#speedButtons(), { id: "leave", text: "Leave", visible: true, enabled: true, plays: false, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
+      return [...this.#speedButtons(), this.#resultButton(snapshot), { id: "leave", text: "Leave", visible: true, enabled: true, plays: false, variant: "secondary", onActivate: () => this.#leave(this.#againScene) }];
     }
     return [
+      this.#resultButton(snapshot),
       { id: "confirm", text: confirmLabel ?? "", visible: confirmLabel !== null, enabled: this.#coachAllowsConfirm(interaction), plays: true, variant: "primary", onActivate: () => this.#confirm() },
       { id: "cancel", text: "Cancel", visible: interaction.canCancel, enabled: true, plays: false, variant: "secondary", onActivate: () => this.onCancel() },
       { id: "endPhase", text: "End phase", visible: playing, enabled: moves?.canEndPhase === true && !busy && this.#coachAllows("endPhase"), plays: true, variant: "secondary", onActivate: () => this.#submit(endPhase(this.#playerId)) },
       { id: "endTurn", text: this.#keyHints() ? "End turn (E)" : "End turn", visible: playing, enabled: moves?.canEndTurn === true && !busy && this.#coachAllows("endTurn"), plays: true, variant: "primary", cue: SoundCue.TURN_END, onActivate: () => this.#submit(endTurn(this.#playerId)) },
       this.#leaveButton(snapshot),
     ];
+  }
+
+  /**
+   * Once the match is over and its result was offered: the result again (closed by a click outside it, to look at the board).
+   * @param {Snapshot} snapshot
+   */
+  #resultButton(snapshot) {
+    return { id: "result", text: "See result", shortText: "Result", visible: snapshot.isOver && this.#gameOverShown, enabled: true, plays: false, variant: /** @type {const} */ ("primary"), onActivate: () => this.#showGameOver(snapshot) };
   }
 
   /** A replay's speeds, the one it plays at lit; none for a game that is not a replay. */
@@ -1413,12 +1454,94 @@ export class MatchScene extends Scene {
     if (line !== null) {
       panel.add(new Label({ x: PANEL_INSET, y: duelBottom, width, height: size.line, text: line, size: "body", weight: "bold", colorKey: "success", fit: true }));
     }
-    const third = (width - 2 * size.buttonGap) / 3;
-    const again = this.#spectating || this.#watching ? "Watch another" : "Play again";
-    panel.add(new Button({ id: "gameOver.again", x: PANEL_INSET, y: buttonsY, width: third, height: size.buttonHeight, text: tutorial ? "Practice vs AI" : again, variant: "primary", onActivate: () => this.#leave(this.#againScene) }));
-    panel.add(new Button({ id: "gameOver.menu", x: PANEL_INSET + third + size.buttonGap, y: buttonsY, width: third, height: size.buttonHeight, text: "Back to menu", onActivate: () => this.#leave(SceneId.MAIN_MENU) }));
-    panel.add(new Button({ id: "gameOver.board", x: PANEL_INSET + 2 * (third + size.buttonGap), y: buttonsY, width: third, height: size.buttonHeight, text: "View board", onActivate: () => this.closeModal() }));
+    const buttons = this.#gameOverButtons(snapshot);
+    const buttonWidth = (width - (buttons.length - 1) * size.buttonGap) / buttons.length;
+    buttons.forEach(({ id, text, variant, enabled, onActivate }, index) => {
+      panel.add(new Button({ id, x: PANEL_INSET + index * (buttonWidth + size.buttonGap), y: buttonsY, width: buttonWidth, height: size.buttonHeight, text, variant, enabled, onActivate }));
+    });
     this.openModal(modal);
+  }
+
+  /**
+   * What the result offers next: play again, the menu, sharing the game (an online one). A click outside it shows the board.
+   * @param {Snapshot} snapshot
+   */
+  #gameOverButtons(snapshot) {
+    return [
+      { id: "gameOver.again", text: this.#againText(snapshot), variant: /** @type {const} */ ("primary"), enabled: true, onActivate: () => this.#leave(this.#againScene) },
+      { id: "gameOver.menu", text: "Back to menu", variant: /** @type {const} */ ("secondary"), enabled: true, onActivate: () => this.#leave(SceneId.MAIN_MENU) },
+      ...(this.#canShare() ? [{ id: "gameOver.share", text: this.#shared ? "Shared" : "Share", variant: /** @type {const} */ ("secondary"), enabled: !this.#shared, onActivate: () => this.#openShare(snapshot) }] : []),
+    ];
+  }
+
+  /**
+   * Where the result's first button leads, in words: another game, another to watch, the practice after
+   * the tutorial, or after a daily challenge its next step (the next challenge, the pack, another try).
+   * @param {Snapshot} snapshot
+   */
+  #againText(snapshot) {
+    if (this.#coach !== null) {
+      return "Practice vs AI";
+    }
+    if (this.#spectating || this.#watching) {
+      return "Watch another";
+    }
+    const rival = snapshot.players.find((player) => player.id !== this.#playerId);
+    const account = rival === undefined ? null : this.#accountOf(rival.id);
+    const step = this.#againScene === SceneId.DAILY && account !== null ? this.#challengeStep(account, outcomeOf(snapshot, this.#playerId)) : null;
+    return step ?? "Play again";
+  }
+
+  /** Whether the player can share this game: an online one they played, not the tutorial. */
+  #canShare() {
+    return this.#sharing !== undefined && !this.#spectating && !this.#watching && this.#coach === null && this.#gameId !== null && this.#sharing.canShare(this.#gameId);
+  }
+
+  /**
+   * The dialog sharing the result as a ping on cur8.fun; Back returns to the result.
+   * @param {Snapshot} snapshot
+   * @param {import("../board/ShareDialog.js").ShareState} [state]
+   */
+  #openShare(snapshot, state = { kind: "ready" }) {
+    const sharing = this.#sharing;
+    const gameId = this.#gameId;
+    if (sharing === undefined || gameId === null) {
+      return;
+    }
+    const played = this.#sharedGame(snapshot);
+    const dialog = buildShareDialog({ viewport: this.services.viewport, text: sharing.textFor(gameId, played), card: sharing.cardFor(gameId, played), state, onPost: () => void this.#postShare(snapshot), onClose: () => this.#showGameOver(snapshot) });
+    this.openModal(dialog);
+  }
+
+  /** @param {Snapshot} snapshot */
+  async #postShare(snapshot) {
+    const sharing = /** @type {NonNullable<MatchScene["sharing"]>} */ (this.#sharing);
+    this.#openShare(snapshot, { kind: "posting" });
+    const posted = await sharing.share(/** @type {string} */ (this.#gameId), this.#sharedGame(snapshot));
+    if (this.modal?.id !== "share") {
+      return;
+    }
+    if (posted.ok) {
+      this.#shared = true;
+      this.#showGameOver(snapshot);
+    } else {
+      this.#openShare(snapshot, { kind: "failed", message: posted.error.message });
+    }
+  }
+
+  /**
+   * The game as a ping tells it, from the player's seat.
+   * @param {Snapshot} snapshot
+   * @returns {import("../../application/social/GameSharing.js").PlayedGame}
+   */
+  #sharedGame(snapshot) {
+    const me = snapshot.players.find((player) => player.id === this.#playerId);
+    const rival = snapshot.players.find((player) => player.id !== this.#playerId);
+    const account = rival === undefined ? null : this.#accountOf(rival.id);
+    const character = account === null ? null : this.#characterName(account);
+    const outcome = outcomeOf(snapshot, this.#playerId);
+    const opponent = { name: character ?? account ?? rival?.name ?? "my opponent", account, character: character !== null };
+    return { outcome, opponent, turns: snapshot.turnNumber, myLife: Math.max(0, me?.life ?? 0), theirLife: Math.max(0, rival?.life ?? 0) };
   }
 
   /**
@@ -1487,7 +1610,7 @@ export class MatchScene extends Scene {
 
   /** Who is looking at the board. */
   #viewer() {
-    return Object.freeze({ playerId: this.#playerId, spectating: this.#spectating });
+    return Object.freeze({ playerId: this.#playerId, spectating: this.#spectating, nameOf: (/** @type {Snapshot} */ snapshot, /** @type {string} */ playerId) => this.#displayName(snapshot, playerId) });
   }
 
   /** @param {string} sceneId */
@@ -1611,7 +1734,7 @@ function activeSeatFor(snapshot) {
   return snapshot.isOver ? null : snapshot.activePlayerId;
 }
 
-/** @typedef {Readonly<{ playerId: string, spectating: boolean }>} Viewer */
+/** @typedef {Readonly<{ playerId: string, spectating: boolean, nameOf: (snapshot: Snapshot, playerId: string) => string }>} Viewer `nameOf`: a player as the screen names them (a challenge's character by its name, others as @account) */
 
 /**
  * The seat a session with no human player is watched from, if it has one (a replay of the viewer's own game).
@@ -1631,12 +1754,6 @@ function paceOf(session) {
 
 /**
  * @param {Snapshot} snapshot
- * @param {string | null} playerId
- */
-const nameOf = (snapshot, playerId) => `@${snapshot.players.find((player) => player.id === playerId)?.name ?? "?"}`;
-
-/**
- * @param {Snapshot} snapshot
  * @param {Viewer} viewer
  */
 function bannerFor(snapshot, viewer) {
@@ -1645,7 +1762,7 @@ function bannerFor(snapshot, viewer) {
   }
   let whose = snapshot.activePlayerId === viewer.playerId ? "Your turn" : "Opponent's turn";
   if (viewer.spectating) {
-    whose = `${nameOf(snapshot, snapshot.activePlayerId)}'s turn`;
+    whose = `${viewer.nameOf(snapshot, snapshot.activePlayerId)}'s turn`;
   }
   return `Turn ${snapshot.turnNumber} · ${whose} · ${phaseName(snapshot.phase)}`;
 }
@@ -1659,7 +1776,7 @@ function outcomeFor(snapshot, viewer) {
     return "Draw";
   }
   if (viewer.spectating) {
-    return `${nameOf(snapshot, snapshot.winnerId)} wins`;
+    return `${viewer.nameOf(snapshot, snapshot.winnerId)} wins`;
   }
   return snapshot.winnerId === viewer.playerId ? "Victory" : "Defeat";
 }
@@ -1719,4 +1836,26 @@ function phaseName(phase) {
  */
 function conditionsOf(snapshot) {
   return /** @type {any} */ (snapshot).conditions ?? [];
+}
+
+/**
+ * The online game a session plays (null: a local one).
+ * @param {object} session
+ * @returns {string | null}
+ */
+function gameIdOf(session) {
+  return "gameId" in session && typeof session.gameId === "string" ? session.gameId : null;
+}
+
+/**
+ * How the game ended for a player, as a shared game tells it.
+ * @param {{ winnerId: string | null }} snapshot
+ * @param {string} playerId
+ * @returns {import("../../application/social/pingText.js").Outcome}
+ */
+function outcomeOf(snapshot, playerId) {
+  if (snapshot.winnerId === null) {
+    return "draw";
+  }
+  return snapshot.winnerId === playerId ? "win" : "loss";
 }
