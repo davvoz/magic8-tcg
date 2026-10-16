@@ -11,6 +11,7 @@ import { IconButton } from "../../ui/IconButton.js";
 import { Label } from "../../ui/Label.js";
 import { Panel, PANEL_INSET, SMALL_PANEL_INSET } from "../../ui/Panel.js";
 import { TextBlock } from "../../ui/TextBlock.js";
+import { PAINTING_ASPECT } from "../play/TileArt.js";
 
 /**
  * @typedef {Readonly<{
@@ -23,9 +24,6 @@ export const CARD_METRICS = Object.freeze({
   wide: Object.freeze({ inset: PANEL_INSET, gap: 8, kicker: 22, title: 44, line: 26, button: 56, note: 24, sizes: Object.freeze({ kicker: "small", title: "heading", text: "body", note: "small" }) }),
   compact: Object.freeze({ inset: SMALL_PANEL_INSET, gap: 4, kicker: 16, title: 26, line: 16, button: 46, note: 16, sizes: Object.freeze({ kicker: "tiny", title: "body", text: "tiny", note: "tiny" }) }),
 });
-
-/** A card's picture is an upright rectangle: its width over its height, at most. */
-const PICTURE_SHAPE = 3 / 4;
 
 /**
  * A button along a card's foot.
@@ -101,21 +99,20 @@ export class HomeCard extends Panel {
   }
 
   /**
-   * The room for a picture, from here down to where a title and two lines of words still fit above the foot: an
-   * upright rectangle (at most PICTURE_SHAPE wide for its height; the card's width when that is narrower), centred
-   * across the card. Cards side by side that take it at the same point get the same box. Null when there is less
-   * than `least`; taking it moves the next part under it.
+   * The room for a picture across the card's width, no taller than the paintings' shape asks for that width (about
+   * square) and no lower than where a title and two lines of words still fit above the foot. Cards side by side that
+   * take it at the same point get the same box. Null when there is less than `least`; taking it moves the next part
+   * under it.
    * @param {number} least the least height the picture is worth showing at
    * @returns {{ x: number, y: number, width: number, height: number } | null}
    */
   takePictureRoom(least) {
     const { title, line, gap } = this.metrics;
-    const height = this.footTop - this.#cursor - gap - (title + 2 * line + 4 + gap);
+    const height = Math.min(this.footTop - this.#cursor - gap - (title + 2 * line + 4 + gap), Math.round(this.inner / PAINTING_ASPECT));
     if (height < least) {
       return null;
     }
-    const width = Math.min(this.inner, Math.round(height * PICTURE_SHAPE));
-    const room = { x: this.left + Math.round((this.inner - width) / 2), y: this.#cursor, width, height };
+    const room = { x: this.left, y: this.#cursor, width: this.inner, height };
     this.advance(height + gap);
     return room;
   }
