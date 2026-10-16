@@ -7,7 +7,7 @@
  */
 import { UiPiece } from "../../images/UiArt.js";
 import { Icon } from "../../ui/icons.js";
-import { TileArt } from "../play/TileArt.js";
+import { PAINTING_ASPECT, TileArt } from "../play/TileArt.js";
 import { HomeCard } from "./HomeCard.js";
 
 /** The least room the painting is worth showing in, wide and on a phone. */
@@ -28,8 +28,8 @@ export class OnlineCard extends HomeCard {
     super(frame);
     this.addKicker("Online");
     this.addTitle("Play a real opponent");
-    this.addText(this.compact ? "Casual to practise, Ranked to climb the season." : "Casual to practise. Ranked to climb the season and win a share of the jackpot.", { lines: 3 });
-    const room = this.takePictureRoom(this.compact ? MIN_PICTURE.compact : MIN_PICTURE.wide);
+    this.addText(this.compact ? "Casual to practise, Ranked to climb the season." : "Casual to practise. Ranked to climb the season and win a share of the jackpot.", { lines: 2 });
+    const room = this.takePictureRoom(this.compact ? MIN_PICTURE.compact : MIN_PICTURE.wide, PAINTING_ASPECT);
     if (room !== null) {
       this.add(new TileArt({ id: "home.online.art", ...room, piece: UiPiece.PLAY_ONLINE, icon: Icon.PLAY, faction: "ember" }));
     }

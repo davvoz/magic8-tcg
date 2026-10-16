@@ -98,13 +98,15 @@ export class HomeCard extends Panel {
   }
 
   /**
-   * The room left above the foot, for a picture across the card's width; null when there is less than `least`.
-   * Taking it moves the next part under it.
+   * The room left above the foot, for a picture across the card's width — no taller than `aspect` asks for that width,
+   * so cards side by side give theirs the same box; null when there is less than `least`. Taking it moves the next
+   * part under it.
    * @param {number} least the least height the picture is worth showing at
+   * @param {number} aspect the picture's shape: width over height
    * @returns {{ x: number, y: number, width: number, height: number } | null}
    */
-  takePictureRoom(least) {
-    const height = this.footTop - this.#cursor - this.metrics.gap;
+  takePictureRoom(least, aspect) {
+    const height = Math.min(this.footTop - this.#cursor - this.metrics.gap, Math.round(this.inner / aspect));
     if (height < least) {
       return null;
     }

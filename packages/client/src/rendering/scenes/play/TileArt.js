@@ -1,9 +1,10 @@
 /**
  * The picture on the left of a Play screen's tile (online play, practice,
  * the tutorial): its painting (Theme.uiArt), whole, never cropped: as large
- * as the frame allows, centred in it, and rimmed in the tile's colour (a
- * frame of the painting's shape is filled by it); until the painting is
- * ready, a glow in that colour round a large emblem. Drawing only; the challenge tile shows a
+ * as the frame allows, centred in it over a glow in the tile's colour (a
+ * frame of the painting's shape, PAINTING_ASPECT, is filled by it), the
+ * frame rimmed in that colour, so pictures side by side line up whatever
+ * their shape; until the painting is ready, a large emblem in the glow. Drawing only; the challenge tile shows a
  * character's portrait instead. The painting may be one of the table's
  * (Theme.tableArt: the card back), and the whole picture may be dimmed (a
  * locked section on a phone's Home).
@@ -13,6 +14,8 @@ import { radialGradient, roundedRectPath } from "../../ui/drawing.js";
 import { UiNode } from "../../ui/UiNode.js";
 import { withAlpha } from "../../theme/color.js";
 
+/** The shape of the menus' paintings (data/art/Play_*.jpg, 620×630): width over height. */
+export const PAINTING_ASPECT = 620 / 630;
 /** The emblem's share of the picture's shorter side. */
 const EMBLEM_SHARE = 0.46;
 /** How much of a dimmed picture shows. */
@@ -67,33 +70,31 @@ export class TileArt extends UiNode {
    * @param {{ area: { x: number, y: number, width: number, height: number }, tones: { light: string, base: string, dark: string }, center: { x: number, y: number }, painting: import("../../images/ImageCache.js").LoadedImage | null }} picture
    */
   #paintPicture(context, theme, { area, tones, center, painting }) {
-    if (painting !== null) {
-      const shown = containedRect(painting, area);
-      context.save();
-      roundedRectPath(context, shown, theme.spacing.radius);
-      context.clip();
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.drawImage(painting.source, shown.x, shown.y, shown.width, shown.height);
-      context.restore();
-      context.save();
-      roundedRectPath(context, shown, theme.spacing.radius);
-      context.lineWidth = 1.5;
-      context.strokeStyle = withAlpha(tones.light, 0.55);
-      context.stroke();
-      context.restore();
-      return;
-    }
+    const radius = theme.spacing.radius;
     context.save();
-    roundedRectPath(context, area, theme.spacing.radius);
+    roundedRectPath(context, area, radius);
     context.clip();
     context.fillStyle = tones.dark;
     context.fillRect(area.x, area.y, area.width, area.height);
     context.fillStyle = radialGradient(context, center, Math.max(area.width, area.height) * 0.7, [[0, withAlpha(tones.base, 0.85)], [0.55, withAlpha(tones.base, 0.25)], [1, withAlpha(tones.dark, 0)]]);
     context.fillRect(area.x, area.y, area.width, area.height);
+    if (painting !== null) {
+      const shown = containedRect(painting, area);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(painting.source, shown.x, shown.y, shown.width, shown.height);
+    }
     context.restore();
-    const size = Math.min(area.width, area.height) * EMBLEM_SHARE;
-    drawIcon(context, this.icon, { x: center.x - size / 2, y: center.y - size / 2, size, color: tones.light });
+    if (painting === null) {
+      const size = Math.min(area.width, area.height) * EMBLEM_SHARE;
+      drawIcon(context, this.icon, { x: center.x - size / 2, y: center.y - size / 2, size, color: tones.light });
+    }
+    context.save();
+    roundedRectPath(context, area, radius);
+    context.lineWidth = 1.5;
+    context.strokeStyle = withAlpha(tones.light, 0.55);
+    context.stroke();
+    context.restore();
   }
 }
 

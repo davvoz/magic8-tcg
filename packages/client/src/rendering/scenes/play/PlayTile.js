@@ -7,13 +7,13 @@
  */
 import { CharacterPortrait } from "../daily/CharacterPortrait.js";
 import { HomeCard } from "../home/HomeCard.js";
-import { TileArt } from "./TileArt.js";
+import { PAINTING_ASPECT, TileArt } from "./TileArt.js";
 
 /**
  * The picture: flush with the tile's left, top and bottom edges (over its painted corners on that side), as wide as
- * the paintings' shape asks for that height (data/art/Play_*.jpg, 620×630), up to a share of the tile's width.
+ * the paintings' shape asks for that height (PAINTING_ASPECT), up to a share of the tile's width.
  */
-const ART = Object.freeze({ aspect: 620 / 630, share: 0.55 });
+const ART = Object.freeze({ aspect: PAINTING_ASPECT, share: 0.55 });
 /** Below this height a phone's tile has room for its name and buttons only. */
 const COMPACT_ROOMY = 150;
 
