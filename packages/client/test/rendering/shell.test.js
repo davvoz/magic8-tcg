@@ -80,14 +80,16 @@ describe("ShellLayout", () => {
     it(`leaves the screen the rest of ${name}: the rail on the left, the bar across the top`, () => {
       const viewport = viewportOf(size);
       const layout = shellLayout(viewport);
+      const shown = viewport.safeBounds;
+      const near = (value, edge) => Math.abs(value - edge) <= 1;
       assert.equal(layout.compact, viewport.compact);
-      assert.deepEqual([layout.rail.x, layout.rail.y, layout.rail.height], [0, 0, viewport.logicalHeight]);
-      assert.equal(layout.bar.x, layout.rail.width);
-      assert.equal(layout.bar.x + layout.bar.width, viewport.logicalWidth);
-      assert.deepEqual([layout.content.x, layout.content.y], [layout.rail.width, layout.bar.height]);
-      assert.deepEqual([layout.content.x + layout.content.width, layout.content.y + layout.content.height], [viewport.logicalWidth, viewport.logicalHeight]);
+      assert.ok(near(layout.rail.x, shown.x) && near(layout.rail.y, shown.y) && near(layout.rail.y + layout.rail.height, shown.y + shown.height), "the rail down the window's left edge");
+      assert.equal(layout.bar.x, layout.rail.x + layout.rail.width);
+      assert.ok(near(layout.bar.x + layout.bar.width, shown.x + shown.width), "the bar to the right edge");
+      assert.deepEqual([layout.content.x, layout.content.y], [layout.bar.x, layout.bar.y + layout.bar.height]);
+      assert.ok(near(layout.content.x + layout.content.width, shown.x + shown.width) && near(layout.content.y + layout.content.height, shown.y + shown.height), "the content takes the rest");
       const last = layout.items.top + SECTIONS.length * (layout.items.height + layout.items.gap) - layout.items.gap;
-      assert.ok(layout.items.top >= layout.logo.height && last <= viewport.logicalHeight, "the five sections fit under the logo");
+      assert.ok(layout.items.top >= layout.logo.height && last <= layout.rail.height, "the five sections fit under the logo");
       assert.ok(layout.controls.y >= 0 && layout.controls.y + layout.controls.height <= layout.bar.height, "the bar's controls fit in it");
       assert.ok(layout.controls.height * viewport.scale >= 40, "and are tall enough for a finger");
     });
@@ -97,6 +99,18 @@ describe("ShellLayout", () => {
     const wide = shellLayout(viewportOf(DESKTOP));
     const compact = shellLayout(viewportOf(IPHONE_SE));
     assert.ok(compact.rail.width < wide.rail.width && compact.bar.height < wide.bar.height);
+  });
+});
+
+describe("ShellLayout on a window of another shape", () => {
+  it("keeps to the window's edges, and gives the content the room the shape adds", () => {
+    const wide = viewportOf({ cssWidth: 1920, cssHeight: 900 });
+    const layout = shellLayout(wide);
+    assert.ok(layout.rail.x < 0 && Math.abs(layout.rail.x - wide.bounds.x) <= 1, "the rail on the window's left edge, left of the design area");
+    assert.ok(layout.content.width > shellLayout(viewportOf(DESKTOP)).content.width, "a wider content area");
+    const huge = shellLayout(viewportOf({ cssWidth: 6000, cssHeight: 900 }));
+    assert.equal(huge.content.width, 2200, "up to a limit");
+    assert.ok(huge.content.x > huge.bar.x, "then centred in what is left");
   });
 });
 

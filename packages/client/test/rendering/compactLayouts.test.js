@@ -120,8 +120,8 @@ function assertFitsPhone(scene, viewport, label) {
   // The scene's own frame (the shell's content area, for a screen inside it), in the scene's coordinates.
   const frame = scene.services.viewport;
   const ownArea = { x: 0, y: 0, width: frame.logicalWidth, height: frame.logicalHeight };
-  // A dialog, and the shell around the content, may use the whole design area.
-  const whole = frame.designArea ?? ownArea;
+  // A dialog, and the shell around the content, may use all the window shows (a screen without the shell, its design area).
+  const whole = "designArea" in frame ? frame.bounds : ownArea;
   const layer = topLayer(scene);
   const chrome = layer === scene.root && scene.chrome !== null ? controlsOf(scene.chrome, scene.chrome) : [];
   const own = controlsOf(layer, layer);

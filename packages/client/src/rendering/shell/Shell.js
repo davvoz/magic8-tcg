@@ -99,7 +99,7 @@ export class Shell {
     this.#stopFollowingSound();
   }
 
-  /** The screen changed shape: lay out again if the design area did. */
+  /** The screen changed shape: lay out again if the shell's place on it did. */
   relayout() {
     if (this.#designKey() !== this.#laidOutFor) {
       this.#rebuild();
@@ -128,9 +128,10 @@ export class Shell {
     return /** @type {import("./ContentViewport.js").ContentViewport} */ (this.#host.services.viewport);
   }
 
+  /** What the shell's layout depends on: the profile, and where the bar and the content are on the screen. */
   #designKey() {
-    const { viewport } = this.#host.services;
-    return `${viewport.profile ?? "wide"}:${viewport.logicalWidth}x${viewport.logicalHeight}`;
+    const { compact, bar, content } = this.#viewport.shell;
+    return `${compact ? "compact" : "wide"}:${bar.x},${bar.y},${bar.width}|${content.x},${content.y},${content.width}x${content.height}`;
   }
 
   #rebuild() {
