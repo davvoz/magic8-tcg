@@ -11,10 +11,11 @@
  * Players who sign in with their keys instead of Keychain sign in the
  * browser; the provider tells such a client which of the account's
  * authorities a key controls (so an active key typed where the posting key
- * belongs is refused before it is stored), and relays the transfers it signs
- * with the active key: only a single transfer from the signed-in account,
- * re-encoded from what was checked. The signature covers every byte, so
- * relaying cannot alter a transfer.
+ * belongs is refused before it is stored), and relays what it signs: a
+ * transfer signed with the active key, or a ping (a comment on cur8.fun)
+ * signed with the posting key. Only a single operation from the signed-in
+ * account is relayed, re-encoded from what was checked. The signature
+ * covers every byte, so relaying cannot alter it.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { isValidAccountName } from "../accountName.js";
@@ -34,6 +35,8 @@ export const WalletError = Object.freeze({
   MALFORMED_TRANSACTION: "MALFORMED_TRANSACTION",
   NOT_A_TRANSFER: "NOT_A_TRANSFER",
   TRANSFER_REJECTED: "TRANSFER_REJECTED",
+  NOT_A_PING: "NOT_A_PING",
+  PING_REJECTED: "PING_REJECTED",
   UNSUPPORTED: "UNSUPPORTED",
 });
 
@@ -188,8 +191,39 @@ export class SteemWalletProvider {
    * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>} the transaction id
    */
   async broadcastTransfer(account, transaction) {
+    return this.#relay(transaction, {
+      accepts: (operation) => operation.type === "transfer" && operation.from === account,
+      refused: [WalletError.NOT_A_TRANSFER, "only a single transfer from your own account is relayed"],
+      rejected: WalletError.TRANSFER_REJECTED,
+    });
+  }
+
+  /**
+   * Broadcasts a ping `account` signed in its browser with its posting key:
+   * a single comment by that account, which `accepts` (the caller's rule:
+   * under the wall of the day). A refusal by the chain is a PING_REJECTED.
+   * @param {string} account the signed-in player
+   * @param {unknown} transaction
+   * @param {(comment: import("../transactions/transaction.js").CommentOperation) => boolean} accepts
+   * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>} the transaction id
+   */
+  async broadcastComment(account, transaction, accepts) {
+    return this.#relay(transaction, {
+      accepts: (operation) => operation.type === "comment" && operation.author === account && accepts(operation),
+      refused: [WalletError.NOT_A_PING, "only a single ping of your own under the wall is relayed"],
+      rejected: WalletError.PING_REJECTED,
+    });
+  }
+
+  /**
+   * Relays a transaction signed in a player's browser: one operation the rule accepts, signed, re-encoded.
+   * @param {unknown} transaction
+   * @param {{ accepts: (operation: import("../transactions/transaction.js").Operation) => boolean, refused: readonly [string, string], rejected: string }} rule
+   *   `refused`: the failure when the transaction is not the one operation accepted; `rejected`: the code of a refusal by the chain
+   */
+  async #relay(transaction, { accepts, refused, rejected }) {
     if (this.#rpc === null) {
-      return fail(WalletError.UNSUPPORTED, "this server does not relay transfers");
+      return fail(WalletError.UNSUPPORTED, "this server does not relay transactions");
     }
     let parsed;
     let serialized;
@@ -200,18 +234,18 @@ export class SteemWalletProvider {
       return fail(WalletError.MALFORMED_TRANSACTION, "not a valid STEEM transaction");
     }
     const { operations } = parsed.transaction;
-    if (operations.length !== 1 || operations[0].type !== "transfer" || operations[0].from !== account) {
-      return fail(WalletError.NOT_A_TRANSFER, "only a single transfer from your own account is relayed");
+    if (operations.length !== 1 || !accepts(operations[0])) {
+      return fail(refused[0], refused[1]);
     }
     const { signatures } = parsed;
     if (signatures.length === 0 || signatures.length > MAX_SIGNATURES || !signatures.every((signature) => typeof signature === "string" && SIGNATURE_PATTERN.test(signature))) {
-      return fail(WalletError.MALFORMED_TRANSACTION, "the transfer is not signed");
+      return fail(WalletError.MALFORMED_TRANSACTION, "the transaction is not signed");
     }
     try {
       await this.#rpc.call("condenser_api.broadcast_transaction", [toBroadcastJson(parsed.transaction, signatures)]);
     } catch (error) {
       if (error instanceof RpcError && error.code === RpcErrorCode.RPC_ERROR) {
-        return fail(WalletError.TRANSFER_REJECTED, error.message.replace(/^[a-z_.]+: /, "").slice(0, MAX_REJECTION_LENGTH));
+        return fail(rejected, error.message.replace(/^[a-z_.]+: /, "").slice(0, MAX_REJECTION_LENGTH));
       }
       return fail(WalletError.CHAIN_UNAVAILABLE, "the chain could not be reached");
     }

@@ -35,6 +35,7 @@ import { ENTRY_KINDS, EntryService, PgEntryRepository, registerEntryRoutes } fro
 import { PgTradeRepository, TradeService, registerTradeRoutes } from "./modules/trading/index.js";
 import { BoardRelay, PgSalesRepository, SaleSettlement, SalesService, registerSalesRoutes } from "./modules/sales/index.js";
 import { NotificationKind, NotificationRelay, NotificationService, PgNotificationRepository, countCards, registerNotificationRoutes } from "./modules/notifications/index.js";
+import { AvatarProxy, PingService, registerPingRoutes } from "./modules/pings/index.js";
 import { DAILY_TIME_POLICY, DailyChallengeService, DailyRewarder, DailySchedule, PgDailyRepository, registerDailyRoutes, validateDailyRoster, validateDailyTracks } from "./modules/daily/index.js";
 import { MaintenanceService, PgMaintenanceRepository, registerMaintenanceRoutes } from "./modules/maintenance/index.js";
 import { MessageRouter } from "./platform/realtime/MessageRouter.js";
@@ -68,11 +69,16 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   ackSigner?: import("./modules/gameplay/application/ports.js").AckSigner | null,
  *   verifyMoveSignature?: (message: string, signature: string, sessionKey: string) => boolean,
  *   version?: string | null,
- * }} deps `verifyMoveSignature` (P-256) is needed for games in protocol v2; `version`: the product's (root package.json)
+ *   pingWall?: import("./modules/pings/application/PingService.js").PingWallReader | null,
+ *   pingImages?: import("./modules/pings/application/PingService.js").ImageHost | null,
+ *   pingAvatars?: import("./modules/pings/application/AvatarProxy.js").AvatarSource | null,
+ * }} deps `verifyMoveSignature` (P-256) is needed for games in protocol v2; `version`: the product's (root package.json);
+ *   `pingWall`: cur8.fun's Pings walls, for sharing games there (none: not offered); `pingImages`: where the pictures of shared games go (none: pings without one);
+ *   `pingAvatars`: players' profile pictures, for those pictures (none: initials)
  */
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
-  const { staticFiles, publishing, ackSigner, verifyMoveSignature, version } = optionalAdapters(deps);
+  const { staticFiles, publishing, ackSigner, verifyMoveSignature, version, pingWall, pingImages, pingAvatars } = optionalAdapters(deps);
   const { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy, lobbyPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
@@ -211,6 +217,7 @@ export async function createServerApp(deps) {
   registerGameRoutes({ router, games });
   registerAutoRoutes({ router, auto });
   registerDailyRoutes({ router, daily });
+  registerPings({ router, wall: pingWall, images: pingImages, avatars: pingAvatars, wallets, audit, clock });
   const readModel = new PgOperationsReadModel(database);
   const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
   const monitor = new Monitor({ readModel, runtime, clock, logger, policy: alarmPolicy });
@@ -418,8 +425,19 @@ function moveSignatures(wallet, verifyMoveSignature) {
  * The optional adapters of createServerApp, with their defaults.
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = null, verifyMoveSignature = undefined, version = null }) {
-  return { staticFiles, publishing, ackSigner, verifyMoveSignature, version };
+function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = null, verifyMoveSignature = undefined, version = null, pingWall = null, pingImages = null, pingAvatars = null }) {
+  return { staticFiles, publishing, ackSigner, verifyMoveSignature, version, pingWall, pingImages, pingAvatars };
+}
+
+/**
+ * Sharing games as pings on cur8.fun, when the server knows where the walls are.
+ * @param {{ router: import("./platform/http/Router.js").Router, wall: import("./modules/pings/application/PingService.js").PingWallReader | null, images: import("./modules/pings/application/PingService.js").ImageHost | null, avatars: import("./modules/pings/application/AvatarProxy.js").AvatarSource | null, wallets: ReadonlyMap<string, object>, audit: AuditTrail, clock: import("./kernel/time.js").Clock }} deps
+ */
+function registerPings({ router, wall, images, avatars, wallets, audit, clock }) {
+  if (wall !== null) {
+    const proxy = avatars === null ? null : new AvatarProxy({ source: avatars, clock });
+    registerPingRoutes({ router, pings: new PingService({ wall, images, wallets, audit, clock }), avatars: proxy });
+  }
 }
 
 /**

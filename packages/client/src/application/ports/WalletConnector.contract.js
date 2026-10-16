@@ -10,8 +10,11 @@
  * @property {(request: { account: string, message: string, keyRole: string }) => Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>} signMessage resolves to the signature
  * @property {(request: TransferRequest) => Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>} requestTransfer
  *   asks the user to approve a transfer exactly as the server's payment instructions say; resolves to the transaction id
+ * @property {(request: CommentRequest) => Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>} postComment
+ *   publishes a comment with the posting key (a ping on cur8.fun, sharing a game); resolves to the transaction id ("" when the wallet does not tell it)
  *
  * @typedef {Readonly<{ from: string, to: string, amount: string, asset: string, memo: string }>} TransferRequest amount as a decimal string ("1.000")
+ * @typedef {Readonly<{ author: string, parentAuthor: string, parentPermlink: string, permlink: string, title: string, body: string, jsonMetadata: string }>} CommentRequest
  */
 
 export const WalletFailure = Object.freeze({
@@ -24,4 +27,4 @@ export const WalletFailure = Object.freeze({
   UNAVAILABLE: "WALLET_UNAVAILABLE",
 });
 
-export const WALLET_CONNECTOR_METHODS = Object.freeze(["isAvailable", "signMessage", "requestTransfer"]);
+export const WALLET_CONNECTOR_METHODS = Object.freeze(["isAvailable", "signMessage", "requestTransfer", "postComment"]);

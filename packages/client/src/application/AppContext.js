@@ -20,6 +20,7 @@
  * @property {import("./online/OnlineService.js").OnlineService} [online] online games; absent with `identity`
  * @property {import("./daily/DailyService.js").DailyService} [daily] the daily challenges against the server's AI; absent with `identity`
  * @property {import("./daily/CharacterVoice.js").CharacterVoice} [voice] what the challenges' characters say during their games; absent with `daily`
+ * @property {import("./social/GameSharing.js").GameSharing} [sharing] sharing finished online games as pings on cur8.fun; absent with `identity`
  * @property {import("./lobby/LobbyService.js").LobbyService} [lobby] who else is online, and challenges between players; absent with `identity`
  * @property {import("./auto/AutoListService.js").AutoListService} [autoList] the auto list of ranked play (the AI plays the player's deck); absent with `identity`
  * @property {import("./auto/AutoReplayService.js").AutoReplayService} [autoReplays] replays of played auto games; absent with `identity`

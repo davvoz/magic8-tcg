@@ -19,6 +19,8 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 | `M8_DATA_KEY_ID`, `M8_DATA_KEYS_OLD` | per la rotazione | vedi §4.1 |
 | `M8_TRUST_PROXY` | `true` dietro **un** proxy | usa l'ultimo indirizzo di `X-Forwarded-For` (quello scritto dal proxy); con `false` l'header è ignorato |
 | `M8_SHOP_ACCOUNT` | default `verdu.green` | riceve i pagamenti |
+| `M8_PINGS_WALL` | default `micro.cur8` | l'account del muro dei Pings di cur8.fun, sotto cui si condividono le partite (26); vuoto: niente condivisione |
+| `M8_PING_IMAGE_HOST` | default il servizio di immagini di cur8.fun (imridd) | dove si caricano le immagini delle partite condivise (26); vuoto: ping senza immagine |
 | `M8_ROOT_ACCOUNT` | default `verdu.green` | pubblica i manifest (consigliato un account dedicato, vedi 06) |
 | `M8_BROADCASTER_KEYS` | per pubblicare | `account:WIF_posting,…`, **solo chiavi posting** |
 | `M8_FIRST_EPOCH_ID` | se il root ha già pubblicato epoche da un altro database | il numero più basso di una nuova epoca dei pacchetti (default 1). Un verificatore lega ogni numero alla **prima** commitment pubblicata dai broadcaster del root: se delle prove sullo stesso account hanno già pubblicato delle epoche, la produzione parte sopra |

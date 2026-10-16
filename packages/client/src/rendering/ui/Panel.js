@@ -120,7 +120,7 @@ export class Panel extends UiNode {
  * @param {import("@magic8/engine/shared/geometry.js").Rect} area
  * @param {number} maxScale the largest the corners may be drawn
  */
-function paintCorners(context, theme, area, maxScale) {
+export function paintCorners(context, theme, area, maxScale) {
   const art = theme.uiArt;
   const image = art?.imageFor(UiPiece.CORNER) ?? null;
   if (art === undefined || image === null) {

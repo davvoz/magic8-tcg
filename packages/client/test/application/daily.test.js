@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { DailyCompanion, LOW_LIFE } from "../../src/application/daily/DailyCompanion.js";
 import { DailyBusy, DailyService } from "../../src/application/daily/DailyService.js";
-import { characterIdOf, isCharacterAccount, lineFor } from "../../src/application/daily/characters.js";
+import { characterIdOf, isCharacterAccount, lineFor, nextStepAfter } from "../../src/application/daily/characters.js";
 import { describeCondition } from "../../src/application/match/describeCondition.js";
 import { describeNotification, packName } from "../../src/application/notifications/describeNotification.js";
 import { HttpDailyApi } from "../../src/infrastructure/api/HttpDailyApi.js";
@@ -138,6 +138,13 @@ describe("characters and rules in words", () => {
     }
     assert.equal(lineFor(["a", "b", "c"], "game-1"), lineFor(["a", "b", "c"], "game-1"), "the same line for the same game");
     assert.equal(lineFor([], "game-1"), null);
+  });
+
+  it("names what follows a challenge: the next one, the pack after the boss, another try", () => {
+    assert.equal(nextStepAfter("win", false), "Next challenge");
+    assert.equal(nextStepAfter("win", true), "See your prize");
+    assert.equal(nextStepAfter("loss", true), "Try again");
+    assert.equal(nextStepAfter("draw", false), "Try again");
   });
 
   it("puts each kind of condition in words, from the reader's seat", () => {

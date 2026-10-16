@@ -25,7 +25,7 @@ import { TextBlock } from "../../ui/TextBlock.js";
 /** @type {OpponentCardMetrics} */
 export const WIDE_CARD = Object.freeze({ inset: 22, header: 28, headerInset: PANEL_INSET + 8, portrait: 300, layout: "stacked", nameHeight: 40, titleHeight: 26, band: 5, quote: 100, minQuote: 26, ruleTitle: 30, ruleText: 52, sizes: Object.freeze({ name: "heading", text: "small" }) });
 /** @type {OpponentCardMetrics} */
-export const COMPACT_CARD = Object.freeze({ inset: 10, header: 20, headerInset: SMALL_PANEL_INSET + 12, portrait: 66, layout: "beside", nameHeight: 24, titleHeight: 18, band: 3, quote: 52, minQuote: 16, ruleTitle: 20, ruleText: 40, sizes: Object.freeze({ name: "body", text: "tiny" }) });
+export const COMPACT_CARD = Object.freeze({ inset: 10, header: 20, headerInset: SMALL_PANEL_INSET + 12, portrait: 104, layout: "stacked", nameHeight: 22, titleHeight: 16, band: 3, quote: 52, minQuote: 16, ruleTitle: 20, ruleText: 40, sizes: Object.freeze({ name: "body", text: "tiny" }) });
 
 /** What the badge says, and in which colour, for each state. */
 const STATES = Object.freeze({

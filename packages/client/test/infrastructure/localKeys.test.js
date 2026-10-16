@@ -67,6 +67,7 @@ function fakeApi({ reference = () => ok(REFERENCE), broadcast } = {}) {
         broadcasts.push(transaction);
         return broadcast === undefined ? ok("ignored") : broadcast(transaction);
       },
+      broadcastPing: async (transaction) => (broadcasts.push(transaction), ok("relayed")),
     },
   };
 }
@@ -189,6 +190,31 @@ describe("LocalKeyWallet: the posting key", () => {
     store.write("magic8.keys.posting", '{"v":1,"iv":"AAAA","data":"AAAA"}');
     assert.equal(await wallet({ store }).keys.restore(), null);
     assert.equal(store.read("magic8.keys.posting").value, null);
+  });
+});
+
+describe("LocalKeyWallet: pings with the posting key", () => {
+  const PING = Object.freeze({ author: "alice", parentAuthor: "micro.cur8", parentPermlink: "wall-1", permlink: "re-wall-1-kijam-ab", title: "", body: "GG #kijam", jsonMetadata: '{"type":"ping"}' });
+
+  it("signs the comment with the posting key, never asking for the active one, and has the server relay it", async () => {
+    const server = fakeApi();
+    const { keys, prompt } = wallet({ api: server.api });
+    await keys.usePostingKey("alice", POSTING.wif);
+    const asked = answering(prompt, []);
+    assert.deepEqual(await keys.postComment(PING), ok("relayed"));
+    assert.deepEqual(asked, [], "no active key");
+    const [transaction] = server.broadcasts;
+    assert.deepEqual(transaction.operations, [["comment", { parent_author: "micro.cur8", parent_permlink: "wall-1", author: "alice", permlink: "re-wall-1-kijam-ab", title: "", body: "GG #kijam", json_metadata: '{"type":"ping"}' }]]);
+    assert.equal(signerOf(transaction), POSTING.publicKey);
+  });
+
+  it("posts only for the account whose posting key it holds", async () => {
+    const server = fakeApi();
+    const { keys } = wallet({ api: server.api });
+    assert.equal((await keys.postComment(PING)).error.code, "WALLET_NOT_INSTALLED");
+    await keys.usePostingKey("alice", POSTING.wif);
+    assert.equal((await keys.postComment({ ...PING, author: "bob" })).error.code, "WALLET_NOT_INSTALLED");
+    assert.deepEqual(server.broadcasts, []);
   });
 });
 

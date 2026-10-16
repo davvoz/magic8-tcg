@@ -330,6 +330,17 @@ describe("KeychainWalletConnector", () => {
     assert.equal((await absent.signMessage({ account: "a", message: "m", keyRole: "Posting" })).error.code, "WALLET_NOT_INSTALLED");
   });
 
+  it("publishes a comment through requestPost, with the posting key Keychain holds", async () => {
+    const posts = [];
+    const keychain = { requestSignBuffer: () => undefined, requestPost: (...args) => (posts.push(args.slice(0, 8)), args[8]({ success: true, result: { id: "c".repeat(40) } })) };
+    const connector = new KeychainWalletConnector({ locate: () => keychain, timers: realTimers });
+    const comment = { author: "alice", parentAuthor: "micro.cur8", parentPermlink: "wall-1", permlink: "re-wall-1-kijam-ab", title: "", body: "GG", jsonMetadata: "{}" };
+    assert.deepEqual(await connector.postComment(comment), { ok: true, value: "c".repeat(40) });
+    assert.deepEqual(posts, [["alice", "", "GG", "wall-1", "micro.cur8", "{}", "re-wall-1-kijam-ab", ""]]);
+    const old = new KeychainWalletConnector({ locate: () => ({ requestSignBuffer: () => undefined }), timers: realTimers });
+    assert.equal((await old.postComment(comment)).error.code, "WALLET_NOT_INSTALLED", "a Keychain too old to post");
+  });
+
   it("answers once even if Keychain calls back twice", async () => {
     const { keychain } = fakeKeychain((callback) => {
       callback({ success: true, result: SIGNATURE });

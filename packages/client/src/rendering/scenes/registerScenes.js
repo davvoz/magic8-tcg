@@ -4,6 +4,7 @@
  * instead of leading to a placeholder. The account scenes (starter deck,
  * collection) need a game server and exist only when the app has one.
  */
+import { nextStepAfter } from "../../application/daily/characters.js";
 import { CollectionScene } from "./CollectionScene.js";
 import { DailyScene } from "./DailyScene.js";
 import { DeckBuilderScene } from "./DeckBuilderScene.js";
@@ -34,7 +35,7 @@ export function registerScenes(sceneManager, app) {
     .register(SceneId.MAIN_MENU, (services) => new MainMenuScene(services, app))
     .register(SceneId.DECK_SELECTION, (services) => new DeckSelectionScene(services, app))
     .register(SceneId.DECK_BUILDER, (services) => new DeckBuilderScene(services, app))
-    .register(SceneId.MATCH, (services) => new MatchScene(services, { rarityOf: (cardId) => app.rarities?.of(cardId) ?? null, audio: app.audio, help: app.help, characterName: (account) => app.daily?.characterOf(account)?.name ?? null, voice: app.voice }))
+    .register(SceneId.MATCH, (services) => new MatchScene(services, { rarityOf: (cardId) => app.rarities?.of(cardId) ?? null, audio: app.audio, help: app.help, characterName: (account) => app.daily?.characterOf(account)?.name ?? null, challengeStep: (account, outcome) => challengeStep(app, account, outcome), voice: app.voice, sharing: app.sharing }))
     .register(SceneId.LOGIN, (services) => new LoginScene(services, app))
     .register(SceneId.INFO, (services) => new InfoScene(services, app))
     .register(SceneId.ERROR, (services) => new ErrorScene(services));
@@ -82,4 +83,15 @@ function registerOnlineScenes(sceneManager, app) {
   if (app.autoReplays !== undefined) {
     sceneManager.register(SceneId.REPLAY, (services) => new ReplayScene(services, app));
   }
+}
+
+/**
+ * After a daily challenge, what going back to the challenges offers; null when the opponent was no character of the day.
+ * @param {import("../../application/AppContext.js").AppContext} app
+ * @param {string} account the opponent's seat
+ * @param {"win" | "loss" | "draw"} outcome the player's
+ */
+function challengeStep(app, account, outcome) {
+  const opponent = app.daily?.characterOf(account) ?? null;
+  return opponent === null ? null : nextStepAfter(outcome, opponent.boss);
 }

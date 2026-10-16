@@ -7,6 +7,7 @@ import {
   RpcErrorCode,
   SteemBlockchainProvider,
   SteemRpcClient,
+  SteemPingWall,
   SteemWalletProvider,
   WalletError,
   publicKeyOf,
@@ -267,7 +268,33 @@ describe("SteemWalletProvider", () => {
       assert.equal((await wallet([]).broadcastTransfer("alice", signed().json)).error.code, WalletError.UNSUPPORTED, "no rpc, no relay");
     });
 
-    it("hands out the head block to reference", async () => {
+    describe("relaying a ping signed in the browser", () => {
+    const ping = { refBlockNum: 1, refBlockPrefix: 2, expiration: Date.UTC(2026, 9, 16, 0, 1) / 1000, operations: [{ type: "comment", parentAuthor: "micro.cur8", parentPermlink: "wall-1", author: "alice", permlink: "re-wall-1-x", title: "", body: "GG #kijam", jsonMetadata: "{}" }] };
+    const signedPing = (transaction = ping) => toBroadcastJson(transaction, [signDigest(transactionDigest(serializeTransaction(transaction)), privateKey)]);
+    const underWall = (comment) => comment.parentAuthor === "micro.cur8" && comment.parentPermlink === "wall-1";
+
+    it("broadcasts a ping of the signed-in account that the caller's rule accepts, and nothing else", async () => {
+      const { rpc, calls } = client({ [A]: () => ({ reply: {} }), [B]: () => ({ reply: {} }) });
+      const provider = new SteemWalletProvider({ chain: new SteemBlockchainProvider({ rpc }), appName: "magic8-tcg", rpc });
+      assert.equal((await provider.broadcastComment("alice", signedPing(), underWall)).ok, true);
+      assert.deepEqual(calls.at(-1).request.params, [signedPing()]);
+      const code = async (account, json) => (await provider.broadcastComment(account, json, underWall)).error?.code;
+      assert.equal(await code("bob", signedPing()), WalletError.NOT_A_PING, "someone else's");
+      assert.equal(await code("alice", signedPing({ ...ping, operations: [{ ...ping.operations[0], parentPermlink: "another-post" }] })), WalletError.NOT_A_PING, "not under the wall");
+      assert.equal(await code("alice", signedPing({ ...ping, operations: [{ type: "transfer", from: "alice", to: "shop", amount: 1, asset: "STEEM", memo: "" }] })), WalletError.NOT_A_PING);
+      assert.equal((await provider.broadcastTransfer("alice", signedPing())).error?.code, WalletError.NOT_A_TRANSFER, "a ping is not relayed as a transfer");
+    });
+
+    it("reads the latest walls, newest first, root posts of the wall account only", async () => {
+      const { rpc, calls } = client({ [A]: () => ({ reply: [{ author: "micro.cur8", permlink: "wall-2", depth: 0 }, { author: "micro.cur8", permlink: "re-x", depth: 1 }, { author: "someone", permlink: "wall-1", depth: 0 }] }) });
+      const wall = new SteemPingWall({ rpc, account: "micro.cur8" });
+      assert.deepEqual(await wall.latest(3), [{ author: "micro.cur8", permlink: "wall-2" }]);
+      assert.deepEqual(calls.at(-1).request.params, { account: "micro.cur8", sort: "posts", limit: 3 });
+      assert.throws(() => new SteemPingWall({ rpc, account: "Not An Account" }), TypeError);
+    });
+  });
+
+  it("hands out the head block to reference", async () => {
       const head = { head_block_number: 100, head_block_id: "00000064dcdcf4b4aaaaaaaaaaaaaaaaaaaaaaaa", time: "2026-09-24T10:00:00" };
       const { provider } = relay(() => ({ reply: head }));
       assert.deepEqual(await provider.reference(), { ok: true, value: { blockNum: 100, blockId: head.head_block_id, time: Date.UTC(2026, 8, 24, 10) } });

@@ -119,9 +119,33 @@ describe("STEEM transaction serialization and signing", () => {
     assert.throws(() => fromBroadcastJson({ ...json, operations: [["transfer", { from: "foo", to: "baar", amount: "1.5 STEEM", memo: "" }]] }), /STEEM or SBD amount/);
   });
 
+  it("serializes a ping (a comment under a wall) as steem-js 0.7.11 signs it", () => {
+    // Signed by steem-js with alice's posting key: our bytes are the ones it signed if its signature recovers that key.
+    const signed = {
+      ref_block_num: 1234,
+      ref_block_prefix: 3456789012,
+      expiration: "2026-10-16T12:00:00",
+      operations: [["comment", { parent_author: "micro.cur8", parent_permlink: "wall-2026-10-16", author: "alice", permlink: "re-wall-2026-10-16-abc123", title: "", body: "I beat The Gravelord in KIJAM! ⚔️ #kijam", json_metadata: '{"type":"ping","tags":["pings","kijam"]}' }]],
+      extensions: [],
+      signatures: ["20441e17d96b697f2289d88914e7bae0d16ec771a1b926b6c30e11dd1e7c678c521eaf4f69a3deaa81b72a875d18e1e617266966c202127301d23c0e0a775eb9b2"],
+    };
+    const parsed = fromBroadcastJson(signed);
+    assert.equal(parsed.transaction.operations[0].type, "comment");
+    assert.deepEqual(recoverSignerKeys(transactionDigest(serializeTransaction(parsed.transaction)), parsed.signatures), ["STM7yBp4Xs1HGh2FziozGLhjepfKGNN8RimB8FkZjzfJR8b7zUnnL"]);
+    assert.deepEqual(toBroadcastJson(parsed.transaction, parsed.signatures), signed, "and back to the node's form");
+
+    const comment = parsed.transaction.operations[0];
+    const bad = (fields) => () => serializeTransaction({ ...parsed.transaction, operations: [{ ...comment, ...fields }] });
+    assert.throws(bad({ author: "Alice" }), /account names/);
+    assert.throws(bad({ permlink: "Not A Permlink" }), /permlinks/);
+    assert.throws(bad({ body: "" }), /chain's limits/);
+    assert.throws(bad({ jsonMetadata: "x".repeat(8193) }), /chain's limits/);
+    assert.doesNotThrow(bad({ parentAuthor: "", parentPermlink: "pings" }), "a root post has no parent author");
+  });
+
   it("refuses what it does not publish", () => {
     const bad = (operation) => () => serializeTransaction({ ...GAME_TX, operations: [{ ...GAME_TX.operations[0], ...operation }] });
-    assert.throws(bad({ type: "vote" }), /only custom_json and transfer/);
+    assert.throws(bad({ type: "vote" }), /only custom_json, transfer and comment/);
     assert.throws(bad({ requiredPostingAuths: [] }), /at least one/);
     assert.throws(bad({ requiredPostingAuths: ["Bad"] }), /account names/);
     assert.throws(bad({ requiredPostingAuths: ["m8tcg-b1", "m8tcg-b1"] }), /duplicate/);

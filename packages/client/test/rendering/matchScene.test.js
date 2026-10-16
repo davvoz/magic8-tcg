@@ -704,8 +704,12 @@ describe("MatchScene on the board", () => {
       assert.ok(result.includes(text), `the result shows ${text}`);
     }
     assert.equal(scene.update(16), true, "the winner's rays keep turning while the result is open");
-    tapNode(byId(scene, "gameOver.board"));
+    assert.equal(byId(scene, "gameOver.board"), null, "no View board: a click outside the result shows the board");
+    scene.onCancel();
     assert.equal(scene.modal, null);
+    tapNode(byId(scene, "result"));
+    assert.equal(scene.modal?.id, "gameOver", "See result brings the result back");
+    scene.onCancel();
     assert.equal(byId(scene, "endTurn"), null, "no turn controls after the match");
     assert.equal(byId(scene, "leave").text, "Back to menu");
     tapNode(byId(scene, "leave"));
@@ -770,7 +774,7 @@ describe("MatchScene on the board", () => {
     assert.ok(titled, "the outcome comes down over the table");
     assert.equal(scene.modal?.id, "gameOver", "then the result is offered");
     assert.equal(scene.isEnding, false);
-    tapNode(byId(scene, "gameOver.board"));
+    scene.onCancel();
     assert.deepEqual(scene.ending.shake, { x: 0, y: 0 }, "the board is left still to be looked at");
     const after = new FakeContext2D();
     ending.draw(after, theme);
