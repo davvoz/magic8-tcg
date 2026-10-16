@@ -4,7 +4,9 @@
  * as the frame allows, centred in it, and rimmed in the tile's colour (a
  * frame of the painting's shape is filled by it); until the painting is
  * ready, a glow in that colour round a large emblem. Drawing only; the challenge tile shows a
- * character's portrait instead.
+ * character's portrait instead. The painting may be one of the table's
+ * (Theme.tableArt: the card back), and the whole picture may be dimmed (a
+ * locked section on a phone's Home).
  */
 import { drawIcon } from "../../ui/icons.js";
 import { radialGradient, roundedRectPath } from "../../ui/drawing.js";
@@ -13,6 +15,8 @@ import { withAlpha } from "../../theme/color.js";
 
 /** The emblem's share of the picture's shorter side. */
 const EMBLEM_SHARE = 0.46;
+/** How much of a dimmed picture shows. */
+const DIM_ALPHA = 0.45;
 
 export class TileArt extends UiNode {
   /** The painting (a UiPiece). */
@@ -21,15 +25,21 @@ export class TileArt extends UiNode {
   icon;
   /** The faction whose colours it takes (theme.colors.factions). */
   faction;
+  /** Where the painting is: the menus' art (a UiPiece) or the table's (a TablePiece). @type {"ui" | "table"} */
+  from;
+  /** Whether it is dimmed. */
+  dim;
 
   /**
-   * @param {{ id?: string, x: number, y: number, width: number, height: number, piece: string, icon: string, faction: string }} options
+   * @param {{ id?: string, x: number, y: number, width: number, height: number, piece: string, icon: string, faction: string, from?: "ui" | "table", dim?: boolean }} options
    */
-  constructor({ piece, icon, faction, ...frame }) {
+  constructor({ piece, icon, faction, from = "ui", dim = false, ...frame }) {
     super(frame);
     this.piece = piece;
     this.icon = icon;
     this.faction = faction;
+    this.from = from;
+    this.dim = dim;
     this.passthrough = true;
   }
 
@@ -42,7 +52,21 @@ export class TileArt extends UiNode {
     const { colors } = theme;
     const tones = colors.factions[this.faction] ?? colors.factions.neutral;
     const center = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
-    const painting = theme.uiArt?.imageFor(this.piece) ?? null;
+    const painting = (this.from === "table" ? theme.tableArt : theme.uiArt)?.imageFor(this.piece) ?? null;
+    context.save();
+    if (this.dim) {
+      context.globalAlpha *= DIM_ALPHA;
+    }
+    this.#paintPicture(context, theme, { area, tones, center, painting });
+    context.restore();
+  }
+
+  /**
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../../theme/Theme.js").Theme} theme
+   * @param {{ area: { x: number, y: number, width: number, height: number }, tones: { light: string, base: string, dark: string }, center: { x: number, y: number }, painting: import("../../images/ImageCache.js").LoadedImage | null }} picture
+   */
+  #paintPicture(context, theme, { area, tones, center, painting }) {
     if (painting !== null) {
       const shown = containedRect(painting, area);
       context.save();

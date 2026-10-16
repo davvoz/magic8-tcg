@@ -28,6 +28,10 @@ export class SectionScene extends Scene {
   #back = null;
   /** Where the opener said Back leads (null: it did not say). @type {import("../shell/navigation.js").BackTarget | null} */
   #named = null;
+  /** What the screen was opened with, to route Back again when the screen turns into a phone's or back. */
+  #params = Object.freeze({});
+  /** Whether Back was last routed for a phone's screen. */
+  #routedCompact = false;
 
   /**
    * @param {import("./Scene.js").SceneServices} services the whole screen's
@@ -64,7 +68,9 @@ export class SectionScene extends Scene {
    * @param {Readonly<Record<string, unknown>>} [params]
    */
   routeBack(params = {}) {
-    const context = { hasScene: this.services.hasScene, app: this.#app };
+    this.#params = params;
+    this.#routedCompact = this.services.viewport.compact === true;
+    const context = { hasScene: this.services.hasScene, app: this.#app, compact: this.#routedCompact };
     this.#named = namedBack(this.sceneId, params, this.services.hasScene);
     this.#back = backTarget(this.sceneId, params, context);
     this.setHeading({ back: this.#back === null ? null : () => this.goBack() });
@@ -104,6 +110,14 @@ export class SectionScene extends Scene {
     return returnTo(this.sceneId, params, this.#named);
   }
 
+  /**
+   * Opens a section's screen as the rail does (a phone's Home lists them): a locked one says why instead.
+   * @param {string} sectionId one of SectionId
+   */
+  openSection(sectionId) {
+    this.#shell.openSection(sectionId);
+  }
+
   /** The bar's Back button, when the screen has one: where the focus goes when nothing else asks for it. */
   get backButton() {
     return this.#shell.backButton;
@@ -115,6 +129,10 @@ export class SectionScene extends Scene {
   }
 
   onResize() {
+    if ((this.services.viewport.compact === true) !== this.#routedCompact) {
+      // A phone's section screens have a Back (Home) that a wider screen's do not: route it again.
+      this.routeBack(this.#params);
+    }
     this.#shell.relayout();
     super.onResize();
   }

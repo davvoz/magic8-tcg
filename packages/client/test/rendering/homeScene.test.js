@@ -20,6 +20,7 @@ import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { UiPiece } from "../../src/rendering/images/UiArt.js";
 import { CharacterPortrait } from "../../src/rendering/scenes/daily/CharacterPortrait.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
+import { NavCard } from "../../src/rendering/scenes/home/NavCard.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
 import { DAY } from "../application/dailyFixtures.js";
@@ -188,5 +189,29 @@ describe("HomeScene, signed in", () => {
     assert.equal(byId(home.scene, "home.headline.title").text, "Your game against @bob");
     byId(home.scene, "home.resume").activate();
     assert.deepEqual(home.navigated.at(-1), { id: SceneId.MATCH, params: { session, againScene: SceneId.ONLINE } });
+  });
+});
+
+describe("HomeScene on a phone", () => {
+  const PHONE = Object.freeze({ cssWidth: 667, cssHeight: 375 });
+
+  it("has no rail: the four other sections as cards, each opening its screen", async () => {
+    const home = world({ size: PHONE });
+    home.scene.enter({});
+    await signIn(home);
+    assert.equal(byId(home.scene, "shell.nav.home"), null, "no rail");
+    assert.equal(byId(home.scene, "home.challenge"), null, "not the wide Home's cards");
+    const cards = ["play", "decks", "market", "season"].map((id) => byId(home.scene, `home.section.${id}`));
+    assert.ok(cards.every((card) => card instanceof NavCard));
+    assert.equal(byId(home.scene, "home.section.play.line").text, "Today's challenge: Kael");
+    assert.equal(byId(home.scene, "home.section.season.line").text, "Jackpot 866.666 STEEM");
+    cards[0].activate();
+    assert.equal(home.navigated.at(-1).id, SceneId.PLAY);
+  });
+
+  it("says why a section is locked, offline", () => {
+    const home = world({ size: PHONE, offline: true });
+    home.scene.enter({});
+    assert.equal(byId(home.scene, "home.section.play").locked, false, "practice plays offline");
   });
 });

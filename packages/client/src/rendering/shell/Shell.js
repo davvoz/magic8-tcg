@@ -1,7 +1,7 @@
 /**
  * The navigation shell around a screen: the rail of sections on the left
- * (NavRail) and the top bar (TopBar), both always there, with names that
- * never change. It is the scene's chrome (Scene.chrome): drawn beneath the
+ * (NavRail; not on a phone, where Home lists the sections) and the top bar
+ * (TopBar), with names that never change. It is the scene's chrome (Scene.chrome): drawn beneath the
  * scene's own tree, reached after it, and left alone when the scene
  * rebuilds itself. Its own dialogs (settings, account, a locked section's
  * reason) are the scene's overlay, above whatever the scene shows.
@@ -174,7 +174,9 @@ export class Shell {
     const screen = () => viewport.bounds;
     const context = { hasScene: this.#host.services.hasScene, app: this.#app };
     const entries = SECTIONS.map((section) => Object.freeze({ section, destination: section.destination(context) }));
-    this.node.add(new NavRail({ layout, origin, screen, entries, current: this.#section, onOpen: (entry) => this.#open(entry) }));
+    if (!layout.compact) {
+      this.node.add(new NavRail({ layout, origin, screen, entries, current: this.#section, onOpen: (entry) => this.#open(entry) }));
+    }
     this.#bar = this.node.add(new TopBar({ layout, origin, screen, heading: this.#heading, controls: this.#controls(layout.compact), tabs: this.#tabs(context) }));
     if (focusedId.length > 0) {
       this.#host.focus(this.node.findById(focusedId));
@@ -194,6 +196,17 @@ export class Shell {
     }
     if (entries?.state !== undefined && entries.state.entries === null && !entries.state.loading) {
       void entries.refresh();
+    }
+  }
+
+  /**
+   * Opens a section's screen, as its entry on the rail does: a locked one says why instead.
+   * @param {string} sectionId one of SectionId
+   */
+  openSection(sectionId) {
+    const section = sectionById(sectionId);
+    if (section !== undefined) {
+      this.#open({ section, destination: section.destination({ hasScene: this.#host.services.hasScene, app: this.#app }) });
     }
   }
 

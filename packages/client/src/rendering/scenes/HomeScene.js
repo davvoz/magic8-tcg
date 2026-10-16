@@ -11,6 +11,11 @@
  *
  * One gold button: the top card's; without one, the challenge's Fight (or
  * Casual).
+ *
+ * A phone has no rail, and its Home is not the wide one: under the top card
+ * (when there is one), the four other sections as cards to open (NavCard):
+ * Play, Decks, Market and Season, each with its picture and a line on what
+ * is there; a locked one says why.
  */
 import { GUIDE_STEPS, guideFor } from "../../application/onboarding/OnboardingGuide.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
@@ -19,14 +24,26 @@ import { HEADLINE_HEIGHT, HeadlineCard } from "./home/HeadlineCard.js";
 import { STEP_NAMES, stepCopy } from "./home/nextStep.js";
 import { OnlineCard } from "./home/OnlineCard.js";
 import { PlayViews } from "./home/PlayViews.js";
+import { NavCard } from "./home/NavCard.js";
 import { SeasonCard } from "./home/SeasonCard.js";
+import { UiPiece } from "../images/UiArt.js";
+import { TablePiece } from "../images/TableArt.js";
+import { SECTIONS, SectionId } from "../shell/sections.js";
 import { hasGameInProgress, resumeGame } from "./returnToGame.js";
+import { Icon } from "../ui/icons.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 import { startTutorial } from "./startTutorial.js";
 
 /** The frame: margins round the cards and the gap between them. */
 const FRAME = Object.freeze({ wide: Object.freeze({ margin: 20, gap: 20 }), compact: Object.freeze({ margin: 8, gap: 8 }) });
+/** What each section's card on a phone's Home shows above its name: a painting, and the emblem until it is ready. */
+const SECTION_PICTURES = Object.freeze({
+  [SectionId.PLAY]: Object.freeze({ piece: UiPiece.PLAY_ONLINE, icon: Icon.PLAY, faction: "ember" }),
+  [SectionId.DECKS]: Object.freeze({ piece: TablePiece.CARD_BACK, from: /** @type {const} */ ("table"), icon: Icon.DECKS, faction: "arcane" }),
+  [SectionId.MARKET]: Object.freeze({ piece: "", icon: Icon.MARKET, faction: "verdant" }),
+  [SectionId.SEASON]: Object.freeze({ piece: "", icon: Icon.SEASON, faction: "iron" }),
+});
 const MINUTE = 60_000;
 
 /**
@@ -140,15 +157,75 @@ export class HomeScene extends SectionScene {
     if (headline !== null && layout.headline !== null) {
       first = this.root.add(new HeadlineCard({ id: "home.headline", ...layout.headline, compact, ...headline })).action;
     }
-    const primary = headline === null;
-    const challenge = this.#views.challenge();
-    const online = this.#views.online();
-    const [left, middle, right] = layout.cards;
-    this.root.add(new ChallengeCard({ id: "home.challenge", ...left, compact, view: challenge, challenger: this.#views.challenger(challenge), primary: primary && challenge.kind === "next", clock: () => this.#animationMs, onFight: () => this.services.navigate(SceneId.DAILY, this.backHere()) }));
-    this.root.add(new OnlineCard({ id: "home.online", ...middle, compact, view: online, primary: primary && challenge.kind !== "next" && online.kind === "open", onPlay: (mode) => this.services.navigate(SceneId.ONLINE, { mode, ...this.backHere() }) }));
-    this.#season = this.root.add(new SeasonCard({ id: "home.season", ...right, compact, view: this.#views.season(), canOpen: this.services.hasScene(SceneId.SEASON), onOpen: () => this.services.navigate(SceneId.SEASON) }));
+    if (compact) {
+      this.#buildSections(layout.cards);
+    } else {
+      this.#buildPlayCards(layout.cards, headline === null);
+    }
     this.focus(this.findNode(focusedId) ?? first ?? this.root.focusableNodes()[0] ?? null);
     this.services.requestRender();
+  }
+
+  /**
+   * The wide Home's cards: today's challenge, online play, the season.
+   * @param {readonly Rect[]} frames
+   * @param {boolean} primary whether the gold button is theirs (there is no top card)
+   */
+  #buildPlayCards([left, middle, right], primary) {
+    const challenge = this.#views.challenge();
+    const online = this.#views.online();
+    this.root.add(new ChallengeCard({ id: "home.challenge", ...left, compact: false, view: challenge, challenger: this.#views.challenger(challenge), primary: primary && challenge.kind === "next", clock: () => this.#animationMs, onFight: () => this.services.navigate(SceneId.DAILY, this.backHere()) }));
+    this.root.add(new OnlineCard({ id: "home.online", ...middle, compact: false, view: online, primary: primary && challenge.kind !== "next" && online.kind === "open", onPlay: (mode) => this.services.navigate(SceneId.ONLINE, { mode, ...this.backHere() }) }));
+    this.#season = this.root.add(new SeasonCard({ id: "home.season", ...right, compact: false, view: this.#views.season(), canOpen: this.services.hasScene(SceneId.SEASON), onOpen: () => this.services.navigate(SceneId.SEASON) }));
+  }
+
+  /**
+   * A phone's way to the other sections: a card each, opening it as its entry on the rail would.
+   * @param {readonly Rect[]} frames
+   */
+  #buildSections(frames) {
+    const context = { hasScene: this.services.hasScene, app: this.#app };
+    SECTIONS.filter((section) => section.id !== SectionId.HOME).forEach((section, index) => {
+      const destination = section.destination(context);
+      const locked = "locked" in destination;
+      this.root.add(
+        new NavCard({
+          id: `home.section.${section.id}`,
+          ...frames[index],
+          picture: SECTION_PICTURES[section.id],
+          name: section.label,
+          line: locked ? destination.locked : this.#sectionLine(section.id),
+          locked,
+          onActivate: () => this.openSection(section.id),
+        }),
+      );
+    });
+  }
+
+  /**
+   * What a section's card on a phone says is there, or where the player stands with it.
+   * @param {string} sectionId
+   */
+  #sectionLine(sectionId) {
+    switch (sectionId) {
+      case SectionId.PLAY: {
+        const challenge = this.#views.challenge();
+        return challenge.kind === "next" ? `Today's challenge: ${challenge.opponent.name}` : "Challenges, online, practice";
+      }
+      case SectionId.DECKS: {
+        if (this.#app.account?.needsStarter === true) {
+          return "Your free starter deck";
+        }
+        const count = this.#app.deckSelection.listDecks().length;
+        return `${count} deck${count === 1 ? "" : "s"} · your cards`;
+      }
+      case SectionId.MARKET:
+        return "Packs, cards, trades";
+      default: {
+        const jackpot = this.#app.jackpot?.state.jackpot ?? null;
+        return jackpot === null ? "Leaderboard and jackpot" : `Jackpot ${jackpot.jackpot} ${jackpot.asset}`;
+      }
+    }
   }
 
   /**
@@ -207,7 +284,8 @@ export class HomeScene extends SectionScene {
 }
 
 /**
- * The top card (when there is one) across the content, and the three cards side by side under it.
+ * The top card (when there is one) across the content, and the cards side by side under it: three, or on a phone the
+ * four sections'.
  * @param {{ compact?: boolean, logicalWidth: number, logicalHeight: number }} viewport the content area
  * @param {boolean} headline
  * @returns {{ headline: Rect | null, cards: readonly Rect[] }}
@@ -218,10 +296,11 @@ export function homeLayout(viewport, headline) {
   const width = viewport.logicalWidth - 2 * margin;
   const height = compact ? HEADLINE_HEIGHT.compact : HEADLINE_HEIGHT.wide;
   const top = headline ? margin + height + gap : margin;
-  const cardWidth = Math.floor((width - 2 * gap) / 3);
+  const count = compact ? SECTIONS.length - 1 : 3;
+  const cardWidth = Math.floor((width - (count - 1) * gap) / count);
   const cardHeight = viewport.logicalHeight - top - margin;
   return Object.freeze({
     headline: headline ? Object.freeze({ x: margin, y: margin, width, height }) : null,
-    cards: Object.freeze([0, 1, 2].map((index) => Object.freeze({ x: margin + index * (cardWidth + gap), y: top, width: cardWidth, height: cardHeight }))),
+    cards: Object.freeze(Array.from({ length: count }, (_, index) => index).map((index) => Object.freeze({ x: margin + index * (cardWidth + gap), y: top, width: cardWidth, height: cardHeight }))),
   });
 }

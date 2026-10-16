@@ -81,7 +81,7 @@ const press = (scene, point) => {
 const center = (node) => ({ x: node.bounds.x + node.bounds.width / 2, y: node.bounds.y + node.bounds.height / 2 });
 
 describe("ShellLayout", () => {
-  for (const [name, size] of [["a desktop", DESKTOP], ["an iPhone SE", IPHONE_SE]]) {
+  for (const [name, size] of [["a desktop", DESKTOP]]) {
     it(`leaves the screen the rest of ${name}: the rail on the left, the bar across the top`, () => {
       const viewport = viewportOf(size);
       const layout = shellLayout(viewport);
@@ -100,10 +100,17 @@ describe("ShellLayout", () => {
     });
   }
 
-  it("keeps the phone's rail narrower and its bar slimmer", () => {
+  it("gives a phone no rail: a slimmer bar across the whole width, the content under it", () => {
     const wide = shellLayout(viewportOf(DESKTOP));
-    const compact = shellLayout(viewportOf(IPHONE_SE));
-    assert.ok(compact.rail.width < wide.rail.width && compact.bar.height < wide.bar.height);
+    const viewport = viewportOf(IPHONE_SE);
+    const compact = shellLayout(viewport);
+    const shown = viewport.safeBounds;
+    const near = (value, edge) => Math.abs(value - edge) <= 1;
+    assert.equal(compact.rail.width, 0);
+    assert.ok(compact.bar.height < wide.bar.height);
+    assert.ok(near(compact.bar.x, shown.x) && near(compact.bar.x + compact.bar.width, shown.x + shown.width), "the bar from edge to edge");
+    assert.deepEqual([compact.content.x, compact.content.y], [compact.bar.x, compact.bar.y + compact.bar.height]);
+    assert.ok(compact.controls.height * viewport.scale >= 40, "the bar's controls tall enough for a finger");
   });
 });
 
@@ -354,6 +361,16 @@ describe("Back, by one rule", () => {
     for (const own of [SceneId.HOME, SceneId.PLAY, SceneId.DECKS, SceneId.COLLECTION, SceneId.SHOP, SceneId.MARKET, SceneId.TRADES, SceneId.SEASON]) {
       assert.equal(backTarget(own, {}, context(app)), null, `${own} has no Back`);
     }
+  });
+
+  it("on a phone, which has no rail, leads a section's own screens Home", () => {
+    const { app } = world();
+    const phone = { ...context(app), compact: true };
+    for (const own of [SceneId.PLAY, SceneId.DECKS, SceneId.COLLECTION, SceneId.SHOP, SceneId.SEASON]) {
+      assert.deepEqual(backTarget(own, {}, phone), { scene: SceneId.HOME, params: {} }, `${own} goes Home`);
+    }
+    assert.equal(backTarget(SceneId.HOME, {}, phone), null, "Home has no Back");
+    assert.deepEqual(backTarget(SceneId.DAILY, {}, phone), { scene: SceneId.PLAY, params: {} }, "the other screens as on a wide screen");
   });
 
   it("leads back to the screen that opened it, when that one said so, opened as it was", () => {

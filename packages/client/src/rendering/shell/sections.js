@@ -33,8 +33,8 @@ export const OFFLINE_REASON = "Not available offline: it needs the game server."
 /**
  * Where a section leads: a screen to open (with what it is told), or why it is locked.
  * @typedef {Readonly<{ scene: string, params?: Readonly<Record<string, unknown>> }> | Readonly<{ locked: string }>} SectionDestination
- * @typedef {Readonly<{ hasScene: (sceneId: string) => boolean, app: import("../../application/AppContext.js").AppContext }>} SectionContext
- *   what a section looks at to choose its screen
+ * @typedef {Readonly<{ hasScene: (sceneId: string) => boolean, app: import("../../application/AppContext.js").AppContext, compact?: boolean }>} SectionContext
+ *   what a section looks at to choose its screen; `compact`: a phone's screen, which has no rail (Back leads Home instead)
  * @typedef {Readonly<{ scene: string, label: string, short?: string, lock?: (context: SectionContext) => string | null }>} SectionTab
  *   one of a section's own screens: `short`, its name where room is short (a phone); `lock`, why it cannot be opened now (null: it can)
  * @typedef {Readonly<{ scene: string, label: string, short: string, locked: string | null }>} TabEntry

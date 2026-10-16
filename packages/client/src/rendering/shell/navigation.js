@@ -5,7 +5,8 @@
  * - Every screen belongs to one section (or to none: the notifications,
  *   Info), which the rail lights.
  * - A section's own screens — the one the rail opens and its tabs — have
- *   no Back of their own: the rail and the tabs are the way around.
+ *   no Back of their own: the rail and the tabs are the way around. On a
+ *   phone, which has no rail, their Back leads Home, where the sections are.
  * - Any other screen goes Back to the screen it was opened from, when that
  *   one said so (`back`, with what it is told again, `backParams`), and
  *   otherwise to its section's own screen (Home for a screen of no
@@ -95,10 +96,10 @@ export function backTarget(sceneId, params, context) {
   if (named !== null) {
     return named;
   }
-  if (isSectionScreen(sceneId, context)) {
-    return null;
-  }
   const section = sectionOf(sceneId);
+  if (isSectionScreen(sceneId, context)) {
+    return context.compact === true && section?.id !== SectionId.HOME && context.hasScene(SceneId.HOME) ? Object.freeze({ scene: SceneId.HOME, params: Object.freeze({}) }) : null;
+  }
   const home = section === null ? { scene: SceneId.HOME } : section.destination(context);
   if (!("scene" in home) || home.scene === sceneId || !context.hasScene(home.scene)) {
     return null;
