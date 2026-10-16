@@ -59,7 +59,7 @@ describe("UiArt", () => {
   });
 
   it("the bundled art is there: one JPEG per ornament, and the cut-out name", () => {
-    for (const file of ["Sfondo_Menu.jpg", "Angolo_decorativo_pannelli.jpg", "DIVISORE_TITOLI.jpg", "BOTTONE_PRIMARIO.jpg", "BOTTONE_SECONDARIO.jpg"]) {
+    for (const file of ["Sfondo_Menu.jpg", "Angolo_decorativo_pannelli.jpg", "DIVISORE_TITOLI.jpg", "BOTTONE_PRIMARIO.jpg", "BOTTONE_SECONDARIO.jpg", "Play_Online.jpg", "Play_Practice.jpg", "Play_Tutorial.jpg"]) {
       const bytes = readFileSync(new URL(`../../../../data/art/${file}`, import.meta.url));
       assert.deepEqual([bytes[0], bytes[1]], [0xff, 0xd8], `${file} is a JPEG`);
     }

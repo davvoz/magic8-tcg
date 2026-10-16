@@ -15,7 +15,8 @@ const ART = Object.freeze({ share: 0.34, wide: 260, compact: 110, inset: 6 });
 const COMPACT_ROOMY = 150;
 
 /**
- * @typedef {Readonly<{ icon: string, faction: string }> | Readonly<{ portrait: import("../../../application/ports/DailyApi.contract.js").DailyOpponent, clock: () => number }>} TilePicture
+ * @typedef {Readonly<{ piece: string, icon: string, faction: string }> | Readonly<{ portrait: import("../daily/CharacterPortrait.js").PortraitCharacter, clock: () => number }>} TilePicture
+ *   a painting (a UiPiece, with the emblem shown until it is ready), or a challenge character's portrait
  * @typedef {Readonly<{ text: string, colorKey?: string }>} TileStatus
  */
 
@@ -61,6 +62,6 @@ export class PlayTile extends HomeCard {
       this.add(new CharacterPortrait({ ...frame, character: picture.portrait, layout: "stacked", clock: picture.clock }));
       return;
     }
-    this.add(new TileArt({ ...frame, icon: picture.icon, faction: picture.faction }));
+    this.add(new TileArt({ ...frame, piece: picture.piece, icon: picture.icon, faction: picture.faction }));
   }
 }

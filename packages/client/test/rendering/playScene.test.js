@@ -20,6 +20,8 @@ import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnb
 import { StoredSelectedDeck } from "../../src/infrastructure/persistence/StoredSelectedDeck.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { DeckSelectionScene } from "../../src/rendering/scenes/DeckSelectionScene.js";
+import { UiPiece } from "../../src/rendering/images/UiArt.js";
+import { CharacterPortrait } from "../../src/rendering/scenes/daily/CharacterPortrait.js";
 import { PlayScene } from "../../src/rendering/scenes/PlayScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
@@ -92,6 +94,8 @@ describe("PlayScene", () => {
     assert.equal(play.navigated.at(-1).id, SceneId.DECK_SELECTION);
     assert.equal(byId(scene, "play.watch").isEffectivelyEnabled, false, "watching needs an account");
     assert.equal(byId(scene, "play.tutorial.play").text, "Start the tutorial");
+    assert.deepEqual(["play.online.art", "play.practice.art", "play.tutorial.art"].map((id) => byId(scene, id)?.piece), [UiPiece.PLAY_ONLINE, UiPiece.PLAY_PRACTICE, UiPiece.PLAY_TUTORIAL], "each way to play has its painting");
+    assert.ok(byId(scene, "play.daily.art") instanceof CharacterPortrait, "the challenges show a character even before today's are known");
   });
 
   it("says the tutorial is done once it is", () => {

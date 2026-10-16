@@ -1,10 +1,12 @@
 /**
- * The picture on the left of a Play screen's tile: a glow in the tile's
- * colour round a large emblem (online play, practice, the tutorial).
- * Drawing only; the challenge tile shows its opponent's portrait instead.
+ * The picture on the left of a Play screen's tile (online play, practice,
+ * the tutorial): its painting (Theme.uiArt), cropped to cover the frame and
+ * rimmed in the tile's colour; until the painting is ready, a glow in that
+ * colour round a large emblem. Drawing only; the challenge tile shows a
+ * character's portrait instead.
  */
 import { drawIcon } from "../../ui/icons.js";
-import { radialGradient, roundedRectPath } from "../../ui/drawing.js";
+import { drawImageCover, radialGradient, roundedRectPath } from "../../ui/drawing.js";
 import { UiNode } from "../../ui/UiNode.js";
 import { withAlpha } from "../../theme/color.js";
 
@@ -12,15 +14,19 @@ import { withAlpha } from "../../theme/color.js";
 const EMBLEM_SHARE = 0.46;
 
 export class TileArt extends UiNode {
+  /** The painting (a UiPiece). */
+  piece;
+  /** The emblem drawn until the painting is ready. */
   icon;
   /** The faction whose colours it takes (theme.colors.factions). */
   faction;
 
   /**
-   * @param {{ id?: string, x: number, y: number, width: number, height: number, icon: string, faction: string }} options
+   * @param {{ id?: string, x: number, y: number, width: number, height: number, piece: string, icon: string, faction: string }} options
    */
-  constructor({ icon, faction, ...frame }) {
+  constructor({ piece, icon, faction, ...frame }) {
     super(frame);
+    this.piece = piece;
     this.icon = icon;
     this.faction = faction;
     this.passthrough = true;
@@ -35,6 +41,21 @@ export class TileArt extends UiNode {
     const { colors } = theme;
     const tones = colors.factions[this.faction] ?? colors.factions.neutral;
     const center = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
+    const painting = theme.uiArt?.imageFor(this.piece) ?? null;
+    if (painting !== null) {
+      context.save();
+      roundedRectPath(context, area, theme.spacing.radius);
+      context.clip();
+      drawImageCover(context, painting, area);
+      context.restore();
+      context.save();
+      roundedRectPath(context, area, theme.spacing.radius);
+      context.lineWidth = 1.5;
+      context.strokeStyle = withAlpha(tones.light, 0.55);
+      context.stroke();
+      context.restore();
+      return;
+    }
     context.save();
     roundedRectPath(context, area, theme.spacing.radius);
     context.clip();

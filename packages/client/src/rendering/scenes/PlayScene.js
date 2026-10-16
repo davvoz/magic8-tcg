@@ -13,6 +13,7 @@
 import { deckMix } from "../../application/decks/deckMix.js";
 import { deckSummary, mixBands } from "../cards/deckStripe.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
+import { UiPiece } from "../images/UiArt.js";
 import { Icon } from "../ui/icons.js";
 import { IconButton } from "../ui/IconButton.js";
 import { PlayViews } from "./home/PlayViews.js";
@@ -29,6 +30,8 @@ const FRAME = Object.freeze({
   compact: Object.freeze({ margin: 8, gap: 8, bar: 46, links: 0, link: 46 }),
 });
 const MINUTE = 60_000;
+/** Who stands for the challenges on their tile before today's opponents are known: the Archmage, veiled. */
+const STAND_IN_CHALLENGER = Object.freeze({ id: "archmage", name: "The Archmage", faction: "arcane", boss: false, state: /** @type {const} */ ("locked") });
 
 /**
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
@@ -198,7 +201,7 @@ export class PlayScene extends SectionScene {
    * @param {boolean} primary
    */
   #dailyTile(view, primary) {
-    const picture = view.kind === "next" ? { portrait: view.opponent, clock: () => this.#animationMs } : { icon: Icon.SEASON, faction: "arcane" };
+    const picture = { portrait: this.#challenger(view), clock: () => this.#animationMs };
     const status = dailyStatus(view);
     return {
       picture,
@@ -213,6 +216,20 @@ export class PlayScene extends SectionScene {
   }
 
   /**
+   * The character the challenge tile shows: the next opponent to beat; once the day is won, its boss; before the day is
+   * known (signed out, offline, still reading), the one who stands for the challenges, veiled.
+   * @param {import("./home/ChallengeCard.js").ChallengeView} view
+   * @returns {import("./daily/CharacterPortrait.js").PortraitCharacter}
+   */
+  #challenger(view) {
+    if (view.kind === "next") {
+      return view.opponent;
+    }
+    const boss = view.kind === "done" ? (this.#app.daily?.state.day?.opponents.at(-1) ?? null) : null;
+    return boss ?? STAND_IN_CHALLENGER;
+  }
+
+  /**
    * @param {import("./home/OnlineCard.js").OnlineView} view
    * @param {boolean} primary
    */
@@ -221,7 +238,7 @@ export class PlayScene extends SectionScene {
     const note = view.kind === "locked" ? view.reason : (view.rankedLock ?? view.note);
     const play = (/** @type {"casual" | "ranked"} */ mode) => this.services.navigate(SceneId.ONLINE, { mode });
     return {
-      picture: { icon: Icon.PLAY, faction: "ember" },
+      picture: { piece: UiPiece.PLAY_ONLINE, icon: Icon.PLAY, faction: "ember" },
       kicker: "Online · real players",
       title: "Online",
       text: "Casual to practise, free. Ranked to climb the season and share its jackpot.",
@@ -238,7 +255,7 @@ export class PlayScene extends SectionScene {
   #practiceTile(primary) {
     const there = this.services.hasScene(SceneId.DECK_SELECTION);
     return {
-      picture: { icon: Icon.TARGET, faction: "shadow" },
+      picture: { piece: UiPiece.PLAY_PRACTICE, icon: Icon.TARGET, faction: "shadow" },
       kicker: "Solo · no limits",
       kickerKey: "accentLight",
       title: "Practice vs AI",
@@ -253,7 +270,7 @@ export class PlayScene extends SectionScene {
     const tutorial = this.#app.tutorial;
     const done = this.#views.tutorialDone;
     return {
-      picture: { icon: Icon.BOOK, faction: "verdant" },
+      picture: { piece: UiPiece.PLAY_TUTORIAL, icon: Icon.BOOK, faction: "verdant" },
       kicker: "Learn",
       kickerKey: "success",
       title: "Tutorial",
