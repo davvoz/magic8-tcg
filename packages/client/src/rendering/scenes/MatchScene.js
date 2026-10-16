@@ -231,10 +231,12 @@ export class MatchScene extends Scene {
   #speech = new SpeechBubble();
   /** The online game on the board (null: a local one). @type {string | null} */
   #gameId = null;
-  /** Sharing a finished online game as a ping on cur8.fun, when the game offers it. @type {Pick<import("../../application/social/GameSharing.js").GameSharing, "canShare" | "textFor" | "cardFor" | "share"> | undefined} */
+  /** Sharing a finished online game as a ping on cur8.fun, when the game offers it. @type {Pick<import("../../application/social/GameSharing.js").GameSharing, "canShare" | "textFor" | "cardFor" | "pictureFor" | "share"> | undefined} */
   #sharing;
   /** Whether this game has been shared already. */
   #shared = false;
+  /** The picture of this game that sharing will post, once painted. @type {import("../../application/ports/ShareImage.contract.js").SharePicture["image"] | null} */
+  #sharePicture = null;
 
   /** @param {import("./Scene.js").SceneServices} services */
   /**
@@ -298,6 +300,7 @@ export class MatchScene extends Scene {
     this.#unsubscribeHelp = this.#help?.subscribe(() => this.#rebuild()) ?? null;
     this.#gameId = gameIdOf(session);
     this.#shared = false;
+    this.#sharePicture = null;
     this.#listenToCharacter();
     this.#taken = session.snapshotFor(this.#playerId);
     this.#show({ snapshot: this.#taken, events: [], chained: false }, false);
@@ -1509,8 +1512,28 @@ export class MatchScene extends Scene {
       return;
     }
     const played = this.#sharedGame(snapshot);
-    const dialog = buildShareDialog({ viewport: this.services.viewport, text: sharing.textFor(gameId, played), card: sharing.cardFor(gameId, played), state, onPost: () => void this.#postShare(snapshot), onClose: () => this.#showGameOver(snapshot) });
+    const dialog = buildShareDialog({ viewport: this.services.viewport, text: sharing.textFor(gameId, played), card: sharing.cardFor(gameId, played), picture: this.#sharePicture, state, onPost: () => void this.#postShare(snapshot), onClose: () => this.#showGameOver(snapshot) });
     this.openModal(dialog);
+    if (this.#sharePicture === null) {
+      void this.#paintSharePicture(snapshot, state);
+    }
+  }
+
+  /**
+   * Paints the picture that will be posted, then shows it in the dialog in place of the card drawn meanwhile.
+   * @param {Snapshot} snapshot
+   * @param {import("../board/ShareDialog.js").ShareState} state
+   */
+  async #paintSharePicture(snapshot, state) {
+    const sharing = /** @type {NonNullable<MatchScene["sharing"]>} */ (this.#sharing);
+    const painted = await sharing.pictureFor(/** @type {string} */ (this.#gameId), this.#sharedGame(snapshot));
+    if (!painted.ok || this.#sharePicture !== null) {
+      return;
+    }
+    this.#sharePicture = painted.value.image;
+    if (this.modal?.id === "share" && state.kind !== "posting") {
+      this.#openShare(snapshot, state);
+    }
   }
 
   /** @param {Snapshot} snapshot */

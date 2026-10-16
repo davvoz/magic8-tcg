@@ -1,5 +1,6 @@
 /**
- * The picture of a shared game (docs/tcg/26-ping.md): what it shows, and
+ * The picture of a shared game (docs/tcg/26-ping.md): what it shows (the
+ * game's name, the outcome, the winner and the defeated with their life), and
  * how it is saved: the players' profile pictures the game server passes
  * through (initials when there is none, or it is late), a challenge
  * character's own portrait, never another site's picture.
@@ -24,16 +25,19 @@ describe("ShareCard", () => {
   it("shows the outcome, the kind of game, both players with their life, and the turns", () => {
     const context = new FakeContext2D();
     paintShareCard(context, theme, card(), { x: 0, y: 0, width: 1200, height: 630 });
-    for (const text of ["VICTORY", "Ranked game", "@alice", "14 life", "@bob", "0 life", "12 turns", "Play at play.example", "#kijam"]) {
+    for (const text of ["KIJAM", "VICTORY", "Ranked game", "@alice", "14", "@bob", "0", "life", "12 turns", "#kijam", "WINNER", "DEFEATED"]) {
       assert.ok(context.texts.includes(text), text);
     }
+    assert.ok(context.texts.some((text) => text.startsWith("Play at play.example")));
   });
 
   it("is saved as a JPEG with the profile pictures passed through the server, initials where there is none", async () => {
     const { context, canvas } = fakeCanvas();
     const asked = [];
     const image = new CanvasShareImage({ theme: { ...theme, avatars: { imageFor: () => PICTURE } }, createCanvas: () => /** @type {any} */ (canvas), pictureOf: async (account) => (asked.push(account), account === "alice" ? PICTURE : null) });
-    assert.deepEqual(await image.render(card()), { ok: true, value: "/9j/AAAA" });
+    const painted = await image.render(card());
+    assert.equal(painted.value.base64, "/9j/AAAA");
+    assert.equal(painted.value.image.source, canvas, "and the painting itself, for the dialog");
     assert.deepEqual([canvas.width, canvas.height], [1200, 630]);
     assert.deepEqual(asked.sort(), ["alice", "bob"]);
     assert.equal(context.calls.filter((call) => call.method === "drawImage").length, 1, "alice's picture; bob, without one, as his initial (never the screen's own pictures)");

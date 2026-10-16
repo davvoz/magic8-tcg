@@ -121,6 +121,7 @@ function buildApp(content, help) {
       canShare: () => true,
       textFor: (_gameId, game) => pingText({ ...game, mode: "ranked", url: window.location.origin }),
       cardFor: (_gameId, game) => shareCardOf({ ...game, mode: "ranked", url: window.location.origin }, { name: "@alice", account: "alice" }),
+      pictureFor: async () => ({ ok: /** @type {const} */ (false), error: { code: "NO_PICTURE", message: "the preview paints none", details: null } }),
       share: () => new Promise((resolve) => window.setTimeout(() => resolve({ ok: true, value: "" }), 1500)),
     },
   });
@@ -265,16 +266,28 @@ async function createMatch(app, { turns, deckId }) {
  * @param {import("../../src/rendering/theme/Theme.js").Theme} theme
  */
 async function showShareCard(theme) {
-  const game = { outcome: /** @type {const} */ ("win"), opponent: { name: "The Gravelord", account: "ai_gravelord", character: true }, turns: 14, myLife: 7, theirLife: 0, mode: "daily", challenge: { boss: true, track: "Hard" }, url: window.location.origin };
+  await /** @type {any} */ (theme.uiArt)?.preload?.();
   await characterPortrait(theme, "gravelord");
-  const painted = await new CanvasShareImage({ theme, createCanvas: () => document.createElement("canvas") }).render(shareCardOf(game, { name: "@alice", account: "alice" }));
-  if (!painted.ok) {
-    throw new Error(painted.error.message);
+  // Stand-ins for the players' profile pictures (the game server passes the real ones through).
+  const photos = { alice: "/data/art/character_sira.jpg", bob: "/data/art/character_rook.jpg" };
+  const painter = new CanvasShareImage({ theme, createCanvas: () => document.createElement("canvas"), pictureOf: (account) => (account in photos ? loadBrowserImage(photos[/** @type {keyof typeof photos} */ (account)]) : Promise.resolve(null)) });
+  const url = window.location.origin;
+  const games = [
+    { game: { outcome: /** @type {const} */ ("win"), opponent: { name: "The Gravelord", account: "ai_gravelord", character: true }, turns: 14, myLife: 7, theirLife: 0, mode: "daily", challenge: { boss: true, track: "Hard" }, url } },
+    { game: { outcome: /** @type {const} */ ("loss"), opponent: { name: "bob", account: "bob", character: false }, turns: 11, myLife: 0, theirLife: 9, mode: "ranked", url } },
+  ];
+  const images = [];
+  for (const { game } of games) {
+    const painted = await painter.render(shareCardOf(game, { name: "@alice", account: "alice" }));
+    if (!painted.ok) {
+      throw new Error(painted.error.message);
+    }
+    const image = document.createElement("img");
+    image.src = `data:image/jpeg;base64,${painted.value.base64}`;
+    image.style.cssText = "display:block;width:1200px;height:630px";
+    images.push(image);
   }
-  const image = document.createElement("img");
-  image.src = `data:image/jpeg;base64,${painted.value}`;
-  image.style.cssText = "display:block;width:1200px;height:630px";
-  document.body.replaceChildren(image);
+  document.body.replaceChildren(...images);
   document.body.style.overflow = "auto";
 }
 

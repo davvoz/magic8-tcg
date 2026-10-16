@@ -6,12 +6,14 @@
  * a data URL, the picture is the page's own.
  *
  * Pictures are kept a few minutes (a couple of hundred at most), so sharing
- * games does not fetch the same faces again and again.
+ * games does not fetch the same faces again and again; "no picture" only a
+ * minute, since the service may simply not have had it ready.
  */
 import { AppError } from "../../../kernel/AppError.js";
 
 const ACCOUNT = /^[a-z][a-z0-9.-]{2,15}$/;
 const KEPT_MS = 10 * 60_000;
+const NONE_KEPT_MS = 60_000;
 const MAX_KEPT = 200;
 
 /**
@@ -42,7 +44,7 @@ export class AvatarProxy {
     }
     const now = this.#clock.now();
     let kept = this.#kept.get(account);
-    if (kept === undefined || now - kept.atMs > KEPT_MS) {
+    if (kept === undefined || now - kept.atMs > (kept.dataUrl === null ? NONE_KEPT_MS : KEPT_MS)) {
       kept = { dataUrl: await this.#fetch(account), atMs: now };
       this.#keep(account, kept);
     }

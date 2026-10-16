@@ -141,14 +141,18 @@ describe("MatchScene — a daily challenge's table", () => {
     const shared = [];
     let answer = ok("t".repeat(40));
     const card = { outcome: "loss", title: "Defeat", kind: "Challenges", me: { name: "@alice", account: "alice", life: 20 }, opponent: { name: "The Gravelord", account: "ai_gravelord", life: 20 }, turns: 1, site: "play.example" };
-    const sharing = { canShare: (id) => id === "g-1", textFor: (_id, game) => `${game.outcome} vs ${game.opponent.name}`, cardFor: () => card, share: async (_id, game) => (shared.push(game), answer) };
+    const sharing = { canShare: (id) => id === "g-1", textFor: (_id, game) => `${game.outcome} vs ${game.opponent.name}`, cardFor: () => card, pictureFor: async () => ok({ base64: "/9j/", image: { source: { painted: true }, width: 1200, height: 630 } }), share: async (_id, game) => (shared.push(game), answer) };
     const scene = await board({ gameId: "g-1", sharing });
     const over = await finished(scene);
     find(scene, "gameOver.share").activate();
     assert.equal(scene.modal?.id, "share");
     const texts = rendered(scene);
     assert.ok(texts.includes(`${over} vs The Gravelord`), "the ping as it will read, the character by name");
-    assert.ok(texts.includes("DEFEAT") && texts.includes("20 life"), "and the picture of the result");
+    assert.ok(texts.includes("DEFEAT") && texts.includes("DEFEATED"), "and the picture of the result, drawn while it is painted");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const shown = new FakeContext2D();
+    scene.render(shown);
+    assert.ok(shown.calls.some((call) => call.method === "drawImage" && call.args[0]?.painted === true), "then the very picture that will be posted");
     answer = fail("PING_REJECTED", "not enough Resource Credits");
     find(scene, "share.post").activate();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -164,7 +168,7 @@ describe("MatchScene — a daily challenge's table", () => {
   });
 
   it("offers no sharing for a local game", async () => {
-    const scene = await board({ sharing: { canShare: () => true, textFor: () => "", cardFor: () => null, share: async () => ok("") } });
+    const scene = await board({ sharing: { canShare: () => true, textFor: () => "", cardFor: () => null, pictureFor: async () => fail("NO_PICTURE", "none here"), share: async () => ok("") } });
     await finished(scene);
     assert.equal(find(scene, "gameOver.share"), null);
   });

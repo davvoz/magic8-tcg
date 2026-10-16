@@ -25,7 +25,7 @@ export function shareCardOf(game, me) {
     title: TITLES[game.outcome],
     kind: kindOf(game),
     me: Object.freeze({ ...me, life: game.myLife }),
-    opponent: Object.freeze({ name: game.opponent.name, account: game.opponent.account, life: game.theirLife }),
+    opponent: Object.freeze({ name: game.opponent.character || game.opponent.account === null ? game.opponent.name : `@${game.opponent.account}`, account: game.opponent.account, life: game.theirLife }),
     turns: game.turns,
     site: game.url.replace(/^https?:\/\//, ""),
   });

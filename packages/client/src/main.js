@@ -864,7 +864,10 @@ class LateShareImage {
     this.#painter = painter;
   }
 
-  /** @param {import("./application/social/shareCard.js").ShareCard} card */
+  /**
+   * @param {import("./application/social/shareCard.js").ShareCard} card
+   * @returns {ReturnType<import("./application/ports/ShareImage.contract.js").ShareImage["render"]>}
+   */
   render(card) {
     return this.#painter === null ? Promise.resolve(fail("IMAGE_FAILED", "the game is still loading")) : this.#painter.render(card);
   }

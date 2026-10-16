@@ -56,7 +56,8 @@ describe("shareCardOf", () => {
 
 describe("GameSharing", () => {
   /** @param {{ account?: string | null, wall?: any, images?: boolean, painted?: any }} [options] */
-  function sharing({ account = "alice", wall, images = true, painted = ok("/9j/4AAQ") } = {}) {
+  function sharing({ account = "alice", wall, images = true, painted = ok({ base64: "/9j/4AAQ", image: { source: {}, width: 1200, height: 630 } }) } = {}) {
+    let paintings = 0;
     const posted = [];
     const uploaded = [];
     const service = new GameSharing({
@@ -65,14 +66,14 @@ describe("GameSharing", () => {
         uploadImage: async (image) => (uploaded.push(image), ok("https://images.example/ping.jpg")),
       },
       wallet: { postComment: async (request) => (posted.push(request), ok("a".repeat(40))) },
-      image: { render: async () => painted },
+      image: { render: async () => (paintings += 1, painted) },
       account: () => account,
       mode: (gameId) => (gameId === "g-1" ? "ranked" : null),
       randomHex: () => "0a1b2c3d4e5f",
       url: URL,
       version: "0.31.0",
     });
-    return { service, posted, uploaded };
+    return { service, posted, uploaded, paintings: () => paintings };
   }
 
   it("offers sharing an online game while signed in", () => {
@@ -98,6 +99,15 @@ describe("GameSharing", () => {
       body: `${text}\n\n![](https://images.example/ping.jpg)`,
       jsonMetadata: { app: "kijam/0.31.0", format: "markdown", type: "ping", tags: ["pings", "kijam", "tcg"], users: ["bob"], image: ["https://images.example/ping.jpg"] },
     });
+  });
+
+  it("paints a game's picture once: the one the dialog shows is the one posted", async () => {
+    const { service, uploaded, paintings } = sharing();
+    const shown = await service.pictureFor("g-1", played());
+    assert.equal(shown.value.base64, "/9j/4AAQ");
+    await service.share("g-1", played());
+    assert.deepEqual(uploaded, ["/9j/4AAQ"]);
+    assert.equal(paintings(), 1);
   });
 
   it("goes without a picture where the server hosts none, and stops when the picture cannot be made", async () => {

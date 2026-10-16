@@ -6,7 +6,9 @@
  *
  * The ping says who won, against whom, in which kind of game and how it went
  * (pingText), and shows a picture of the result (shareCard, painted by the
- * ShareImage, hosted by the game server) when the server hosts pictures. Its
+ * ShareImage, hosted by the game server) when the server hosts pictures. The
+ * picture is painted once per game: the dialog shows it, and the very same
+ * picture is posted. Its
  * json_metadata is cur8.fun's: a ping, its hashtags as tags, the accounts it
  * mentions, its picture.
  */
@@ -38,6 +40,8 @@ export class GameSharing {
   #randomHex;
   #url;
   #version;
+  /** The picture of each game shared, painted once. @type {Map<string, Promise<import("@magic8/engine/shared/Result.js").Ok<import("../ports/ShareImage.contract.js").SharePicture> | import("@magic8/engine/shared/Result.js").Fail>>} */
+  #pictures = new Map();
 
   /**
    * @param {{
@@ -93,6 +97,29 @@ export class GameSharing {
   }
 
   /**
+   * The picture of a finished game, painted once (again only if it failed): what the dialog shows and what is posted.
+   * @param {string} gameId
+   * @param {PlayedGame} played
+   * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<import("../ports/ShareImage.contract.js").SharePicture> | import("@magic8/engine/shared/Result.js").Fail>}
+   */
+  pictureFor(gameId, played) {
+    if (this.#image === null) {
+      return Promise.resolve(fail("NO_PICTURE", "pictures are not painted here"));
+    }
+    let painting = this.#pictures.get(gameId);
+    if (painting === undefined) {
+      painting = this.#image.render(this.cardFor(gameId, played)).then((painted) => {
+        if (!painted.ok) {
+          this.#pictures.delete(gameId);
+        }
+        return painted;
+      });
+      this.#pictures.set(gameId, painting);
+    }
+    return painting;
+  }
+
+  /**
    * Publishes the ping under today's wall, with the picture of the result when the server hosts it.
    * @param {string} gameId
    * @param {PlayedGame} played
@@ -134,11 +161,11 @@ export class GameSharing {
    * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<string> | import("@magic8/engine/shared/Result.js").Fail>}
    */
   async #picture(gameId, played) {
-    const painted = await /** @type {import("../ports/ShareImage.contract.js").ShareImage} */ (this.#image).render(this.cardFor(gameId, played));
+    const painted = await this.pictureFor(gameId, played);
     if (!painted.ok) {
       return fail(painted.error.code, `the picture could not be made (${painted.error.message})`);
     }
-    return this.#api.uploadImage(painted.value);
+    return this.#api.uploadImage(painted.value.base64);
   }
 
   /**

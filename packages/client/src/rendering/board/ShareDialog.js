@@ -1,8 +1,9 @@
 /**
  * The dialog that shares a finished game as a ping on cur8.fun: the picture
- * of the result and the ping beside it, as they will read, and Post. While
- * it is being posted the buttons wait; a failure is told under them, and
- * Post works again.
+ * of the result and the ping beside it, as they will read, and Post. The
+ * picture shown is the one that will be posted, once it is painted (the card
+ * is drawn in its place meanwhile). While it is being posted the buttons
+ * wait; a failure is told under them, and Post works again.
  */
 import { ShareCardNode, SHARE_CARD_SIZE } from "../share/ShareCard.js";
 import { Button } from "../ui/Button.js";
@@ -10,6 +11,8 @@ import { Label } from "../ui/Label.js";
 import { Modal } from "../ui/Modal.js";
 import { Panel, PANEL_INSET, SMALL_PANEL_INSET } from "../ui/Panel.js";
 import { TextBlock } from "../ui/TextBlock.js";
+import { UiNode } from "../ui/UiNode.js";
+import { fillRoundedRect } from "../ui/drawing.js";
 
 /**
  * @typedef {Readonly<{ width: number, height: number, inset: number, title: number, note: number, picture: number, status: number, buttonHeight: number, gap: number, pad: number, text: import("../theme/Theme.js").FontSize }>} ShareMetrics
@@ -23,10 +26,11 @@ const COMPACT = Object.freeze({ width: 640, height: 340, inset: SMALL_PANEL_INSE
 /** @typedef {Readonly<{ kind: "ready" } | { kind: "posting" } | { kind: "failed", message: string }>} ShareState */
 
 /**
- * @param {{ viewport: { logicalWidth: number, logicalHeight: number, compact: boolean }, text: string, card: import("../../application/social/shareCard.js").ShareCard, state: ShareState, onPost: () => void, onClose: () => void }} options
+ * @param {{ viewport: { logicalWidth: number, logicalHeight: number, compact: boolean }, text: string, card: import("../../application/social/shareCard.js").ShareCard, picture?: import("../../application/ports/ShareImage.contract.js").SharePicture["image"] | null, state: ShareState, onPost: () => void, onClose: () => void }} options
+ *   `picture`: the painted picture that will be posted (null: not painted yet)
  * @returns {Modal}
  */
-export function buildShareDialog({ viewport, text, card, state, onPost, onClose }) {
+export function buildShareDialog({ viewport, text, card, picture = null, state, onPost, onClose }) {
   const m = viewport.compact ? COMPACT : WIDE;
   const width = Math.min(m.width, viewport.logicalWidth - 20);
   const height = Math.min(m.height, viewport.logicalHeight - 20);
@@ -40,7 +44,8 @@ export function buildShareDialog({ viewport, text, card, state, onPost, onClose 
   panel.add(new Label({ x: m.inset, y, width: inner, height: m.note, text: "A ping on your profile, under today's Pings wall:", size: "small", colorKey: "textMuted", align: "left", fit: true }));
   y += m.note + 4;
   const pictureHeight = (m.picture * SHARE_CARD_SIZE.height) / SHARE_CARD_SIZE.width;
-  panel.add(new ShareCardNode({ id: "share.picture", x: m.inset, y, width: m.picture, height: pictureHeight, card }));
+  const frame = { id: "share.picture", x: m.inset, y, width: m.picture, height: pictureHeight };
+  panel.add(picture === null ? new ShareCardNode({ ...frame, card }) : new PictureNode({ ...frame, picture }));
   const textX = m.inset + m.picture + m.gap;
   const quote = panel.add(new Panel({ id: "share.ping", x: textX, y, width: inner - m.picture - m.gap, height: pictureHeight, fillKey: "panelDark", smallCorners: true }));
   quote.add(new TextBlock({ id: "share.text", x: m.pad, y: m.pad, width: quote.width - 2 * m.pad, height: quote.height - 2 * m.pad, text, size: m.text }));
@@ -51,6 +56,34 @@ export function buildShareDialog({ viewport, text, card, state, onPost, onClose 
   panel.add(new Button({ id: "share.back", x: m.inset, y: buttonsY, width: half, height: m.buttonHeight, text: "Back", enabled: !posting, onActivate: onClose }));
   panel.add(new Button({ id: "share.post", x: m.inset + half + m.gap, y: buttonsY, width: half, height: m.buttonHeight, text: posting ? "Posting…" : "Post ping", variant: "primary", enabled: !posting, onActivate: onPost }));
   return modal;
+}
+
+/** The picture that will be posted, scaled into its box. */
+class PictureNode extends UiNode {
+  #picture;
+
+  /**
+   * @param {{ id?: string, x: number, y: number, width: number, height: number, picture: { source: unknown, width: number, height: number } }} options
+   */
+  constructor({ picture, ...frame }) {
+    super(frame);
+    this.passthrough = true;
+    this.#picture = picture;
+  }
+
+  /**
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   */
+  paint(context, theme) {
+    const { x, y, width, height } = this.bounds;
+    context.save();
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(/** @type {CanvasImageSource} */ (this.#picture.source), x, y, width, height);
+    context.restore();
+    fillRoundedRect(context, { x, y, width, height }, { stroke: theme.colors.panelBorder, radius: 4, lineWidth: 1 });
+  }
 }
 
 /** @param {ShareState} state */
