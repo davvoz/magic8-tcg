@@ -10,6 +10,8 @@
  * account loading, unread notifications, their wallet and entries — and
  * lays itself out again on each change, and when the screen changes shape.
  * The wallet and the entries are read once when nothing is known of them.
+ * A screen may put buttons of its own in the bar (`setActions`), left of
+ * the player's things: Play's live games and the player's own games.
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
@@ -36,7 +38,9 @@ const WIDTHS = Object.freeze({
   compact: Object.freeze({ wallet: 140, entries: 112, profile: 0, signIn: 110 }),
 });
 /** What gives way first when the bar is short of room: the entries, then the wallet. */
-const DROP = Object.freeze({ entries: 1, wallet: 2 });
+const DROP = Object.freeze({ entries: 1, wallet: 2, action: 3 });
+/** A screen's own button in the bar: its width with its caption (a phone shows the icon alone, square). */
+const ACTION_WIDTH = 190;
 const WALLET_ASSET = "STEEM";
 /** The dialog that says why a section is locked. */
 const NOTICE = Object.freeze({ width: 520, height: 230, button: 48 });
@@ -54,6 +58,10 @@ const NOTICE = Object.freeze({ width: 520, height: 230, button: 48 });
  *   notifications, Info) is told so that its Back comes back to this one
  */
 
+/**
+ * @typedef {Readonly<{ id: string, icon: string, caption: string, enabled?: boolean, onActivate: () => void }>} BarAction a screen's own button in the bar
+ */
+
 export class Shell {
   /** The rail and the bar, in the scene's (content) coordinates. */
   node = new UiNode({ id: "shell" });
@@ -67,6 +75,8 @@ export class Shell {
   #heading;
   /** @type {import("./TopBar.js").TopBar | null} */
   #bar = null;
+  /** The screen's own buttons in the bar. @type {readonly BarAction[]} */
+  #actions = [];
   /** @type {Array<() => void>} */
   #unsubscribes = [];
   /** The design area last laid out for. */
@@ -119,6 +129,19 @@ export class Shell {
     const next = Object.freeze({ ...this.#heading, ...heading });
     if (next.title !== this.#heading.title || next.back !== this.#heading.back) {
       this.#heading = next;
+      this.#rebuild();
+    }
+  }
+
+  /**
+   * Puts the screen's own buttons in the bar, left of the player's things (none: `[]`).
+   * @param {readonly BarAction[]} actions
+   */
+  setActions(actions) {
+    const key = (/** @type {readonly BarAction[]} */ list) => list.map((action) => `${action.id}:${action.caption}:${action.enabled !== false}`).join("|");
+    const changed = key(actions) !== key(this.#actions);
+    this.#actions = actions;
+    if (changed) {
       this.#rebuild();
     }
   }
@@ -223,7 +246,7 @@ export class Shell {
   }
 
   /**
-   * The bar's controls, left to right: wallet, entries, notifications, settings, the account.
+   * The bar's controls, left to right: the screen's own, wallet, entries, notifications, settings, the account.
    * @param {boolean} compact
    * @returns {import("./TopBar.js").BarControl[]}
    */
@@ -231,7 +254,12 @@ export class Shell {
     const widths = compact ? WIDTHS.compact : WIDTHS.wide;
     const square = this.#viewport.shell.controls.height;
     /** @type {import("./TopBar.js").BarControl[]} */
-    const controls = [];
+    const controls = this.#actions.map((action) => ({
+      id: action.id,
+      width: compact ? square : ACTION_WIDTH,
+      drop: DROP.action,
+      make: (/** @type {import("@magic8/engine/shared/geometry.js").Rect} */ box) => new IconButton({ id: action.id, ...box, icon: action.icon, caption: compact ? "" : action.caption, enabled: action.enabled !== false, onActivate: action.onActivate }),
+    }));
     const signedIn = this.#signedIn();
     const { balance, entries, notifications } = this.#app;
     if (signedIn && balance?.state !== undefined) {

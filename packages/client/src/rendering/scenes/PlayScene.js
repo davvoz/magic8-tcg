@@ -3,7 +3,7 @@
  * for and where the player stands with it: the daily challenges (today's
  * opponent in their portrait), online play (Casual, and Ranked
  * locked until the player may play it), practice against the AI (offline
- * too) and the tutorial. At the foot, the games being played now to watch,
+ * too) and the tutorial. In the bar, the games being played now to watch,
  * and the player's own games and replays. What needs an account or the
  * game server stays in its place, locked, saying why. The deck is chosen
  * where each way to play starts (the challenges, the lobby, practice).
@@ -13,23 +13,22 @@
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { UiPiece } from "../images/UiArt.js";
 import { Icon } from "../ui/icons.js";
-import { IconButton } from "../ui/IconButton.js";
 import { PlayViews } from "./home/PlayViews.js";
 import { PlayTile } from "./play/PlayTile.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 import { startTutorial } from "./startTutorial.js";
 
-/** The frame: margins, gaps, and the links at the foot (a phone's are icons only). */
+/** The frame: the margins round the tiles and the gaps between them. */
 const FRAME = Object.freeze({
-  wide: Object.freeze({ margin: 20, gap: 20, links: 56, link: 300, linkGap: 16 }),
-  compact: Object.freeze({ margin: 8, gap: 8, links: 46, link: 56, linkGap: 8 }),
+  wide: Object.freeze({ margin: 20, gap: 20 }),
+  compact: Object.freeze({ margin: 8, gap: 8 }),
 });
 const MINUTE = 60_000;
 
 /**
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
- * @typedef {Readonly<{ tiles: readonly Rect[], links: readonly Rect[] }>} PlayLayout
+ * @typedef {Readonly<{ tiles: readonly Rect[] }>} PlayLayout
  */
 
 export class PlayScene extends SectionScene {
@@ -126,7 +125,7 @@ export class PlayScene extends SectionScene {
     this.root.add(new PlayTile({ id: "play.online", ...play, compact, ...this.#onlineTile(online, gold === "online") }));
     this.root.add(new PlayTile({ id: "play.practice", ...practice, compact, ...this.#practiceTile(gold === "practice") }));
     this.root.add(new PlayTile({ id: "play.tutorial", ...tutorial, compact, ...this.#tutorialTile() }));
-    this.#buildLinks(layout.links, compact);
+    this.#buildLinks();
     const goldId = { daily: "play.daily.play", online: "play.online.casual", practice: "play.practice.play" }[gold];
     this.focus(this.findNode(focusedId) ?? this.root.findById(goldId) ?? null);
     this.services.requestRender();
@@ -202,21 +201,13 @@ export class PlayScene extends SectionScene {
     };
   }
 
-  /**
-   * The games being played now, and the player's own: both need an account.
-   * @param {readonly Rect[]} frames
-   * @param {boolean} compact
-   */
-  #buildLinks(frames, compact) {
-    const signedIn = this.#views.signedIn;
-    const links = [
-      { id: "play.watch", icon: Icon.EYE, caption: "Watch live games", scene: SceneId.LIVE_GAMES },
-      { id: "play.history", icon: Icon.HISTORY, caption: "My games and replays", scene: SceneId.GAME_HISTORY },
-    ];
-    links.forEach((link, index) => {
-      const frame = frames[index];
-      this.root.add(new IconButton({ id: link.id, ...frame, icon: link.icon, caption: compact ? "" : link.caption, enabled: signedIn && this.services.hasScene(link.scene), onActivate: () => this.services.navigate(link.scene, this.backHere()) }));
-    });
+  /** The games being played now, and the player's own, in the bar: both need an account. */
+  #buildLinks() {
+    const enabled = (/** @type {string} */ scene) => this.#views.signedIn && this.services.hasScene(scene);
+    this.setBarActions([
+      { id: "play.watch", icon: Icon.EYE, caption: "Live games", enabled: enabled(SceneId.LIVE_GAMES), onActivate: () => this.services.navigate(SceneId.LIVE_GAMES, this.backHere()) },
+      { id: "play.history", icon: Icon.HISTORY, caption: "My games", enabled: enabled(SceneId.GAME_HISTORY), onActivate: () => this.services.navigate(SceneId.GAME_HISTORY, this.backHere()) },
+    ]);
   }
 }
 
@@ -261,17 +252,14 @@ function dailyStatus(view) {
 }
 
 /**
- * The four tiles two by two, the links at the foot.
+ * The four tiles two by two.
  * @param {{ compact?: boolean, logicalWidth: number, logicalHeight: number }} viewport the content area
  * @returns {PlayLayout}
  */
 export function playLayout(viewport) {
   const f = viewport.compact === true ? FRAME.compact : FRAME.wide;
-  const width = viewport.logicalWidth - 2 * f.margin;
-  const linksY = viewport.logicalHeight - f.margin - f.links;
-  const tileWidth = Math.floor((width - f.gap) / 2);
-  const tileHeight = Math.floor((linksY - f.gap - f.margin - f.gap) / 2);
+  const tileWidth = Math.floor((viewport.logicalWidth - 2 * f.margin - f.gap) / 2);
+  const tileHeight = Math.floor((viewport.logicalHeight - 2 * f.margin - f.gap) / 2);
   const tiles = [0, 1, 2, 3].map((index) => Object.freeze({ x: f.margin + (index % 2) * (tileWidth + f.gap), y: f.margin + Math.floor(index / 2) * (tileHeight + f.gap), width: tileWidth, height: tileHeight }));
-  const links = [0, 1].map((index) => Object.freeze({ x: f.margin + index * (f.link + f.linkGap), y: linksY, width: f.link, height: f.links }));
-  return Object.freeze({ tiles: Object.freeze(tiles), links: Object.freeze(links) });
+  return Object.freeze({ tiles: Object.freeze(tiles) });
 }

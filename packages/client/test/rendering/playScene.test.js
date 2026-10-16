@@ -1,6 +1,6 @@
 /**
  * The Play screen: the four ways to play with where the player stands, locked with their reason
- * where they cannot be used, the links to live games and to the player's
+ * where they cannot be used, the links in the bar to live games and to the player's
  * own, and one gold button.
  */
 import assert from "node:assert/strict";
@@ -86,6 +86,7 @@ describe("PlayScene", () => {
     byId(scene, "play.practice.play").activate();
     assert.equal(play.navigated.at(-1).id, SceneId.DECK_SELECTION);
     assert.equal(byId(scene, "play.watch").isEffectivelyEnabled, false, "watching needs an account");
+    assert.ok(scene.chrome.findById("play.watch") && scene.chrome.findById("play.history"), "both links are in the bar");
     assert.equal(byId(scene, "play.tutorial.play").text, "Start the tutorial");
     assert.deepEqual(["play.online.art", "play.practice.art", "play.tutorial.art"].map((id) => byId(scene, id)?.piece), [UiPiece.PLAY_ONLINE, UiPiece.PLAY_PRACTICE, UiPiece.PLAY_TUTORIAL], "each way to play has its painting");
     assert.ok(byId(scene, "play.daily.art") instanceof CharacterPortrait, "the challenges show a character even before today's are known");

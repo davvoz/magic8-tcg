@@ -7,7 +7,8 @@
  * ContentViewport) describes as if it were the whole screen.
  *
  * The scene names itself (its SceneId: the section it belongs to follows,
- * shell/navigation.js) and its title, which it may change (`setHeading`).
+ * shell/navigation.js) and its title, which it may change (`setHeading`),
+ * and may put buttons of its own in the bar (`setBarActions`).
  * Back follows the one rule of navigation.js: on entering, the scene hands
  * over what it was opened with (`routeBack`); `goBack` follows it (Escape,
  * the bar's Back), and `backHere` is what a screen opened from this one is
@@ -48,6 +49,14 @@ export class SectionScene extends Scene {
    */
   setHeading(heading) {
     this.#shell.setHeading(heading);
+  }
+
+  /**
+   * Puts the screen's own buttons in the bar, left of the player's things (none: `[]`).
+   * @param {readonly import("../shell/Shell.js").BarAction[]} actions
+   */
+  setBarActions(actions) {
+    this.#shell.setActions(actions);
   }
 
   /**
