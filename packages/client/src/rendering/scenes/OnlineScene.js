@@ -206,7 +206,9 @@ export class OnlineScene extends SectionScene {
     this.setHeading({ back: () => this.#leave() });
   }
 
-  enter() {
+  /** @param {{ mode?: string }} [params] `mode`: "ranked" opens on the Ranked tab (the Home screen's Ranked), Casual otherwise */
+  enter(params = {}) {
+    this.#mode = params.mode === QueueMode.RANKED ? this.#rankedMode : QueueMode.CASUAL;
     const online = this.#online();
     this.#unsubscribes.push(online.subscribe((state) => this.#onChange(state)));
     online.start();

@@ -14,7 +14,7 @@ import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
 import { TextField } from "../ui/TextField.js";
 import { Scene } from "./Scene.js";
-import { SceneId } from "./sceneIds.js";
+import { landingScene } from "./landing.js";
 
 /**
  * Where everything goes in the panel, wide and on a compact screen (a phone in landscape).
@@ -146,7 +146,7 @@ export class LoginScene extends Scene {
     }
     const left = (size.width - 2 * buttons.width - buttons.gap) / 2;
     this.#submit = panel.add(new Button({ id: "login.submit", x: left, y: buttons.y, width: buttons.width, height: buttons.height, text: "Sign in", variant: "primary", onActivate: () => this.#signIn() }));
-    panel.add(new Button({ id: "login.back", x: left + buttons.width + buttons.gap, y: buttons.y, width: buttons.width, height: buttons.height, text: "Back", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
+    panel.add(new Button({ id: "login.back", x: left + buttons.width + buttons.gap, y: buttons.y, width: buttons.width, height: buttons.height, text: "Back", onActivate: () => this.services.navigate(landingScene(this.services.hasScene)) }));
     this.#status = panel.add(new Label({ x: inset, y: layout.status.y, width: inner, height: layout.status.height, text: status.text, size: "small", colorKey: status.colorKey, fit: true }));
     this.focus(this.#field.value.length > 0 && this.#key !== null ? this.#key : this.#field);
     this.services.requestRender();
@@ -159,7 +159,7 @@ export class LoginScene extends Scene {
   }
 
   onCancel() {
-    this.services.navigate(SceneId.MAIN_MENU);
+    this.services.navigate(landingScene(this.services.hasScene));
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -194,7 +194,7 @@ export class LoginScene extends Scene {
     const account = this.#field?.value ?? "";
     const result = this.#mode === Mode.KEYS ? await identity.signInWithKey(account, this.#key?.value ?? "") : await identity.signIn(account);
     if (result.ok) {
-      this.services.navigate(SceneId.MAIN_MENU);
+      this.services.navigate(landingScene(this.services.hasScene));
     }
   }
 

@@ -43,10 +43,10 @@ export class IconButton extends Button {
     if (this.caption.length === 0) {
       drawIcon(context, this.icon, { x: area.x + (area.width - size) / 2, y: iconY, size, color });
     } else {
-      const fitted = fitText(context, { text: this.caption, font: scalableFont(theme, "small", "bold"), size: theme.fonts.sizes.small, width: area.width - size - ICON.gap - 2 * ICON.gap, minScale: theme.textFit?.minScale ?? 1 });
+      const fitted = fitText(context, { text: this.caption, font: scalableFont(theme, "small", "bold"), size: theme.fonts.sizes.small, width: area.width - size - 2 * ICON.gap, minScale: theme.textFit?.minScale ?? 1 });
       context.font = fitted.font;
       const textWidth = context.measureText(fitted.text).width;
-      const startX = area.x + Math.max(ICON.gap, (area.width - size - ICON.gap - textWidth) / 2);
+      const startX = area.x + Math.max(ICON.gap / 2, (area.width - size - ICON.gap - textWidth) / 2);
       drawIcon(context, this.icon, { x: startX, y: iconY, size, color });
       drawTextInRect(context, fitted.text, { x: startX + size + ICON.gap, y: area.y, width: textWidth + 1, height: area.height }, { font: fitted.font, color, align: "left" });
     }

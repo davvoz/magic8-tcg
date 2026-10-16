@@ -70,6 +70,14 @@ describe("returnToGame", () => {
     assert.deepEqual(toasts.shown, []);
   });
 
+  it("does the same from Home, where the game now opens", () => {
+    const { online, scenes, toasts } = world({ scene: SceneId.HOME });
+    returnToGame({ online, scenes, toasts });
+    online.set({ status: OnlineStatus.PLAYING, session: session(), opponent: "bob" });
+    assert.deepEqual(scenes.visits.map((visit) => visit.sceneId), [SceneId.MATCH]);
+    assert.deepEqual(toasts.shown, []);
+  });
+
   it("brings a daily challenge back to its own screen, and names its character", () => {
     const { online, scenes, toasts } = world({ scene: SceneId.SHOP });
     returnToGame({ online, scenes, toasts, nameOf: (account) => (account === "ai_kael" ? "Kael" : null) });

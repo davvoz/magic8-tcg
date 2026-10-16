@@ -11,6 +11,7 @@ import { DeckBuilderScene } from "./DeckBuilderScene.js";
 import { DeckSelectionScene } from "./DeckSelectionScene.js";
 import { ErrorScene } from "./ErrorScene.js";
 import { GameHistoryScene } from "./GameHistoryScene.js";
+import { HomeScene } from "./HomeScene.js";
 import { InfoScene } from "./InfoScene.js";
 import { LeaderboardScene } from "./LeaderboardScene.js";
 import { LiveGamesScene } from "./LiveGamesScene.js";
@@ -32,6 +33,7 @@ import { TradesScene } from "./TradesScene.js";
  */
 export function registerScenes(sceneManager, app) {
   sceneManager
+    .register(SceneId.HOME, (services) => new HomeScene(services, app))
     .register(SceneId.MAIN_MENU, (services) => new MainMenuScene(services, app))
     .register(SceneId.DECK_SELECTION, (services) => new DeckSelectionScene(services, app))
     .register(SceneId.DECK_BUILDER, (services) => new DeckBuilderScene(services, app))

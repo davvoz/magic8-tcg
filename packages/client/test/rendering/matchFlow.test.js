@@ -85,7 +85,7 @@ describe("registerScenes", () => {
     manager.current.findNode("shell.nav.play").activate();
     assert.equal(manager.currentId, SceneId.DECK_SELECTION, "and Play the practice against the AI");
     manager.current.findNode("shell.nav.home").activate();
-    assert.equal(manager.currentId, SceneId.MAIN_MENU);
+    assert.equal(manager.currentId, SceneId.HOME);
   });
 });
 

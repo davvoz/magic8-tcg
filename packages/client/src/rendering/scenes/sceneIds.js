@@ -1,5 +1,7 @@
 /** Scene identifiers used for navigation. */
 export const SceneId = Object.freeze({
+  /** The Home section: what to do now; where the game opens. */
+  HOME: "home",
   MAIN_MENU: "mainMenu",
   LOGIN: "login",
   DECK_SELECTION: "deckSelection",

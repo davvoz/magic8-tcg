@@ -75,7 +75,7 @@ describe("LoginScene", () => {
     scene.onKey({ type: "keydown", key: "Enter", repeat: false });
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(service.state.status, IdentityStatus.SIGNED_IN);
-    assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
+    assert.deepEqual(navigated, [SceneId.HOME]);
     scene.exit();
   });
 
@@ -99,7 +99,7 @@ describe("LoginScene", () => {
     const scene = new LoginScene(services({ navigate: (id) => navigated.push(id) }), appWith(identity().service));
     scene.enter({});
     scene.onCancel();
-    assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
+    assert.deepEqual(navigated, [SceneId.HOME]);
   });
 });
 
@@ -139,7 +139,7 @@ describe("LoginScene with a posting key", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.deepEqual(typed, [{ account: "alice", wif: "5KsecretPostingKey" }]);
     assert.equal(service.state.status, IdentityStatus.SIGNED_IN);
-    assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
+    assert.deepEqual(navigated, [SceneId.HOME]);
     scene.exit();
   });
 

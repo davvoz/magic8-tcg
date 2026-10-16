@@ -10,6 +10,8 @@ import { fail } from "@magic8/engine/shared/Result.js";
 import { ContentResource } from "./application/ports/ContentSource.contract.js";
 import { AudioService } from "./application/audio/AudioService.js";
 import { HelpSettings } from "./application/help/HelpSettings.js";
+import { OnboardingProgress } from "./application/onboarding/OnboardingProgress.js";
+import { followMilestones } from "./application/onboarding/followMilestones.js";
 import { MusicTrack, SoundCue } from "./application/audio/SoundCue.js";
 import { AccountService, AccountStatus } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
@@ -56,6 +58,7 @@ import { createBrowserAudioContext, followVisibility, unlockOnGesture } from "./
 import { createCoreSoundBank } from "./infrastructure/audio/registerCorePatches.js";
 import { StoredAudioPreferences } from "./infrastructure/persistence/StoredAudioPreferences.js";
 import { StoredHelpPreferences } from "./infrastructure/persistence/StoredHelpPreferences.js";
+import { StoredOnboarding } from "./infrastructure/persistence/StoredOnboarding.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
@@ -447,6 +450,7 @@ async function boot() {
   }
   const audio = buildAudio(localStore, storageAvailable);
   const help = buildHelp(localStore, storageAvailable);
+  const onboarding = buildOnboarding(localStore, storageAvailable);
   const browserDecks = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
   // Signed in, decks live in the account (only owned cards); otherwise in this browser.
   const collectionApi = new HttpCollectionApi({ fetch: httpFetch });
@@ -562,6 +566,8 @@ async function boot() {
 
   const effects = createCoreEffectRegistry();
   const matchSetup = new MatchSetupService({ content: content.value, effects, scheduler: browserScheduler, logger });
+  const tutorial = new TutorialService({ matchSetup, content: content.value });
+  followMilestones({ progress: onboarding, identity, tutorial, daily, online });
   /** @type {import("./application/AppContext.js").AppContext} */
   const app = Object.freeze({
     content: content.value,
@@ -570,7 +576,7 @@ async function boot() {
     deckBuilding,
     matchSetup,
     opponents: new AiOpponentFactory({ content: content.value, effects }),
-    tutorial: new TutorialService({ matchSetup, content: content.value }),
+    tutorial,
     createSeed,
     logger,
     environment: Object.freeze({ version: ENGINE_VERSION, release: describeRelease(RELEASE), storage: storageAvailable ? "local" : "memory" }),
@@ -596,6 +602,7 @@ async function boot() {
     notifications,
     audio,
     help,
+    onboarding,
     ...rarities,
   });
 
@@ -641,7 +648,7 @@ async function boot() {
   notifications.onArrival((notification) => {
     const described = describeNotification(notification, content.value.catalog);
     // An auto game played: a click watches it, then comes back here (not to a match, which is over by then).
-    const here = sceneManager.currentId === SceneId.MATCH || sceneManager.currentId === SceneId.REPLAY ? SceneId.MAIN_MENU : sceneManager.currentId;
+    const here = sceneManager.currentId === SceneId.MATCH || sceneManager.currentId === SceneId.REPLAY ? SceneId.HOME : sceneManager.currentId;
     toasts.show(described.gameId === undefined ? described : { ...described, opens: SceneId.REPLAY, params: { gameId: described.gameId, from: here } });
     if (notification.kind === "auto.finished" || notification.kind === "auto.refunded") {
       void autoList.refresh();
@@ -671,7 +678,7 @@ async function boot() {
   });
   // The character of a daily challenge speaks as the game starts, when it is nearly beaten, and when it ends: a bubble by its seat.
   new DailyCompanion({ online, daily, say: (speech) => voice.say(speech) }).start();
-  sceneManager.navigate(SceneId.MAIN_MENU);
+  sceneManager.navigate(SceneId.HOME);
   preloadArt({ illustrations, coinArt });
   // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.
   await Promise.race([firstScreenArt, new Promise((resolve) => window.setTimeout(resolve, FIRST_SCREEN_ART_WAIT_MS))]);
@@ -715,6 +722,16 @@ function buildLocalKeys(localStore, storageAvailable, httpFetch) {
     prompt: activeKeys,
   });
   return { activeKeys, keys, signIns: new StoredSignIn({ store }) };
+}
+
+/**
+ * A new player's first steps that only this browser can know (the Home screen's guide), remembered in `store`.
+ * @param {LocalStorageStore} localStore
+ * @param {boolean} storageAvailable without it, they last only as long as the page
+ */
+function buildOnboarding(localStore, storageAvailable) {
+  const store = storageAvailable ? localStore : new InMemoryStore();
+  return new OnboardingProgress({ preferences: new StoredOnboarding({ store, logger }) });
 }
 
 /**

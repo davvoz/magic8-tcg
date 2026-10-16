@@ -27,6 +27,10 @@ import { ActiveKeyPrompt } from "../../src/application/wallet/ActiveKeyPrompt.js
 import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
 import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
 import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
+import { OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
+import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStore.js";
+import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnboarding.js";
 import { DailyScene } from "../../src/rendering/scenes/DailyScene.js";
 import { DailyService } from "../../src/application/daily/DailyService.js";
 import { DAY } from "../application/dailyFixtures.js";
@@ -213,6 +217,13 @@ function withRankedPlay(app, { eligible = true, auto = false } = {}) {
 /** @param {any} scene */
 const openRanked = (scene) => scene.root.findById("online.mode.ranked")?.activate();
 
+/** The first-time guide, nothing done in this browser. @param {any} app */
+function withGuide(app) {
+  const onboarding = new OnboardingProgress({ preferences: new StoredOnboarding({ store: new InMemoryStore(), logger: new MemoryLogger() }) });
+  Object.assign(app, { onboarding });
+  return onboarding;
+}
+
 /** Sound settings that only remember what they are told. */
 function fakeAudio() {
   let settings = { music: 0.5, effects: 0.5, muted: false };
@@ -230,6 +241,8 @@ const withDailyRun = (run) => (app) => Object.assign(app, { daily: dailyService(
 
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
+  { name: "home, with the guide", make: (s, app) => new HomeScene(s, app), before: (app) => withGuide(app), after: (scene) => assert.ok(scene.root.findById("home.next")) },
+  { name: "home, without the guide", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app), withGuide(app).dismiss()), after: (scene) => assert.equal(scene.root.findById("home.next"), null) },
   { name: "main menu", make: (s, app) => new MainMenuScene(s, app) },
   { name: "main menu with every entry (daily challenges, tutorial)", make: (s, app) => new MainMenuScene(s, app), before: (app) => Object.assign(app, { tutorial: {} }), after: (scene) => (assert.ok(scene.root.findById("daily")), assert.ok(scene.root.findById("tutorial"))) },
   { name: "main menu, account dialog", make: (s, app) => new MainMenuScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },

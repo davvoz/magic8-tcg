@@ -137,7 +137,7 @@ describe("SceneManager and a scene in a frame", () => {
     const { app, viewport } = world();
     const manager = new SceneManager({ theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined });
     manager.register(SceneId.COLLECTION, (services) => new ProbeScene(services, app));
-    manager.register(SceneId.MAIN_MENU, (services) => new ProbeScene(services, app, { section: SectionId.HOME, title: "Home" }));
+    manager.register(SceneId.HOME, (services) => new ProbeScene(services, app, { section: SectionId.HOME, title: "Home" }));
     manager.navigate(SceneId.COLLECTION);
     const scene = /** @type {ProbeScene} */ (manager.current);
     const { content: area } = shellLayout(viewport);
@@ -154,7 +154,7 @@ describe("SceneManager and a scene in a frame", () => {
     const at = center(home);
     manager.onPointer({ type: "down", x: at.x + area.x, y: at.y + area.y, button: 0, pointerType: "mouse" });
     manager.onPointer({ type: "up", x: at.x + area.x, y: at.y + area.y, button: 0, pointerType: "mouse" });
-    assert.equal(manager.currentId, SceneId.MAIN_MENU);
+    assert.equal(manager.currentId, SceneId.HOME);
   });
 });
 
@@ -176,7 +176,7 @@ describe("The rail", () => {
     for (const section of SECTIONS) {
       scene.findNode(`shell.nav.${section.id}`).activate();
     }
-    assert.deepEqual(navigated.map((entry) => entry.id), [SceneId.MAIN_MENU, SceneId.DECK_SELECTION, SceneId.DECK_BUILDER, SceneId.SHOP, SceneId.LEADERBOARD], "signed out: practice, and the Deck Builder");
+    assert.deepEqual(navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.DECK_SELECTION, SceneId.DECK_BUILDER, SceneId.SHOP, SceneId.LEADERBOARD], "signed out: practice, and the Deck Builder");
   });
 
   it("keeps a section it cannot open in its place, locked, and says why", () => {
