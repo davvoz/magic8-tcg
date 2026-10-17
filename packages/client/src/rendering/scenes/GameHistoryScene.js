@@ -7,15 +7,14 @@
 import { seatLabel } from "../../application/daily/characters.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
-import { Label } from "../ui/Label.js";
 import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { timeAgo } from "./NotificationsScene.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
 const RESULT_TEXT = Object.freeze({ win: "Won", loss: "Lost", draw: "Draw" });
 /** The mode of the games the AI played for both players: they can be watched again. */
@@ -54,18 +53,16 @@ export function historySummary(games, more) {
   return `${games.length}${more ? "+" : ""} ${noun} · ${count("win")}–${count("loss")}${draws}`;
 }
 
-export class GameHistoryScene extends Scene {
-  /** The frame for the screen in use (the compact one on a phone). */
+export class GameHistoryScene extends SectionScene {
+  /** The frame for the screen in use (the compact one on a phone): its list fills it, with no toolbar. */
   get #screen() {
-    return screenLayout(this.services.viewport);
+    return screenLayout(this.services.viewport, { toolbar: false });
   }
 
   #app;
   #now;
   /** Whose games: an account, or null when nobody is signed in and none was asked for. @type {string | null} */
   #account = null;
-  /** Where Back leads, and with what. @type {{ scene: string, params?: object }} */
-  #back = { scene: SceneId.ONLINE };
   /** @type {readonly import("../../application/ports/GameHistoryApi.contract.js").PlayedGame[]} */
   #games = [];
   /** @type {string | null} */
@@ -82,27 +79,32 @@ export class GameHistoryScene extends Scene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services);
+    super(services, app, { scene: SceneId.GAME_HISTORY, title: "Games" });
     this.#app = app;
     this.#now = now;
   }
 
-  /** @param {{ account?: string, back?: string, backParams?: object }} [params] `backParams` what the screen Back leads to is opened with */
-  enter(params) {
-    this.#account = params?.account ?? this.#app.identity?.state.user?.account ?? null;
-    this.#back = { scene: params?.back ?? SceneId.ONLINE, params: params?.backParams };
+  /**
+   * @param {{ account?: string, back?: string, backParams?: Readonly<Record<string, unknown>> }} [params] `account`: whose games (the
+   *   player's by default); `back`: where Back leads (Play by default), opened with `backParams`
+   */
+  enter(params = {}) {
+    this.routeBack(params);
+    this.#account = params.account ?? this.#app.identity?.state.user?.account ?? null;
+    this.setHeading({ title: this.#account === null ? "Games" : `Games — @${this.#account}` });
     this.#games = [];
     this.#next = null;
     this.#error = null;
     this.#load(null);
   }
 
-  onCancel() {
-    this.services.navigate(this.#back.scene, this.#back.params);
-  }
-
   relayout() {
     this.#rebuild();
+  }
+
+  /** What a replay opened from here is told, so that its Back comes back to these games. */
+  #backHere() {
+    return this.backHere(this.#account === null ? {} : { account: this.#account });
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -142,11 +144,6 @@ export class GameHistoryScene extends Scene {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
     const { viewport } = this.services;
-    const header = this.#screen.header;
-    const titleWidth = Math.min(900, viewport.logicalWidth - 2 * header.sideMargin - header.backWidth - 16);
-    const title = this.#account === null ? "Games" : `Games — @${this.#account}`;
-    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: titleWidth, height: header.height, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    const back = this.root.add(new Button({ id: "history.back", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: "Back", onActivate: () => this.onCancel() }));
     const width = viewport.logicalWidth - 2 * this.#screen.columns.left.x;
     const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width, height: this.#screen.columns.height }));
     const compact = this.#screen.compact;
@@ -154,7 +151,7 @@ export class GameHistoryScene extends Scene {
     panel.add(new TextBlock({ id: "history.status", x: this.#screen.inset, y: compact ? 10 : 16, width: width - 2 * this.#screen.inset, height: 30, text: this.#status(), size: compact ? "small" : "body", colorKey: this.#error === null ? "text" : "danger" }));
     const list = panel.add(new ScrollList({ id: "history.list", x: this.#screen.inset, y: listTop, width: width - 2 * this.#screen.inset, height: this.#screen.columns.height - listTop - this.#screen.inset }));
     this.#fill(list);
-    this.focus(this.root.findById(focusedId) ?? back);
+    this.focus(this.findNode(focusedId) ?? this.backButton);
     this.services.requestRender();
   }
 
@@ -191,7 +188,7 @@ export class GameHistoryScene extends Scene {
           text: playedGameTitle(game, (account) => this.#app.daily?.characterOf(account)?.name ?? null),
           subtitle: replayable ? `${playedGameSubtitle(game, now)} · click to watch` : playedGameSubtitle(game, now),
           avatar: game.opponent,
-          onActivate: replayable ? () => this.services.navigate(SceneId.REPLAY, { gameId: game.gameId, from: SceneId.GAME_HISTORY }) : () => undefined,
+          onActivate: replayable ? () => this.services.navigate(SceneId.REPLAY, { gameId: game.gameId, ...this.#backHere() }) : () => undefined,
         }),
       );
     });

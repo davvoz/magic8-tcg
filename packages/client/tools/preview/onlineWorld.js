@@ -28,6 +28,14 @@ const PLAYERS = Object.freeze([
   { account: "im-ridd", status: "playing" },
   { account: "alice", status: "idle" },
 ]);
+/** The season's leaderboard: the stand-in account fourth. */
+const LEADERBOARD = Object.freeze([
+  { rank: 1, provisional: false, account: "alice", rating: 1700, games: 30, wins: 22, losses: 8, draws: 0 },
+  { rank: 2, provisional: false, account: "davvoz", rating: 1650, games: 26, wins: 17, losses: 8, draws: 1 },
+  { rank: 3, provisional: false, account: "verdu.green", rating: 1631, games: 19, wins: 12, losses: 7, draws: 0 },
+  { rank: 4, provisional: false, account: "im-ridd", rating: 1612, games: 12, wins: 8, losses: 4, draws: 0 },
+  { rank: null, provisional: true, account: "bob", rating: 1540, games: 3, wins: 2, losses: 1, draws: 0 },
+]);
 const RANKED_ENTRY = Object.freeze({ id: "ranked_entry", kind: "entry", name: "Ranked Entry", description: "One ranked game.", prices: [{ asset: "STEEM", amount: "1.000" }], contents: [{ type: "entry", ref: "ranked", count: 1 }], rarity: null, cards: 0, perOrder: 50 });
 
 /**
@@ -72,7 +80,7 @@ export function onlineServices(content, { entries, eligible }, logger) {
   return {
     online: new OnlineService({ connection, randomHex: (bytes) => "ab".repeat(bytes), newCommandId: () => crypto.randomUUID(), accountDecks: () => decks, logger }),
     lobby: new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => Date.now(), logger }),
-    ranking: new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season: SEASON, entries: [] }) } }),
+    ranking: new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season: SEASON, entries: LEADERBOARD }) } }),
     entries: new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: entries, perGame: 1, season: SEASON.id }]) } }),
     shop: { state: { status: "ready", listing: { products: [RANKED_ENTRY] } }, subscribe: quiet, load: async () => undefined },
     jackpot: { state: { loading: false, loaded: true, jackpot, error: null }, subscribe: quiet, watch: quiet, now: () => Date.now() },

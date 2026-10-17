@@ -1,15 +1,21 @@
 /** Scene identifiers used for navigation. */
 export const SceneId = Object.freeze({
-  MAIN_MENU: "mainMenu",
+  /** The Home section: what to do now; where the game opens, and where signing in or out leads. */
+  HOME: "home",
+  /** The Play section: every way to play. */
+  PLAY: "play",
   LOGIN: "login",
   DECK_SELECTION: "deckSelection",
+  /** The Decks section: the player's decks. */
+  DECKS: "decks",
   DECK_BUILDER: "deckBuilder",
   STARTER: "starter",
   COLLECTION: "collection",
   SHOP: "shop",
   ONLINE: "online",
   DAILY: "daily",
-  LEADERBOARD: "leaderboard",
+  /** The Season section: the leaderboard, the jackpot, how ranked works. */
+  SEASON: "season",
   GAME_HISTORY: "gameHistory",
   LIVE_GAMES: "liveGames",
   REPLAY: "replay",

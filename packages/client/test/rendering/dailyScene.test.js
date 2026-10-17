@@ -154,14 +154,14 @@ describe("DailyScene", () => {
     click(byId(scene, "daily.pack"));
     assert.deepEqual(navigated.at(-1), {
       id: SceneId.COLLECTION,
-      params: { fresh: [{ definitionId: "ember_imp", count: 1, serial: 12 }, { definitionId: "pyre_drake", count: 1, serial: 3 }], from: SceneId.DAILY },
+      params: { fresh: [{ definitionId: "ember_imp", count: 1, serial: 12 }, { definitionId: "pyre_drake", count: 1, serial: 3 }], back: SceneId.DAILY, backParams: {} },
     });
   });
 
   it("opens the Info screen on how the challenges work, and comes back here", async () => {
     const { scene, navigated } = await world();
     click(byId(scene, "daily.help"));
-    assert.deepEqual(navigated.at(-1), { id: SceneId.INFO, params: { topic: "challenges", back: SceneId.DAILY } });
+    assert.deepEqual(navigated.at(-1), { id: SceneId.INFO, params: { topic: "challenges", back: SceneId.DAILY, backParams: {} } });
   });
 
   it("keeps everything on a phone's screen", async () => {

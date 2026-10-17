@@ -49,6 +49,16 @@ export class Modal extends UiNode {
     this.height = area.height;
   }
 
+  /**
+   * Centres the panel on `area` (in the same coordinates as the backdrop's parent): a screen whose
+   * content sits in a frame centres its dialogs on the whole design area all the same.
+   * @param {import("@magic8/engine/shared/geometry.js").Rect} area
+   */
+  centerOn(area) {
+    this.panel.x = Math.round(area.x + (area.width - this.panel.width) / 2 - this.x);
+    this.panel.y = Math.round(area.y + (area.height - this.panel.height) / 2 - this.y);
+  }
+
   /** A release on the backdrop (outside the panel) dismisses. */
   activate() {
     this.onDismiss();

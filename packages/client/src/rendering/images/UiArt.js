@@ -1,12 +1,14 @@
 /**
  * The painted furniture of the screens around the match: the backdrop of
  * every menu, the gold corner that dresses large panels, the medallion of
- * the title divider, the plates of the buttons and the game's name. Each
- * ornament is painted gold on pure black (JPEG, no alpha) and laid with the
- * "screen" blend, so its black drops out; the button plates are cut out
- * along their rounded outline instead, and the name comes already cut out
- * (WebP with alpha), so its letters stay solid over what lies beneath. Until
- * a piece's image is ready its painter draws it procedurally.
+ * the title divider, the plates of the buttons, the game's name and the
+ * pictures of the ways to play. Each ornament is painted gold on pure black
+ * (JPEG, no alpha) and laid with the "screen" blend, so its black drops
+ * out; the button plates are cut out along their rounded outline instead,
+ * the name comes already cut out (WebP with alpha), so its letters stay
+ * solid over what lies beneath, and the pictures are plain paintings,
+ * cropped to cover their frame. Until a piece's image is ready its painter
+ * draws it procedurally.
  */
 import { PieceArt } from "./PieceArt.js";
 
@@ -21,8 +23,12 @@ export const UiPiece = Object.freeze({
   BUTTON_PRIMARY: "buttonPrimary",
   /** The plate of every other button: thin gold rim. */
   BUTTON_SECONDARY: "buttonSecondary",
-  /** The game's name over the main menu, engraved gold letters on transparency. */
+  /** The game's name at the top of the rail, engraved gold letters on transparency. */
   TITLE: "title",
+  /** The Play screen's pictures of its ways to play: online (crossed swords), practice (a target), the tutorial (a book). */
+  PLAY_ONLINE: "playOnline",
+  PLAY_PRACTICE: "playPractice",
+  PLAY_TUTORIAL: "playTutorial",
 });
 
 /**

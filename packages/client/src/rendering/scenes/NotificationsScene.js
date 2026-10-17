@@ -5,7 +5,8 @@
  * where it can be followed up (a click on the entry or its Open button).
  * Opening the screen marks everything read; what arrived unread stays lit
  * and marked "New" until the player opens it. Cards received are handed to
- * the collection, which lights them.
+ * the collection, which lights them. What the feed is doing (loading, a
+ * failure) is said in the toolbar.
  */
 import { NotificationTarget, describeNotification } from "../../application/notifications/describeNotification.js";
 import { NotificationStatus } from "../../application/notifications/NotificationService.js";
@@ -20,20 +21,18 @@ import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
 /**
  * Sizes of the feed, wide and compact (a phone in landscape: lower entries, fewer and smaller thumbnails, the text as wide as what is left).
- * @typedef {Readonly<{ entry: { height: number, gap: number, textWidth: number | null, open: number, openHeight: number, avatar: number }, thumb: { width: number, gap: number, max: number }, title: number, statusX: number }>} FeedMetrics
+ * @typedef {Readonly<{ entry: { height: number, gap: number, textWidth: number | null, open: number, openHeight: number, avatar: number }, thumb: { width: number, gap: number, max: number } }>} FeedMetrics
  *   `entry.textWidth`: null for whatever the thumbnails and Open leave; `entry.avatar`: the portrait leading a notification about another player
  */
 /** @type {FeedMetrics} */
-const WIDE = Object.freeze({ entry: Object.freeze({ height: 140, gap: 12, textWidth: 640, open: 150, openHeight: 48, avatar: 56 }), thumb: Object.freeze({ width: 66, gap: 10, max: 6 }), title: 400, statusX: 300 });
+const WIDE = Object.freeze({ entry: Object.freeze({ height: 140, gap: 12, textWidth: 640, open: 150, openHeight: 48, avatar: 56 }), thumb: Object.freeze({ width: 66, gap: 10, max: 6 }) });
 /** @type {FeedMetrics} */
-const COMPACT = Object.freeze({ entry: Object.freeze({ height: 110, gap: 8, textWidth: null, open: 96, openHeight: 46, avatar: 40 }), thumb: Object.freeze({ width: 48, gap: 6, max: 3 }), title: 220, statusX: 220 });
-/** The wide feed's panel; a compact one fills the frame's column area. */
-const PANEL = Object.freeze({ top: 100, height: 770 });
+const COMPACT = Object.freeze({ entry: Object.freeze({ height: 110, gap: 8, textWidth: null, open: 96, openHeight: 46, avatar: 40 }), thumb: Object.freeze({ width: 48, gap: 6, max: 3 }) });
 
 const LIST_ID = "notifications.list";
 const MINUTE = 60 * 1000;
@@ -41,19 +40,19 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const TONE_KEYS = Object.freeze({ good: "success", bad: "danger", info: "accent" });
 
-/** Scene a notification's follow-up lives in. */
 /**
- * What the screen a notification leads to is told: the cards that came (the collection), the game to replay.
+ * What the screen a notification leads to is told about it: the cards that came (the collection), the game to replay.
  * @param {string} scene
  * @param {{ fresh: readonly Readonly<{ definitionId: string, count: number, serial?: number }>[], gameId?: string }} about
  */
 function paramsFor(scene, { fresh, gameId }) {
   if (scene === SceneId.COLLECTION) {
-    return { fresh, from: SceneId.NOTIFICATIONS };
+    return { fresh };
   }
-  return scene === SceneId.REPLAY ? { gameId, from: SceneId.NOTIFICATIONS } : {};
+  return scene === SceneId.REPLAY ? { gameId } : {};
 }
 
+/** Scene a notification's follow-up lives in. */
 const TARGET_SCENES = Object.freeze({
   [NotificationTarget.COLLECTION]: SceneId.COLLECTION,
   [NotificationTarget.TRADES]: SceneId.TRADES,
@@ -83,7 +82,7 @@ export function timeAgo(at, now) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-export class NotificationsScene extends Scene {
+export class NotificationsScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
   get #screen() {
     return screenLayout(this.services.viewport);
@@ -94,9 +93,9 @@ export class NotificationsScene extends Scene {
     return this.#screen.compact ? COMPACT : WIDE;
   }
 
-  /** Where the feed's panel goes. */
+  /** Where the feed's panel goes: the frame's column area. */
   get #panel() {
-    return this.#screen.compact ? { top: this.#screen.columns.top, height: this.#screen.columns.height } : PANEL;
+    return { top: this.#screen.columns.top, height: this.#screen.columns.height };
   }
 
   relayout() {
@@ -115,12 +114,14 @@ export class NotificationsScene extends Scene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services);
+    super(services, app, { scene: SceneId.NOTIFICATIONS, title: "Notifications" });
     this.#app = app;
     this.#now = now;
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: the screen the bell was rung from, which Back returns to (Home by default) */
+  enter(params = {}) {
+    this.routeBack(params);
     const notifications = this.#notifications();
     this.#unsubscribe = notifications.subscribe(() => this.#rebuild());
     notifications.refresh().then(() => notifications.markAllRead());
@@ -131,14 +132,6 @@ export class NotificationsScene extends Scene {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     super.exit();
-  }
-
-  onCancel() {
-    if (this.modal !== null) {
-      super.onCancel();
-      return;
-    }
-    this.services.navigate(SceneId.MAIN_MENU);
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -157,14 +150,11 @@ export class NotificationsScene extends Scene {
     const { viewport } = this.services;
     const state = this.#notifications().state;
     const width = viewport.logicalWidth - 2 * this.#screen.header.sideMargin;
-    const { title, statusX } = this.#m;
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: title, height: this.#screen.header.height, text: "Notifications", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
     const status = state.error ?? (state.status === NotificationStatus.LOADING ? "Loading…" : "What happened to your orders, trades and sales.");
-    this.root.add(new Label({ id: "notifications.status", x: this.#screen.header.sideMargin + statusX, y: this.#screen.header.y, width: width - statusX - this.#screen.header.backWidth - 16, height: this.#screen.header.height, text: status, size: "small", align: "left", colorKey: state.error === null ? "textMuted" : "danger", fit: true }));
-    const back = this.root.add(new Button({ id: "notifications.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
+    this.root.add(new Label({ id: "notifications.status", x: this.#screen.header.sideMargin, y: this.#screen.header.y, width, height: this.#screen.header.height, text: status, size: "small", align: "left", colorKey: state.error === null ? "textMuted" : "danger", fit: true }));
     const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.header.sideMargin, y: this.#panel.top, width, height: this.#panel.height }));
     this.#buildList(panel, width - 2 * this.#screen.inset, state);
-    this.focus(this.root.findById(focusedId) ?? back);
+    this.focus(this.findNode(focusedId) ?? this.backButton);
     this.services.requestRender();
   }
 
@@ -258,7 +248,8 @@ export class NotificationsScene extends Scene {
    */
   #open(item, text, scene) {
     const fresh = text.cards.map((card) => Object.freeze({ definitionId: card.definitionId, count: card.count ?? 1, serial: card.serial }));
-    this.services.navigate(scene, paramsFor(scene, { fresh, gameId: text.gameId }));
+    // Back from there comes back to the notifications.
+    this.services.navigate(scene, { ...paramsFor(scene, { fresh, gameId: text.gameId }), ...this.backHere() });
     // After leaving: this screen no longer listens, so it is not rebuilt under the click.
     this.#notifications().markOpened(item.id);
   }

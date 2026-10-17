@@ -3,7 +3,7 @@
  * looking at it. Its clock does not wait: a seat away for a minute has its
  * turn played by the server, away for three minutes it forfeits (TurnClock).
  * - The page learns of a game it did not know (it was reopened, or
- *   reloaded, mid-game) and the player is on the main menu: straight into
+ *   reloaded, mid-game) and the player is on the Home screen: straight into
  *   the match, nothing else on screen matters more.
  * - Otherwise, while the game runs and another screen shows: a toast that
  *   stays until it is clicked (it opens the match) or the game ends.
@@ -13,6 +13,25 @@ import { SceneId } from "./sceneIds.js";
 
 /** The key of the "your game is in progress" toast (its click opens the match: `open`). */
 export const GAME_TOAST_KEY = "online.game";
+
+/**
+ * Into the match of the online game in progress. A daily challenge goes back to its own screen when it ends; any
+ * other game to the lobby.
+ * @param {(sceneId: string, params?: Readonly<Record<string, unknown>>) => unknown} navigate
+ * @param {Pick<import("../../application/online/OnlineService.js").OnlineService, "state" | "resume">} online
+ */
+export function resumeGame(navigate, online) {
+  navigate(SceneId.MATCH, { session: online.resume(), againScene: online.state.mode === "daily" ? SceneId.DAILY : SceneId.ONLINE });
+}
+
+/**
+ * Whether the player has an online game running that they can go back to.
+ * @param {Pick<import("../../application/online/OnlineService.js").OnlineService, "state">} online
+ */
+export function hasGameInProgress(online) {
+  const { status, session } = online.state;
+  return status === OnlineStatus.PLAYING && session !== null && session.hasSnapshot;
+}
 
 /**
  * @param {{
@@ -31,10 +50,7 @@ export function returnToGame({ online, scenes, toasts, nameOf = () => null }) {
   /** The game the toast is up for. @type {string | null} */
   let toastFor = null;
 
-  const open = () => {
-    // A daily challenge goes back to its own screen when it ends; any other game to the lobby.
-    scenes.navigate(SceneId.MATCH, { session: online.resume(), againScene: online.state.mode === "daily" ? SceneId.DAILY : SceneId.ONLINE });
-  };
+  const open = () => resumeGame(scenes.navigate, online);
   const dismiss = () => {
     if (toastFor !== null) {
       toastFor = null;
@@ -66,13 +82,13 @@ export function returnToGame({ online, scenes, toasts, nameOf = () => null }) {
       body: `You have a game in progress against ${against}. Its clock is running.`,
     });
   };
-  /** @returns {boolean} whether the page just learned of the game and the player, on the main menu, was taken into it */
+  /** @returns {boolean} whether the page just learned of the game and the player, on the Home screen, was taken into it */
   const tookIn = (/** @type {{ gameId: string }} */ session) => {
     if (arriving !== session.gameId) {
       return false;
     }
     arriving = null;
-    if (scenes.currentId !== SceneId.MAIN_MENU) {
+    if (scenes.currentId !== SceneId.HOME) {
       return false;
     }
     open();

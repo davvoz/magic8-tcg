@@ -29,7 +29,7 @@ import { MatchSoundscape } from "../../src/rendering/board/MatchSoundscape.js";
 import { blowLandsAfter } from "../../src/rendering/cards/CardVisual.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { buildAudioSettingsModal } from "../../src/rendering/scenes/audioSettings.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { MatchScene } from "../../src/rendering/scenes/MatchScene.js";
 import { Scene } from "../../src/rendering/scenes/Scene.js";
 import { Button } from "../../src/rendering/ui/Button.js";
@@ -398,22 +398,23 @@ describe("sound settings", () => {
     phone.exit();
   });
 
-  it("opens from the main menu, whose Sound button follows the game being muted from anywhere", async () => {
+  it("opens from the settings of any screen, which follow the game being muted from anywhere", async () => {
     const { audio } = audioWorld();
     const content = await loadBundledContent();
     const app = { content, deckSelection: { listDecks: () => [] }, deckBuilding: {}, matchSetup: {}, createSeed: () => "9f".repeat(32), logger: new MemoryLogger(), environment: { version: "test", storage: "local" }, audio };
-    const scene = new MainMenuScene(services(), /** @type {any} */ (app));
+    const scene = new HomeScene(services(), /** @type {any} */ (app));
     scene.enter({});
-    const button = scene.root.findById("sound");
-    assert.equal(button?.text, "Sound");
+    scene.findNode("settings")?.activate();
+    assert.equal(scene.overlay?.id, "settings");
+    const mute = scene.overlay?.findById("audio.mute");
+    assert.equal(mute?.text, "Mute all");
+    assert.ok(scene.overlay?.findById("audio.music.up"), "with the music and effects levels");
     audio.toggleMute();
-    assert.equal(button?.text, "Sound off");
-    button?.activate();
-    assert.equal(scene.modal?.id, "audio");
-    scene.modal?.findById("audio.close")?.activate();
-    assert.equal(scene.modal, null);
+    assert.equal(mute?.text, "Unmute", "muted with M while they are open");
+    scene.overlay?.findById("settings.close")?.activate();
+    assert.equal(scene.overlay, null);
+    audio.toggleMute();
+    assert.equal(mute?.text, "Unmute", "no longer followed once closed");
     scene.exit();
-    audio.toggleMute();
-    assert.equal(button?.text, "Sound off", "no longer followed once the menu is left");
   });
 });

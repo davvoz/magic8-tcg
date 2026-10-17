@@ -1,64 +1,67 @@
 /**
- * Deck builder: the library view when no draft is open, the editor view
- * otherwise. The draft lives in DeckBuildingService, so leaving and coming
- * back resumes editing. The scene keeps only presentation state (scroll
- * offsets, the inspected card, focus) and rebuilds its whole widget tree
- * after every change; the trees are small and this keeps the views free
- * of incremental-update bugs.
+ * Deck builder: the deck being edited (the draft, which lives in
+ * DeckBuildingService, so leaving and coming back resumes editing). The
+ * player's decks are listed on their own screen (DecksScene, which opens
+ * the one to edit); opened with no draft, the builder starts a new deck.
+ * Closing the deck goes Back (to the player's decks, unless the builder
+ * was opened from elsewhere). The scene keeps only presentation state
+ * (scroll offsets, the inspected card, focus) and rebuilds its whole widget
+ * tree after every change; the trees are small and this keeps the view
+ * free of incremental-update bugs.
  */
 import { drawSceneBackdrop } from "../ui/backdrop.js";
-import { Button } from "../ui/Button.js";
-import { Label } from "../ui/Label.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { EditorView } from "./deckBuilder/EditorView.js";
-import { LibraryView } from "./deckBuilder/LibraryView.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { buildInspectModal } from "./deckBuilder/modals.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
-export class DeckBuilderScene extends Scene {
-  /** The frame for the screen in use (the compact one on a phone). */
+export class DeckBuilderScene extends SectionScene {
+  /** The frame for the screen in use (the compact one on a phone): the two columns fill it, with no toolbar. */
   get #screen() {
-    return screenLayout(this.services.viewport);
+    return screenLayout(this.services.viewport, { toolbar: false });
   }
 
   #app;
-  #library;
   #editor;
   /** Scroll offsets by list id, kept across rebuilds. @type {Record<string, number>} */
   #scroll = {};
   /** Card shown in the inspect overlay, if any. @type {string | null} */
   #inspecting = null;
-  /** Where Back leads: the scene the player came from. @type {string} */
-  #from = SceneId.MAIN_MENU;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services);
+    super(services, app, { scene: SceneId.DECK_BUILDER, title: "Deck Builder" });
     this.#app = app;
     /** @type {import("./deckBuilder/layout.js").BuilderHost} */
     const host = {
       app,
       theme: services.theme,
       screen: () => this.#screen,
-      dialog: { viewport: services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() },
+      dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() },
       rebuild: () => this.#rebuild(),
       inspect: (cardId) => this.#inspect(cardId),
       confirm: (request) => this.#confirm(request),
+      closed: () => this.goBack(),
       scroll: this.#scroll,
     };
-    this.#library = new LibraryView(host);
     this.#editor = new EditorView(host);
   }
 
-  /** @param {Readonly<Record<string, unknown>>} [params] `{ from?: string }`: where Back leads (the collection, deck selection), the menu by default */
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: where Back leads (the player's decks by default) */
   enter(params = {}) {
-    this.#from = typeof params.from === "string" && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
+    this.routeBack(params);
+    if (this.#app.deckBuilding.draft === null) {
+      const started = this.#app.deckBuilding.startNew();
+      if (!started.ok) {
+        this.#app.logger.warn("could not start a deck", started.error);
+      }
+    }
     this.#rebuild();
   }
 
@@ -73,35 +76,26 @@ export class DeckBuilderScene extends Scene {
     this.#rebuild();
   }
 
-  get isEditing() {
-    return this.#app.deckBuilding.draft !== null;
-  }
-
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.#rememberScroll();
     this.closeModal();
     this.root.clear();
-    this.#buildHeader();
-    const view = this.isEditing ? this.#editor : this.#library;
-    const initialFocus = view.build(this.root);
+    if (this.#app.deckBuilding.draft === null) {
+      // No deck to edit (it could not be started): nothing but the way back.
+      this.focus(this.backButton);
+      this.services.requestRender();
+      return;
+    }
+    const initialFocus = this.#editor.build(this.root);
     if (this.#inspecting !== null) {
       this.#openInspect(this.#inspecting);
     }
     // Focus never escapes an open modal, even when the previously focused node still exists beneath it.
-    const scope = this.modal ?? this.root;
+    const kept = this.modal === null ? this.findNode(focusedId) : this.modal.findById(focusedId);
     const fallback = this.modal === null ? initialFocus : this.modal.focusableNodes()[0] ?? null;
-    this.focus(scope.findById(focusedId) ?? fallback);
+    this.focus(kept ?? fallback);
     this.services.requestRender();
-  }
-
-  #buildHeader() {
-    const { viewport } = this.services;
-    const { header, backText } = this.#screen;
-    const title = this.isEditing ? "Deck Builder · editing" : "Deck Builder";
-    const backX = viewport.logicalWidth - header.sideMargin - header.backWidth;
-    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: Math.min(800, backX - header.sideMargin - header.gap), height: header.height, text: title, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    this.root.add(new Button({ id: "builder.back", x: backX, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#from === SceneId.MAIN_MENU ? backText : "Back", onActivate: () => this.#leave() }));
   }
 
   /** Scroll offsets survive rebuilds so adding a card does not jump the list. */
@@ -170,9 +164,5 @@ export class DeckBuilderScene extends Scene {
         onCancel: () => this.closeModal(),
       }),
     );
-  }
-
-  #leave() {
-    this.services.navigate(this.#from);
   }
 }

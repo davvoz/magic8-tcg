@@ -12,14 +12,15 @@ import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { Scene } from "./Scene.js";
+import { namedBack } from "../shell/navigation.js";
 import { SceneId } from "./sceneIds.js";
 
 const PANEL = Object.freeze({ width: 760, height: 280, button: 56 });
 
 export class ReplayScene extends Scene {
   #app;
-  /** Where Back (and the board's own Back) lead. @type {string} */
-  #from = SceneId.MAIN_MENU;
+  /** Where Back (and the board's own Back) lead: the screen that opened the replay (Home when none said). @type {import("../shell/navigation.js").BackTarget} */
+  #back = Object.freeze({ scene: SceneId.HOME, params: Object.freeze({}) });
   /** @type {string | null} */
   #error = null;
   /** Bumped on every entry: a replay that arrives after the player left is dropped. */
@@ -34,9 +35,9 @@ export class ReplayScene extends Scene {
     this.#app = app;
   }
 
-  /** @param {Readonly<Record<string, unknown>>} params `{ gameId: string, from?: string }` */
+  /** @param {Readonly<Record<string, unknown>>} params `{ gameId: string, back?: string, backParams?: object }` */
   enter(params) {
-    this.#from = typeof params.from === "string" && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
+    this.#back = namedBack(SceneId.REPLAY, params, this.services.hasScene) ?? Object.freeze({ scene: SceneId.HOME, params: Object.freeze({}) });
     this.#error = null;
     this.#generation += 1;
     this.#rebuild();
@@ -49,7 +50,7 @@ export class ReplayScene extends Scene {
   }
 
   onCancel() {
-    this.services.navigate(this.#from);
+    this.services.navigate(this.#back.scene, this.#back.params);
   }
 
   relayout() {
@@ -81,7 +82,7 @@ export class ReplayScene extends Scene {
       this.#rebuild();
       return;
     }
-    this.services.navigate(SceneId.MATCH, { session: opened.value.session, againScene: this.#from });
+    this.services.navigate(SceneId.MATCH, { session: opened.value.session, againScene: this.#back.scene, againParams: this.#back.params });
   }
 
   #rebuild() {

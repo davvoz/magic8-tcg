@@ -24,7 +24,6 @@ import { CardFaceProfile, cardFaceLayout, paintCardFace, typeLineFor } from "../
 import { drawCardBack } from "../../src/rendering/cards/CardRenderer.js";
 import { CardOption } from "../../src/rendering/cards/CardOption.js";
 import { CardStrip } from "../../src/rendering/cards/CardStrip.js";
-import { HeroNode } from "../../src/rendering/scenes/mainMenu/HeroNode.js";
 import { hexToRgb, mix, rgbToHex, shade, withAlpha } from "../../src/rendering/theme/color.js";
 import { bodyFont, displayFont, factionTones, fontFor } from "../../src/rendering/theme/Theme.js";
 import { drawSceneBackdrop } from "../../src/rendering/ui/backdrop.js";
@@ -259,7 +258,7 @@ describe("CardOption", () => {
 });
 
 describe("decorative nodes", () => {
-  it("backdrop, hero fan, ornament and HUD render without leaking context state", () => {
+  it("backdrop, ornament and HUD render without leaking context state", () => {
     const bounds = { x: 0, y: 0, width: 1600, height: 900 };
     const backdrop = new FakeContext2D();
     drawSceneBackdrop(backdrop, theme, bounds, { seed: "test" });
@@ -268,11 +267,6 @@ describe("decorative nodes", () => {
     const quiet = new FakeContext2D();
     drawSceneBackdrop(quiet, theme, bounds, { motes: false });
     assert.ok(quiet.calls.filter((call) => call.method === "arc").length < backdrop.calls.filter((call) => call.method === "arc").length, "motes are optional");
-
-    const hero = new FakeContext2D();
-    new HeroNode({ x: 400, y: 20, width: 800, height: 280 }).draw(hero, theme);
-    assert.equal(hero.calls.filter((call) => call.method === "rotate").length, 5, "five fanned cards");
-    assertBalanced(hero);
 
     const ornament = new FakeContext2D();
     new Ornament({ x: 0, y: 0, width: 300, height: 16 }).draw(ornament, theme);

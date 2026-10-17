@@ -19,8 +19,8 @@ import { coachCardLayout } from "../../src/rendering/board/CoachCard.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { RICH_LINE_GAP, plainRich, wrapRich } from "../../src/rendering/ui/RichText.js";
 import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
 import { MatchScene } from "../../src/rendering/scenes/MatchScene.js";
+import { PlayScene } from "../../src/rendering/scenes/PlayScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { DeckBuildingService } from "../../src/application/decks/DeckBuildingService.js";
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
@@ -231,7 +231,7 @@ for (const [label, size] of [["a desktop", DESKTOP], ["the smallest phone", SMAL
 }
 
 describe("The tutorial board", () => {
-  it("is left, not conceded: the player goes back to the menu", async () => {
+  it("is left, not conceded: the player goes back Home", async () => {
     const { scene, session, navigated } = await tutorialBoard(DESKTOP);
     await play(scene, session);
     const leave = byId(scene, "leave");
@@ -240,7 +240,7 @@ describe("The tutorial board", () => {
     assert.equal(scene.modal?.id !== undefined, true, "it asks first");
     const confirm = scene.modal.focusableNodes().find((node) => node.text === "Leave");
     confirm.activate();
-    assert.equal(navigated.at(-1).id, SceneId.MAIN_MENU);
+    assert.equal(navigated.at(-1).id, SceneId.HOME);
     assert.equal(session.isStopped, true);
     assert.equal(session.snapshotFor("player").isOver, false, "nobody conceded");
   });
@@ -265,12 +265,12 @@ describe("The tutorial board", () => {
 });
 
 describe("Starting the tutorial", () => {
-  it("from the main menu, while its column has room", () => {
+  it("from Play, its tile always there", () => {
     const navigated = [];
-    const scene = new MainMenuScene(services(DESKTOP, { navigate: (id, params) => navigated.push({ id, params }) }), app());
-    scene.enter();
-    const button = byId(scene, "tutorial");
-    assert.equal(button.text, "Tutorial");
+    const scene = new PlayScene(services(DESKTOP, { navigate: (id, params) => navigated.push({ id, params }) }), app());
+    scene.enter({});
+    const button = byId(scene, "play.tutorial.play");
+    assert.equal(button.text, "Start the tutorial");
     button.activate();
     assert.equal(navigated[0].id, SceneId.MATCH);
     assert.ok(navigated[0].params.coach, "the board comes with its coach");

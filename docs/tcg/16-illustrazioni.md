@@ -71,6 +71,7 @@ Con lo stesso principio (immagine dipinta se pronta, altrimenti disegno procedur
 |---|---|---|
 | Tappeto della partita, dorso delle carte, pietra dei pannelli | `TableArt` (`TablePiece.MAT`, `CARD_BACK`, `PANEL`) | `Tappeto.jpg`, `Dorso.jpg`, `Texture.jpg` |
 | Sfondo dei menu, angoli dei pannelli, medaglione dei divisori, pulsanti primari e secondari | `UiArt` (`UiPiece`) | `Sfondo_Menu.jpg`, `Angolo_decorativo_pannelli.jpg`, `DIVISORE_TITOLI.jpg`, `BOTTONE_PRIMARIO.jpg`, `BOTTONE_SECONDARIO.jpg` |
+| Immagini dei modi di giocare nella schermata Play (online, allenamento, tutorial; le sfide mostrano il personaggio) | `UiArt` (`UiPiece.PLAY_*`) | `Play_Online.jpg`, `Play_Practice.jpg`, `Play_Tutorial.jpg` (620×630, cornice tagliata via) |
 | Moneta del sorteggio iniziale (testa e croce, 1024²) | `CoinArt` | `coin_testa.png`, `coin_croce.png` |
 
 - Le immagini dei menu sono oro su nero, 1168 × 784 o 784 × 1168. `UI_ART.layout` in `main.js` dice dove stanno le parti utili in ogni immagine, in frazioni: se si rigenera un file, quelle misure vanno riprese.

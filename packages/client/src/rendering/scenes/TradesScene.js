@@ -21,19 +21,19 @@ import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { screenLayout } from "./deckBuilder/layout.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
 const MAX_CARDS = 10;
 const MAX_ASK = 3;
 /**
  * Sizes, wide and compact (a phone in landscape: the recipient and the filter share a row, thumbnails are smaller).
- * @typedef {Readonly<{ thumb: { width: number, gap: number }, title: number, statusX: number, field: { y: number, height: number }, filterButton: boolean, button: number }>} TradesMetrics
+ * @typedef {Readonly<{ thumb: { width: number, gap: number }, field: { y: number, height: number }, filterButton: boolean, button: number }>} TradesMetrics
  */
 /** @type {TradesMetrics} */
-const WIDE = Object.freeze({ thumb: Object.freeze({ width: 92, gap: 10 }), title: 320, statusX: 180, field: Object.freeze({ y: 16, height: 52 }), filterButton: false, button: 52 });
+const WIDE = Object.freeze({ thumb: Object.freeze({ width: 92, gap: 10 }), field: Object.freeze({ y: 16, height: 52 }), filterButton: false, button: 52 });
 /** @type {TradesMetrics} */
-const COMPACT = Object.freeze({ thumb: Object.freeze({ width: 64, gap: 8 }), title: 120, statusX: 120, field: Object.freeze({ y: 8, height: CARD_FILTER_BUTTON_HEIGHT }), filterButton: true, button: 46 });
+const COMPACT = Object.freeze({ thumb: Object.freeze({ width: 64, gap: 8 }), field: Object.freeze({ y: 8, height: CARD_FILTER_BUTTON_HEIGHT }), filterButton: true, button: 46 });
 /** On a compact screen: how much of the composer's first row the recipient takes (the filter has the rest), and where its lists start. */
 const COMPACT_COMPOSER = Object.freeze({ field: 0.58, titlesTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 6, listsTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 32 });
 const DAY = 24 * 60 * 60 * 1000;
@@ -58,7 +58,7 @@ export function tradeSubtitle(trade, now) {
   return `open · ${deal} · ${days} day(s) left`;
 }
 
-export class TradesScene extends Scene {
+export class TradesScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
   get #screen() {
     return screenLayout(this.services.viewport);
@@ -94,12 +94,14 @@ export class TradesScene extends Scene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services);
+    super(services, app, { scene: SceneId.TRADES, title: "Trades" });
     this.#app = app;
     this.#now = now;
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: opened from a screen that said so (a notification), Back leads there */
+  enter(params = {}) {
+    this.routeBack(params);
     const trading = this.#trading();
     this.#unsubscribe = trading.subscribe(() => this.#rebuild());
     trading.refresh();
@@ -114,12 +116,12 @@ export class TradesScene extends Scene {
   }
 
   onCancel() {
-    if (this.#composing) {
+    if (this.#composing && this.modal === null) {
       this.#composing = false;
       this.#rebuild();
       return;
     }
-    this.services.navigate(SceneId.COLLECTION);
+    super.onCancel();
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -131,26 +133,28 @@ export class TradesScene extends Scene {
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
-    const back = this.#buildHeader();
+    this.#buildToolbar();
     this.#buildList();
     if (this.#composing) {
       this.#buildComposer();
     } else {
       this.#buildDetail();
     }
-    this.focus(this.root.findById(focusedId) ?? back);
+    this.focus(this.findNode(focusedId) ?? this.backButton);
     this.services.requestRender();
   }
 
-  #buildHeader() {
+  /**
+   * The toolbar: what the trades are saying, and the toggle between an offer's details and the composer.
+   * @returns {Button} the toggle
+   */
+  #buildToolbar() {
     const { viewport } = this.services;
+    const { header } = this.#screen;
     const state = this.#trading().state;
-    const { title, statusX } = this.#m;
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: title, height: this.#screen.header.height, text: "Trades", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const message = state.error ?? state.notice ?? "Card for card. Offered cards are held until the offer is answered or expires.";
-    this.root.add(new Label({ id: "trades.status", x: this.#screen.header.sideMargin + statusX, y: this.#screen.header.y, width: viewport.logicalWidth - 2 * this.#screen.header.sideMargin - 2 * (this.#screen.header.backWidth + 16) - statusX, height: this.#screen.header.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
-    this.root.add(new Button({ id: "trades.new", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#newOfferText(), onActivate: () => this.#toggleComposer() }));
-    return this.root.add(new Button({ keepPlate: true, id: "trades.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Collection", onActivate: () => this.services.navigate(SceneId.COLLECTION) }));
+    this.root.add(new Label({ id: "trades.status", x: header.sideMargin, y: header.y, width: viewport.logicalWidth - 2 * header.sideMargin - (header.backWidth + 16), height: header.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
+    return this.root.add(new Button({ id: "trades.new", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#newOfferText(), onActivate: () => this.#toggleComposer() }));
   }
 
   #buildList() {

@@ -17,7 +17,8 @@ import { LISTING_WITH_ENTRIES } from "../application/fakeMarketApi.js";
 import { OnlineService } from "../../src/application/online/OnlineService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { OnlineScene, matchedText, rankedSteps } from "../../src/rendering/scenes/OnlineScene.js";
+import { OnlineScene, matchedText } from "../../src/rendering/scenes/OnlineScene.js";
+import { rankedSteps } from "../../src/rendering/scenes/online/rankedGuideFor.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
@@ -100,7 +101,7 @@ async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop =
   return { scene, online, lobby, requests, navigated, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
 }
 
-const byId = (scene, id) => scene.root.findById(id);
+const byId = (scene, id) => scene.findNode(id);
 function rendered(scene) {
   const context = new FakeContext2D();
   scene.render(context);
@@ -192,7 +193,7 @@ describe("OnlineScene: the Casual and Ranked tabs", () => {
     const get = byId(scene, "online.getEntries");
     assert.equal(get.text, "Get ranked entries");
     get.activate();
-    assert.deepEqual(navigated.at(-1), { id: SceneId.SHOP, params: { category: "ranked", from: SceneId.ONLINE } });
+    assert.deepEqual(navigated.at(-1), { id: SceneId.SHOP, params: { category: "ranked", back: SceneId.ONLINE, backParams: { mode: "ranked" } } }, "Back from the shop comes back to the Ranked tab");
     assert.equal(requests.some((request) => request.t === "queue.join"), false);
   });
 

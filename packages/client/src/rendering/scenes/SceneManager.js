@@ -9,6 +9,10 @@
  *
  * Whoever follows where the player is (the music) hears of each move (`onNavigate`).
  *
+ * A scene laid out in a frame of its own (the content area of the
+ * navigation shell, Scene.origin) is drawn from there, and is handed the
+ * pointer in its own coordinates.
+ *
  * It also remembers how the player is playing — by touch or with mouse and
  * keyboard, from their last input — for every scene to ask (`usingTouch`).
  *
@@ -17,6 +21,8 @@
 import { Easing } from "../animation/Tween.js";
 import { withAlpha } from "../theme/color.js";
 
+/** Where a scene that does not say otherwise is drawn: at the design area's origin. */
+const NO_OFFSET = Object.freeze({ x: 0, y: 0 });
 /** How long a new scene takes to fade in, as a multiple of the medium duration. */
 const FADE_MEDIUM = 1.5;
 
@@ -54,6 +60,7 @@ export class SceneManager {
       requestRender,
       navigate: (sceneId, params) => this.navigate(sceneId, params),
       hasScene: (sceneId) => this.#factories.has(sceneId),
+      currentScene: () => this.#currentId,
       usingTouch: () => this.#touch,
       ...(sound === undefined ? {} : { sound }),
       ...(openLink === undefined ? {} : { openLink }),
@@ -169,9 +176,21 @@ export class SceneManager {
     return true;
   }
 
+  /** Where the current scene's frame starts on the design area (the origin for a scene that has the screen to itself). */
+  get origin() {
+    return this.#current?.origin ?? NO_OFFSET;
+  }
+
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
-    this.#current?.render(context);
+    const scene = this.#current;
+    if (scene !== null) {
+      const { x, y } = scene.origin ?? NO_OFFSET;
+      context.save();
+      context.translate(x, y);
+      scene.render(context);
+      context.restore();
+    }
     this.#paintFade(context);
     this.#overlay?.render(context, this.#services.theme);
   }
@@ -201,7 +220,12 @@ export class SceneManager {
     if (this.#overlay?.onPointer(/** @type {{ type: string, x: number, y: number }} */ (input))) {
       return;
     }
-    this.#current?.onPointer(input);
+    const scene = this.#current;
+    if (scene === null) {
+      return;
+    }
+    const { x, y } = scene.origin ?? NO_OFFSET;
+    scene.onPointer(x === 0 && y === 0 ? input : { ...input, x: input.x - x, y: input.y - y });
   }
 
   /** The canvas changed size: the current scene re-fits to `viewport.bounds`. */

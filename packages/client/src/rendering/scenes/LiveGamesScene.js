@@ -1,18 +1,18 @@
 /**
  * Games being played now, the most watched first: pick one to watch it
- * (docs/tcg/10-spettatori.md). The list is a snapshot; "Refresh" asks again.
+ * (docs/tcg/10-spettatori.md). The list is a snapshot; "Refresh" (in the
+ * toolbar) asks again.
  */
 import { seatLabel } from "../../application/daily/characters.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
-import { Label } from "../ui/Label.js";
 import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
 /**
  * @param {import("../../application/ports/LiveGamesApi.contract.js").LiveGame} game
@@ -22,7 +22,7 @@ export function liveGameSubtitle(game) {
   return `${game.mode} · turn ${game.turn} · ${watching}`;
 }
 
-export class LiveGamesScene extends Scene {
+export class LiveGamesScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
   get #screen() {
     return screenLayout(this.services.viewport);
@@ -42,17 +42,15 @@ export class LiveGamesScene extends Scene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services);
+    super(services, app, { scene: SceneId.LIVE_GAMES, title: "Watch a game" });
     this.#app = app;
   }
 
-  enter() {
+  /** @param {{ back?: string }} [params] `back`: where Back leads (Play by default) */
+  enter(params = {}) {
+    this.routeBack(params);
     this.#error = null;
     this.#load();
-  }
-
-  onCancel() {
-    this.services.navigate(SceneId.ONLINE);
   }
 
   relayout() {
@@ -94,9 +92,7 @@ export class LiveGamesScene extends Scene {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
     const { viewport } = this.services;
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: Math.min(600, viewport.logicalWidth - 2 * this.#screen.header.sideMargin - 2 * (this.#screen.header.backWidth + 16)), height: this.#screen.header.height, text: "Watch a game", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    const back = this.root.add(new Button({ id: "live.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.onCancel() }));
-    this.root.add(new Button({ id: "live.refresh", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Refresh", enabled: !this.#loading, onActivate: () => this.#load() }));
+    this.root.add(new Button({ id: "live.refresh", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Refresh", enabled: !this.#loading, onActivate: () => this.#load() }));
     const width = viewport.logicalWidth - 2 * this.#screen.columns.left.x;
     const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width, height: this.#screen.columns.height }));
     const status = this.#error === null ? "Spectators see the board, never a hand." : this.#error;
@@ -105,7 +101,7 @@ export class LiveGamesScene extends Scene {
     panel.add(new TextBlock({ id: "live.status", x: this.#screen.inset, y: compact ? 10 : 16, width: width - 2 * this.#screen.inset, height: 30, text: status, size: compact ? "small" : "body", colorKey: this.#error === null ? "textMuted" : "danger" }));
     const list = panel.add(new ScrollList({ id: "live.list", x: this.#screen.inset, y: listTop, width: width - 2 * this.#screen.inset, height: this.#screen.columns.height - listTop - this.#screen.inset }));
     const first = this.#fill(list);
-    this.focus(this.root.findById(focusedId) ?? first ?? back);
+    this.focus(this.findNode(focusedId) ?? first ?? this.backButton);
     this.services.requestRender();
   }
 

@@ -711,9 +711,9 @@ describe("MatchScene on the board", () => {
     assert.equal(scene.modal?.id, "gameOver", "See result brings the result back");
     scene.onCancel();
     assert.equal(byId(scene, "endTurn"), null, "no turn controls after the match");
-    assert.equal(byId(scene, "leave").text, "Back to menu");
+    assert.equal(byId(scene, "leave").text, "Back to Home");
     tapNode(byId(scene, "leave"));
-    assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
+    assert.deepEqual(navigated, [SceneId.HOME]);
     assert.equal(session.isStopped, true);
   });
 
@@ -1250,6 +1250,6 @@ describe("MatchScene on the board", () => {
     const navigated = [];
     const scene = new MatchScene(services({ navigate: (id) => navigated.push(id) }));
     scene.enter({});
-    assert.deepEqual(navigated, [SceneId.MAIN_MENU]);
+    assert.deepEqual(navigated, [SceneId.HOME]);
   });
 });

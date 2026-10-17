@@ -2,7 +2,9 @@
  * Layout lint for phones: every screen, built for the compact profile on the
  * smallest supported phone (an iPhone SE) and a common one (an iPhone 14),
  * keeps each control on screen (or inside the list that scrolls it), tall
- * enough for a finger, and clear of the other controls.
+ * enough for a finger, and clear of the other controls. A screen inside the
+ * navigation shell keeps its controls in the content area the shell leaves
+ * it, and the shell's own (the rail, the top bar) on screen and clear of them.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -19,16 +21,22 @@ import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { CollectionScene } from "../../src/rendering/scenes/CollectionScene.js";
 import { DeckBuilderScene } from "../../src/rendering/scenes/DeckBuilderScene.js";
+import { DecksScene } from "../../src/rendering/scenes/DecksScene.js";
 import { DeckSelectionScene } from "../../src/rendering/scenes/DeckSelectionScene.js";
 import { ErrorScene } from "../../src/rendering/scenes/ErrorScene.js";
 import { ActiveKeyPrompt } from "../../src/application/wallet/ActiveKeyPrompt.js";
 import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
 import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
+import { PlayScene } from "../../src/rendering/scenes/PlayScene.js";
+import { OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
+import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStore.js";
+import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnboarding.js";
 import { DailyScene } from "../../src/rendering/scenes/DailyScene.js";
 import { DailyService } from "../../src/application/daily/DailyService.js";
 import { DAY } from "../application/dailyFixtures.js";
 import { NotificationsScene } from "../../src/rendering/scenes/NotificationsScene.js";
+import { SeasonScene } from "../../src/rendering/scenes/SeasonScene.js";
 import { OnlineScene } from "../../src/rendering/scenes/OnlineScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
 import { StarterScene } from "../../src/rendering/scenes/StarterScene.js";
@@ -115,23 +123,19 @@ const overlap = (a, b) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x,
  */
 function assertFitsPhone(scene, viewport, label) {
   scene.render(new FakeContext2D());
-  const screen = { x: 0, y: 0, width: viewport.logicalWidth, height: viewport.logicalHeight };
+  // The scene's own frame (the shell's content area, for a screen inside it), in the scene's coordinates.
+  const frame = scene.services.viewport;
+  const ownArea = { x: 0, y: 0, width: frame.logicalWidth, height: frame.logicalHeight };
+  // A dialog, and the shell around the content, may use all the window shows (a screen without the shell, its design area).
+  const whole = "designArea" in frame ? frame.bounds : ownArea;
   const layer = topLayer(scene);
-  const controls = walk(layer).filter(({ node }) => node.interactive && node !== layer && node.width > 0);
-  assert.ok(controls.length > 0, `${label}: has controls`);
-  for (const { node, clip } of controls) {
-    const bounds = node.bounds;
-    const name = `${label}: ${node.id || node.constructor.name}`;
-    if (clip === null) {
-      assert.ok(within(bounds, screen), `${name} stays on screen (${JSON.stringify(bounds)})`);
-    } else {
-      const list = clip.bounds;
-      assert.ok(bounds.x >= list.x - EPSILON && bounds.x + bounds.width <= list.x + list.width + EPSILON, `${name} stays within its list's width`);
-    }
-    assert.ok(bounds.height * viewport.scale >= MIN_TOUCH - EPSILON, `${name} is tall enough for a finger (${(bounds.height * viewport.scale).toFixed(1)} px)`);
-  }
+  const chrome = layer === scene.root && scene.chrome !== null ? controlsOf(scene.chrome, scene.chrome) : [];
+  const own = controlsOf(layer, layer);
+  assert.ok(own.length + chrome.length > 0, `${label}: has controls`);
+  own.forEach((control) => assertReachable(control, { screen: layer === scene.root ? ownArea : whole, scale: viewport.scale, label }));
+  chrome.forEach((control) => assertReachable(control, { screen: whole, scale: viewport.scale, label }));
   // Controls laid out side by side never cover one another (a list's rows are compared within their list).
-  const loose = controls.filter(({ clip }) => clip === null);
+  const loose = [...own, ...chrome].filter(({ clip }) => clip === null);
   for (let index = 0; index < loose.length; index += 1) {
     for (let other = index + 1; other < loose.length; other += 1) {
       const a = loose[index].node;
@@ -144,8 +148,27 @@ function assertFitsPhone(scene, viewport, label) {
   }
 }
 
-/** What the player can touch: the overlay (the active key asked for), the scene's modal, or the scene. */
+/**
+ * A control stays on its screen (or within the list that scrolls it) and is tall enough for a finger.
+ * @param {{ node: import("../../src/rendering/ui/UiNode.js").UiNode, clip: ScrollList | null }} control
+ * @param {{ screen: { x: number, y: number, width: number, height: number }, scale: number, label: string }} where
+ */
+function assertReachable({ node, clip }, { screen, scale, label }) {
+  const bounds = node.bounds;
+  const name = `${label}: ${node.id || node.constructor.name}`;
+  if (clip === null) {
+    assert.ok(within(bounds, screen), `${name} stays on screen (${JSON.stringify(bounds)})`);
+  } else {
+    const list = clip.bounds;
+    assert.ok(bounds.x >= list.x - EPSILON && bounds.x + bounds.width <= list.x + list.width + EPSILON, `${name} stays within its list's width`);
+  }
+  assert.ok(bounds.height * scale >= MIN_TOUCH - EPSILON, `${name} is tall enough for a finger (${(bounds.height * scale).toFixed(1)} px)`);
+}
+
+/** What the player can touch: the overlay (the active key asked for, the shell's dialogs), the scene's modal, or the scene. */
 const topLayer = (scene) => scene.overlay ?? scene.modal ?? scene.root;
+/** The controls of a tree that have a size, with the list clipping each. */
+const controlsOf = (tree, layer) => walk(tree).filter(({ node }) => node.interactive && node !== layer && node.width > 0);
 
 const isAncestor = (node, descendant) => {
   for (let parent = descendant.parent; parent !== null; parent = parent.parent) {
@@ -196,6 +219,27 @@ function withRankedPlay(app, { eligible = true, auto = false } = {}) {
 /** @param {any} scene */
 const openRanked = (scene) => scene.root.findById("online.mode.ranked")?.activate();
 
+/** The season's jackpot, three places paying, the season ending in three weeks. @param {any} app */
+function withJackpot(app) {
+  const now = Date.now();
+  const places = [65, 25, 10].map((percent, index) => ({ place: index + 1, percent, amount: "100.000", account: index === 2 ? null : "alice", rating: null, paid: null }));
+  const jackpot = { season: { id: "season-1", name: "Season 1", startsAt: now - 86_400_000, endsAt: now + 21 * 86_400_000, status: "running" }, bank: "bank", asset: "STEEM", share: { numerator: 2, denominator: 3 }, jackpot: "866.666", opening: "666.666", readAt: now, places };
+  Object.assign(app, { jackpot: { state: { loading: false, loaded: true, jackpot, error: null }, subscribe: () => () => undefined, watch: () => () => undefined, now: () => Date.now() } });
+}
+
+/** The first-time guide, nothing done in this browser. @param {any} app */
+function withGuide(app) {
+  const onboarding = new OnboardingProgress({ preferences: new StoredOnboarding({ store: new InMemoryStore(), logger: new MemoryLogger() }) });
+  Object.assign(app, { onboarding });
+  return onboarding;
+}
+
+/** Sound settings that only remember what they are told. */
+function fakeAudio() {
+  let settings = { music: 0.5, effects: 0.5, muted: false };
+  return { get settings() { return settings; }, step: () => undefined, toggleMute: () => (settings = { ...settings, muted: !settings.muted }), play: () => undefined, subscribe: () => () => undefined };
+}
+
 /** The daily challenges over a server that always answers with `day`. */
 function dailyService(day) {
   return new DailyService({ api: { today: async () => ok(day), chooseTrack: async () => ok(day), play: async () => ok({ gameId: "g" }) } });
@@ -207,11 +251,16 @@ const withDailyRun = (run) => (app) => Object.assign(app, { daily: dailyService(
 
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
-  { name: "main menu", make: (s, app) => new MainMenuScene(s, app) },
-  { name: "main menu with every entry (daily challenges, tutorial)", make: (s, app) => new MainMenuScene(s, app), before: (app) => Object.assign(app, { tutorial: {} }), after: (scene) => (assert.ok(scene.root.findById("daily")), assert.ok(scene.root.findById("tutorial"))) },
-  { name: "main menu, account dialog", make: (s, app) => new MainMenuScene(s, app), after: (scene) => (scene.root.findById("profile")?.activate(), assert.ok(scene.modal?.findById("signOut"))) },
+  { name: "play", make: (s, app) => new PlayScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("play.daily.play")) },
+  { name: "home, with the guide", make: (s, app) => new HomeScene(s, app), before: (app) => withGuide(app), after: (scene) => assert.ok(scene.root.findById("home.next")) },
+  { name: "home, without the guide", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app), withGuide(app).dismiss()), after: (scene) => assert.equal(scene.root.findById("home.next"), null) },
+  { name: "home, account dialog", make: (s, app) => new HomeScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },
+  { name: "home, settings", make: (s, app) => new HomeScene(s, app), before: (app) => Object.assign(app, { audio: fakeAudio() }), after: (scene) => (scene.findNode("settings")?.activate(), assert.ok(scene.overlay?.findById("audio.music.up")), assert.ok(scene.overlay?.findById("settings.about.3"))) },
   { name: "deck selection", make: (s, app) => new DeckSelectionScene(s, app) },
-  { name: "deck builder library", make: (s, app) => new DeckBuilderScene(s, app) },
+  { name: "my decks", make: (s, app) => new DecksScene(s, app), after: (scene) => assert.ok(scene.findNode("shell.tab.collection")) },
+  { name: "my decks, the starter to take", make: (s, app) => new DecksScene(s, app), starter: false, after: (scene) => assert.ok(scene.root.findById("decks.starter")) },
+  { name: "my decks, a deck left open", make: (s, app) => new DecksScene(s, app), before: (app) => app.deckBuilding.startNew(), after: (scene) => assert.ok(scene.root.findById("decks.resume")) },
+  { name: "deck builder, a new deck", make: (s, app) => new DeckBuilderScene(s, app) },
   { name: "deck builder editor", make: (s, app) => new DeckBuilderScene(s, app), before: (app) => app.deckBuilding.startNew() },
   { name: "collection", make: (s, app) => new CollectionScene(s, app) },
   { name: "shop", make: (s, app) => new ShopScene(s, app) },
@@ -221,6 +270,9 @@ const SCREENS = Object.freeze([
   { name: "shop's unpaid orders", make: (s, app) => new ShopScene(s, app, BEFORE_DUE), before: withUnpaidOrders, after: (scene) => scene.root.findById("shop.orders")?.activate() },
   { name: "starter", make: (s, app) => new StarterScene(s, app), starter: false },
   { name: "notifications", make: (s, app) => new NotificationsScene(s, app) },
+  { name: "season", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => (assert.ok(scene.root.findById("season.jackpot")), assert.equal(scene.root.findById("season.play")?.isEffectivelyEnabled, true)) },
+  { name: "season, ranked locked", make: (s, app) => new SeasonScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("season.play.note")) },
+  { name: "season, how ranked works", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => (scene.root.findById("season.guide.open")?.activate(), assert.ok(scene.modal?.findById("season.guide.close"))) },
   { name: "online lobby", make: (s, app) => new OnlineScene(s, app) },
   { name: "online lobby, casual tab", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => assert.equal(scene.root.findById("online.mode.casual")?.selected, true) },
   { name: "online lobby, ranked tab", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => (openRanked(scene), assert.ok(scene.root.findById("online.tickets"))) },

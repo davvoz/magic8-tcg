@@ -131,7 +131,7 @@ function market({ account = "bob", wallet = fakeWallet(), budget } = {}) {
   return { api, wallet, sales, scene, navigated, connection, reloads: () => reloads };
 }
 
-const byId = (scene, id) => scene.root.findById(id);
+const byId = (scene, id) => scene.findNode(id);
 const rendered = (scene) => {
   const context = new FakeContext2D();
   scene.render(context);
@@ -190,7 +190,7 @@ describe("MarketScene", () => {
 
   it("shows the board, a listing's details, and buys it through the wallet", async () => {
     const { scene, wallet, navigated } = market();
-    scene.enter({ from: "shop" });
+    scene.enter({ back: "shop" });
     await flush();
     const row = byId(scene, `market.listing.${LISTING.id}`);
     assert.equal(row.text, "1.500 STEEM");
@@ -211,7 +211,7 @@ describe("MarketScene", () => {
     assert.equal(byId(scene, "market.buy"), null, "no buying one's own card");
     assert.equal(byId(scene, "market.withdraw").enabled, false, "not while a buyer is paying");
     scene.onCancel();
-    assert.deepEqual(navigated.at(-1), ["shop", undefined], "back to the shop it came from");
+    assert.deepEqual(navigated.at(-1), ["shop", {}], "back to the shop it came from");
   });
 
   it("reloads the board on screen when the server says it changed, once per burst", async () => {
@@ -310,14 +310,19 @@ describe("MarketScene", () => {
     assert.equal(purchaseActivity({ ...PURCHASE, status: "CANCELLED" }).closed, true);
   });
 
-  it("describes listings, and goes back where the player came from", () => {
+  it("describes listings, and goes back where the player came from (a tab of the Market has no Back of its own)", () => {
     assert.equal(listingSubtitle(LISTING, NOW), "#4 · @alice · 3 day(s) left");
     assert.equal(listingSubtitle({ ...LISTING, status: "SOLD", buyer: "bob" }, NOW), "#4 · sold to @bob");
     assert.equal(listingSubtitle({ ...LISTING, reserved: true }, NOW), "#4 · @alice · a buyer is paying");
     const { scene, navigated } = market({ account: null });
-    scene.enter({ from: "collection" });
+    scene.enter({ back: "collection" });
     assert.equal(byId(scene, "market.sell"), null, "signed out: nothing to sell");
     scene.onCancel();
-    assert.deepEqual(navigated.at(-1), ["collection", undefined]);
+    assert.deepEqual(navigated.at(-1), ["collection", {}]);
+    const tab = market({ account: null });
+    tab.scene.enter({});
+    tab.scene.onCancel();
+    assert.deepEqual(tab.navigated, []);
+    assert.equal(tab.scene.backButton, null);
   });
 });

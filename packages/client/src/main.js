@@ -10,6 +10,8 @@ import { fail } from "@magic8/engine/shared/Result.js";
 import { ContentResource } from "./application/ports/ContentSource.contract.js";
 import { AudioService } from "./application/audio/AudioService.js";
 import { HelpSettings } from "./application/help/HelpSettings.js";
+import { OnboardingProgress } from "./application/onboarding/OnboardingProgress.js";
+import { followMilestones } from "./application/onboarding/followMilestones.js";
 import { MusicTrack, SoundCue } from "./application/audio/SoundCue.js";
 import { AccountService, AccountStatus } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
@@ -56,6 +58,9 @@ import { createBrowserAudioContext, followVisibility, unlockOnGesture } from "./
 import { createCoreSoundBank } from "./infrastructure/audio/registerCorePatches.js";
 import { StoredAudioPreferences } from "./infrastructure/persistence/StoredAudioPreferences.js";
 import { StoredHelpPreferences } from "./infrastructure/persistence/StoredHelpPreferences.js";
+import { StoredOnboarding } from "./infrastructure/persistence/StoredOnboarding.js";
+import { StoredSelectedDeck } from "./infrastructure/persistence/StoredSelectedDeck.js";
+import { SelectedDeck } from "./application/decks/SelectedDeck.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
 import { HttpCollectionApi } from "./infrastructure/api/HttpCollectionApi.js";
 import { HttpMarketApi } from "./infrastructure/api/HttpMarketApi.js";
@@ -99,6 +104,7 @@ import { SceneManager } from "./rendering/scenes/SceneManager.js";
 import { registerScenes } from "./rendering/scenes/registerScenes.js";
 import { GAME_TOAST_KEY, returnToGame } from "./rendering/scenes/returnToGame.js";
 import { SceneId } from "./rendering/scenes/sceneIds.js";
+import { SectionScene } from "./rendering/scenes/SectionScene.js";
 import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
 import { CoinArt } from "./rendering/board/CoinArt.js";
 import { TableArt, TablePiece } from "./rendering/images/TableArt.js";
@@ -240,7 +246,7 @@ const FALLBACK_THEME_RAW = Object.freeze({
 });
 
 const logger = new ConsoleLogger();
-/** Shown by the page itself before any script ran; lifted when the main menu is ready, or for the error screen. */
+/** Shown by the page itself before any script ran; lifted when the first screen is ready, or for the error screen. */
 const loading = new LoadingScreen(document, window);
 
 /**
@@ -313,7 +319,7 @@ function buildPresentation(theme, sound) {
       context.fillRect(0, 0, cssWidth, cssHeight);
       viewport.applyTransform(context);
       sceneManager.render(context);
-      fieldInputs.sync(placeFields(sceneManager.textFields(), viewport));
+      fieldInputs.sync(placeFields(sceneManager.textFields(), viewport, sceneManager.origin));
     },
     onError: (error) => showFatal("Unexpected error", describeError(error)),
   };
@@ -326,12 +332,13 @@ function buildPresentation(theme, sound) {
  * Where each text field is on the page, in CSS pixels: the canvas fills the window from its top-left corner.
  * @param {readonly TextField[]} fields
  * @param {Viewport} viewport
+ * @param {{ x: number, y: number }} origin where the scene's frame starts on the design area (the fields are in its coordinates)
  * @returns {import("./rendering/page/FieldInputs.js").FieldPlacement[]}
  */
-function placeFields(fields, viewport) {
+function placeFields(fields, viewport, origin) {
   return fields.map((field) => {
     const { x, y, width, height } = field.bounds;
-    const corner = viewport.toCss(x, y);
+    const corner = viewport.toCss(x + origin.x, y + origin.y);
     return Object.freeze({ field, x: corner.x, y: corner.y, width: width * viewport.scale, height: height * viewport.scale, scale: viewport.scale });
   });
 }
@@ -446,6 +453,8 @@ async function boot() {
   }
   const audio = buildAudio(localStore, storageAvailable);
   const help = buildHelp(localStore, storageAvailable);
+  const onboarding = buildOnboarding(localStore, storageAvailable);
+  const selectedDeck = buildSelectedDeck(localStore, storageAvailable);
   const browserDecks = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
   // Signed in, decks live in the account (only owned cards); otherwise in this browser.
   const collectionApi = new HttpCollectionApi({ fetch: httpFetch });
@@ -478,7 +487,7 @@ async function boot() {
     accountDecks: () =>
       accountDecks.list().value.flatMap((deck) => {
         const ref = accountDecks.describe(deck.id);
-        return ref === undefined ? [] : [{ id: ref.serverId, name: deck.name, mix: deckMix(content.value, deck.entries), totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
+        return ref === undefined ? [] : [{ id: ref.serverId, localId: deck.id, name: deck.name, mix: deckMix(content.value, deck.entries), totalCards: deck.totalCards, playable: ref.playable, problem: ref.problems[0]?.message ?? null }];
       }),
     liveGames: new HttpLiveGamesApi({ fetch: httpFetch }),
     // Signed moves (docs/tcg/12): a key per game that cannot leave the browser, authorised with Keychain.
@@ -561,15 +570,18 @@ async function boot() {
 
   const effects = createCoreEffectRegistry();
   const matchSetup = new MatchSetupService({ content: content.value, effects, scheduler: browserScheduler, logger });
+  const tutorial = new TutorialService({ matchSetup, content: content.value });
+  followMilestones({ progress: onboarding, identity, tutorial, daily, online });
   /** @type {import("./application/AppContext.js").AppContext} */
   const app = Object.freeze({
     content: content.value,
     // Signed in, the player's decks are the account's; the preconstructed ones are offline practice only.
     deckSelection: new DeckSelectionService({ content: content.value, repository, logger, showPreconstructed: () => repository.storage === DeckStorage.BROWSER }),
     deckBuilding,
+    selectedDeck,
     matchSetup,
     opponents: new AiOpponentFactory({ content: content.value, effects }),
-    tutorial: new TutorialService({ matchSetup, content: content.value }),
+    tutorial,
     createSeed,
     logger,
     environment: Object.freeze({ version: ENGINE_VERSION, release: describeRelease(RELEASE), storage: storageAvailable ? "local" : "memory" }),
@@ -595,6 +607,7 @@ async function boot() {
     notifications,
     audio,
     help,
+    onboarding,
     ...rarities,
   });
 
@@ -617,10 +630,12 @@ async function boot() {
   soundShop(shop, audio);
   soundSales(sales, audio);
   soundOnline(online, audio);
+  // What a screen opened from a toast is told, so that its Back returns to the screen the player was on (from a match or a replay, which are over by then, its own way back).
+  const backFromToast = () => (sceneManager.current instanceof SectionScene ? sceneManager.current.backHere() : {});
   // A notification that arrives shows as a toast on any screen; a click opens the feed (or the lobby, for a challenge).
   const toasts = new ToastLayer({
     viewport,
-    onOpen: (message) => (message.key === GAME_TOAST_KEY ? gameReturn.open() : sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS, message.params ?? {})),
+    onOpen: (message) => (message.key === GAME_TOAST_KEY ? gameReturn.open() : sceneManager.navigate(message.opens ?? SceneId.NOTIFICATIONS, { ...message.params, ...backFromToast() })),
     requestRender: () => loop.requestRender(),
     sound: audio,
   });
@@ -639,9 +654,8 @@ async function boot() {
   });
   notifications.onArrival((notification) => {
     const described = describeNotification(notification, content.value.catalog);
-    // An auto game played: a click watches it, then comes back here (not to a match, which is over by then).
-    const here = sceneManager.currentId === SceneId.MATCH || sceneManager.currentId === SceneId.REPLAY ? SceneId.MAIN_MENU : sceneManager.currentId;
-    toasts.show(described.gameId === undefined ? described : { ...described, opens: SceneId.REPLAY, params: { gameId: described.gameId, from: here } });
+    // An auto game played: a click watches it, then comes back to the screen it was clicked on.
+    toasts.show(described.gameId === undefined ? described : { ...described, opens: SceneId.REPLAY, params: { gameId: described.gameId } });
     if (notification.kind === "auto.finished" || notification.kind === "auto.refunded") {
       void autoList.refresh();
       ranking.refresh();
@@ -670,7 +684,7 @@ async function boot() {
   });
   // The character of a daily challenge speaks as the game starts, when it is nearly beaten, and when it ends: a bubble by its seat.
   new DailyCompanion({ online, daily, say: (speech) => voice.say(speech) }).start();
-  sceneManager.navigate(SceneId.MAIN_MENU);
+  sceneManager.navigate(SceneId.HOME);
   preloadArt({ illustrations, coinArt });
   // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.
   await Promise.race([firstScreenArt, new Promise((resolve) => window.setTimeout(resolve, FIRST_SCREEN_ART_WAIT_MS))]);
@@ -714,6 +728,26 @@ function buildLocalKeys(localStore, storageAvailable, httpFetch) {
     prompt: activeKeys,
   });
   return { activeKeys, keys, signIns: new StoredSignIn({ store }) };
+}
+
+/**
+ * A new player's first steps that only this browser can know (the Home screen's guide), remembered in `store`.
+ * @param {LocalStorageStore} localStore
+ * @param {boolean} storageAvailable without it, they last only as long as the page
+ */
+function buildOnboarding(localStore, storageAvailable) {
+  const store = storageAvailable ? localStore : new InMemoryStore();
+  return new OnboardingProgress({ preferences: new StoredOnboarding({ store, logger }) });
+}
+
+/**
+ * The deck the player plays with, wherever they play, remembered in `store`.
+ * @param {LocalStorageStore} localStore
+ * @param {boolean} storageAvailable without it, the choice lasts only as long as the page
+ */
+function buildSelectedDeck(localStore, storageAvailable) {
+  const store = storageAvailable ? localStore : new InMemoryStore();
+  return new SelectedDeck({ preferences: new StoredSelectedDeck({ store, logger }) });
 }
 
 /**

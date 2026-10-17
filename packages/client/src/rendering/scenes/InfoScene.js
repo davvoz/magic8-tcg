@@ -15,8 +15,8 @@ import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { InfoArticle } from "./info/InfoArticle.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 import { startTutorial } from "./startTutorial.js";
 
 /**
@@ -33,10 +33,10 @@ const SPACING = 12;
 /** How much of the article a page key scrolls: most of its height, so the reader keeps a line of context. */
 const PAGE = 0.85;
 
-export class InfoScene extends Scene {
-  /** The frame for the screen in use (the compact one on a phone). */
+export class InfoScene extends SectionScene {
+  /** The frame for the screen in use (the compact one on a phone): the tabs and the article fill it, with no toolbar. */
   get #screen() {
-    return screenLayout(this.services.viewport);
+    return screenLayout(this.services.viewport, { toolbar: false });
   }
 
   get #m() {
@@ -47,8 +47,6 @@ export class InfoScene extends Scene {
   #topics;
   /** @type {string} */
   #topicId = InfoTopicId.MECHANICS;
-  /** Where Back leads. @type {string} */
-  #back = SceneId.MAIN_MENU;
   /** How far each topic was read, kept across rebuilds and tab switches. @type {Record<string, number>} */
   #scroll = {};
   /** @type {InfoArticle | null} */
@@ -61,16 +59,16 @@ export class InfoScene extends Scene {
    * @param {import("../../application/AppContext.js").AppContext} app
    */
   constructor(services, app) {
-    super(services);
+    super(services, app, { scene: SceneId.INFO, title: "Info" });
     this.#topics = infoTopics(app.content);
     this.#tutorial = app.tutorial;
   }
 
-  /** @param {{ topic?: string, back?: string }} [params] `topic`: the one shown first; `back`: where Back leads */
-  enter(params) {
-    const asked = params?.topic;
+  /** @param {{ topic?: string, back?: string }} [params] `topic`: the one shown first; `back`: where Back leads (Home by default) */
+  enter(params = {}) {
+    this.routeBack(params);
+    const asked = params.topic;
     this.#topicId = this.#topics.some((topic) => topic.id === asked) ? /** @type {string} */ (asked) : InfoTopicId.MECHANICS;
-    this.#back = params?.back ?? SceneId.MAIN_MENU;
     this.#scroll = {};
     this.#rebuild();
     this.focus(this.root.findById(`info.tab.${this.#topicId}`));
@@ -79,10 +77,6 @@ export class InfoScene extends Scene {
   exit() {
     this.#article = null;
     super.exit();
-  }
-
-  onCancel() {
-    this.services.navigate(this.#back);
   }
 
   relayout() {
@@ -118,12 +112,8 @@ export class InfoScene extends Scene {
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
-    const { viewport } = this.services;
-    const { header, columns, inset, panel: panelOptions, compact } = this.#screen;
+    const { columns, inset, panel: panelOptions, compact } = this.#screen;
     const m = this.#m;
-    const titleWidth = viewport.logicalWidth - 2 * header.sideMargin - header.backWidth - 16;
-    this.root.add(new Label({ x: header.sideMargin, y: header.y, width: titleWidth, height: header.height, text: "Info", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true, fit: true }));
-    const back = this.root.add(new Button({ id: "info.back", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#back === SceneId.MAIN_MENU ? this.#screen.backText : "Back", onActivate: () => this.onCancel() }));
 
     const left = columns.left.x;
     const tabs = this.root.add(new Panel({ ...panelOptions, x: left, y: columns.top, width: m.tabsWidth, height: columns.height }));
@@ -145,7 +135,7 @@ export class InfoScene extends Scene {
     });
 
     this.#buildArticle(left + m.tabsWidth + m.gap);
-    this.focus(this.root.findById(focusedId) ?? back);
+    this.focus(this.findNode(focusedId) ?? this.backButton);
     this.services.requestRender();
   }
 

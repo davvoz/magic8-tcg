@@ -4,7 +4,8 @@
  * order, the player first (no coin toss), a short game (TUTORIAL_LIFE), and
  * an opponent that follows the script (ScriptedAiController). With it comes
  * the coach that walks the player through it (TutorialCoach). Needs no
- * game server and no cards of the player's own.
+ * game server and no cards of the player's own. Whoever keeps track of a
+ * new player's first steps hears when a tutorial is won (`onCompleted`).
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { GameRules } from "@magic8/engine/domain/game/GameRules.js";
@@ -23,6 +24,8 @@ const SEED = 1;
 export class TutorialService {
   #matchSetup;
   #content;
+  /** @type {Set<() => void>} */
+  #completedListeners = new Set();
 
   /**
    * @param {{ matchSetup: import("../match/MatchSetupService.js").MatchSetupService, content: import("../content/ContentService.js").GameContent }} deps
@@ -50,6 +53,30 @@ export class TutorialService {
     if (!created.ok) {
       return fail(created.error.code, `the tutorial could not be set up: ${created.error.message}`, created.error.details);
     }
+    this.#awaitWin(created.value);
     return ok(Object.freeze({ session: created.value, coach: new TutorialCoach({ steps: TUTORIAL_STEPS, playerId: TUTORIAL_SEATS.player.id }) }));
+  }
+
+  /**
+   * Hears every tutorial the player wins (played to its end, not left halfway).
+   * @param {() => void} listener
+   * @returns {() => void}
+   */
+  onCompleted(listener) {
+    this.#completedListeners.add(listener);
+    return () => this.#completedListeners.delete(listener);
+  }
+
+  /** @param {import("../match/MatchSession.js").MatchSession} session */
+  #awaitWin(session) {
+    const stop = session.subscribe(() => {
+      if (!session.isOver) {
+        return;
+      }
+      stop();
+      if (session.snapshotFor(TUTORIAL_SEATS.player.id).winnerId === TUTORIAL_SEATS.player.id) {
+        this.#completedListeners.forEach((listener) => listener());
+      }
+    });
   }
 }

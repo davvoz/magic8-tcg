@@ -18,6 +18,7 @@ import { UiNode } from "../../ui/UiNode.js";
 /**
  * @typedef {"stacked" | "beside"} PortraitLayout `stacked`: the figure above, the name under it on the image; `beside`: the figure on the left, the name to its right (a phone's short card)
  * @typedef {"beaten" | "next" | "locked"} PortraitState
+ * @typedef {Readonly<{ id: string, name: string, faction: string, boss: boolean, state: PortraitState }>} PortraitCharacter what a portrait shows of a character
  */
 
 /** How lit each state is: the aura's strength and the veil over the portrait. */
@@ -41,8 +42,7 @@ export class CharacterPortrait extends UiNode {
 
   /**
    * @param {{ id?: string, x: number, y: number, width: number, height: number,
-   *   character: { id: string, name: string, faction: string, boss: boolean, state: PortraitState },
-   *   layout: PortraitLayout, clock: () => number }} options `clock`: the scene's animation time, in ms
+   *   character: PortraitCharacter, layout: PortraitLayout, clock: () => number }} options `clock`: the scene's animation time, in ms
    */
   constructor({ character, layout, clock, ...frame }) {
     super(frame);

@@ -15,7 +15,7 @@ Un ping pubblicato da KIJAM è quindi un normale commento Steem dell'account del
 ## Cosa si condivide
 
 - Solo le **partite online** giocate dal giocatore connesso: casual, classificate e Sfide. Non le partite contro l'IA nel browser, il tutorial, le partite guardate da spettatore.
-- Il pulsante **Share** è nel riquadro del risultato (con *Play again* e *Back to menu*; un clic fuori dal riquadro mostra il tavolo, e *See result* nella colonna delle azioni lo riapre). Apre un dialogo con l'immagine e il ping affiancati, com'è, *Back* e *Post ping*. Pubblicato, il pulsante diventa *Shared* e non si ripete.
+- Il pulsante **Share** è nel riquadro del risultato (con *Play again* e *Back to Home*; un clic fuori dal riquadro mostra il tavolo, e *See result* nella colonna delle azioni lo riapre). Apre un dialogo con l'immagine e il ping affiancati, com'è, *Back* e *Post ping*. Pubblicato, il pulsante diventa *Shared* e non si ripete.
 - Il testo (`application/social/pingText.js`) dice chi ha vinto, contro chi e in che tipo di partita, poi i dettagli (turni, vita finale di entrambi, il percorso per le Sfide), dove giocare e gli hashtag:
   - *I won a ranked game against @bob on KIJAM! 🏆* / *⚔️ 12 turns · ❤️ 14 vs 0*
   - *I beat The Gravelord, today's boss, in KIJAM's Challenges! 🏆* / *⚔️ 15 turns · ❤️ 7 vs 0 · Hard*

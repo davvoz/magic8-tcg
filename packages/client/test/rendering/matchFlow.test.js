@@ -68,18 +68,26 @@ const rendered = (scene) => {
 };
 
 describe("registerScenes", () => {
-  it("registers every scene and the menu can reach them all", () => {
+  it("registers every scene, and the rail and the sections' own screens reach them", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     registerScenes(manager, appContext());
-    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.DAILY, SceneId.LEADERBOARD, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
+    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.DAILY, SceneId.SEASON, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
     assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map((id) => !accountScenes.includes(id)), "account scenes need a game server");
-    assert.equal(manager.navigate(SceneId.MAIN_MENU), true);
-    assert.equal(buttonNamed(manager.current, "Deck Builder").enabled, true);
-    assert.equal(buttonNamed(manager.current, "Play").enabled, true);
-    buttonNamed(manager.current, "Deck Builder").activate();
+    assert.equal(manager.navigate(SceneId.HOME), true);
+    manager.current.findNode("shell.nav.decks").activate();
+    assert.equal(manager.currentId, SceneId.DECKS);
+    assert.equal(manager.current.findNode("shell.back"), null, "a section's own screen has no Back");
+    manager.current.findNode("decks.new").activate();
     assert.equal(manager.currentId, SceneId.DECK_BUILDER);
-    buttonNamed(manager.current, "Back to menu").activate();
-    assert.equal(manager.currentId, SceneId.MAIN_MENU);
+    manager.current.findNode("shell.back").activate();
+    assert.equal(manager.currentId, SceneId.DECKS, "Back goes to the section's screen, not to the menu");
+    manager.current.findNode("shell.nav.home").activate();
+    manager.current.findNode("shell.nav.decks").activate();
+    assert.equal(manager.currentId, SceneId.DECKS, "offline too, the rail's Decks opens the player's decks");
+    manager.current.findNode("shell.nav.play").activate();
+    assert.equal(manager.currentId, SceneId.PLAY, "and Play every way to play");
+    manager.current.findNode("shell.nav.home").activate();
+    assert.equal(manager.currentId, SceneId.HOME);
   });
 });
 
@@ -124,7 +132,7 @@ describe("DeckSelectionScene", () => {
     assert.equal(logger.entries.find((entry) => entry.message === "match created")?.data?.opponent, "hard");
 
     const panel = scene.root.children[0];
-    for (const node of buttons(scene).filter((button) => ["backToMenu", "opponent", "editDecks"].includes(button.id))) {
+    for (const node of buttons(scene).filter((button) => ["opponent", "editDecks"].includes(button.id))) {
       assert.ok(node.bounds.y + node.bounds.height <= panel.bounds.y + panel.bounds.height, `${node.text} overflows the panel`);
     }
   });
@@ -134,7 +142,7 @@ describe("DeckSelectionScene", () => {
     viewport.resize({ cssWidth: 667, cssHeight: 375 });
     const scene = new DeckSelectionScene(services({ viewport }), { ...appContext(), opponents: new AiOpponentFactory({ content, effects }) });
     scene.enter({});
-    const footer = ["backToMenu", "opponent", "editDecks", "startMatch"].map((id) => buttons(scene).find((node) => node.id === id).bounds);
+    const footer = ["opponent", "editDecks", "startMatch"].map((id) => buttons(scene).find((node) => node.id === id).bounds);
     const panel = scene.root.children[0].bounds;
     footer.slice(1).forEach((bounds, index) => assert.ok(bounds.x >= footer[index].x + footer[index].width, "side by side, in order"));
     assert.ok(footer.at(-1).x + footer.at(-1).width <= panel.x + panel.width, "Start stays inside the panel");
@@ -179,12 +187,12 @@ describe("DeckSelectionScene", () => {
     builder.startNew("Work in progress");
     builder.addCard("iron_watcher");
     assert.equal((await builder.save()).ok, true);
-    const scene = new DeckSelectionScene(services({ hasScene: (id) => id === SceneId.DECK_BUILDER }), real);
+    const scene = new DeckSelectionScene(services({ hasScene: (id) => id === SceneId.DECKS }), real);
     scene.enter({});
     const wip = buttons(scene).find((node) => node.id === "deck-custom_1");
     assert.equal(wip.enabled, false);
     assert.match(wip.subtitle, /not playable: deck has 1 cards; minimum is 30/);
-    assert.equal(buttonNamed(scene, "Deck builder").enabled, true);
+    assert.equal(buttonNamed(scene, "Edit decks").enabled, true);
   });
 
   it("scrolls a long deck list with the wheel and keeps the selection reachable", async () => {

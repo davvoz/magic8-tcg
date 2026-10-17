@@ -28,48 +28,47 @@ import { Button } from "../ui/Button.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
 import { Label } from "../ui/Label.js";
 import { COMPACT_CARD, OpponentCard, WIDE_CARD } from "./daily/OpponentCard.js";
-import { Scene } from "./Scene.js";
+import { deckKey } from "./OnlineScene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
 /**
  * @typedef {import("../../application/ports/DailyApi.contract.js").DailyDay} DailyDay
  * @typedef {import("../../application/ports/DailyApi.contract.js").DailyOpponent} DailyOpponent
  * @typedef {Readonly<{
- *   side: number, title: { y: number, height: number }, subtitle: { y: number, height: number }, cards: { top: number, height: number, gap: number },
+ *   side: number, subtitle: { y: number, height: number }, cards: { top: number, height: number, gap: number },
  *   info: { y: number, height: number }, row: { y: number, height: number, gap: number },
- *   footer: { y: number, height: number }, back: number, card: import("./daily/OpponentCard.js").OpponentCardMetrics,
- * }>} DailyLayout
+ *   footer: { y: number, height: number }, help: number, card: import("./daily/OpponentCard.js").OpponentCardMetrics,
+ * }>} DailyLayout laid out in the content area the shell leaves (its title is the shell's); `help`: the width of the button on how the challenges work
  */
 
 /** @type {DailyLayout} */
 const WIDE = Object.freeze({
-  side: 60,
-  title: Object.freeze({ y: 20, height: 56 }),
-  subtitle: Object.freeze({ y: 76, height: 30 }),
-  cards: Object.freeze({ top: 120, height: 520, gap: 30 }),
-  info: Object.freeze({ y: 654, height: 30 }),
-  row: Object.freeze({ y: 692, height: 64, gap: 24 }),
-  footer: Object.freeze({ y: 812, height: 56 }),
-  back: 220,
+  side: 40,
+  subtitle: Object.freeze({ y: 12, height: 30 }),
+  cards: Object.freeze({ top: 52, height: 520, gap: 30 }),
+  info: Object.freeze({ y: 586, height: 30 }),
+  row: Object.freeze({ y: 624, height: 64, gap: 24 }),
+  footer: Object.freeze({ y: 744, height: 56 }),
+  help: 220,
   card: WIDE_CARD,
 });
 /** @type {DailyLayout} */
 const COMPACT = Object.freeze({
   side: 8,
-  title: Object.freeze({ y: 2, height: 34 }),
-  subtitle: Object.freeze({ y: 34, height: 20 }),
-  cards: Object.freeze({ top: 56, height: 210, gap: 6 }),
-  info: Object.freeze({ y: 268, height: 20 }),
-  row: Object.freeze({ y: 290, height: 46, gap: 8 }),
-  footer: Object.freeze({ y: 342, height: 46 }),
-  back: 110,
+  subtitle: Object.freeze({ y: 2, height: 20 }),
+  cards: Object.freeze({ top: 24, height: 204, gap: 6 }),
+  info: Object.freeze({ y: 230, height: 20 }),
+  row: Object.freeze({ y: 252, height: 46, gap: 8 }),
+  footer: Object.freeze({ y: 300, height: 46 }),
+  help: 110,
   card: COMPACT_CARD,
 });
 /** The room between the footer's status line and its buttons. */
 const FOOTER_GAP = 16;
 const MINUTE = 60_000;
 
-export class DailyScene extends Scene {
+export class DailyScene extends SectionScene {
   #app;
   #now;
   /** @type {Array<() => void>} */
@@ -89,12 +88,14 @@ export class DailyScene extends Scene {
    * @param {{ now?: () => number }} [clock]
    */
   constructor(services, app, { now = () => Date.now() } = {}) {
-    super(services);
+    super(services, app, { scene: SceneId.DAILY, title: "Challenges" });
     this.#app = app;
     this.#now = now;
   }
 
-  enter() {
+  /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: where Back leads (Play by default) */
+  enter(params = {}) {
+    this.routeBack(params);
     const daily = this.#daily();
     this.#unsubscribes = [daily.subscribe(() => this.#rebuild())];
     if (this.#app.online !== undefined) {
@@ -112,14 +113,6 @@ export class DailyScene extends Scene {
 
   relayout() {
     this.#rebuild();
-  }
-
-  onCancel() {
-    if (this.modal === null) {
-      this.services.navigate(SceneId.MAIN_MENU);
-      return;
-    }
-    super.onCancel();
   }
 
   /** @param {number} dtMs */
@@ -179,31 +172,29 @@ export class DailyScene extends Scene {
     const m = this.#m;
     const width = viewport.logicalWidth;
     const { day } = this.#daily().state;
-    this.root.add(new Label({ x: m.side, y: m.title.y, width: width - 2 * m.side, height: m.title.height, text: "Challenges", size: "heading", weight: "bold", colorKey: "accentLight", glow: true }));
     this.root.add(new Label({ id: "daily.subtitle", x: m.side, y: m.subtitle.y, width: width - 2 * m.side, height: m.subtitle.height, text: this.#subtitle(day), size: viewport.compact ? "tiny" : "small", colorKey: "textMuted", fit: true }));
     if (day !== null) {
       this.#buildCards(day);
     }
     const primary = this.#buildActions(day);
-    const back = this.#buildFooter(day);
-    this.focus(this.root.findById(focusedId) ?? primary ?? back);
+    const help = this.#buildFooter(day);
+    this.focus(this.findNode(focusedId) ?? primary ?? help);
     this.services.requestRender();
   }
 
   /**
-   * The status line, how the challenges work (the Info screen's topic), and the way back to the menu.
+   * The status line, and how the challenges work (the Info screen's topic).
    * @param {DailyDay | null} day
-   * @returns {Button} the way back
+   * @returns {Button} the way to how they work
    */
   #buildFooter(day) {
     const { viewport } = this.services;
     const m = this.#m;
     const width = viewport.logicalWidth;
     const status = this.#status(day);
-    const helpX = width - m.side - 2 * m.back - FOOTER_GAP;
+    const helpX = width - m.side - m.help;
     this.root.add(new Label({ id: "daily.status", x: m.side, y: m.footer.y, width: helpX - m.side - FOOTER_GAP, height: m.footer.height, text: status.text, size: viewport.compact ? "tiny" : "small", colorKey: status.colorKey, align: "left", fit: true }));
-    this.root.add(new Button({ id: "daily.help", x: helpX, y: m.footer.y, width: m.back, height: m.footer.height, text: viewport.compact ? "Help" : "How it works", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO, { topic: InfoTopicId.CHALLENGES, back: SceneId.DAILY }) }));
-    return this.root.add(new Button({ id: "daily.back", x: width - m.side - m.back, y: m.footer.y, width: m.back, height: m.footer.height, text: viewport.compact ? "Menu" : "Back to menu", onActivate: () => this.services.navigate(SceneId.MAIN_MENU) }));
+    return this.root.add(new Button({ id: "daily.help", x: helpX, y: m.footer.y, width: m.help, height: m.footer.height, text: viewport.compact ? "Help" : "How it works", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO, { topic: InfoTopicId.CHALLENGES, ...this.backHere() }) }));
   }
 
   /** @param {DailyDay | null} day */
@@ -315,7 +306,8 @@ export class DailyScene extends Scene {
    * @param {readonly import("../../application/online/OnlineService.js").OnlineDeck[]} decks the playable ones
    */
   #chosenDeck(decks) {
-    const deck = decks.find((candidate) => candidate.id === this.#deckId) ?? decks[0] ?? null;
+    // The one chosen here, else the deck the player plays with (wherever they chose it), else the first.
+    const deck = decks.find((candidate) => candidate.id === this.#deckId) ?? this.#app.selectedDeck?.pick(decks, { idOf: deckKey }) ?? decks[0] ?? null;
     this.#deckId = deck?.id ?? null;
     return deck;
   }
@@ -358,7 +350,7 @@ export class DailyScene extends Scene {
       return;
     }
     const fresh = reward.cards.map((card) => Object.freeze({ definitionId: card.definitionId, count: 1, serial: card.serial }));
-    this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.DAILY });
+    this.services.navigate(SceneId.COLLECTION, { fresh, ...this.backHere() });
   }
 
   /** @param {string} text the line above the actions */
@@ -375,7 +367,11 @@ export class DailyScene extends Scene {
   /** @param {readonly import("../../application/online/OnlineService.js").OnlineDeck[]} decks */
   #nextDeck(decks) {
     const index = decks.findIndex((deck) => deck.id === this.#deckId);
-    this.#deckId = decks[(index + 1) % decks.length]?.id ?? null;
+    const next = decks[(index + 1) % decks.length] ?? null;
+    this.#deckId = next?.id ?? null;
+    if (next !== null) {
+      this.#app.selectedDeck?.choose(deckKey(next));
+    }
     this.#rebuild();
   }
 

@@ -37,7 +37,6 @@
  */
 import { AUTO_STYLES, AutoListStatus, AutoStyle } from "../../application/auto/AutoListService.js";
 import { entriesNoteText, heldEntriesText, rankedFeeText } from "../../application/entries/EntryService.js";
-import { describeJackpot } from "../../application/jackpot/describeJackpot.js";
 import { ChallengeMode, PlayerActivity } from "../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../application/online/OnlineService.js";
 import { ShopStatus } from "../../application/shop/ShopService.js";
@@ -57,32 +56,29 @@ import { EntryTickets } from "./entries/EntryTickets.js";
 import { PlayKind } from "./online/lobbyIcons.js";
 import { ModeTab } from "./online/ModeTab.js";
 import { Perks } from "./online/Perks.js";
-import { RankedGuide } from "./online/RankedGuide.js";
+import { rankedGuideFor, rankedPriceText } from "./online/rankedGuideFor.js";
 import { RatingCrest } from "./online/RatingCrest.js";
 import { timeAgo } from "./NotificationsScene.js";
-import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 
 const LIST_ID = "online.decks";
 const PLAYERS_ID = "online.players";
 /**
  * Sizes of the lobby, wide and compact (a phone in landscape: the three columns share its width).
- * @typedef {Readonly<{ button: number, mode: { y: number, height: number, gap: number }, playerRow: { height: number, gap: number }, titleY: number, listTop: number, statusSize: "body" | "small", note: boolean, title: number, tab: number, tabGap: number }>} LobbyMetrics
+ * @typedef {Readonly<{ button: number, mode: { y: number, height: number, gap: number }, playerRow: { height: number, gap: number }, titleY: number, listTop: number, statusSize: "body" | "small", note: boolean, tab: number, tabGap: number }>} LobbyMetrics
  *   `mode`: the row of the ranked ways to play (and, without tabs, where the status starts); `note`: the paragraph on how games are kept fair;
- *   `title`: the width of the screen's title; `tab`: the height of the Casual and Ranked tabs, `tabGap` the space between them
+ *   `tab`: the height of the Casual and Ranked tabs, `tabGap` the space between them
  */
 /** @type {LobbyMetrics} */
-const WIDE = Object.freeze({ button: 60, mode: Object.freeze({ y: 64, height: 48, gap: 12 }), playerRow: Object.freeze({ height: 64, gap: 8 }), titleY: 14, listTop: 60, statusSize: "body", note: true, title: 400, tab: 64, tabGap: 10 });
+const WIDE = Object.freeze({ button: 60, mode: Object.freeze({ y: 64, height: 48, gap: 12 }), playerRow: Object.freeze({ height: 64, gap: 8 }), titleY: 14, listTop: 60, statusSize: "body", note: true, tab: 64, tabGap: 10 });
 /** @type {LobbyMetrics} */
-const COMPACT = Object.freeze({ button: 46, mode: Object.freeze({ y: 50, height: 46, gap: 6 }), playerRow: Object.freeze({ height: 52, gap: 6 }), titleY: 8, listTop: 50, statusSize: "small", note: false, title: 200, tab: 46, tabGap: 6 });
-/** The three columns: your decks, the players online, the game (its two tabs over its panel). */
-const LAYOUT = Object.freeze({
-  decks: Object.freeze({ x: 60, width: 400 }),
-  players: Object.freeze({ x: 480, width: 400 }),
-  game: Object.freeze({ x: 900, width: 640 }),
+const COMPACT = Object.freeze({ button: 46, mode: Object.freeze({ y: 50, height: 46, gap: 6 }), playerRow: Object.freeze({ height: 52, gap: 6 }), titleY: 8, listTop: 50, statusSize: "small", note: false, tab: 46, tabGap: 6 });
+/** The three columns (your decks, the players online, the game: its two tabs over its panel): their share of the width and the gap between them. */
+const COLUMN_SPLIT = Object.freeze({
+  wide: Object.freeze({ shares: Object.freeze([0.278, 0.278, 0.444]), gap: 20 }),
+  compact: Object.freeze({ shares: Object.freeze([0.3, 0.31, 0.39]), gap: 8 }),
 });
-/** On a compact screen: the columns' share of the width (decks, players, game) and the gap between them. */
-const COMPACT_COLUMNS = Object.freeze({ shares: Object.freeze([0.3, 0.31, 0.39]), gap: 8 });
 /** The status and the error under it, on a wide screen: what a line at the foot of the panel must leave them. */
 const STATUS_ROOM = 176;
 /**
@@ -146,10 +142,10 @@ const ACTIVITY_TEXT = Object.freeze({
   [PlayerActivity.PLAYING]: "In a game",
 });
 
-export class OnlineScene extends Scene {
+export class OnlineScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
   get #screen() {
-    return screenLayout(this.services.viewport);
+    return screenLayout(this.services.viewport, { toolbar: false });
   }
 
   /** @returns {LobbyMetrics} */
@@ -159,17 +155,15 @@ export class OnlineScene extends Scene {
 
   /** The three columns for the screen in use. */
   get #columns() {
-    if (!this.#screen.compact) {
-      return LAYOUT;
-    }
+    const split = this.#screen.compact ? COLUMN_SPLIT.compact : COLUMN_SPLIT.wide;
     const { sideMargin } = this.#screen.header;
-    const inner = this.services.viewport.logicalWidth - 2 * sideMargin - 2 * COMPACT_COLUMNS.gap;
-    const [decks, players] = COMPACT_COLUMNS.shares.map((share) => Math.round(inner * share));
+    const inner = this.services.viewport.logicalWidth - 2 * sideMargin - 2 * split.gap;
+    const [decks, players] = split.shares.map((share) => Math.round(inner * share));
     const game = inner - decks - players;
     return {
       decks: { x: sideMargin, width: decks },
-      players: { x: sideMargin + decks + COMPACT_COLUMNS.gap, width: players },
-      game: { x: sideMargin + decks + players + 2 * COMPACT_COLUMNS.gap, width: game },
+      players: { x: sideMargin + decks + split.gap, width: players },
+      game: { x: sideMargin + decks + players + 2 * split.gap, width: game },
     };
   }
 
@@ -204,12 +198,18 @@ export class OnlineScene extends Scene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services);
+    super(services, app, { scene: SceneId.ONLINE, title: "Play online" });
     this.#app = app;
     this.#now = now;
   }
 
-  enter() {
+  /**
+   * @param {{ mode?: string, back?: string }} [params] `mode`: "ranked" opens on the Ranked tab (the Home screen's Ranked),
+   *   Casual otherwise; `back`: where Back leads (Play by default)
+   */
+  enter(params = {}) {
+    this.routeBack(params);
+    this.#mode = params.mode === QueueMode.RANKED ? this.#rankedMode : QueueMode.CASUAL;
     const online = this.#online();
     this.#unsubscribes.push(online.subscribe((state) => this.#onChange(state)));
     online.start();
@@ -269,14 +269,6 @@ export class OnlineScene extends Scene {
     super.exit();
   }
 
-  onCancel() {
-    if (this.modal !== null) {
-      super.onCancel();
-      return;
-    }
-    this.#leave();
-  }
-
   /** @param {CanvasRenderingContext2D} context */
   render(context) {
     drawSceneBackdrop(context, this.services.theme, this.services.viewport.bounds, { seed: "online" });
@@ -305,19 +297,10 @@ export class OnlineScene extends Scene {
       this.closeModal();
     }
     this.root.clear();
-    const { viewport } = this.services;
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: this.#m.title, height: this.#screen.header.height, text: "Play online", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    const back = this.root.add(new Button({ keepPlate: true, id: "online.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#screen.backText, onActivate: () => this.#leave() }));
-    if (this.#app.ranking !== undefined && this.services.hasScene(SceneId.LEADERBOARD)) {
-      this.root.add(new Button({ keepPlate: true, id: "online.leaderboard", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Leaderboard", onActivate: () => this.services.navigate(SceneId.LEADERBOARD) }));
-    }
-    if (this.services.hasScene(SceneId.LIVE_GAMES)) {
-      this.root.add(new Button({ keepPlate: true, id: "online.watch", x: viewport.logicalWidth - this.#screen.header.sideMargin - 3 * this.#screen.header.backWidth - 32, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Watch", onActivate: () => this.services.navigate(SceneId.LIVE_GAMES) }));
-    }
     const firstDeck = this.#buildDecks();
     this.#buildPlayers();
     const action = this.#buildActions();
-    this.focus(this.root.findById(focusedId) ?? action ?? firstDeck ?? back);
+    this.focus(this.findNode(focusedId) ?? action ?? firstDeck ?? this.backButton);
     this.#reopenDialog(focusedId);
     this.services.requestRender();
   }
@@ -332,7 +315,10 @@ export class OnlineScene extends Scene {
     const list = panel.add(new ScrollList({ id: LIST_ID, x: this.#screen.inset, y: listTop, width, height: this.#screen.columns.height - listTop - this.#screen.inset }));
     const decks = this.#online().decks();
     if (!decks.some((deck) => deck.id === this.#selectedId && deck.playable)) {
-      this.#selectedId = decks.find((deck) => deck.playable)?.id ?? null;
+      // The deck the player plays with, wherever they chose it; else the first that can be played.
+      const playable = (/** @type {import("../../application/online/OnlineService.js").OnlineDeck} */ deck) => deck.playable;
+      const chosen = this.#app.selectedDeck?.pick(decks, { idOf: deckKey, playable }) ?? decks.find(playable) ?? null;
+      this.#selectedId = chosen?.id ?? null;
     }
     if (decks.length === 0) {
       list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * this.#screen.row.height, text: "You have no decks in your account yet. Take your free starter deck, or build a deck in the Deck Builder.", size: "small", colorKey: "textMuted" }));
@@ -356,6 +342,7 @@ export class OnlineScene extends Scene {
           stripe: mixBands(this.services.theme, deck.mix),
           onActivate: () => {
             this.#selectedId = deck.id;
+            this.#app.selectedDeck?.choose(deckKey(deck));
             this.#rebuild();
           },
         }),
@@ -653,15 +640,7 @@ export class OnlineScene extends Scene {
    * @param {{ x: number, y: number, width: number, height: number, compact: boolean }} frame
    */
   #guide(frame) {
-    const ranked = this.#app.entries?.ranked ?? null;
-    const steps = rankedSteps({ price: this.#priceText(), perGame: ranked?.perGame ?? null, places: this.#app.jackpot?.state.jackpot?.places.length ?? null });
-    return new RankedGuide({ ...frame, steps, tickets: { count: ranked === null || ranked.perGame === 0 ? null : ranked.balance, face: this.#priceText() }, jackpot: this.#jackpotAmount() });
-  }
-
-  /** What the season's jackpot holds ("866.666 STEEM"), or null when there is none or it is not known yet. */
-  #jackpotAmount() {
-    const jackpot = this.#app.jackpot?.state.jackpot ?? null;
-    return jackpot === null || jackpot.jackpot === null ? null : describeJackpot(jackpot, this.#now()).amount;
+    return rankedGuideFor(this.#app, frame, this.#now());
   }
 
   /**
@@ -1122,8 +1101,7 @@ export class OnlineScene extends Scene {
 
   /** What one ranked entry costs ("1.000 STEEM"), or null until the shop's listing is read. */
   #priceText() {
-    const price = this.#entryPrice();
-    return price === null ? null : `${price.amount} ${price.asset}`;
+    return rankedPriceText(this.#app);
   }
 
   /** What a ranked game costs now ("1.000 STEEM"), or null when it is free or not known yet. */
@@ -1141,9 +1119,9 @@ export class OnlineScene extends Scene {
     return this.#hasEntries() ? "" : " A ranked game takes a ranked entry: you have none.";
   }
 
-  /** The shop's Ranked shelf: many entries, one payment; Back comes here. */
+  /** The shop's Ranked shelf: many entries, one payment; Back comes back here, on the Ranked tab. */
   #getEntries() {
-    this.services.navigate(SceneId.SHOP, { category: ShopCategory.RANKED, from: SceneId.ONLINE });
+    this.services.navigate(SceneId.SHOP, { category: ShopCategory.RANKED, ...this.backHere({ mode: QueueMode.RANKED }) });
   }
 
   #selectedDeck() {
@@ -1168,12 +1146,13 @@ export class OnlineScene extends Scene {
     }
   }
 
-  #leave() {
+  /** Back: out of the queue first, when the player is in it. */
+  goBack() {
     const online = this.#online();
     if (online.state.status === OnlineStatus.SEARCHING) {
       online.leaveQueue();
     }
-    this.services.navigate(SceneId.MAIN_MENU);
+    return super.goBack();
   }
 
   #online() {
@@ -1185,31 +1164,20 @@ export class OnlineScene extends Scene {
 }
 
 /**
+ * How the player's decks name an online deck (SelectedDeck): its id in the account's repository.
+ * @param {import("../../application/online/OnlineService.js").OnlineDeck} deck
+ */
+export function deckKey(deck) {
+  return deck.localId ?? deck.id;
+}
+
+/**
  * "Ranked · 1.000 STEEM": a button that says what it costs, when it costs something.
  * @param {string} text
  * @param {string | null} fee
  */
 function withFee(text, fee) {
   return fee === null ? text : `${text} · ${fee}`;
-}
-
-/**
- * The three steps of ranked play as the guide words them: get entries, play (a game takes some), win the jackpot (which
- * every entry feeds).
- * @param {{ price: string | null, perGame: number | null, places: number | null }} facts what one entry costs ("1.000 STEEM"),
- *   how many a game takes (0: ranked is free; null: not known yet) and how many places the jackpot pays (null: not known)
- * @returns {[import("./online/RankedGuide.js").GuideStep, import("./online/RankedGuide.js").GuideStep, import("./online/RankedGuide.js").GuideStep]}
- */
-export function rankedSteps({ price, perGame, places }) {
-  const free = perGame === 0;
-  const buy = price === null ? "From the shop: buy many with one payment." : `${price} each. Buy many with one payment.`;
-  const take = perGame === null || perGame === 1 ? "A game takes 1 entry" : `A game takes ${perGame} entries`;
-  const share = places === null ? "the best of the season share it" : `the top ${places} share it`;
-  return [
-    { title: "Get entries", text: free ? "Free this season: no entry needed." : buy },
-    { title: "Play ranked", text: free ? "Win to climb the season's leaderboard." : `${take}, given back if it is called off before it starts.` },
-    { title: "Win the jackpot", text: `Every entry goes into it. When the season ends, ${share}.` },
-  ];
 }
 
 /** @param {string} style */

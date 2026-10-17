@@ -2,7 +2,7 @@
 
 **Stato:** 2026-10-01.
 - **Server:** modulo `lobby` (`LobbyService`: chi è online, sfide in memoria). La partita di una sfida accettata la crea il matchmaking (`MatchmakingService.startDirect`).
-- **Client:** `LobbyService` (lista e sfide, attivo da quando il giocatore entra), colonna "Players online" nella lobby, finestre di sfida, toast su ogni schermata. Immagini di profilo STEEM nella lobby, nei toast, nella partita online, nel menu principale e in classifica.
+- **Client:** `LobbyService` (lista e sfide, attivo da quando il giocatore entra), colonna "Players online" nella lobby, finestre di sfida, toast su ogni schermata. Immagini di profilo STEEM nella lobby, nei toast, nella partita online, nella barra in alto e in classifica.
 
 ## L'idea
 
@@ -98,5 +98,5 @@ Errori: `NOT_FOUND` (giocatore non online, sfida non più aperta), `CONFLICT` (u
   - righe della lobby e finestre di sfida;
   - toast delle sfide;
   - HUD dei due giocatori in una partita online (anche per gli spettatori);
-  - angolo in alto a sinistra del menu principale;
+  - barra in alto di ogni schermata (l'account, 27);
   - righe della classifica.

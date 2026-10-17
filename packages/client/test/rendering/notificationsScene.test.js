@@ -1,7 +1,7 @@
 /**
  * Notifications and rarity on screen: the feed (new markers, cards that open
  * their details, the way to the follow-up screen, marking read), the toasts
- * over any scene, the main menu's button, and a card's rarity shown on its
+ * over any scene, the top bar's bell, and a card's rarity shown on its
  * face, on its strip and in the details of every screen that lists cards.
  */
 import assert from "node:assert/strict";
@@ -15,7 +15,7 @@ import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { CardDetail } from "../../src/rendering/cards/CardDetail.js";
 import { CardStrip } from "../../src/rendering/cards/CardStrip.js";
 import { CardThumb } from "../../src/rendering/cards/CardThumb.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { NotificationsScene, timeAgo } from "../../src/rendering/scenes/NotificationsScene.js";
 import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
@@ -63,7 +63,7 @@ function nodes(root) {
   visit(root);
   return found;
 }
-const byId = (scene, id) => scene.root.findById(id) ?? (scene.modal === null ? null : scene.modal.findById(id));
+const byId = (scene, id) => scene.findNode(id) ?? (scene.modal === null ? null : scene.modal.findById(id));
 function rendered(scene) {
   const context = new FakeContext2D();
   scene.render(context);
@@ -121,14 +121,14 @@ describe("NotificationsScene", () => {
     assert.equal(byId(scene, "notifications.open.1").variant, "secondary");
 
     byId(scene, "notifications.entry.4").activate();
-    assert.deepEqual(h.navigated.at(-1), { id: SceneId.COLLECTION, params: { fresh: [{ definitionId: "ember_imp", count: 2, serial: undefined }, { definitionId: "pyre_drake", count: 1, serial: undefined }], from: SceneId.NOTIFICATIONS } });
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.COLLECTION, params: { fresh: [{ definitionId: "ember_imp", count: 2, serial: undefined }, { definitionId: "pyre_drake", count: 1, serial: undefined }], back: SceneId.NOTIFICATIONS, backParams: {} } });
     scene.exit();
 
     scene.enter({});
     await settle();
     assert.deepEqual(lit(), [3, 2], "the one opened is no longer lit, the others still are");
     byId(scene, "notifications.open.3").activate();
-    assert.deepEqual(h.navigated.at(-1), { id: SceneId.MARKET, params: {} });
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.MARKET, params: { back: SceneId.NOTIFICATIONS, backParams: {} } });
     scene.exit();
   });
 
@@ -146,7 +146,7 @@ describe("NotificationsScene", () => {
     scene.enter({});
     await settle();
     byId(scene, "notifications.entry.9").activate();
-    assert.deepEqual(h.navigated.at(-1), { id: SceneId.REPLAY, params: { gameId: "01j8x3r6h2qkq4w0v7m5a9c1dz", from: SceneId.NOTIFICATIONS } });
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.REPLAY, params: { gameId: "01j8x3r6h2qkq4w0v7m5a9c1dz", back: SceneId.NOTIFICATIONS, backParams: {} } });
     scene.exit();
   });
 
@@ -166,17 +166,17 @@ describe("NotificationsScene", () => {
   });
 });
 
-describe("main menu notifications button", () => {
-  it("appears once the account is loaded and counts the unread notifications", async () => {
+describe("the top bar's notifications", () => {
+  it("appear once the account is loaded and count the unread notifications", async () => {
     const h = harness();
-    const menu = new MainMenuScene(h.services, h.app);
+    const menu = new HomeScene(h.services, h.app);
     menu.enter({});
     assert.equal(byId(menu, "notifications"), null, "not before sign-in");
     h.identity.become(ALICE);
     await settle();
     h.notifications.start();
     await settle();
-    assert.equal(byId(menu, "notifications").text, "Notifications (2)");
+    assert.equal(byId(menu, "notifications").badge, "2", "the bell counts what is unread");
     byId(menu, "notifications").activate();
     assert.equal(h.navigated.at(-1).id, SceneId.NOTIFICATIONS);
     menu.exit();

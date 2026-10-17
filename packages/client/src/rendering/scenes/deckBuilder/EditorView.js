@@ -304,7 +304,7 @@ export class EditorView {
     const builder = this.#host.app.deckBuilding;
     if (!builder.hasUnsavedChanges) {
       builder.discard();
-      this.#host.rebuild();
+      this.#host.closed();
       return;
     }
     this.#host.confirm({
@@ -314,7 +314,7 @@ export class EditorView {
       destructive: true,
       onConfirm: () => {
         builder.discard();
-        this.#host.rebuild();
+        this.#host.closed();
       },
     });
   }

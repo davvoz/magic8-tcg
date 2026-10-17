@@ -4,9 +4,15 @@
  * content and jumps straight to a screen chosen by the query string, so
  * every screen can be screenshotted headlessly without clicking through:
  *
- *   /tools/preview/?scene=menu
- *   /tools/preview/?scene=decks
- *   /tools/preview/?scene=builder            deck builder, library view
+ *   /tools/preview/?scene=home               Home, signed in, over the lobby's and the challenges' scripted servers
+ *   /tools/preview/?scene=home&eligible=0    ...a player new to ranked play, so the guide is not over (onlineWorld.js lists the other options)
+ *   /tools/preview/?scene=home&done=2        ...with that many of the guide's milestones kept here (tutorial, challenge, online game)
+ *   /tools/preview/?scene=home&hidden=1      ...with the guide hidden
+ *   /tools/preview/?scene=play               Play, in the same world as Home
+ *   /tools/preview/?scene=season             Season (the leaderboard, the jackpot, how ranked works), in the same world as Home
+ *   /tools/preview/?scene=mydecks            the player's decks (the Decks section)
+ *   /tools/preview/?scene=decks              practice: choose a deck
+ *   /tools/preview/?scene=builder            deck builder, on a new deck
  *   /tools/preview/?scene=editor             deck builder, editing a copy of the first deck
  *   /tools/preview/?scene=editor&inspect=1   plus the inspect overlay
  *   /tools/preview/?scene=starter            the starter offer (data/economy/starter-offer.json), signed in as a stand-in
@@ -23,6 +29,7 @@
  *   /tools/preview/?scene=online&tab=ranked  the online lobby against a scripted server (onlineWorld.js lists its options)
  *   /tools/preview/?scene=daily&stage=1      the challenges screen over a day of the real roster (dailyWorld.js lists its options)
  *   ...&art=procedural                       every card and the table with procedural art, ignoring data/art/
+ *   ...&press=settings                       then presses a control of the screen by id (the shell's too: settings, profile, shell.nav.market)
  *
  * Illustrations are all loaded before the first frame, so a screenshot never
  * catches a card still procedural because its image was on its way.
@@ -49,6 +56,8 @@ import { CommandType } from "@magic8/engine/domain/commands/CommandType.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
 import { dailyServices } from "./dailyWorld.js";
+import { Milestone, OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
+import { IdentityStatus } from "../../src/application/identity/IdentityService.js";
 import { onlineServices } from "./onlineWorld.js";
 import { FetchContentSource } from "../../src/infrastructure/config/FetchContentSource.js";
 import { ConsoleLogger } from "../../src/infrastructure/logging/ConsoleLogger.js";
@@ -343,7 +352,7 @@ function inspectFirstCard(sceneManager) {
 }
 
 /** Screens shown as they open, with nothing to set up. */
-const PLAIN_SCENES = Object.freeze({ daily: SceneId.DAILY, decks: SceneId.DECK_SELECTION, starter: SceneId.STARTER, builder: SceneId.DECK_BUILDER });
+const PLAIN_SCENES = Object.freeze({ home: SceneId.HOME, play: SceneId.PLAY, season: SceneId.SEASON, daily: SceneId.DAILY, mydecks: SceneId.DECKS, decks: SceneId.DECK_SELECTION, starter: SceneId.STARTER, builder: SceneId.DECK_BUILDER });
 
 /**
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
@@ -366,7 +375,7 @@ async function show(sceneManager, app, request) {
   } else if (scene === "match") {
     await showMatch(sceneManager, app, request);
   } else {
-    sceneManager.navigate(SceneId.MAIN_MENU);
+    sceneManager.navigate(SceneId.HOME);
   }
 }
 
@@ -507,6 +516,19 @@ async function appFor(request, content) {
     // The lobby's services stand in for a server: casting them is the harness's business.
     return Object.freeze({ ...app, .../** @type {any} */ (onlineServices(content, request.online, logger)) });
   }
+  if (request.scene === "home" || request.scene === "play" || request.scene === "season") {
+    const lobby = /** @type {any} */ (onlineServices(content, request.online, logger));
+    const { daily } = await dailyServices(content, request.daily);
+    const onboarding = new OnboardingProgress({ preferences: { load: () => null, save: () => undefined } });
+    [Milestone.TUTORIAL, Milestone.CHALLENGE, Milestone.ONLINE].slice(0, request.home.done).forEach((milestone) => onboarding.reach(milestone, lobby.account?.state.account ?? "preview"));
+    if (request.home.hidden) {
+      onboarding.dismiss();
+    }
+    const account = lobby.account?.state.account ?? "preview";
+    // Signed in, as the lobby's stand-in account: the guide and the cards read it.
+    const identity = { state: { status: IdentityStatus.SIGNED_IN, user: { id: "u-preview", account, network: "steem" }, method: null, error: null }, subscribe: () => () => undefined };
+    return Object.freeze({ ...app, ...lobby, daily, onboarding, identity });
+  }
   return app;
 }
 
@@ -526,6 +548,8 @@ async function boot() {
     help: query.get("help") !== "0",
     online: { tab: query.get("tab"), way: query.get("way"), guide: query.get("guide") === "1", entries: countParam(query, "entries", 3), eligible: query.get("eligible") !== "0" },
     daily: { opponents: query.get("opponents"), stage: optionalCount(query, "stage") },
+    press: query.get("press"),
+    home: { done: countParam(query, "done", 0), hidden: query.get("hidden") === "1" },
   };
   const source = new FetchContentSource(MANIFEST, (url, init) => fetch(url, init));
   const [rawTheme, content, rawIllustrations, rawCharacterArt] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("illustrations"), source.load("characterArt")]);
@@ -566,6 +590,9 @@ async function present(theme, app, request) {
     await showOnline(sceneManager, request.online);
   } else {
     await show(sceneManager, app, request);
+  }
+  if (request.press !== null) {
+    sceneManager.current?.findNode(request.press)?.activate();
   }
 }
 

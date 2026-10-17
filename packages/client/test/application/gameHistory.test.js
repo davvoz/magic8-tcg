@@ -12,7 +12,7 @@ import { HttpGameHistoryApi } from "../../src/infrastructure/api/HttpGameHistory
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { GameHistoryScene, historySummary, playedGameSubtitle, playedGameTitle } from "../../src/rendering/scenes/GameHistoryScene.js";
-import { LeaderboardScene } from "../../src/rendering/scenes/LeaderboardScene.js";
+import { SeasonScene } from "../../src/rendering/scenes/SeasonScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
 
@@ -105,7 +105,7 @@ describe("GameHistoryScene", () => {
     const row = scene.root.findById(`history.game.${auto.gameId}`);
     assert.equal(row.subtitle, "auto · 7 turns · life depleted · 2 h ago · click to watch");
     row.activate();
-    assert.deepEqual(navigated, [{ id: SceneId.REPLAY, params: { gameId: auto.gameId, from: SceneId.GAME_HISTORY } }]);
+    assert.deepEqual(navigated, [{ id: SceneId.REPLAY, params: { gameId: auto.gameId, back: SceneId.GAME_HISTORY, backParams: { account: "alice" } } }], "Back from the replay comes back to these games");
     scene.root.findById(`history.game.${FIRST.gameId}`).activate();
     assert.equal(navigated.length, 1, "a game played by hand has no replay");
   });
@@ -127,7 +127,7 @@ describe("GameHistoryScene", () => {
     assert.equal(scene.root.findById("history.more"), null, "nothing older left");
     assert.ok(rendered(scene).includes("3 games · 1–1–1"));
     scene.onCancel();
-    assert.deepEqual(navigated, [{ id: SceneId.ONLINE, params: undefined }]);
+    assert.deepEqual(navigated, [{ id: SceneId.PLAY, params: {} }], "opened from nowhere in particular, Back leads to Play");
   });
 
   it("shows another player's games, and says when there are none or they cannot be read", async () => {
@@ -144,19 +144,20 @@ describe("GameHistoryScene", () => {
   });
 });
 
-describe("LeaderboardScene → game history", () => {
-  it("opens the player's own games, or those of a player picked, and Back returns as the leaderboard was opened", async () => {
+describe("SeasonScene → game history", () => {
+  it("opens the games of a player picked on the leaderboard, whose Back returns to the season", async () => {
     const entries = [{ rank: 1, provisional: false, account: "carol", rating: 1600, games: 12, wins: 8, losses: 4, draws: 0 }];
     const ranking = new RankingService({ api: { standing: async () => fail("NETWORK", "offline"), leaderboard: async () => ok({ season: { id: "s1", name: "Season 1" }, entries }) } });
     const navigated = [];
-    const scene = new LeaderboardScene(services({ navigate: (id, params) => navigated.push({ id, params }) }), { ranking, identity: signedIn("alice") });
-    scene.enter({ back: SceneId.MAIN_MENU });
+    const navigate = (id, params) => navigated.push({ id, params });
+    const scene = new SeasonScene(services({ navigate }), /** @type {any} */ ({ ranking, identity: signedIn("alice") }));
+    scene.enter({});
     await flush();
-    scene.root.findById("leaderboard.history").activate();
-    scene.root.findById("leaderboard.row.1").activate();
-    assert.deepEqual(navigated, [
-      { id: SceneId.GAME_HISTORY, params: { back: SceneId.LEADERBOARD, backParams: { back: SceneId.MAIN_MENU } } },
-      { id: SceneId.GAME_HISTORY, params: { account: "carol", back: SceneId.LEADERBOARD, backParams: { back: SceneId.MAIN_MENU } } },
-    ]);
+    scene.root.findById("season.row.1").activate();
+    assert.deepEqual(navigated, [{ id: SceneId.GAME_HISTORY, params: { account: "carol", back: SceneId.SEASON, backParams: {} } }]);
+    const history = new GameHistoryScene(services({ navigate }), { identity: signedIn("alice"), gameHistory: fakeApi() }, () => NOW);
+    history.enter(navigated[0].params);
+    history.onCancel();
+    assert.deepEqual(navigated.at(-1), { id: SceneId.SEASON, params: {} });
   });
 });

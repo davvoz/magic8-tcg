@@ -38,9 +38,9 @@ import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { screenLayout } from "./deckBuilder/layout.js";
-import { Scene } from "./Scene.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
 import { SceneId } from "./sceneIds.js";
+import { SectionScene } from "./SectionScene.js";
 import { approveTransferText } from "./walletText.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -50,7 +50,7 @@ const MINUTE = 60 * 1000;
  * @typedef {Readonly<{
  *   line: number, tabs: { top: number, height: number, gap: number }, sorts: { top: number, height: number, gap: number, width: number },
  *   filterTop: number, filterButton: boolean, listTop: number, copiesTop: number, composerFilterTop: number, pager: number,
- *   priceWidth: number, metaWidth: number, sellerAvatar: number, card: { width: number, height: number }, button: number, priceField: number, title: number,
+ *   priceWidth: number, metaWidth: number, sellerAvatar: number, card: { width: number, height: number }, button: number, priceField: number,
  * }>} MarketMetrics `filterButton`: the card filter as one button (on the sorts' row, and under the composer's title);
  *   `copiesTop`: the composer's list of copies, below its title and filter; `metaWidth`: the seller column of the board (0: none),
  *   `sellerAvatar`: the seller's portrait at its start
@@ -72,7 +72,6 @@ const WIDE = Object.freeze({
   card: Object.freeze({ width: 300, height: 442 }),
   button: 56,
   priceField: 52,
-  title: 220,
 });
 /** @type {MarketMetrics} */
 const COMPACT = Object.freeze({
@@ -91,7 +90,6 @@ const COMPACT = Object.freeze({
   card: Object.freeze({ width: 140, height: 196 }),
   button: 46,
   priceField: 46,
-  title: 120,
 });
 const PRICE_PATTERN = /^\d{1,6}(\.\d{1,3})?$/;
 const Tab = Object.freeze({ BOARD: "board", MINE: "mine" });
@@ -183,7 +181,7 @@ function stageText(stage, purchase, error, app) {
 /** @param {string} problem */
 const problemText = (problem) => PROBLEM_TEXT[/** @type {keyof typeof PROBLEM_TEXT} */ (problem)] ?? problem;
 
-export class MarketScene extends Scene {
+export class MarketScene extends SectionScene {
   /** The frame for the screen in use (the compact one on a phone). */
   get #screen() {
     return screenLayout(this.services.viewport);
@@ -212,8 +210,6 @@ export class MarketScene extends Scene {
   #boardFilter = NO_CARD_FILTER;
   /** Copies offered for sale. @type {import("../../application/content/CardFilter.js").CardFilter} */
   #sellFilter = NO_CARD_FILTER;
-  /** Where Back leads: the scene the player came from. @type {string} */
-  #from = SceneId.MAIN_MENU;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -221,14 +217,14 @@ export class MarketScene extends Scene {
    * @param {() => number} [now]
    */
   constructor(services, app, now = () => Date.now()) {
-    super(services);
+    super(services, app, { scene: SceneId.MARKET, title: "Market" });
     this.#app = app;
     this.#now = now;
   }
 
-  /** @param {{ from?: string }} [params] */
+  /** @param {{ back?: string }} [params] `back`: the screen that opened it (a notification), which Back returns to; none of its own */
   enter(params = {}) {
-    this.#from = params.from !== undefined && this.services.hasScene(params.from) ? params.from : SceneId.MAIN_MENU;
+    this.routeBack(params);
     const sales = this.#sales();
     const unsubscribe = sales.subscribe(() => this.#rebuild());
     // What other players list, buy or withdraw shows up while the board is on screen.
@@ -272,7 +268,7 @@ export class MarketScene extends Scene {
       this.#rebuild();
       return;
     }
-    this.services.navigate(this.#from);
+    this.goBack();
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -284,7 +280,7 @@ export class MarketScene extends Scene {
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
-    const back = this.#buildHeader();
+    const sell = this.#buildToolbar();
     const listPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width: this.#screen.columns.left.width, height: this.#screen.columns.height }));
     const firstTab = this.#buildTabs(listPanel);
     if (this.#tab === Tab.MINE && this.#signedIn()) {
@@ -294,24 +290,27 @@ export class MarketScene extends Scene {
     }
     const detailPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
     this.#buildDetail(detailPanel);
-    this.focus(this.root.findById(focusedId) ?? firstTab ?? back);
+    this.focus(this.findNode(focusedId) ?? firstTab ?? sell ?? this.backButton);
     this.services.requestRender();
   }
 
-  #buildHeader() {
+  /**
+   * The toolbar: what the market is saying, and (signed in) the toggle between the board and the composer.
+   * @returns {Button | null} the toggle
+   */
+  #buildToolbar() {
     const { viewport } = this.services;
+    const { header } = this.#screen;
     const state = this.#sales().state;
-    const title = this.#m.title;
-    this.root.add(new Label({ x: this.#screen.header.sideMargin, y: this.#screen.header.y, width: title, height: this.#screen.header.height, text: "Market", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const intro = this.#signedIn() ? "Cards sold by players. You pay the seller directly from your wallet; the card is yours once the chain confirms it." : "Cards sold by players, for STEEM. Sign in to buy or sell.";
     const message = state.error ?? state.notice ?? intro;
-    const buttons = this.#signedIn() ? 2 : 1;
-    const statusX = this.#screen.header.sideMargin + Math.min(200, title);
-    this.root.add(new Label({ id: "market.status", x: statusX, y: this.#screen.header.y, width: viewport.logicalWidth - this.#screen.header.sideMargin - buttons * (this.#screen.header.backWidth + 16) - statusX, height: this.#screen.header.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
-    if (this.#signedIn()) {
-      this.root.add(new Button({ keepPlate: true, id: "market.sell", x: viewport.logicalWidth - this.#screen.header.sideMargin - 2 * this.#screen.header.backWidth - 16, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: this.#sellButtonText(), enabled: !this.#buyingBusy(), onActivate: () => this.#toggleSelling() }));
+    const buttons = this.#signedIn() ? 1 : 0;
+    const statusX = header.sideMargin;
+    this.root.add(new Label({ id: "market.status", x: statusX, y: header.y, width: viewport.logicalWidth - header.sideMargin - buttons * (header.backWidth + 16) - statusX, height: header.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
+    if (!this.#signedIn()) {
+      return null;
     }
-    return this.root.add(new Button({ id: "market.back", x: viewport.logicalWidth - this.#screen.header.sideMargin - this.#screen.header.backWidth, y: this.#screen.header.y + 4, width: this.#screen.header.backWidth, height: this.#screen.header.height - 8, text: "Back", onActivate: () => this.services.navigate(this.#from) }));
+    return this.root.add(new Button({ keepPlate: true, id: "market.sell", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#sellButtonText(), enabled: !this.#buyingBusy(), onActivate: () => this.#toggleSelling() }));
   }
 
   /**
@@ -677,7 +676,7 @@ export class MarketScene extends Scene {
     const fresh = [Object.freeze({ definitionId: purchase.card.definitionId, count: 1, serial: purchase.card.serial })];
     const view = () => {
       sales.dismiss();
-      this.services.navigate(SceneId.COLLECTION, { fresh, from: SceneId.MARKET });
+      this.services.navigate(SceneId.COLLECTION, { fresh, ...this.backHere() });
     };
     panel.add(new Button({ keepPlate: true, id: "market.buying.collection", x: this.#screen.inset, y, width: half, height: this.#m.button, text: "View collection", variant: "primary", onActivate: view }));
     panel.add(new Button({ keepPlate: true, id: "market.buying.close", x: this.#screen.inset + half + 16, y, width: half, height: this.#m.button, text: "Done", onActivate: () => sales.dismiss() }));

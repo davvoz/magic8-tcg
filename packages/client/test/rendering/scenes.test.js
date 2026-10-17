@@ -3,17 +3,13 @@ import { describe, it } from "node:test";
 
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { ErrorScene } from "../../src/rendering/scenes/ErrorScene.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
-import { UiPiece } from "../../src/rendering/images/UiArt.js";
 import { Scene } from "../../src/rendering/scenes/Scene.js";
 import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
-import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { Button } from "../../src/rendering/ui/Button.js";
 import { Label } from "../../src/rendering/ui/Label.js";
 import { Panel } from "../../src/rendering/ui/Panel.js";
 import { UiNode } from "../../src/rendering/ui/UiNode.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
-import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
 
 const theme = loadTheme();
@@ -190,83 +186,6 @@ describe("SceneManager", () => {
     assert.equal(captured.hasScene("c"), false);
     captured.navigate("b");
     assert.equal(manager.currentId, "b");
-  });
-});
-
-const content = await loadBundledContent();
-
-describe("MainMenuScene", () => {
-  const app = (storage = "local") => ({
-    content,
-    deckSelection: { listDecks: () => [{ source: "preconstructed" }, { source: "custom" }] },
-    deckBuilding: {},
-    matchSetup: {},
-    createSeed: () => "9f".repeat(32),
-    logger: new MemoryLogger(),
-    environment: { version: "test", storage },
-  });
-
-  it("renders title, buttons and the content summary, and disables unregistered destinations", () => {
-    const navigated = [];
-    const svc = services({ hasScene: (id) => id === SceneId.DECK_SELECTION, navigate: (id) => navigated.push(id) });
-    const scene = new MainMenuScene(svc, app());
-    scene.enter({});
-    const context = new FakeContext2D();
-    scene.render(context);
-    assert.ok(context.texts.includes("KIJAM"));
-    assert.ok(context.texts.some((text) => text.includes(`${content.catalog.size} cards · ${content.preconDecks.length} preconstructed decks`)));
-    assert.ok(context.texts.some((text) => text.includes("1 custom deck saved in this browser")));
-    const [play, builder] = scene.root.focusableNodes();
-    assert.equal(play.text, "Play");
-    assert.equal(play.enabled, true);
-    assert.equal(scene.focusedNode, play, "Play is focused by default");
-    assert.equal(builder, undefined, "disabled Deck Builder is not focusable");
-    scene.onKey(key("Enter"));
-    assert.deepEqual(navigated, [SceneId.DECK_SELECTION]);
-    const { x, y, width, height } = play.bounds;
-    scene.onPointer(down(x + width / 2, y + height / 2));
-    scene.onPointer(up(x + width / 2, y + height / 2));
-    assert.deepEqual(navigated, [SceneId.DECK_SELECTION, SceneId.DECK_SELECTION]);
-  });
-
-  it("lets the painted logo, once it is ready, stand for the name, its tagline and its ornament, from the fan's top down", () => {
-    let ready = false;
-    const logo = { source: { piece: UiPiece.TITLE }, width: 1100, height: 663 };
-    const uiArt = { layout: { title: { top: 0.39, bottom: 0.72, stops: [0.1, 0.3, 0.4, 0.5, 0.7, 0.9], star: { x: 0.5, y: 0.3 } } }, imageFor: (piece) => (ready && piece === UiPiece.TITLE ? logo : null) };
-    const scene = new MainMenuScene(services({ theme: { ...theme, uiArt } }), app());
-    scene.enter({});
-    const tagline = (/** @type {string[]} */ texts) => texts.some((text) => text.includes("collectible card game"));
-    const first = new FakeContext2D();
-    scene.render(first);
-    assert.ok(tagline(first.texts), "until the logo is ready: the face's name and the tagline");
-    const textTitle = scene.root.findById("title").bounds;
-
-    ready = true;
-    scene.update(16);
-    const painted = new FakeContext2D();
-    scene.render(painted);
-    assert.ok(!tagline(painted.texts), "the logo carries its own");
-    assert.ok(painted.calls.some((call) => call.method === "drawImage" && call.args[0] === logo.source));
-    const logoArea = scene.root.findById("title").bounds;
-    assert.ok(logoArea.y < textTitle.y && logoArea.height > textTitle.height, "a taller place, from the fan's top");
-    scene.exit();
-  });
-
-  it("reports memory-only storage and an open deck draft", () => {
-    const scene = new MainMenuScene(services(), app("memory"));
-    scene.enter({});
-    const context = new FakeContext2D();
-    scene.render(context);
-    assert.ok(context.texts.some((text) => text.includes("kept in memory only")));
-    assert.ok(!context.texts.some((text) => text.startsWith("Deck builder:")));
-
-    const withDraft = app("memory");
-    withDraft.deckBuilding = { draft: { name: "Wall Time" }, hasUnsavedChanges: true };
-    const editing = new MainMenuScene(services(), withDraft);
-    editing.enter({});
-    const drafted = new FakeContext2D();
-    editing.render(drafted);
-    assert.ok(drafted.texts.includes('Deck builder: editing "Wall Time" (unsaved changes)'));
   });
 });
 

@@ -13,7 +13,7 @@ import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 /** A running game's session, as OnlineService holds it. */
 const session = (gameId = "g1") => ({ gameId, hasSnapshot: true });
 
-function world({ scene = /** @type {string | null} */ (SceneId.MAIN_MENU) } = {}) {
+function world({ scene = /** @type {string | null} */ (SceneId.HOME) } = {}) {
   const listeners = new Set();
   const online = {
     /** @type {any} */
@@ -59,7 +59,7 @@ function world({ scene = /** @type {string | null} */ (SceneId.MAIN_MENU) } = {}
 const matches = (scenes) => scenes.visits.filter((visit) => visit.sceneId === SceneId.MATCH).length;
 
 describe("returnToGame", () => {
-  it("takes a page reopened mid-game from the main menu straight into the match", () => {
+  it("takes a page reopened mid-game on Home straight into the match", () => {
     const { online, scenes, toasts } = world();
     returnToGame({ online, scenes, toasts });
     online.set({ status: OnlineStatus.CONNECTING });
@@ -75,7 +75,7 @@ describe("returnToGame", () => {
     returnToGame({ online, scenes, toasts, nameOf: (account) => (account === "ai_kael" ? "Kael" : null) });
     online.set({ status: OnlineStatus.PLAYING, session: session(), opponent: "ai_kael", mode: "daily" });
     assert.match(toasts.shown[0].body, /against Kael\./);
-    scenes.navigate(SceneId.MAIN_MENU);
+    scenes.navigate(SceneId.HOME);
     online.set({ status: OnlineStatus.PLAYING, session: session("g2"), opponent: "ai_kael", mode: "daily" });
     assert.equal(scenes.visits.at(-1).params.againScene, SceneId.DAILY);
   });
@@ -84,7 +84,7 @@ describe("returnToGame", () => {
     const { online, scenes, toasts } = world({ scene: null });
     online.set({ status: OnlineStatus.PLAYING, session: session(), opponent: "bob" });
     returnToGame({ online, scenes, toasts });
-    scenes.navigate(SceneId.MAIN_MENU);
+    scenes.navigate(SceneId.HOME);
     assert.equal(matches(scenes), 1);
   });
 
@@ -94,8 +94,8 @@ describe("returnToGame", () => {
     online.set({ status: OnlineStatus.PLAYING, session: session(), opponent: "bob" });
     assert.deepEqual(scenes.visits, []);
     assert.deepEqual(toasts.shown, []);
-    scenes.navigate(SceneId.MAIN_MENU);
-    assert.deepEqual(scenes.visits.map((visit) => visit.sceneId), [SceneId.MAIN_MENU, SceneId.MATCH]);
+    scenes.navigate(SceneId.HOME);
+    assert.deepEqual(scenes.visits.map((visit) => visit.sceneId), [SceneId.HOME, SceneId.MATCH]);
   });
 
   it("does not pull a busy player away: a toast stays until clicked, then goes when the match shows", () => {

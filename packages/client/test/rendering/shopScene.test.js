@@ -12,7 +12,7 @@ import { PurchaseStage, ShopService } from "../../src/application/shop/ShopServi
 import { BalanceService } from "../../src/application/wallet/BalanceService.js";
 import { EntryService } from "../../src/application/entries/EntryService.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { MainMenuScene } from "../../src/rendering/scenes/MainMenuScene.js";
+import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
 import { EntryTickets } from "../../src/rendering/scenes/entries/EntryTickets.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
@@ -62,7 +62,7 @@ async function harness({ signedIn = true, budget, listing = LISTING, entries, pa
   return { ...world, market, shop, scene, app, services, navigated, transfers };
 }
 
-const byId = (scene, id) => scene.root.findById(id);
+const byId = (scene, id) => scene.findNode(id);
 /** Every node of the scene, depth first. */
 const nodes = (scene) => {
   const found = [];
@@ -213,7 +213,7 @@ describe("ShopScene", () => {
     click(byId(scene, "reveal.collection"));
     const { id, params } = navigated.at(-1);
     assert.equal(id, SceneId.COLLECTION);
-    assert.equal(params.from, SceneId.SHOP, "back leads to the shop");
+    assert.equal(params.back, SceneId.SHOP, "back leads to the shop");
     assert.equal(params.fresh.length, 5, "the cards received are lit in the collection");
     assert.ok(params.fresh.some((card) => card.serial === 5), "with their serials");
     assert.equal(shop.state.purchase.stage, PurchaseStage.NONE);
@@ -222,7 +222,7 @@ describe("ShopScene", () => {
   it("sells ranked entries on their own shelf, many with one transfer, and says they go into the jackpot", async () => {
     const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 2, perGame: 1, season: "season-1" }]) } });
     await entries.refresh();
-    const { scene, transfers, navigated, shop } = await harness({ listing: LISTING_WITH_ENTRIES, entries, params: { category: "ranked", from: SceneId.ONLINE } });
+    const { scene, transfers, navigated, shop } = await harness({ listing: LISTING_WITH_ENTRIES, entries, params: { category: "ranked", back: SceneId.ONLINE } });
     assert.equal(byId(scene, "shop.tab.ranked").text, "Ranked (1)");
     assert.equal(byId(scene, "shop.product.ranked_entry").subtitle, "1 ranked game · 1.000 STEEM · into the jackpot");
     const texts = rendered(scene);
@@ -244,7 +244,7 @@ describe("ShopScene", () => {
     assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
     assert.equal(scene.modal, null, "no cards to reveal");
     assert.equal(byId(scene, "shop.status").text, "Done: 5 ranked entries are yours, and in the season's jackpot.");
-    click(byId(scene, "shop.back"));
+    click(byId(scene, "shell.back"));
     assert.equal(navigated.at(-1).id, SceneId.ONLINE, "back to the lobby that sent the player here");
   });
 
@@ -424,11 +424,12 @@ describe("ShopScene", () => {
     assert.match(scene.modal.findById(`orders.detail.${order.id}`).text, /time to pay is over: it closes on its own$/);
   });
 
-  it("is reachable from the main menu", async () => {
-    const { app, services } = await harness();
-    const menu = new MainMenuScene(services, app);
-    menu.enter({});
-    assert.equal(menu.root.findById("shop").text, "Shop");
-    menu.exit();
+  it("is what the rail's Market opens", async () => {
+    const { app, services, navigated } = await harness();
+    const home = new HomeScene(services, app);
+    home.enter({});
+    home.findNode("shell.nav.market").activate();
+    assert.equal(navigated.at(-1).id ?? navigated.at(-1), SceneId.SHOP);
+    home.exit();
   });
 });
