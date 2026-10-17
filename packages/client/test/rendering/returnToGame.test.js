@@ -8,7 +8,12 @@ import { describe, it } from "node:test";
 
 import { OnlineStatus } from "../../src/application/online/OnlineService.js";
 import { GAME_TOAST_KEY, returnToGame } from "../../src/rendering/scenes/returnToGame.js";
+import { Viewport } from "../../src/rendering/canvas/Viewport.js";
+import { Scene } from "../../src/rendering/scenes/Scene.js";
+import { SceneManager } from "../../src/rendering/scenes/SceneManager.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
+import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
+import { loadTheme } from "./fakes.js";
 
 /** A running game's session, as OnlineService holds it. */
 const session = (gameId = "g1") => ({ gameId, hasSnapshot: true });
@@ -141,5 +146,26 @@ describe("returnToGame", () => {
     assert.equal(toasts.shown.length, 1);
     scenes.navigate(SceneId.MATCH, { session: { gameId: "practice" } });
     assert.equal(toasts.shown.length, 1, "a practice match is not the online game");
+  });
+
+  it("takes the player into the match through a real SceneManager (its navigate called as its own)", () => {
+    const { online, toasts } = world();
+    const theme = loadTheme();
+    const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
+    /** @type {any[]} */
+    const entered = [];
+    class Stub extends Scene {
+      /** @param {any} params */
+      enter(params) {
+        entered.push(params);
+      }
+    }
+    manager.register(SceneId.HOME, (services) => new Stub(services));
+    manager.register(SceneId.MATCH, (services) => new Stub(services));
+    manager.navigate(SceneId.HOME);
+    returnToGame({ online, scenes: manager, toasts });
+    online.set({ status: OnlineStatus.PLAYING, session: session(), opponent: "bob" });
+    assert.equal(manager.currentId, SceneId.MATCH);
+    assert.equal(entered.at(-1).session, online.state.session);
   });
 });

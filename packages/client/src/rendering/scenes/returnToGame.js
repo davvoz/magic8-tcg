@@ -51,7 +51,8 @@ export function returnToGame({ online, scenes, toasts, nameOf = () => null }) {
   /** The game the toast is up for. @type {string | null} */
   let toastFor = null;
 
-  const open = () => resumeGame(scenes.navigate, online);
+  // Called as the scenes' own method: a SceneManager's navigate reads its private state.
+  const open = () => resumeGame((sceneId, params) => scenes.navigate(sceneId, params), online);
   const dismiss = () => {
     if (toastFor !== null) {
       toastFor = null;
