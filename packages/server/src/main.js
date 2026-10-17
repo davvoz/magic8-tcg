@@ -17,7 +17,7 @@ import { parseJson } from "./kernel/json.js";
 import { createConsoleLogger, createJsonLogger } from "./kernel/logger.js";
 import { nodeSecureRandom } from "./kernel/random.js";
 import { systemClock } from "./kernel/time.js";
-import { grantLocalRankedAccess } from "./modules/ranking/application/LocalRankedGrant.js";
+import { grantLocalRankedAccess } from "./modules/ranking/index.js";
 import { openDatabase } from "./platform/db/openDatabase.js";
 import { StaticFiles } from "./platform/http/StaticFiles.js";
 

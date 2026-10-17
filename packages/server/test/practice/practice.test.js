@@ -68,7 +68,7 @@ describe("practice games", () => {
     assert.deepEqual(grant, { account: "im-ridd", entries: 5 });
     assert.ok(user);
     await setup.app.ranking.assertEligible(user.id);
-    assert.deepEqual(await setup.app.entries.view(user.id), [{ kind: "ranked", balance: 5, perGame: 1, season: "season-1" }]);
+    assert.deepEqual(await setup.app.entries.view(user.id), [{ kind: "ranked", balance: 5, perGame: 1, season: "2026-s1" }]);
     assert.equal(await setup.app.practice.countOf(user.id), 0);
     assert.equal((await setup.database.maybeOne("SELECT count(*)::integer AS n FROM entry_ledger WHERE user_id = $1 AND reason = 'purchase'", [user.id])).n, 0);
   });
