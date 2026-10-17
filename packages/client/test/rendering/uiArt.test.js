@@ -13,7 +13,7 @@ import { UiArt, UiPiece } from "../../src/rendering/images/UiArt.js";
 import { drawSceneBackdrop } from "../../src/rendering/ui/backdrop.js";
 import { Button } from "../../src/rendering/ui/Button.js";
 import { Ornament } from "../../src/rendering/ui/Ornament.js";
-import { Panel } from "../../src/rendering/ui/Panel.js";
+import { Panel, PanelCorners } from "../../src/rendering/ui/Panel.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
 
 const theme = loadTheme();
@@ -59,7 +59,7 @@ describe("UiArt", () => {
   });
 
   it("the bundled art is there: one JPEG per ornament, and the cut-out name", () => {
-    for (const file of ["Sfondo_Menu.jpg", "Angolo_decorativo_pannelli.jpg", "DIVISORE_TITOLI.jpg", "BOTTONE_PRIMARIO.jpg", "BOTTONE_SECONDARIO.jpg", "Play_Online.jpg", "Play_Practice.jpg", "Play_Tutorial.jpg"]) {
+    for (const file of ["Sfondo_Menu.jpg", "Angolo_decorativo_pannelli.jpg", "DIVISORE_TITOLI.jpg", "BOTTONE_PRIMARIO.jpg", "BOTTONE_SECONDARIO.jpg", "Play_Online_Arena.jpg", "Play_Practice.jpg", "Play_Tutorial.jpg", "Play_Online_Tall.jpg", "Play_Online_Wide.jpg", "Decks_Tall.jpg", "Market_Tall.jpg", "Season_Tall.jpg"]) {
       const bytes = readFileSync(new URL(`../../../../data/art/${file}`, import.meta.url));
       assert.deepEqual([bytes[0], bytes[1]], [0xff, 0xd8], `${file} is a JPEG`);
     }
@@ -100,6 +100,11 @@ describe("painting the menus", () => {
     const flips = painted.calls.filter((call) => call.method === "scale").map((call) => call.args.map(Math.sign));
     assert.deepEqual(flips, [[1, 1], [-1, 1], [1, -1], [-1, -1]], "mirrored into each corner");
     assertBalanced(painted);
+
+    const foot = new FakeContext2D();
+    new Panel({ x: 100, y: 50, width: 600, height: 700, corners: PanelCorners.FOOT }).draw(foot, withArt);
+    assert.deepEqual(foot.calls.filter((call) => call.method === "translate").map((call) => call.args), [[106, 744], [694, 744]], "only the two at its foot");
+    assertBalanced(foot);
 
     for (const [label, panel, look] of [
       ["small", new Panel({ x: 0, y: 0, width: 400, height: 90 }), withArt],

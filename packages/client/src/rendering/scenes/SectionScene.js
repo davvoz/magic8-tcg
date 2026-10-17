@@ -1,8 +1,8 @@
 /**
  * Base of the screens inside the navigation shell (rendering/shell): every
  * screen but the match, the replay, sign-in and the error. The shell — the
- * rail of sections and the top bar with the screen's title (or its
- * section's tabs) and Back — is the scene's chrome; the scene lays itself
+ * top bar with the screen's title (or its section's tabs) and Back — is
+ * the scene's chrome; the scene lays itself
  * out in the content area left to it, which its `services.viewport` (a
  * ContentViewport) describes as if it were the whole screen.
  *
@@ -28,10 +28,6 @@ export class SectionScene extends Scene {
   #back = null;
   /** Where the opener said Back leads (null: it did not say). @type {import("../shell/navigation.js").BackTarget | null} */
   #named = null;
-  /** What the screen was opened with, to route Back again when the screen turns into a phone's or back. */
-  #params = Object.freeze({});
-  /** Whether Back was last routed for a phone's screen. */
-  #routedCompact = false;
 
   /**
    * @param {import("./Scene.js").SceneServices} services the whole screen's
@@ -68,9 +64,7 @@ export class SectionScene extends Scene {
    * @param {Readonly<Record<string, unknown>>} [params]
    */
   routeBack(params = {}) {
-    this.#params = params;
-    this.#routedCompact = this.services.viewport.compact === true;
-    const context = { hasScene: this.services.hasScene, app: this.#app, compact: this.#routedCompact };
+    const context = { hasScene: this.services.hasScene, app: this.#app };
     this.#named = namedBack(this.sceneId, params, this.services.hasScene);
     this.#back = backTarget(this.sceneId, params, context);
     this.setHeading({ back: this.#back === null ? null : () => this.goBack() });
@@ -111,7 +105,7 @@ export class SectionScene extends Scene {
   }
 
   /**
-   * Opens a section's screen as the rail does (a phone's Home lists them): a locked one says why instead.
+   * Opens a section's screen (Home lists them): a locked one says why instead.
    * @param {string} sectionId one of SectionId
    */
   openSection(sectionId) {
@@ -129,10 +123,6 @@ export class SectionScene extends Scene {
   }
 
   onResize() {
-    if ((this.services.viewport.compact === true) !== this.#routedCompact) {
-      // A phone's section screens have a Back (Home) that a wider screen's do not: route it again.
-      this.routeBack(this.#params);
-    }
     this.#shell.relayout();
     super.onResize();
   }

@@ -68,25 +68,27 @@ const rendered = (scene) => {
 };
 
 describe("registerScenes", () => {
-  it("registers every scene, and the rail and the sections' own screens reach them", () => {
+  it("registers every scene, and Home and the sections' own screens reach them", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     registerScenes(manager, appContext());
     const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.ONLINE, SceneId.DAILY, SceneId.SEASON, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
     assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map((id) => !accountScenes.includes(id)), "account scenes need a game server");
     assert.equal(manager.navigate(SceneId.HOME), true);
-    manager.current.findNode("shell.nav.decks").activate();
+    manager.current.findNode("home.section.decks").activate();
     assert.equal(manager.currentId, SceneId.DECKS);
-    assert.equal(manager.current.findNode("shell.back"), null, "a section's own screen has no Back");
+    assert.ok(manager.current.findNode("shell.back"), "a section's own screen has Back, to Home");
     manager.current.findNode("decks.new").activate();
     assert.equal(manager.currentId, SceneId.DECK_BUILDER);
     manager.current.findNode("shell.back").activate();
     assert.equal(manager.currentId, SceneId.DECKS, "Back goes to the section's screen, not to the menu");
-    manager.current.findNode("shell.nav.home").activate();
-    manager.current.findNode("shell.nav.decks").activate();
-    assert.equal(manager.currentId, SceneId.DECKS, "offline too, the rail's Decks opens the player's decks");
-    manager.current.findNode("shell.nav.play").activate();
+    manager.current.findNode("shell.back").activate();
+    assert.equal(manager.currentId, SceneId.HOME, "and from there Back goes Home");
+    manager.current.findNode("home.section.decks").activate();
+    assert.equal(manager.currentId, SceneId.DECKS, "offline too, Home's Decks opens the player's decks");
+    manager.current.findNode("shell.back").activate();
+    manager.current.findNode("home.section.play").activate();
     assert.equal(manager.currentId, SceneId.PLAY, "and Play every way to play");
-    manager.current.findNode("shell.nav.home").activate();
+    manager.current.findNode("shell.back").activate();
     assert.equal(manager.currentId, SceneId.HOME);
   });
 });

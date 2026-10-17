@@ -1,8 +1,8 @@
 /**
  * The Home screen: the guide's next step (and hiding it), a game in progress
- * to resume, today's challenge, online play and the season, each locked
- * with its reason where it cannot be used (a picture in its place all the
- * same), and one gold button.
+ * to resume, and the way to the other sections — Play, Decks, Market as
+ * cards to open, the season's own card on a wide screen — each locked with
+ * its reason where it cannot be used.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -18,7 +18,6 @@ import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStor
 import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnboarding.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { UiPiece } from "../../src/rendering/images/UiArt.js";
-import { CharacterPortrait } from "../../src/rendering/scenes/daily/CharacterPortrait.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { NavCard } from "../../src/rendering/scenes/home/NavCard.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
@@ -105,12 +104,7 @@ describe("HomeScene, signed out", () => {
     assert.equal(byId(home.scene, "home.headline.title").text, "Learn the game in a few minutes");
     assert.equal(byId(home.scene, "home.next").text, "Start the tutorial");
     assert.ok(rendered(home.scene).includes("NEXT STEP · 1 OF 5"));
-    assert.equal(byId(home.scene, "home.challenge.fight").isEffectivelyEnabled, false);
-    assert.equal(byId(home.scene, "home.challenge.note").text, "Sign in to take on the challenges.");
-    assert.equal(byId(home.scene, "home.online.casual").isEffectivelyEnabled, false);
-    assert.equal(byId(home.scene, "home.online.note").text, "Sign in to play online.");
-    assert.ok(byId(home.scene, "home.challenge.portrait") instanceof CharacterPortrait, "the challenges show a character before today's are known");
-    assert.equal(byId(home.scene, "home.online.art")?.piece, UiPiece.PLAY_ONLINE, "online play shows its painting");
+    assert.equal(byId(home.scene, "home.section.play.line").text, "Challenges, online, practice");
     assert.equal(byId(home.scene, "home.season.standing").text, "Sign in to take part in the season.");
     assert.ok(byId(home.scene, "home.season.jackpot"), "the jackpot is for everyone to see");
     assert.deepEqual(golden(home.scene), ["home.next"], "one gold button");
@@ -128,8 +122,7 @@ describe("HomeScene, signed out", () => {
   it("locks what needs the game server, offline", () => {
     const home = world({ offline: true });
     home.scene.enter({});
-    assert.equal(byId(home.scene, "home.challenge.note").text, "Not available offline.");
-    assert.equal(byId(home.scene, "home.online.note").text, "Not available offline.");
+    assert.equal(byId(home.scene, "home.section.play").locked, false, "practice plays offline");
     assert.equal(byId(home.scene, "home.season.note").text, "Not available offline.");
   });
 });
@@ -146,39 +139,29 @@ describe("HomeScene, signed in", () => {
     await home.account.claimStarter("precon_ember");
     await settle();
     assert.equal(byId(home.scene, "home.headline.title").text, "Win your first daily challenge");
-    assert.equal(byId(home.scene, "home.challenge.name").text, "Kael");
-    assert.ok(byId(home.scene, "home.challenge.portrait"));
-    byId(home.scene, "home.challenge.fight").activate();
-    assert.equal(home.navigated.at(-1).id, SceneId.DAILY);
+    assert.equal(byId(home.scene, "home.section.play.line").text, "Today's challenge: Kael");
+    byId(home.scene, "home.section.play").activate();
+    assert.equal(home.navigated.at(-1).id, SceneId.PLAY);
     assert.equal(byId(home.scene, "home.season.standing").text, "You: not ranked yet");
   });
 
-  it("keeps Ranked beside Casual, locked with what it waits for", async () => {
+  it("hides the guide for good, the cards taking its room", async () => {
     const home = world();
     home.scene.enter({});
     await signIn(home);
-    assert.equal(byId(home.scene, "home.online.ranked").isEffectivelyEnabled, false);
-    assert.equal(byId(home.scene, "home.online.note").text, "Ranked opens after 2 more casual games.");
-    byId(home.scene, "home.online.casual").activate();
-    assert.deepEqual(home.navigated.at(-1), { id: SceneId.ONLINE, params: { mode: "casual", back: SceneId.HOME, backParams: {} } }, "Back there returns Home");
-  });
-
-  it("hides the guide for good, and gives its gold to today's challenge", async () => {
-    const home = world();
-    home.scene.enter({});
-    await signIn(home);
+    const top = byId(home.scene, "home.section.play").bounds.y;
     byId(home.scene, "home.hideGuide").activate();
     assert.equal(byId(home.scene, "home.headline"), null);
     assert.equal(home.onboarding.dismissed, true);
-    assert.deepEqual(golden(home.scene), ["home.challenge.fight"]);
+    assert.ok(byId(home.scene, "home.section.play").bounds.y < top);
+    assert.deepEqual(golden(home.scene), [], "no gold button without the guide");
   });
 
-  it("says when new opponents come once the day's three are beaten", async () => {
+  it("points Play at the challenges again once the day's three are beaten", async () => {
     const home = world({ day: { ...DAY, opponents: DAY.opponents.map((opponent) => ({ ...opponent, state: "beaten" })), run: { track: "hard", stage: 3, gameId: null, attempts: 3, rewarded: true, last: null, reward: null } } });
     home.scene.enter({});
     await signIn(home);
-    assert.ok(rendered(home.scene).includes("New opponents in 2h 5m."));
-    assert.ok(byId(home.scene, "home.challenge.portrait"), "the day's boss stands for the challenges once they are won");
+    assert.equal(byId(home.scene, "home.section.play.line").text, "Challenges, online, practice");
   });
 
   it("puts a game in progress first, to resume", async () => {
@@ -192,17 +175,43 @@ describe("HomeScene, signed in", () => {
   });
 });
 
+describe("HomeScene on a wide screen", () => {
+  it("has Play across Decks and Market, its picture beside its words, and the season's card down the right", async () => {
+    const home = world();
+    home.scene.enter({});
+    await signIn(home);
+    const [play, decks, market, season] = ["home.section.play", "home.section.decks", "home.section.market", "home.season"].map((id) => byId(home.scene, id));
+    assert.ok([play, decks, market].every((card) => card instanceof NavCard));
+    assert.equal(byId(home.scene, "home.section.season"), null, "the season keeps its own card");
+    assert.deepEqual([play.bounds.x, play.bounds.x + play.bounds.width], [decks.bounds.x, market.bounds.x + market.bounds.width], "Play as wide as the two under it");
+    assert.equal(play.sideBySide, true, "its picture beside its words");
+    const art = byId(home.scene, "home.section.play.art").bounds;
+    assert.ok(art.width > play.bounds.width / 2, "the picture taking most of the card");
+    assert.equal(decks.sideBySide, false);
+    assert.ok(decks.bounds.y > play.bounds.y + play.bounds.height && market.bounds.y === decks.bounds.y);
+    assert.ok(season.bounds.x > market.bounds.x + market.bounds.width, "the season on the right");
+    assert.equal(season.bounds.y, play.bounds.y);
+    assert.equal(season.bounds.y + season.bounds.height, decks.bounds.y + decks.bounds.height, "down the whole height");
+    assert.equal(byId(home.scene, "home.section.play.art")?.piece, UiPiece.PLAY_ONLINE_WIDE, "a landscape painting in a box wider than tall");
+    assert.equal(byId(home.scene, "home.section.decks.art")?.piece, UiPiece.DECKS_TALL, "an upright one where there is no other");
+    decks.activate();
+    assert.equal(home.navigated.at(-1).id, SceneId.DECKS);
+  });
+});
+
 describe("HomeScene on a phone", () => {
   const PHONE = Object.freeze({ cssWidth: 667, cssHeight: 375 });
 
-  it("has no rail: the four other sections as cards, each opening its screen", async () => {
+  it("has the four other sections as cards side by side, each opening its screen", async () => {
     const home = world({ size: PHONE });
     home.scene.enter({});
     await signIn(home);
-    assert.equal(byId(home.scene, "shell.nav.home"), null, "no rail");
-    assert.equal(byId(home.scene, "home.challenge"), null, "not the wide Home's cards");
+    assert.equal(byId(home.scene, "home.season"), null, "not the wide Home's season card");
     const cards = ["play", "decks", "market", "season"].map((id) => byId(home.scene, `home.section.${id}`));
     assert.ok(cards.every((card) => card instanceof NavCard));
+    const pictures = ["play", "decks", "market", "season"].map((id) => byId(home.scene, `home.section.${id}.art`));
+    assert.deepEqual(pictures.map((art) => art?.piece), [UiPiece.PLAY_ONLINE_TALL, UiPiece.DECKS_TALL, UiPiece.MARKET_TALL, UiPiece.SEASON_TALL], "each section shows its upright painting");
+    assert.ok(pictures.every((art) => art?.cover), "filling its picture");
     assert.equal(byId(home.scene, "home.section.play.line").text, "Today's challenge: Kael");
     assert.equal(byId(home.scene, "home.section.season.line").text, "Jackpot 866.666 STEEM");
     cards[0].activate();

@@ -116,7 +116,6 @@ describe("GameHistoryScene", () => {
     const scene = new GameHistoryScene(services({ navigate: (id, params) => navigated.push({ id, params }) }), { identity: signedIn("alice"), gameHistory: api }, () => NOW);
     scene.enter({});
     await flush();
-    assert.ok(rendered(scene).includes("Games — @alice"));
     const row = scene.root.findById(`history.game.${FIRST.gameId}`);
     assert.deepEqual([row.text, row.avatar], ["Won vs @bob", "bob"]);
     assert.ok(rendered(scene).includes("2+ games · 1–1"));

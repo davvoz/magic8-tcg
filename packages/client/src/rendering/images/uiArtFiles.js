@@ -19,9 +19,15 @@ export const UI_ART = Object.freeze({
     // Cut out on transparency (1100×663), not gold on black: the name, "Trading card game" and their scrolls.
     [UiPiece.TITLE]: "Logo_KIJAM.webp",
     // Plain paintings (620×630, their frames cropped away), drawn to cover the picture of a way to play.
-    [UiPiece.PLAY_ONLINE]: "Play_Online.jpg",
+    [UiPiece.PLAY_ONLINE_ARENA]: "Play_Online_Arena.jpg",
     [UiPiece.PLAY_PRACTICE]: "Play_Practice.jpg",
     [UiPiece.PLAY_TUTORIAL]: "Play_Tutorial.jpg",
+    // Upright (620×1111), drawn to cover the pictures of the section cards on Home; Play's in landscape too (1100×614).
+    [UiPiece.PLAY_ONLINE_TALL]: "Play_Online_Tall.jpg",
+    [UiPiece.PLAY_ONLINE_WIDE]: "Play_Online_Wide.jpg",
+    [UiPiece.DECKS_TALL]: "Decks_Tall.jpg",
+    [UiPiece.MARKET_TALL]: "Market_Tall.jpg",
+    [UiPiece.SEASON_TALL]: "Season_Tall.jpg",
   }),
   layout: Object.freeze({
     title: Object.freeze({ top: 0.39, bottom: 0.72, stops: Object.freeze([0.083, 0.285, 0.39, 0.479, 0.68, 0.93]), star: Object.freeze({ x: 0.4943, y: 0.2905 }) }),

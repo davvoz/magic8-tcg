@@ -310,7 +310,7 @@ describe("MarketScene", () => {
     assert.equal(purchaseActivity({ ...PURCHASE, status: "CANCELLED" }).closed, true);
   });
 
-  it("describes listings, and goes back where the player came from (a tab of the Market has no Back of its own)", () => {
+  it("describes listings, and goes back where the player came from (a tab of the Market, else Home)", () => {
     assert.equal(listingSubtitle(LISTING, NOW), "#4 · @alice · 3 day(s) left");
     assert.equal(listingSubtitle({ ...LISTING, status: "SOLD", buyer: "bob" }, NOW), "#4 · sold to @bob");
     assert.equal(listingSubtitle({ ...LISTING, reserved: true }, NOW), "#4 · @alice · a buyer is paying");
@@ -322,7 +322,7 @@ describe("MarketScene", () => {
     const tab = market({ account: null });
     tab.scene.enter({});
     tab.scene.onCancel();
-    assert.deepEqual(tab.navigated, []);
-    assert.equal(tab.scene.backButton, null);
+    assert.deepEqual(tab.navigated, [["home", {}]]);
+    assert.ok(tab.scene.backButton);
   });
 });

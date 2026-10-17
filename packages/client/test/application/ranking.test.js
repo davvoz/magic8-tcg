@@ -152,14 +152,13 @@ describe("ranked screens", () => {
     await flush();
     const context = new FakeContext2D();
     scene.render(context);
-    assert.ok(context.texts.includes("Season 1"), "the season names the screen");
     assert.equal(scene.root.findById("season.row.2").selected, true, "alice is highlighted");
     assert.equal(scene.root.findById("season.row.1").selected, false);
     assert.equal(scene.root.findById("season.row.3").text, "—  @dave", "a provisional player is listed with no rank");
     assert.equal(scene.root.findById("season.standing").text, "Season 1: rating 1612 (#4), 8–4 in 12 game(s).");
     assert.ok(scene.root.findById("season.guide.steps"), "how ranked works");
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });
-    assert.equal(navigated.length, 0, "the section's own screen has no Back");
+    assert.equal(navigated.at(-1), SceneId.HOME, "the section's own screen goes Back Home");
     assert.equal(scene.root.findById("season.play").variant, "primary");
     scene.root.findById("season.play").activate();
     assert.equal(navigated.at(-1), SceneId.ONLINE);

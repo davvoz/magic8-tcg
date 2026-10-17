@@ -1,7 +1,7 @@
 /**
- * The navigation shell around a screen: the rail of sections on the left
- * (NavRail; not on a phone, where Home lists the sections) and the top bar
- * (TopBar), with names that never change. It is the scene's chrome (Scene.chrome): drawn beneath the
+ * The navigation shell around a screen: the top bar (TopBar), with names
+ * that never change. There is no rail of sections: Home lists them, and
+ * the other sections' screens have Back to Home (navigation.js). It is the scene's chrome (Scene.chrome): drawn beneath the
  * scene's own tree, reached after it, and left alone when the scene
  * rebuilds itself. Its own dialogs (settings, account, a locked section's
  * reason) are the scene's overlay, above whatever the scene shows.
@@ -26,9 +26,8 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { UiNode } from "../ui/UiNode.js";
 import { buildAccountDialog } from "./AccountDialog.js";
 import { Chip } from "./Chip.js";
-import { NavRail } from "./NavRail.js";
 import { ProfileButton } from "./ProfileButton.js";
-import { SECTIONS, sectionById, sectionTabs } from "./sections.js";
+import { sectionById, sectionTabs } from "./sections.js";
 import { buildSettingsDialog } from "./SettingsDialog.js";
 import { TopBar } from "./TopBar.js";
 
@@ -45,6 +44,10 @@ const WALLET_ASSET = "STEEM";
 /** The dialog that says why a section is locked. */
 const NOTICE = Object.freeze({ width: 520, height: 230, button: 48 });
 
+/**
+ * A section and where it leads now.
+ * @typedef {Readonly<{ section: import("./sections.js").Section, destination: import("./sections.js").SectionDestination }>} SectionEntry
+ */
 /**
  * What the shell needs of the scene it surrounds.
  * @typedef {{
@@ -63,7 +66,7 @@ const NOTICE = Object.freeze({ width: 520, height: 230, button: 48 });
  */
 
 export class Shell {
-  /** The rail and the bar, in the scene's (content) coordinates. */
+  /** The bar, in the scene's (content) coordinates. */
   node = new UiNode({ id: "shell" });
   #host;
   #app;
@@ -88,7 +91,7 @@ export class Shell {
 
   /**
    * @param {{ host: ShellHost, app: import("../../application/AppContext.js").AppContext, scene: string, section: string | null, heading: import("./TopBar.js").Heading }} options
-   *   `scene`: the screen's SceneId; `section`: the one it belongs to (SectionId), lit on the rail; null for none
+   *   `scene`: the screen's SceneId; `section`: the one it belongs to (SectionId), whose tabs the bar shows; null for none
    */
   constructor({ host, app, scene, section, heading }) {
     this.#host = host;
@@ -127,8 +130,10 @@ export class Shell {
    */
   setHeading(heading) {
     const next = Object.freeze({ ...this.#heading, ...heading });
-    if (next.title !== this.#heading.title || next.back !== this.#heading.back) {
-      this.#heading = next;
+    const backChanged = next.back !== this.#heading.back;
+    this.#heading = next;
+    // The bar shows no title: only a Back that comes or goes changes it.
+    if (backChanged) {
       this.#rebuild();
     }
   }
@@ -173,10 +178,6 @@ export class Shell {
     const origin = viewport.origin;
     const screen = () => viewport.bounds;
     const context = { hasScene: this.#host.services.hasScene, app: this.#app };
-    const entries = SECTIONS.map((section) => Object.freeze({ section, destination: section.destination(context) }));
-    if (!layout.compact) {
-      this.node.add(new NavRail({ layout, origin, screen, entries, current: this.#section, onOpen: (entry) => this.#open(entry) }));
-    }
     this.#bar = this.node.add(new TopBar({ layout, origin, screen, heading: this.#heading, controls: this.#controls(layout.compact), tabs: this.#tabs(context) }));
     if (focusedId.length > 0) {
       this.#host.focus(this.node.findById(focusedId));
@@ -200,7 +201,7 @@ export class Shell {
   }
 
   /**
-   * Opens a section's screen, as its entry on the rail does: a locked one says why instead.
+   * Opens a section's screen (Home's cards): a locked one says why instead.
    * @param {string} sectionId one of SectionId
    */
   openSection(sectionId) {
@@ -210,7 +211,7 @@ export class Shell {
     }
   }
 
-  /** @param {import("./NavRail.js").RailEntry} entry */
+  /** @param {SectionEntry} entry */
   #open({ section, destination }) {
     if ("locked" in destination) {
       this.#showNotice(section.label, destination.locked);
@@ -229,7 +230,7 @@ export class Shell {
     if (section === undefined || !section.tabs.some((tab) => tab.scene === this.#scene)) {
       return null;
     }
-    return Object.freeze({ title: section.label, entries: sectionTabs(section, context), current: this.#scene, onOpen: (/** @type {import("./sections.js").TabEntry} */ tab) => this.#openTab(tab) });
+    return Object.freeze({ entries: sectionTabs(section, context), current: this.#scene, onOpen: (/** @type {import("./sections.js").TabEntry} */ tab) => this.#openTab(tab) });
   }
 
   /** @param {import("./sections.js").TabEntry} tab */

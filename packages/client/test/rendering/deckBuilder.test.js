@@ -112,7 +112,7 @@ describe("DecksScene — the player's decks", () => {
     assert.equal(world.app.selectedDeck.deckId, second.deck.id, "a click makes it the deck played with");
     assert.equal(byId(world.scene, `decks.deck.${second.deck.id}`).selected, true);
     world.scene.onKey(key("Escape"));
-    assert.deepEqual(world.navigated, [], "the section's own screen has no Back");
+    assert.deepEqual(world.navigated, [SceneId.HOME], "the section's own screen goes Back Home");
   });
 
   it("opens the Deck Builder on a new deck, whose Back comes back to the decks", () => {
@@ -120,7 +120,6 @@ describe("DecksScene — the player's decks", () => {
     click(byId(world.scene, "decks.new"));
     assert.deepEqual(world.navigated, [SceneId.DECK_BUILDER]);
     assert.ok(world.scene instanceof DeckBuilderScene);
-    assert.ok(rendered(world.scene).includes("Deck Builder"));
     assert.equal(world.app.deckBuilding.draft.name, "New Deck");
     click(byId(world.scene, "shell.back"));
     assert.deepEqual(world.navigated, [SceneId.DECK_BUILDER, SceneId.DECKS]);

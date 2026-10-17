@@ -48,7 +48,6 @@ describe("InfoScene", () => {
     const scene = new InfoScene(services(), app());
     scene.enter({});
     const texts = rendered(scene);
-    assert.ok(texts.includes("Info"));
     assert.ok(texts.includes("The goal"), "the article starts with the goal");
     assert.ok(texts.some((text) => text.startsWith("Each player starts with 20 life")));
     const tabs = ["mechanics", "purchases", "account", "ranked", "shop"].map((id) => scene.root.findById(`info.tab.${id}`));

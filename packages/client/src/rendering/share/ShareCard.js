@@ -79,7 +79,7 @@ function paintBackground(context, theme, tone) {
   glowRoundedRect(context, inner, { color: withAlpha(theme.colors.accent, 0.55), radius: 18, blur: 18, lineWidth: 2 });
   fillRoundedRect(context, inner, { stroke: withAlpha(theme.colors.accent, 0.85), radius: 18, lineWidth: 2.5 });
   fillRoundedRect(context, { x: inner.x + 8, y: inner.y + 8, width: inner.width - 16, height: inner.height - 16 }, { stroke: withAlpha(theme.colors.accentDark, 0.8), radius: 12, lineWidth: 1 });
-  paintCorners(context, theme, inner, 0.16);
+  paintCorners(context, theme, inner, { maxScale: 0.16 });
 }
 
 /**

@@ -20,6 +20,10 @@ const STONE = Object.freeze({ alpha: 0.45, footShade: 0.55 });
 const CORNER = Object.freeze({ inset: 6, maxScale: 0.12, minScale: 0.07, reach: 0.42, alpha: 0.85 });
 /** Top-left, top-right, bottom-left, bottom-right. */
 const CORNER_FLIPS = Object.freeze([[1, 1], [-1, 1], [1, -1], [-1, -1]]);
+/** Which corners a panel dresses: all four, or only the two at its foot (a picture fills its top). */
+export const PanelCorners = Object.freeze({ ALL: "all", FOOT: "foot" });
+/** @type {Readonly<Record<string, ReadonlyArray<readonly number[]>>>} */
+const CORNER_SETS = Object.freeze({ [PanelCorners.ALL]: CORNER_FLIPS, [PanelCorners.FOOT]: Object.freeze(CORNER_FLIPS.filter(([, flipY]) => flipY < 0)) });
 /**
  * How far a panel's content keeps from its sides so that none of it sits on
  * the painted corners: at CORNER.maxScale their scrolls reach about 34
@@ -41,20 +45,21 @@ export const SMALL_PANEL_INSET = 18;
  * `glowKey` lights it: a halo and a tint in that theme colour (something
  * new). With `onActivate` the whole panel is clickable (a list entry); the
  * widgets on it still take their own clicks. `smallCorners` keeps the painted
- * corners within SMALL_PANEL_INSET, for the tighter panels of a phone's screen.
+ * corners within SMALL_PANEL_INSET, for the tighter panels of a phone's screen;
+ * `corners` (PanelCorners) says which of them are painted.
  */
 export class Panel extends UiNode {
-  /** @type {{ fillKey: string, strokeKey: string | null, textured: boolean, glowKey: string | null, smallCorners: boolean }} */
+  /** @type {{ fillKey: string, strokeKey: string | null, textured: boolean, glowKey: string | null, smallCorners: boolean, corners: string }} */
   style;
   /** @type {(() => void) | null} */
   onActivate;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, fillKey?: string, strokeKey?: string | null, textured?: boolean, glowKey?: string | null, onActivate?: (() => void) | null, smallCorners?: boolean }} [options]
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, fillKey?: string, strokeKey?: string | null, textured?: boolean, glowKey?: string | null, onActivate?: (() => void) | null, smallCorners?: boolean, corners?: string }} [options]
    */
   constructor(options = {}) {
     super(options);
-    this.style = { fillKey: options.fillKey ?? "panel", strokeKey: options.strokeKey === undefined ? "panelBorder" : options.strokeKey, textured: options.textured ?? false, glowKey: options.glowKey ?? null, smallCorners: options.smallCorners ?? false };
+    this.style = { fillKey: options.fillKey ?? "panel", strokeKey: options.strokeKey === undefined ? "panelBorder" : options.strokeKey, textured: options.textured ?? false, glowKey: options.glowKey ?? null, smallCorners: options.smallCorners ?? false, corners: options.corners ?? PanelCorners.ALL };
     this.onActivate = options.onActivate ?? null;
     this.interactive = this.onActivate !== null;
   }
@@ -88,7 +93,7 @@ export class Panel extends UiNode {
     bevelRoundedRect(context, area, { light: withAlpha("#ffffff", 0.08), dark: withAlpha("#000000", 0.5), radius });
     fillRoundedRect(context, insetRect(area, RIM_INSET), { stroke: withAlpha(theme.colors.accent, 0.12), radius: Math.max(0, radius - RIM_INSET), lineWidth: 1 });
     if (!this.style.textured) {
-      paintCorners(context, theme, area, this.style.smallCorners ? SMALL_CORNER_SCALE : CORNER.maxScale);
+      paintCorners(context, theme, area, { maxScale: this.style.smallCorners ? SMALL_CORNER_SCALE : CORNER.maxScale, corners: this.style.corners });
     }
   }
 
@@ -118,9 +123,10 @@ export class Panel extends UiNode {
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").Theme} theme
  * @param {import("@magic8/engine/shared/geometry.js").Rect} area
- * @param {number} maxScale the largest the corners may be drawn
+ * @param {{ maxScale: number, corners?: string }} options `maxScale`: the largest the corners may be
+ *   drawn; `corners`: which of them (PanelCorners)
  */
-export function paintCorners(context, theme, area, maxScale) {
+export function paintCorners(context, theme, area, { maxScale, corners = PanelCorners.ALL }) {
   const art = theme.uiArt;
   const image = art?.imageFor(UiPiece.CORNER) ?? null;
   if (art === undefined || image === null) {
@@ -138,7 +144,7 @@ export function paintCorners(context, theme, area, maxScale) {
   context.globalAlpha = CORNER.alpha;
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
-  for (const [flipX, flipY] of CORNER_FLIPS) {
+  for (const [flipX, flipY] of CORNER_SETS[corners] ?? CORNER_FLIPS) {
     context.save();
     context.translate(flipX > 0 ? area.x + CORNER.inset : area.x + area.width - CORNER.inset, flipY > 0 ? area.y + CORNER.inset : area.y + area.height - CORNER.inset);
     context.scale(flipX * scale, flipY * scale);

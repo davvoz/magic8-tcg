@@ -82,31 +82,26 @@ const center = (node) => ({ x: node.bounds.x + node.bounds.width / 2, y: node.bo
 
 describe("ShellLayout", () => {
   for (const [name, size] of [["a desktop", DESKTOP]]) {
-    it(`leaves the screen the rest of ${name}: the rail on the left, the bar across the top`, () => {
+    it(`leaves the screen the rest of ${name}: no rail, the bar across the top`, () => {
       const viewport = viewportOf(size);
       const layout = shellLayout(viewport);
       const shown = viewport.safeBounds;
       const near = (value, edge) => Math.abs(value - edge) <= 1;
       assert.equal(layout.compact, viewport.compact);
-      assert.ok(near(layout.rail.x, shown.x) && near(layout.rail.y, shown.y) && near(layout.rail.y + layout.rail.height, shown.y + shown.height), "the rail down the window's left edge");
-      assert.equal(layout.bar.x, layout.rail.x + layout.rail.width);
-      assert.ok(near(layout.bar.x + layout.bar.width, shown.x + shown.width), "the bar to the right edge");
+      assert.ok(near(layout.bar.x, shown.x) && near(layout.bar.y, shown.y) && near(layout.bar.x + layout.bar.width, shown.x + shown.width), "the bar from edge to edge, along the top");
       assert.deepEqual([layout.content.x, layout.content.y], [layout.bar.x, layout.bar.y + layout.bar.height]);
       assert.ok(near(layout.content.x + layout.content.width, shown.x + shown.width) && near(layout.content.y + layout.content.height, shown.y + shown.height), "the content takes the rest");
-      const last = layout.items.top + SECTIONS.length * (layout.items.height + layout.items.gap) - layout.items.gap;
-      assert.ok(layout.items.top >= layout.logo.height && last <= layout.rail.height, "the five sections fit under the logo");
       assert.ok(layout.controls.y >= 0 && layout.controls.y + layout.controls.height <= layout.bar.height, "the bar's controls fit in it");
       assert.ok(layout.controls.height * viewport.scale >= 40, "and are tall enough for a finger");
     });
   }
 
-  it("gives a phone no rail: a slimmer bar across the whole width, the content under it", () => {
+  it("gives a phone a slimmer bar across the whole width, the content under it", () => {
     const wide = shellLayout(viewportOf(DESKTOP));
     const viewport = viewportOf(IPHONE_SE);
     const compact = shellLayout(viewport);
     const shown = viewport.safeBounds;
     const near = (value, edge) => Math.abs(value - edge) <= 1;
-    assert.equal(compact.rail.width, 0);
     assert.ok(compact.bar.height < wide.bar.height);
     assert.ok(near(compact.bar.x, shown.x) && near(compact.bar.x + compact.bar.width, shown.x + shown.width), "the bar from edge to edge");
     assert.deepEqual([compact.content.x, compact.content.y], [compact.bar.x, compact.bar.y + compact.bar.height]);
@@ -118,7 +113,7 @@ describe("ShellLayout on a window of another shape", () => {
   it("keeps to the window's edges, and gives the content the room the shape adds", () => {
     const wide = viewportOf({ cssWidth: 1920, cssHeight: 900 });
     const layout = shellLayout(wide);
-    assert.ok(layout.rail.x < 0 && Math.abs(layout.rail.x - wide.bounds.x) <= 1, "the rail on the window's left edge, left of the design area");
+    assert.ok(layout.bar.x < 0 && Math.abs(layout.bar.x - wide.bounds.x) <= 1, "the bar from the window's left edge, left of the design area");
     assert.ok(layout.content.width > shellLayout(viewportOf(DESKTOP)).content.width, "a wider content area");
     const huge = shellLayout(viewportOf({ cssWidth: 6000, cssHeight: 900 }));
     assert.equal(huge.content.width, 2200, "up to a limit");
@@ -161,44 +156,37 @@ describe("SceneManager and a scene in a frame", () => {
     manager.onPointer({ type: "down", x: area.x + 10, y: area.y + 10, button: 0, pointerType: "mouse" });
     manager.onPointer({ type: "up", x: area.x + 10, y: area.y + 10, button: 0, pointerType: "mouse" });
     assert.equal(scene.pressed, 1);
-    // The rail is the scene's too: Home, in its place on the design area, opens the menu.
-    const home = /** @type {import("../../src/rendering/ui/UiNode.js").UiNode} */ (scene.findNode("shell.nav.home"));
-    const at = center(home);
+    // The bar is the scene's too: its settings, in their place on the design area, open.
+    const settings = /** @type {import("../../src/rendering/ui/UiNode.js").UiNode} */ (scene.findNode("settings"));
+    const at = center(settings);
     manager.onPointer({ type: "down", x: at.x + area.x, y: at.y + area.y, button: 0, pointerType: "mouse" });
     manager.onPointer({ type: "up", x: at.x + area.x, y: at.y + area.y, button: 0, pointerType: "mouse" });
-    assert.equal(manager.currentId, SceneId.HOME);
+    assert.equal(scene.overlay?.id, "settings");
   });
 });
 
-describe("The rail", () => {
-  it("lists the five sections under fixed names and lights the screen's", () => {
+describe("Opening a section", () => {
+  it("has no rail: Home lists the sections", () => {
     const { app, services } = world();
     const scene = new ProbeScene(services, app);
     scene.enter({});
-    const items = SECTIONS.map((section) => scene.findNode(`shell.nav.${section.id}`));
-    assert.deepEqual(items.map((item) => item?.label), ["Home", "Play", "Decks", "Market", "Season"]);
-    assert.deepEqual(items.map((item) => item?.selected), [false, false, true, false, false]);
-    assert.ok(items.every((item) => item.bounds.x < 0 && item.bounds.x + item.bounds.width <= 0), "left of the content");
-    assert.ok(rendered(scene).includes("Decks"));
+    assert.equal(scene.findNode("shell.rail"), null);
+    assert.ok(SECTIONS.every((section) => scene.findNode(`shell.nav.${section.id}`) === null));
   });
 
   it("opens each section's screen", () => {
     const { app, services, navigated } = world();
     const scene = new ProbeScene(services, app);
     for (const section of SECTIONS) {
-      scene.findNode(`shell.nav.${section.id}`).activate();
+      scene.openSection(section.id);
     }
     assert.deepEqual(navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.PLAY, SceneId.DECKS, SceneId.SHOP, SceneId.SEASON]);
   });
 
-  it("keeps a section it cannot open in its place, locked, and says why", () => {
+  it("says why a section it cannot open is locked", () => {
     const { app, services, navigated } = world({ scenes: [SceneId.HOME, SceneId.DECK_SELECTION, SceneId.DECK_BUILDER] });
     const scene = new ProbeScene(services, app);
-    const market = scene.findNode("shell.nav.market");
-    assert.equal(market.locked, true);
-    assert.equal(scene.findNode("shell.nav.season").locked, true);
-    assert.equal(scene.findNode("shell.nav.play").locked, false);
-    market.activate();
+    scene.openSection(SectionId.MARKET);
     assert.deepEqual(navigated, [], "nothing opens");
     assert.equal(scene.overlay?.id, "shell.notice");
     assert.ok(rendered(scene).some((text) => text.includes("Not available offline")));
@@ -228,20 +216,22 @@ describe("Sections", () => {
 });
 
 describe("The top bar", () => {
-  it("names the screen and shows Back only when the screen has somewhere to go back to", () => {
+  it("starts with the game's logo, shows Back only when the screen has somewhere to go back to, and no title", () => {
     const { app, services } = world();
     const scene = new ProbeScene(services, app);
     scene.enter({});
-    assert.equal(scene.findNode("shell.title").text, "Probe");
+    assert.equal(scene.findNode("shell.title"), null, "the bar names no screen");
+    assert.ok(!rendered(scene).includes("Probe"));
     assert.equal(scene.backButton, null);
     let backs = 0;
-    scene.setHeading({ title: "Probe · editing", back: () => (backs += 1) });
-    assert.equal(scene.findNode("shell.title").text, "Probe · editing");
+    scene.setHeading({ back: () => (backs += 1) });
     assert.equal(scene.backButton?.caption, "Back");
     press(scene, center(scene.backButton));
     assert.equal(backs, 1);
-    const title = scene.findNode("shell.title");
-    assert.ok(title.bounds.x >= scene.backButton.bounds.x + scene.backButton.bounds.width, "the title after Back");
+    const logo = scene.findNode("shell.logo");
+    const bar = scene.findNode("shell.bar");
+    assert.ok(logo.bounds.x < bar.bounds.x + 30 && logo.bounds.x + logo.bounds.width <= scene.backButton.bounds.x, "the logo first, at the bar's left end");
+    assert.ok(rendered(scene).includes("KIJAM"), "its letters until the painted logo is ready");
   });
 
   it("offers Sign in while signed out, and the player's account once signed in", async () => {
@@ -286,21 +276,20 @@ describe("The top bar", () => {
     identity.become(ALICE);
     await settle();
     await settle();
-    const title = scene.findNode("shell.title");
-    assert.ok(title.width >= 120, `the title keeps its room (${title.width})`);
+    assert.ok(scene.findNode("shell.logo") && scene.backButton, "the logo and Back");
     assert.ok(scene.findNode("notifications") && scene.findNode("settings") && scene.findNode("profile"), "the bell, the settings and the account stay");
     assert.equal(scene.findNode("profile").named, false, "a phone shows the player's picture alone");
     assert.ok(scene.findNode("shell.wallet") && scene.findNode("shell.entries"), "the wallet and the entries too");
   });
 
-  it("lets the controls that matter least give way first when the title would be crowded", () => {
+  it("lets the controls that matter least give way first when there is not room for all", () => {
     const layout = shellLayout(viewportOf(IPHONE_SE));
     const made = [];
     const control = (id, drop) => ({ id, width: 160, drop, make: (box) => (made.push(id), new Button({ id, ...box, text: id, onActivate: () => undefined })) });
     const bar = new TopBar({ layout, origin: { x: 0, y: 0 }, screen: () => layout.bar, heading: { title: "A long title", back: null }, controls: [control("wallet", 2), control("entries", 1), control("bell", Infinity), control("account", Infinity)] });
     assert.deepEqual(made.sort(), ["account", "bell", "wallet"], "the entries went first, the wallet stayed while there was room");
-    const title = bar.findById("shell.title");
-    assert.ok(title.width >= 120, `the title keeps its room (${title.width})`);
+    const logo = bar.findById("shell.logo");
+    assert.ok(bar.children.filter((node) => node !== logo).every((node) => node.x >= logo.x + logo.width), "all clear of the logo");
   });
 
   it("opens the settings: the sound, Info, and the game's details", () => {
@@ -325,7 +314,8 @@ describe("A scene in the shell", () => {
     scene.onKey({ type: "keydown", key: "Tab", repeat: false });
     assert.equal(scene.focusedNode?.id, "probe.button");
     scene.onKey({ type: "keydown", key: "Tab", repeat: false });
-    assert.equal(scene.focusedNode?.id, "shell.nav.home");
+    const next = scene.focusedNode;
+    assert.ok(next !== null && next.id !== "probe.button" && scene.chrome.findById(next.id) === next, `then the bar's (${next?.id})`);
   });
 
   it("keeps the shell under a dialog: it is drawn over, and out of reach", () => {
@@ -338,8 +328,9 @@ describe("A scene in the shell", () => {
     const panel = modal.panel.bounds;
     const area = /** @type {import("../../src/rendering/shell/ContentViewport.js").ContentViewport} */ (viewport).designArea;
     assert.ok(Math.abs(panel.x + panel.width / 2 - (area.x + area.width / 2)) <= 1 && Math.abs(panel.y + panel.height / 2 - (area.y + area.height / 2)) <= 1, "centred on the whole screen, shell included");
-    press(scene, center(scene.findNode("shell.nav.home")));
-    assert.equal(scene.modal, null, "a press on the rail lands on the dialog's backdrop, which closes it");
+    press(scene, center(scene.findNode("settings")));
+    assert.equal(scene.modal, null, "a press on the bar lands on the dialog's backdrop, which closes it");
+    assert.equal(scene.overlay, null, "and opens nothing");
   });
 });
 
@@ -353,24 +344,20 @@ function rendered(scene) {
 describe("Back, by one rule", () => {
   const context = (app, scenes = Object.values(SceneId)) => ({ app, hasScene: (id) => scenes.includes(id) });
 
-  it("leads a screen to its section's own, which has none: the rail and the tabs are the way around", () => {
+  it("leads a screen to its section's own", () => {
     const { app } = world();
     assert.deepEqual(backTarget(SceneId.DAILY, {}, context(app)), { scene: SceneId.PLAY, params: {} });
     assert.deepEqual(backTarget(SceneId.DECK_BUILDER, {}, context(app)), { scene: SceneId.DECKS, params: {} });
     assert.deepEqual(backTarget(SceneId.NOTIFICATIONS, {}, context(app)), { scene: SceneId.HOME, params: {} }, "a screen of no section goes Home");
-    for (const own of [SceneId.HOME, SceneId.PLAY, SceneId.DECKS, SceneId.COLLECTION, SceneId.SHOP, SceneId.MARKET, SceneId.TRADES, SceneId.SEASON]) {
-      assert.equal(backTarget(own, {}, context(app)), null, `${own} has no Back`);
-    }
   });
 
-  it("on a phone, which has no rail, leads a section's own screens Home", () => {
+  it("leads a section's own screens Home, where the sections are; Home has none", () => {
     const { app } = world();
-    const phone = { ...context(app), compact: true };
-    for (const own of [SceneId.PLAY, SceneId.DECKS, SceneId.COLLECTION, SceneId.SHOP, SceneId.SEASON]) {
-      assert.deepEqual(backTarget(own, {}, phone), { scene: SceneId.HOME, params: {} }, `${own} goes Home`);
+    for (const own of [SceneId.PLAY, SceneId.DECKS, SceneId.COLLECTION, SceneId.SHOP, SceneId.MARKET, SceneId.TRADES, SceneId.SEASON]) {
+      assert.deepEqual(backTarget(own, {}, context(app)), { scene: SceneId.HOME, params: {} }, `${own} goes Home`);
     }
-    assert.equal(backTarget(SceneId.HOME, {}, phone), null, "Home has no Back");
-    assert.deepEqual(backTarget(SceneId.DAILY, {}, phone), { scene: SceneId.PLAY, params: {} }, "the other screens as on a wide screen");
+    assert.equal(backTarget(SceneId.HOME, {}, context(app)), null, "Home has no Back");
+    assert.equal(backTarget(SceneId.PLAY, {}, context(app, [SceneId.PLAY])), null, "nor a section's screen without a Home to go to");
   });
 
   it("leads back to the screen that opened it, when that one said so, opened as it was", () => {
@@ -413,7 +400,7 @@ describe("A section's tabs", () => {
     const scene = new ProbeScene(services, app, { scene: SceneId.SHOP, title: "Shop" });
     assert.deepEqual(["shop", "market", "trades"].map((id) => scene.findNode(`shell.tab.${id}`)?.label), ["Shop", "Player market", "Trades"]);
     assert.equal(scene.findNode("shell.tab.shop").selected, true);
-    assert.equal(scene.findNode("shell.title").text, "Market", "the section's name before them");
+    assert.equal(scene.findNode("shell.title"), null, "no name before them: the lit tab says where");
     scene.findNode("shell.tab.market").activate();
     assert.deepEqual(navigated, [{ id: SceneId.MARKET, params: {} }]);
     scene.findNode("shell.tab.shop").activate();

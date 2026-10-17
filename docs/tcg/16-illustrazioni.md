@@ -71,7 +71,8 @@ Con lo stesso principio (immagine dipinta se pronta, altrimenti disegno procedur
 |---|---|---|
 | Tappeto della partita, dorso delle carte, pietra dei pannelli | `TableArt` (`TablePiece.MAT`, `CARD_BACK`, `PANEL`) | `Tappeto.jpg`, `Dorso.jpg`, `Texture.jpg` |
 | Sfondo dei menu, angoli dei pannelli, medaglione dei divisori, pulsanti primari e secondari | `UiArt` (`UiPiece`) | `Sfondo_Menu.jpg`, `Angolo_decorativo_pannelli.jpg`, `DIVISORE_TITOLI.jpg`, `BOTTONE_PRIMARIO.jpg`, `BOTTONE_SECONDARIO.jpg` |
-| Immagini dei modi di giocare nella schermata Play (online, allenamento, tutorial; le sfide mostrano il personaggio) | `UiArt` (`UiPiece.PLAY_*`) | `Play_Online.jpg`, `Play_Practice.jpg`, `Play_Tutorial.jpg` (620×630, cornice tagliata via) |
+| Immagini dei modi di giocare nella schermata Play (online: una battaglia nell'arena; allenamento, tutorial; le sfide mostrano il personaggio) | `UiArt` (`UiPiece.PLAY_*`) | `Play_Online_Arena.jpg`, `Play_Practice.jpg`, `Play_Tutorial.jpg` (620×630, cornice tagliata via) |
+| Immagini delle carte delle sezioni nella Home (Play: le spade; Decks: un mazzo; Market: una bancarella; Season, solo sul telefono: i trofei sul podio; in verticale, a coprire il riquadro; Play anche orizzontale, per la carta larga su PC) | `UiArt` (`UiPiece.PLAY_ONLINE_TALL`, `PLAY_ONLINE_WIDE`, `DECKS_TALL`, `MARKET_TALL`, `SEASON_TALL`) | `Play_Online_Tall.jpg`, `Decks_Tall.jpg`, `Market_Tall.jpg`, `Season_Tall.jpg` (620×1111), `Play_Online_Wide.jpg` (1100×614) |
 | Moneta del sorteggio iniziale (testa e croce, 1024²) | `CoinArt` | `coin_testa.png`, `coin_croce.png` |
 
 - Le immagini dei menu sono oro su nero, 1168 × 784 o 784 × 1168. `UI_ART.layout` in `main.js` dice dove stanno le parti utili in ogni immagine, in frazioni: se si rigenera un file, quelle misure vanno riprese.

@@ -12,6 +12,20 @@ import { SceneId } from "../sceneIds.js";
 /** Why what needs the game server is locked. */
 export const OFFLINE_REASON = "Not available offline.";
 const MINUTE = 60_000;
+/**
+ * What today's challenge shows.
+ * @typedef {Readonly<{ kind: "locked", reason: string }>
+ *   | Readonly<{ kind: "waiting", text: string }>
+ *   | Readonly<{ kind: "next", opponent: import("../../../application/ports/DailyApi.contract.js").DailyOpponent, stage: number }>
+ *   | Readonly<{ kind: "done", renewsIn: string }>} ChallengeView
+ *   `waiting`: the day not read yet (or not readable): the challenges still open, and say more
+ */
+/**
+ * What online play shows.
+ * @typedef {Readonly<{ kind: "locked", reason: string }> | Readonly<{ kind: "open", rankedLock: string | null, note: string | null }>} OnlineView
+ *   `rankedLock`: why ranked is not open yet (null: it is)
+ */
+
 /** Who stands for the challenges before today's opponents are known: the Archmage, veiled. */
 const STAND_IN_CHALLENGER = Object.freeze({ id: "archmage", name: "The Archmage", faction: "arcane", boss: false, state: /** @type {const} */ ("locked") });
 
@@ -45,7 +59,7 @@ export class PlayViews {
     return this.#app.onboarding?.has(Milestone.TUTORIAL, null) === true;
   }
 
-  /** @returns {import("./ChallengeCard.js").ChallengeView} */
+  /** @returns {ChallengeView} */
   challenge() {
     const daily = this.#app.daily;
     if (!this.server || daily === undefined || this.#app.online === undefined || !this.#hasScene(SceneId.DAILY)) {
@@ -68,7 +82,7 @@ export class PlayViews {
   /**
    * The character that stands for today's challenge: the next opponent to beat; once the day is won, its boss; before
    * the day is known (signed out, offline, still reading), the Archmage, veiled.
-   * @param {import("./ChallengeCard.js").ChallengeView} view
+   * @param {ChallengeView} view
    * @returns {import("../daily/CharacterPortrait.js").PortraitCharacter}
    */
   challenger(view) {
@@ -79,7 +93,7 @@ export class PlayViews {
     return boss ?? STAND_IN_CHALLENGER;
   }
 
-  /** @returns {import("./OnlineCard.js").OnlineView} */
+  /** @returns {OnlineView} */
   online() {
     if (!this.server || this.#app.online === undefined || !this.#hasScene(SceneId.ONLINE)) {
       return { kind: "locked", reason: OFFLINE_REASON };

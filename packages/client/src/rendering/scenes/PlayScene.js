@@ -132,7 +132,7 @@ export class PlayScene extends SectionScene {
   }
 
   /**
-   * @param {import("./home/ChallengeCard.js").ChallengeView} view
+   * @param {import("./home/PlayViews.js").ChallengeView} view
    * @param {boolean} primary
    */
   #dailyTile(view, primary) {
@@ -151,7 +151,7 @@ export class PlayScene extends SectionScene {
   }
 
   /**
-   * @param {import("./home/OnlineCard.js").OnlineView} view
+   * @param {import("./home/PlayViews.js").OnlineView} view
    * @param {boolean} primary
    */
   #onlineTile(view, primary) {
@@ -159,7 +159,7 @@ export class PlayScene extends SectionScene {
     const note = view.kind === "locked" ? view.reason : (view.rankedLock ?? view.note);
     const play = (/** @type {"casual" | "ranked"} */ mode) => this.services.navigate(SceneId.ONLINE, { mode });
     return {
-      picture: { piece: UiPiece.PLAY_ONLINE, icon: Icon.PLAY, faction: "ember" },
+      picture: { piece: UiPiece.PLAY_ONLINE_ARENA, icon: Icon.PLAY, faction: "ember" },
       kicker: "Online · real players",
       title: "Online",
       text: "Casual to practise, free. Ranked to climb the season and share its jackpot.",
@@ -213,8 +213,8 @@ export class PlayScene extends SectionScene {
 
 /**
  * The tile with the screen's gold button: today's challenge while there is one to fight, else online play, else practice.
- * @param {import("./home/ChallengeCard.js").ChallengeView} challenge
- * @param {import("./home/OnlineCard.js").OnlineView} online
+ * @param {import("./home/PlayViews.js").ChallengeView} challenge
+ * @param {import("./home/PlayViews.js").OnlineView} online
  * @returns {"daily" | "online" | "practice"}
  */
 function goldTile(challenge, online) {
@@ -235,7 +235,7 @@ function variantOf(primary) {
 
 /**
  * Where the player stands with today's challenges, in a line.
- * @param {import("./home/ChallengeCard.js").ChallengeView} view
+ * @param {import("./home/PlayViews.js").ChallengeView} view
  * @returns {import("./play/PlayTile.js").TileStatus}
  */
 function dailyStatus(view) {

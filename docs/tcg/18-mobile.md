@@ -26,7 +26,7 @@ Le scene si ridispongono (`Scene.relayout`) solo quando cambia lo spazio di prog
 
 ## Le schermate
 
-- **Cornice di navigazione** (27): barra laterale a sinistra (84 unità, icone e nomi corti) e barra in alto bassa (52), con *Back* ridotto alla freccia; le schede di una sezione prendono i loro nomi corti.
+- **Cornice di navigazione** (27): nessuna barra laterale (le sezioni sono le card della Home), barra in alto bassa (52), con *Back* ridotto alla freccia; le schede di una sezione prendono i loro nomi corti.
 - **Barra degli strumenti e colonne condivise** (`deckBuilder/layout.js` → `screenLayout(viewport)`): su compact la riga degli strumenti è alta 54 (e manca dove non serve), due colonne affiancate, pannelli con angoli decorati piccoli (`Panel.smallCorners`).
 - **Filtri delle carte**: su compact un solo bottone "Filter: …" che apre la barra completa in un dialogo; la scelta si applica con **Done**.
 - **Righe di carte** (`CardStrip`): se il nome non ha spazio, attacco/vita e numero di copie passano nel sottotitolo. Dove non c'è posto per "Info"/"View", è la striscia stessa (`Hotspot`) ad aprire la carta.

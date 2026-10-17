@@ -3,10 +3,10 @@
  * screen inside the shell.
  *
  * - Every screen belongs to one section (or to none: the notifications,
- *   Info), which the rail lights.
- * - A section's own screens — the one the rail opens and its tabs — have
- *   no Back of their own: the rail and the tabs are the way around. On a
- *   phone, which has no rail, their Back leads Home, where the sections are.
+ *   Info).
+ * - A section's own screens — the one Home's card opens and its tabs —
+ *   have Back to Home, where the sections are (Home itself has none); the
+ *   tabs are the way around within the section.
  * - Any other screen goes Back to the screen it was opened from, when that
  *   one said so (`back`, with what it is told again, `backParams`), and
  *   otherwise to its section's own screen (Home for a screen of no
@@ -56,7 +56,7 @@ export function sectionOf(sceneId) {
 }
 
 /**
- * Whether a screen is one of its section's own: the one the rail opens, or one of its tabs.
+ * Whether a screen is one of its section's own: the one Home's card opens, or one of its tabs.
  * @param {string} sceneId
  * @param {import("./sections.js").SectionContext} context
  */
@@ -98,7 +98,7 @@ export function backTarget(sceneId, params, context) {
   }
   const section = sectionOf(sceneId);
   if (isSectionScreen(sceneId, context)) {
-    return context.compact === true && section?.id !== SectionId.HOME && context.hasScene(SceneId.HOME) ? Object.freeze({ scene: SceneId.HOME, params: Object.freeze({}) }) : null;
+    return section?.id !== SectionId.HOME && context.hasScene(SceneId.HOME) ? Object.freeze({ scene: SceneId.HOME, params: Object.freeze({}) }) : null;
   }
   const home = section === null ? { scene: SceneId.HOME } : section.destination(context);
   if (!("scene" in home) || home.scene === sceneId || !context.hasScene(home.scene)) {

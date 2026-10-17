@@ -25,10 +25,19 @@ export const UiPiece = Object.freeze({
   BUTTON_SECONDARY: "buttonSecondary",
   /** The game's name at the top of the rail, engraved gold letters on transparency. */
   TITLE: "title",
-  /** The Play screen's pictures of its ways to play: online (crossed swords), practice (a target), the tutorial (a book). */
-  PLAY_ONLINE: "playOnline",
+  /** The Play screen's pictures of its ways to play: online (a battle in an arena), practice (a target), the tutorial (a book). */
+  PLAY_ONLINE_ARENA: "playOnlineArena",
   PLAY_PRACTICE: "playPractice",
   PLAY_TUTORIAL: "playTutorial",
+  /** Online play's crossed swords painted upright, for the Play card on Home; and in landscape, for that card on a wide screen. */
+  PLAY_ONLINE_TALL: "playOnlineTall",
+  PLAY_ONLINE_WIDE: "playOnlineWide",
+  /** A deck of cards in smoke, upright, for the Decks card on a phone's Home. */
+  DECKS_TALL: "decksTall",
+  /** A market stall of cards, potions and chests, upright, for the Market card on a phone's Home. */
+  MARKET_TALL: "marketTall",
+  /** Gold, silver and bronze trophies on a podium in a hall, upright, for the Season card on a phone's Home. */
+  SEASON_TALL: "seasonTall",
 });
 
 /**

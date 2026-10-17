@@ -88,7 +88,7 @@ describe("PlayScene", () => {
     assert.equal(byId(scene, "play.watch").isEffectivelyEnabled, false, "watching needs an account");
     assert.ok(scene.chrome.findById("play.watch") && scene.chrome.findById("play.history"), "both links are in the bar");
     assert.equal(byId(scene, "play.tutorial.play").text, "Start the tutorial");
-    assert.deepEqual(["play.online.art", "play.practice.art", "play.tutorial.art"].map((id) => byId(scene, id)?.piece), [UiPiece.PLAY_ONLINE, UiPiece.PLAY_PRACTICE, UiPiece.PLAY_TUTORIAL], "each way to play has its painting");
+    assert.deepEqual(["play.online.art", "play.practice.art", "play.tutorial.art"].map((id) => byId(scene, id)?.piece), [UiPiece.PLAY_ONLINE_ARENA, UiPiece.PLAY_PRACTICE, UiPiece.PLAY_TUTORIAL], "each way to play has its painting");
     assert.ok(byId(scene, "play.daily.art") instanceof CharacterPortrait, "the challenges show a character even before today's are known");
   });
 

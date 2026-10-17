@@ -148,12 +148,12 @@ describe("CollectionScene", () => {
     return { ...world, scene };
   }
 
-  it("is a tab of the Decks section, beside the player's decks, with no Back of its own", async () => {
+  it("is a tab of the Decks section, beside the player's decks, its Back leading Home", async () => {
     const { scene, navigated } = await collectionScene();
     assert.equal(byId(scene, "shell.tab.collection").selected, true);
-    assert.equal(byId(scene, "shell.back"), null);
+    assert.ok(byId(scene, "shell.back"));
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });
-    assert.equal(navigated.length, 0);
+    assert.deepEqual(navigated.at(-1), { id: SceneId.HOME, params: {} });
     click(byId(scene, "shell.tab.decks"));
     assert.deepEqual(navigated.at(-1), { id: SceneId.DECKS, params: {} });
     scene.exit();

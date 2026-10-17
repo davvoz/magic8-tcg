@@ -424,11 +424,11 @@ describe("ShopScene", () => {
     assert.match(scene.modal.findById(`orders.detail.${order.id}`).text, /time to pay is over: it closes on its own$/);
   });
 
-  it("is what the rail's Market opens", async () => {
+  it("is what Home's Market opens", async () => {
     const { app, services, navigated } = await harness();
     const home = new HomeScene(services, app);
     home.enter({});
-    home.findNode("shell.nav.market").activate();
+    home.findNode("home.section.market").activate();
     assert.equal(navigated.at(-1).id ?? navigated.at(-1), SceneId.SHOP);
     home.exit();
   });
