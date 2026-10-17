@@ -15,8 +15,8 @@ import { SceneId } from "./sceneIds.js";
 
 /** The panel on a wide screen: its pills under the title, the steps under them. */
 const WIDE = Object.freeze({ perks: Object.freeze({ y: 60, height: 30 }), steps: Object.freeze({ y: 106, row: 40 }), gap: 14 });
-/** On a phone: a step's row. */
-const COMPACT = Object.freeze({ row: 30, gap: 6 });
+/** On a phone: a step's row, room for its words on two lines on the narrowest screens. */
+const COMPACT = Object.freeze({ row: 40, gap: 6 });
 /** How a casual game starts, wide and in short on a phone. */
 const STEPS = Object.freeze({
   full: Object.freeze(["Choose one of your decks on the left.", "Find a match, or click a player online to challenge them.", "Play! The first player is drawn by lot."]),

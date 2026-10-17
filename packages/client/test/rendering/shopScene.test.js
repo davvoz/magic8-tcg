@@ -25,10 +25,10 @@ const theme = loadTheme();
 const content = await loadBundledContent();
 
 /**
- * @param {{ signedIn?: boolean, budget?: string, listing?: object, entries?: object, params?: object, now?: () => number }} [options] `budget`: the STEEM the player's wallet holds (no balance service without it);
+ * @param {{ signedIn?: boolean, budget?: string, listing?: object, entries?: object, params?: object, now?: () => number, size?: { cssWidth: number, cssHeight: number } }} [options] `budget`: the STEEM the player's wallet holds (no balance service without it);
  *   `entries`: the entry service; `params`: what the scene is entered with; `now`: the scene's clock (the fake server's orders are due at 1)
  */
-async function harness({ signedIn = true, budget, listing = LISTING, entries, params = {}, now } = {}) {
+async function harness({ signedIn = true, budget, listing = LISTING, entries, params = {}, now, size = { cssWidth: 1600, cssHeight: 900 } } = {}) {
   const world = accountWorld(content);
   if (signedIn) {
     world.identity.become(ALICE);
@@ -39,7 +39,7 @@ async function harness({ signedIn = true, budget, listing = LISTING, entries, pa
   const wallet = { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async (request) => (transfers.push(request), ok("ef".repeat(20))) };
   const shop = new ShopService({ api: market.api, wallet, account: world.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" });
   const viewport = new Viewport(theme.layout);
-  viewport.resize({ cssWidth: 1600, cssHeight: 900 });
+  viewport.resize(size);
   const navigated = [];
   const app = {
     content,
@@ -82,6 +82,16 @@ function rendered(scene) {
 }
 
 describe("ShopScene", () => {
+  it("on a phone, leaves out the reminder of how paying works, and keeps what the player must know", async () => {
+    const phone = { cssWidth: 667, cssHeight: 375 };
+    const { scene } = await harness({ budget: "0.700", size: phone });
+    assert.equal(byId(scene, "shop.status"), null, "no reminder: its room goes to what the pack holds");
+    click(byId(scene, "shop.more"));
+    assert.equal(byId(scene, "shop.status").text, "Not enough STEEM: this costs 1 STEEM, your wallet holds 0.7 STEEM.");
+    const wide = await harness({ budget: "0.700" });
+    assert.match(byId(wide.scene, "shop.status").text, /before anything is paid/, "a wide screen keeps it");
+  });
+
   it("shows the player's budget in STEEM and offers to pay only what it covers", async () => {
     const { scene, transfers } = await harness({ budget: "0.700" });
     assert.equal(byId(scene, "shop.budget").text, "Your budget: 0.7 STEEM");

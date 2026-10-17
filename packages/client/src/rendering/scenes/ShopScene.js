@@ -193,7 +193,8 @@ export class ShopScene extends SectionScene {
     const { columns, inset } = this.#screen;
     const { line, buy, quantity, rowGap, compactPurchase } = this.#m;
     if (compactPurchase) {
-      return columns.height - inset - buy.height - rowGap - quantity.height - rowGap - 2 * line;
+      const status = this.#compactStatus === null ? 0 : 2 * line + rowGap;
+      return columns.height - inset - buy.height - rowGap - quantity.height - status;
     }
     return columns.height - inset - 2 * line - 8 - buy.height - inset - quantity.height;
   }
@@ -232,6 +233,8 @@ export class ShopScene extends SectionScene {
   #ordersShown = false;
   /** What the last Add to cart did, until the next choice. @type {{ text: string, colorKey: string } | null} */
   #notice = null;
+  /** A phone's status line over the purchase of the product shown (null: none, its room left to the product). @type {{ text: string, colorKey: string } | null} */
+  #compactStatus = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -533,6 +536,7 @@ export class ShopScene extends SectionScene {
    * @returns {Button | null} the Buy button
    */
   #buildDetail(shelves) {
+    this.#compactStatus = null;
     const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
     const selected = this.#selected[this.#category];
     if (this.#category === ShopCategory.SINGLES) {
@@ -543,6 +547,7 @@ export class ShopScene extends SectionScene {
     if (product === undefined) {
       return null;
     }
+    this.#compactStatus = this.#compactStatusOf(product);
     const deck = this.#deckOf(product);
     this.#buildTitle(panel, product, deck === undefined || !this.#screen.compact);
     if (deck !== undefined) {
@@ -699,6 +704,7 @@ export class ShopScene extends SectionScene {
    * @returns {Button} the Buy button
    */
   #buildSingleDetail(panel, offer) {
+    this.#compactStatus = this.#compactStatusOf(offer.product);
     const card = this.#app.content.catalog.get(offer.cardId);
     const { single: SINGLE, line: LINE } = this.#m;
     const compact = this.#screen.compact;
@@ -850,9 +856,12 @@ export class ShopScene extends SectionScene {
     const statusY = this.#purchaseTop;
     const price = priceOf(product);
     const amount = multiplyAmount(price.amount, this.#quantity);
-    const status = this.#statusLine(purchase, amount, price.asset);
-    panel.add(new TextBlock({ id: "shop.status", x: inset, y: statusY, width, height: 2 * line, text: status.text, size: "small", colorKey: status.colorKey }));
-    const quantityY = statusY + 2 * line + rowGap;
+    const status = this.#compactStatus;
+    let quantityY = statusY;
+    if (status !== null) {
+      panel.add(new TextBlock({ id: "shop.status", x: inset, y: statusY, width, height: 2 * line, text: status.text, size: "small", colorKey: status.colorKey }));
+      quantityY += 2 * line + rowGap;
+    }
     panel.add(new Button({ id: "shop.less", x: inset, y: quantityY, width: action.small, height: quantity.height, text: "−", enabled: this.#quantity > 1, onActivate: () => this.#changeQuantity(-1, product) }));
     panel.add(new Label({ id: "shop.quantity", x: inset + action.small, y: quantityY, width: quantity.width, height: quantity.height, text: String(this.#quantity), size: "heading", weight: "bold" }));
     panel.add(new Button({ id: "shop.more", x: inset + action.small + quantity.width, y: quantityY, width: action.small, height: quantity.height, text: "+", enabled: this.#quantity < product.perOrder, onActivate: () => this.#changeQuantity(1, product) }));
@@ -932,7 +941,7 @@ export class ShopScene extends SectionScene {
    * @param {import("../../application/shop/ShopService.js").Purchase} purchase
    * @param {string} amount what Buy would pay
    * @param {string} asset
-   * @returns {{ text: string, colorKey: string }}
+   * @returns {{ text: string, colorKey: string, hint?: boolean }} `hint`: only the reminder of how paying works
    */
   #statusLine(purchase, amount, asset) {
     if (purchase.error !== null) {
@@ -950,7 +959,22 @@ export class ShopScene extends SectionScene {
       return { text: "Sign in to buy.", colorKey: "textMuted" };
     }
     const preview = transferPreviewText(this.#app);
-    return this.#shortfall(amount, asset) ?? { text: `${preview[0].toUpperCase()}${preview.slice(1)} before anything is paid.`, colorKey: "textMuted" };
+    return this.#shortfall(amount, asset) ?? { text: `${preview[0].toUpperCase()}${preview.slice(1)} before anything is paid.`, colorKey: "textMuted", hint: true };
+  }
+
+  /**
+   * What a phone's purchase says over its quantity: the status line, unless it is only the reminder of how paying
+   * works, whose room goes to what the product holds; null for none.
+   * @param {Product} product
+   * @returns {{ text: string, colorKey: string } | null}
+   */
+  #compactStatusOf(product) {
+    if (!this.#m.compactPurchase) {
+      return null;
+    }
+    const price = priceOf(product);
+    const status = this.#statusLine(this.#shop().state.purchase, multiplyAmount(price.amount, this.#quantity), price.asset);
+    return status.hint === true ? null : status;
   }
 
   /**
