@@ -124,7 +124,7 @@ export class DecksScene extends SectionScene {
     const { columns, inset } = screen;
     const panel = this.root.add(new Panel({ ...screen.panel, x: column.x, y: columns.top, width: column.width, height: columns.height }));
     const width = column.width - 2 * inset;
-    panel.add(new Label({ id: "decks.title", x: inset, y: m.titleY, width, height: m.title, text: "Your decks", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    panel.add(new Label({ id: "decks.title", x: screen.titleInset, y: m.titleY, width: width - 2 * (screen.titleInset - inset), height: m.title, text: "Your decks", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left" }));
     const list = panel.add(new ScrollList({ id: LIST_ID, x: inset, y: m.listY, width, height: columns.height - m.listY - inset }));
     const { options, playingId } = this.#decks();
     if (options.length === 0) {
@@ -185,12 +185,14 @@ export class DecksScene extends SectionScene {
     const { columns, inset } = screen;
     const panel = this.root.add(new Panel({ ...screen.panel, x: side.x, y: columns.top, width: side.width, height: columns.height }));
     const width = side.width - 2 * inset;
+    // What sits in the column's top band keeps clear of its painted corners.
+    const across = (/** @type {number} */ at) => (at < inset ? { x: screen.titleInset, width: side.width - 2 * screen.titleInset } : { x: inset, width });
     let y = m.titleY;
     const starter = this.#app.account?.state.status === AccountStatus.READY && this.#app.account.needsStarter;
     /** @type {Button | null} */
     let main = null;
     if (starter) {
-      panel.add(new Label({ x: inset, y, width, height: m.title, text: "Your free starter deck", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+      panel.add(new Label({ x: screen.titleInset, y, width: width - 2 * (screen.titleInset - inset), height: m.title, text: "Your free starter deck", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
       y += m.title + 2;
       panel.add(new TextBlock({ x: inset, y, width, height: m.starterText, text: "Pick one of the starter decks: its cards become yours, and it is saved here as a deck.", size: "small", align: "left", colorKey: "textMuted" }));
       y += m.starterText + 4;
@@ -199,10 +201,10 @@ export class DecksScene extends SectionScene {
     }
     const draft = this.#app.deckBuilding.draft;
     if (draft !== null) {
-      panel.add(new Button({ id: "decks.resume", x: inset, y, width, height: m.button, text: `Continue editing "${draft.name}"`, enabled: this.services.hasScene(SceneId.DECK_BUILDER), onActivate: () => this.services.navigate(SceneId.DECK_BUILDER, this.backHere()) }));
+      panel.add(new Button({ id: "decks.resume", ...across(y), y, height: m.button, text: `Continue editing "${draft.name}"`, enabled: this.services.hasScene(SceneId.DECK_BUILDER), onActivate: () => this.services.navigate(SceneId.DECK_BUILDER, this.backHere()) }));
       y += m.button + m.gap;
     }
-    panel.add(new Label({ x: inset, y, width, height: m.title, text: "New deck", size: starter ? "body" : "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    panel.add(new Label({ ...across(y), y, height: m.title, text: "New deck", size: starter ? "body" : "subheading", weight: "bold", colorKey: "accentLight", align: "left" }));
     y += m.title;
     for (const text of this.#hints(screen.compact)) {
       panel.add(new Label({ x: inset, y, width, height: m.text, text, size: "small", align: "left", colorKey: "textMuted", fit: true }));

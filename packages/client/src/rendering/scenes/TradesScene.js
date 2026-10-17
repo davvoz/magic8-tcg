@@ -154,7 +154,7 @@ export class TradesScene extends SectionScene {
     const state = this.#trading().state;
     const message = state.error ?? state.notice ?? "Card for card. Offered cards are held until the offer is answered or expires.";
     this.root.add(new Label({ id: "trades.status", x: header.sideMargin, y: header.y, width: viewport.logicalWidth - 2 * header.sideMargin - (header.backWidth + 16), height: header.height, text: message, size: "small", colorKey: state.error === null ? "textMuted" : "danger", align: "left", fit: true }));
-    return this.root.add(new Button({ id: "trades.new", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#newOfferText(), onActivate: () => this.#toggleComposer() }));
+    return this.root.add(new Button({ keepPlate: true, id: "trades.new", x: viewport.logicalWidth - header.sideMargin - header.backWidth, y: header.y + 4, width: header.backWidth, height: header.height - 8, text: this.#newOfferText(), onActivate: () => this.#toggleComposer() }));
   }
 
   #buildList() {
@@ -162,7 +162,7 @@ export class TradesScene extends SectionScene {
     const width = this.#screen.columns.left.width - 2 * this.#screen.inset;
     const titleY = this.#screen.compact ? 8 : 14;
     const listY = this.#screen.compact ? 50 : 60;
-    panel.add(new Label({ x: this.#screen.inset, y: titleY, width, height: 36, text: "Your trades", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    panel.add(new Label({ x: this.#screen.titleInset, y: titleY, width: width - 2 * (this.#screen.titleInset - this.#screen.inset), height: 36, text: "Your trades", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left" }));
     const list = panel.add(new ScrollList({ id: "trades.list", x: this.#screen.inset, y: listY, width, height: this.#screen.columns.height - listY - this.#screen.inset }));
     const { trades, loading } = this.#trading().state;
     if (trades.length === 0) {

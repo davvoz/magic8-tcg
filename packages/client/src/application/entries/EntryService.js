@@ -5,7 +5,6 @@
  * decides everything: this only tells the player before they try.
  */
 import { RANKED_ENTRY } from "../ports/EntriesApi.contract.js";
-import { multiplyAmount } from "../shop/shopCatalog.js";
 
 /**
  * @typedef {import("../ports/EntriesApi.contract.js").Entries} Entries
@@ -79,41 +78,22 @@ export class EntryService {
 }
 
 /**
- * What a ranked game costs now, as the screens show it: in the shop's money when its price is known ("1.000 STEEM"),
- * else in entries; null when ranked play is free (or not known yet).
+ * What a ranked game costs now, as the screens show it: in ranked tickets ("1 ranked ticket"), never in money (money buys
+ * the entries; a game takes entries); null when ranked play is free (or not known yet).
  * @param {Entries | null} ranked
- * @param {Readonly<{ asset: string, amount: string }> | null} [price] what one ranked entry costs in the shop
  */
-export function rankedFeeText(ranked, price = null) {
+export function rankedFeeText(ranked) {
   if (ranked === null || ranked.perGame === 0) {
     return null;
   }
-  return price === null ? `${ranked.perGame} ranked ${entryWord(ranked.perGame)}` : `${multiplyAmount(price.amount, ranked.perGame)} ${price.asset}`;
+  return rankedEntriesText(ranked.perGame);
 }
 
-/**
- * How many ranked entries the player holds, as the lobby's ranked panel says it (its pictures say what they cost and
- * where they go); null when ranked play is free (or not known yet).
- * @param {Entries | null} ranked
- */
-export function heldEntriesText(ranked) {
-  if (ranked === null || ranked.perGame === 0) {
-    return null;
-  }
-  return ranked.balance === 0 ? "You have no ranked entries yet." : `You have ${rankedEntriesText(ranked.balance)}.`;
-}
+/** "ticket" or "tickets": what players call ranked entries. @param {number} count */
+const entryWord = (count) => (count === 1 ? "ticket" : "tickets");
 
-/**
- * What the lobby says beside the tickets on a small screen, where the tickets alone say how many the player holds;
- * null when ranked play is free (or not known yet).
- * @param {Entries | null} ranked
- */
-export function entriesNoteText(ranked) {
-  return ranked === null || ranked.perGame === 0 ? null : "Every entry goes into the season's jackpot.";
-}
-
-/** "entry" or "entries" @param {number} count */
-const entryWord = (count) => (count === 1 ? "entry" : "entries");
-
-/** "1 ranked entry", "3 ranked entries" @param {number} count */
+/** "1 ranked ticket", "3 ranked tickets" @param {number} count */
 export const rankedEntriesText = (count) => `${count} ranked ${entryWord(count)}`;
+
+/** "1 ticket", "3 tickets": where the screen already says they are ranked ones. @param {number} count */
+export const entriesText = (count) => `${count} ${entryWord(count)}`;

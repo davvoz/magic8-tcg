@@ -58,7 +58,7 @@ const TARGET_SCENES = Object.freeze({
   [NotificationTarget.TRADES]: SceneId.TRADES,
   [NotificationTarget.MARKET]: SceneId.MARKET,
   [NotificationTarget.SHOP]: SceneId.SHOP,
-  [NotificationTarget.ONLINE]: SceneId.ONLINE,
+  [NotificationTarget.RANKED]: SceneId.RANKED,
   [NotificationTarget.REPLAY]: SceneId.REPLAY,
 });
 

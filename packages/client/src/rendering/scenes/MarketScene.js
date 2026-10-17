@@ -18,6 +18,7 @@
  * beside the sorts, the board has no seller column (the listing says who
  * sells it), and the card beside a listing is small: a tap shows it whole.
  */
+import { moneyText } from "../../application/money/moneyText.js";
 import { NO_CARD_FILTER, cardFilterOptions, cardIdsMatching, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_BUY_STAGES, BuyStage, PROBLEM_TEXT } from "../../application/sales/SalesService.js";
 import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
@@ -98,7 +99,7 @@ const Tab = Object.freeze({ BOARD: "board", MINE: "mine" });
 /** What the buyer sees at each step of a purchase. */
 const STAGE_TEXT = Object.freeze({
   [BuyStage.RESERVING]: () => "Reserving the card for you…",
-  [BuyStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${purchase.payment.amount} ${purchase.payment.asset} to @${purchase.payment.to}, the seller.`,
+  [BuyStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${moneyText(purchase.payment.amount, purchase.payment.asset)} to @${purchase.payment.to}, the seller.`,
   [BuyStage.CONFIRMING]: () => "Payment sent to the seller. The STEEM blockchain makes it final in about a minute: keep playing, you will be notified when the card is yours.",
   [BuyStage.DONE]: () => "Done: the card is in your collection.",
 });
@@ -323,11 +324,13 @@ export class MarketScene extends SectionScene {
       { tab: Tab.BOARD, text: "Board" },
       ...(this.#signedIn() ? [{ tab: Tab.MINE, text: "My sales & purchases" }] : []),
     ];
-    const width = (this.#screen.columns.left.width - 2 * this.#screen.inset - (tabs.length - 1) * this.#m.tabs.gap) / tabs.length;
+    // The row runs along the panel's top band: clear of its painted corners.
+    const left = this.#screen.titleInset;
+    const width = (this.#screen.columns.left.width - 2 * left - (tabs.length - 1) * this.#m.tabs.gap) / tabs.length;
     /** @type {Button | null} */
     let first = null;
     tabs.forEach(({ tab, text }, index) => {
-      const button = panel.add(new Button({ keepPlate: true, id: `market.tab.${tab}`, x: this.#screen.inset + index * (width + this.#m.tabs.gap), y: this.#m.tabs.top, width, height: this.#m.tabs.height, text, variant: this.#tab === tab ? "primary" : "secondary", onActivate: () => this.#switchTab(tab) }));
+      const button = panel.add(new Button({ keepPlate: true, id: `market.tab.${tab}`, x: left + index * (width + this.#m.tabs.gap), y: this.#m.tabs.top, width, height: this.#m.tabs.height, text, variant: this.#tab === tab ? "primary" : "secondary", onActivate: () => this.#switchTab(tab) }));
       first ??= button;
     });
     return first;
@@ -377,7 +380,7 @@ export class MarketScene extends SectionScene {
           list.add(new Label({ x: textX, y: rowTop + 4, width: textWidth, height: rowHeight / 2 - 4, text: `@${listing.seller}`, size: "small", colorKey: "text", align: "left", fit: true }));
           list.add(new Label({ x: textX, y: rowTop + rowHeight / 2, width: textWidth, height: rowHeight / 2 - 4, text: copy, size: "tiny", colorKey: "textMuted", align: "left", fit: true }));
         }
-        const text = listing.reserved ? "reserved" : `${listing.price.amount} ${listing.price.asset}`;
+        const text = listing.reserved ? "reserved" : moneyText(listing.price.amount, listing.price.asset);
         list.add(new Button({ id: `market.listing.${listing.id}`, x: meta ? metaX + this.#m.metaWidth + this.#screen.action.gap : metaX, y: this.#screen.rowY(index), width: this.#m.priceWidth, height: this.#screen.row.height, text, textSize: "small", variant: selected ? "primary" : "secondary", onActivate: () => this.#select("listing", listing.id) }));
       });
       list.contentHeight = this.#screen.rowsHeight(listings.length);
@@ -454,7 +457,7 @@ export class MarketScene extends SectionScene {
     // The whole row picks it, as the price does; only the price takes the keyboard's focus.
     const area = list.add(new Hotspot({ x: 0, y: top, width: meta ? metaX + metaWidth : stripWidth, height, onActivate: select }));
     area.focusable = false;
-    list.add(new Button({ id: `market.mine.${id}`, x: meta ? metaX + metaWidth + gap : metaX, y: top, width: priceWidth, height, text: `${price.amount} ${price.asset}`, textSize: "small", variant: selected ? "primary" : "secondary", onActivate: select }));
+    list.add(new Button({ id: `market.mine.${id}`, x: meta ? metaX + metaWidth + gap : metaX, y: top, width: priceWidth, height, text: moneyText(price.amount, price.asset), textSize: "small", variant: selected ? "primary" : "secondary", onActivate: select }));
   }
 
   /** @param {Panel} panel */
@@ -521,7 +524,7 @@ export class MarketScene extends SectionScene {
       { text: this.#cardName(listing.card.definitionId), bold: true, colorKey: "accentLight" },
       { text: copyLabel(listing.card) },
       { text: `Sold by @${listing.seller}`, avatar: listing.seller },
-      { text: `${listing.price.amount} ${listing.price.asset}`, bold: true, colorKey: "accent" },
+      { text: moneyText(listing.price.amount, listing.price.asset), bold: true, colorKey: "accent" },
       { text: listingSubtitle(listing, now), colorKey: "textMuted", avatar: listing.status === "SOLD" ? listing.buyer : null },
       ...(buyable ? [this.#budgetLine(listing.price)] : []),
     ];
@@ -551,7 +554,7 @@ export class MarketScene extends SectionScene {
   #buildBuy(panel, listing, { y, width }) {
     const { amount, asset } = listing.price;
     const short = this.#isShort(listing.price);
-    let text = `Buy for ${amount} ${asset}`;
+    let text = `Buy for ${moneyText(amount, asset)}`;
     if (listing.reserved) {
       text = "Someone is buying it: try again in a few minutes";
     } else if (short) {
@@ -574,7 +577,7 @@ export class MarketScene extends SectionScene {
     const balance = this.#app.balance;
     const amount = balance?.amountOf(price.asset) ?? null;
     if (amount !== null) {
-      return { text: `Your budget: ${amount} ${price.asset}`, colorKey: this.#isShort(price) ? "danger" : "accentLight", bold: true, avatar: null };
+      return { text: `Your budget: ${moneyText(amount, price.asset)}`, colorKey: this.#isShort(price) ? "danger" : "accentLight", bold: true, avatar: null };
     }
     const text = balance === undefined || balance.state.loading ? "Reading your wallet…" : "Your budget is not known";
     return { text, colorKey: "textMuted", bold: false, avatar: null };
@@ -588,7 +591,7 @@ export class MarketScene extends SectionScene {
     const lines = [
       { text: this.#cardName(purchase.card.definitionId), bold: true, colorKey: "accentLight" },
       { text: `Copy #${purchase.card.serial}` },
-      { text: `From @${purchase.seller} for ${purchase.price.amount} ${purchase.price.asset}`, avatar: purchase.seller },
+      { text: `From @${purchase.seller} for ${moneyText(purchase.price.amount, purchase.price.asset)}`, avatar: purchase.seller },
       { text: `Status: ${purchase.status.toLowerCase()}`, bold: true },
       ...(purchase.txId === null ? [] : [{ text: `Payment ${purchase.txId.slice(0, 12)}…`, colorKey: "textMuted" }]),
       ...(purchase.problem === null ? [] : [{ text: problemText(purchase.problem), colorKey: "danger" }]),
@@ -628,7 +631,7 @@ export class MarketScene extends SectionScene {
       { text: this.#cardName(purchase.card.definitionId), bold: true, colorKey: "accentLight" },
       { text: `Copy #${purchase.card.serial}` },
       { text: `From @${purchase.seller}`, avatar: purchase.seller },
-      { text: `${purchase.price.amount} ${purchase.price.asset}`, bold: true, colorKey: "accent" },
+      { text: moneyText(purchase.price.amount, purchase.price.asset), bold: true, colorKey: "accent" },
     ];
     if (purchase.payment !== null) {
       const minutes = Math.max(0, Math.ceil((purchase.payment.expiresAt - this.#now()) / MINUTE));
@@ -719,7 +722,7 @@ export class MarketScene extends SectionScene {
   }
 
   #listText() {
-    return PRICE_PATTERN.test(this.#price) ? `Sell for ${this.#price} ${this.#sales().asset}` : "Sell";
+    return PRICE_PATTERN.test(this.#price) ? `Sell for ${moneyText(this.#price, this.#sales().asset)}` : "Sell";
   }
 
   #canList() {

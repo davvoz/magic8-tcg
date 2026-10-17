@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import { ok } from "@magic8/engine/shared/Result.js";
 import { DailyService } from "../../src/application/daily/DailyService.js";
 import { DeckSelectionService } from "../../src/application/decks/DeckSelectionService.js";
+import { EntryService } from "../../src/application/entries/EntryService.js";
 import { SelectedDeck } from "../../src/application/decks/SelectedDeck.js";
 import { Milestone, OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
 import { OnlineStatus } from "../../src/application/online/OnlineService.js";
@@ -81,7 +82,7 @@ describe("PlayScene", () => {
     assert.deepEqual(["play.daily.title", "play.online.title", "play.practice.title", "play.tutorial.title"].map((id) => byId(scene, id)?.text), ["Daily challenges", "Online", "Practice vs AI", "Tutorial"]);
     assert.equal(byId(scene, "play.daily.play").isEffectivelyEnabled, false);
     assert.equal(byId(scene, "play.daily.status").text, "Sign in to take on the challenges.");
-    assert.equal(byId(scene, "play.online.casual").isEffectivelyEnabled, false);
+    assert.equal(byId(scene, "play.online.play").isEffectivelyEnabled, false);
     assert.deepEqual(golden(scene), ["play.practice.play"], "signed out, practice is the gold button");
     byId(scene, "play.practice.play").activate();
     assert.equal(play.navigated.at(-1).id, SceneId.DECK_SELECTION);
@@ -111,10 +112,40 @@ describe("PlayScene", () => {
     assert.equal(byId(scene, "play.daily.status").text, "Today: 0 of 3 beaten · next, Kael");
     assert.ok(byId(scene, "play.daily.art"), "the opponent's portrait");
     assert.deepEqual(golden(scene), ["play.daily.play"]);
-    byId(scene, "play.online.ranked").activate();
-    assert.deepEqual(play.navigated.at(-1), { id: SceneId.ONLINE, params: { mode: "ranked" } });
+    assert.equal(byId(scene, "play.online.play").text, "Play online", "one button: the choice comes next");
+    byId(scene, "play.online.play").activate();
+    assert.ok(scene.modal?.findById("choice.casual") && scene.modal.findById("choice.ranked"), "casual or ranked, side by side");
+    scene.modal.findById("choice.ranked.play").activate();
+    assert.equal(play.navigated.at(-1).id, SceneId.RANKED);
+    assert.equal(scene.modal, null);
+    byId(scene, "play.online.play").activate();
+    scene.modal.findById("choice.casual.play").activate();
+    assert.equal(play.navigated.at(-1).id, SceneId.CASUAL);
     byId(scene, "play.history").activate();
     assert.deepEqual(play.navigated.at(-1), { id: SceneId.GAME_HISTORY, params: { back: SceneId.PLAY, backParams: {} } });
+  });
+
+  it("says in the choice what ranked needs: the casual games left and the entries the player lacks", async () => {
+    const play = world();
+    Object.assign(play.app, {
+      ranking: new RankingService({ api: { standing: async () => ok({ ...STANDING, eligible: false, casualGamesNeeded: 2 }), leaderboard: async () => ok({ season: STANDING.season, entries: [] }) } }),
+      entries: new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 0, perGame: 1, season: "season-1" }]) } }),
+    });
+    const scene = new PlayScene(play.services, play.app);
+    scene.enter({});
+    play.identity.become(ALICE);
+    await settle();
+    await settle();
+    assert.equal(byId(scene, "play.online.status").text, "Ranked opens after 2 more casual games.");
+    byId(scene, "play.online.play").activate();
+    await settle();
+    const ranked = scene.modal?.findById("choice.ranked");
+    assert.equal(ranked.locked, true, "a padlock by its name");
+    assert.equal(scene.modal.findById("choice.ranked.steps.text.1").text, "Ranked opens after 2 more casual games.");
+    assert.equal(scene.modal.findById("choice.ranked.steps.text.2").text, "A game uses 1 ticket · you have none yet");
+    assert.equal(scene.modal.findById("choice.ranked.play").isEffectivelyEnabled, true, "its screen says how to get there");
+    scene.onKey({ type: "keydown", key: "Escape", repeat: false });
+    assert.equal(scene.modal, null, "Escape closes the choice");
   });
 
   it("leaves the deck to where each way to play starts", () => {

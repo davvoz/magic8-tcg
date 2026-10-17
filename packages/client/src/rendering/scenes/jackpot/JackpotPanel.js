@@ -10,15 +10,17 @@
  * usual widgets; `tick()` rewrites the countdown when its second changes.
  */
 import { describeJackpot } from "../../../application/jackpot/describeJackpot.js";
+import { Glyph } from "../../ui/glyphs.js";
 import { Label } from "../../ui/Label.js";
-import { Panel, SMALL_PANEL_INSET } from "../../ui/Panel.js";
+import { Panel, SMALL_PANEL_TITLE_INSET } from "../../ui/Panel.js";
 
 /** @typedef {"card" | "wide" | "banner"} JackpotLayout */
 
 /** Heights each layout needs (the scenes size the panel with them). */
 export const JACKPOT_HEIGHT = Object.freeze({ card: 276, wide: 172, banner: 76 });
 
-const PAD = SMALL_PANEL_INSET;
+/** The words' margin from the sides: clear of the small painted corners beside the title and the last place. */
+const PAD = SMALL_PANEL_TITLE_INSET;
 /** The stacked text block: title, amount, countdown, source, growth. */
 const INFO = Object.freeze({ title: { y: 12, height: 22 }, amount: { y: 34, height: 44 }, countdown: { y: 80, height: 26 }, source: { y: 108, height: 18 }, growth: { y: 126, height: 18 } });
 const PLACE = Object.freeze({ height: 36, label: 96, amount: 160 });
@@ -83,7 +85,7 @@ export class JackpotPanel extends Panel {
     const line = (/** @type {{ y: number, height: number }} */ at, /** @type {Partial<ConstructorParameters<typeof Label>[0]> & { text: string }} */ options) =>
       this.add(new Label({ x: PAD, y: at.y, width, height: at.height, align: "left", fit: true, ...options }));
     line(INFO.title, { id: "jackpot.title", text: text.title.toUpperCase(), size: "small", weight: "bold", colorKey: "accent" });
-    line(INFO.amount, { id: "jackpot.amount", text: text.amount, size: "heading", weight: "bold", colorKey: "accentLight", glow: true });
+    line(INFO.amount, { id: "jackpot.amount", text: text.amount, size: "heading", weight: "bold", colorKey: "accentLight", glow: true, glyph: Glyph.STEEM });
     this.#countdown = line(INFO.countdown, { id: "jackpot.countdown", text: text.countdown, size: "body", weight: "bold", colorKey: "text" });
     line(INFO.source, { id: "jackpot.source", text: text.source, size: "tiny", colorKey: "textMuted" });
     if (text.growth !== null) {
@@ -113,7 +115,7 @@ export class JackpotPanel extends Panel {
    */
   #buildBanner(text) {
     const width = this.width - 2 * PAD;
-    this.add(new Label({ id: "jackpot.amount", x: PAD, y: 6, width, height: 26, text: `${text.title}: ${text.amount}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    this.add(new Label({ id: "jackpot.amount", x: PAD, y: 6, width, height: 26, text: `${text.title}: ${text.amount}`, size: "body", weight: "bold", colorKey: "accentLight", align: "left", fit: true, glyph: Glyph.STEEM }));
     this.#countdown = this.add(new Label({ id: "jackpot.countdown", x: PAD, y: 32, width, height: 20, text: this.#countdownLine(text), size: "small", colorKey: "text", align: "left", fit: true }));
     const holder = (/** @type {{ account: string | null }} */ place) => (place.account === null ? [] : ["@" + place.account]);
     const places = text.places.map((place) => [place.label, place.share, place.figure, ...holder(place)].join(" ")).join(" · ") + " " + text.asset;

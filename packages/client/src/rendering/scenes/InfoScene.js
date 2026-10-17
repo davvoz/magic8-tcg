@@ -13,6 +13,7 @@ import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
+import { ScrollList } from "../ui/ScrollList.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { InfoArticle } from "./info/InfoArticle.js";
 import { SceneId } from "./sceneIds.js";
@@ -25,6 +26,8 @@ import { startTutorial } from "./startTutorial.js";
  *   `title`, `link`: the heights of the topic's title and of its link button
  */
 /** @type {InfoMetrics} */
+/** The list of the topics' tabs. */
+const TABS_ID = "info.tabs";
 const WIDE = Object.freeze({ tabsWidth: 360, gap: 40, tab: Object.freeze({ height: 56, gap: 10 }), title: 48, link: 56 });
 /** @type {InfoMetrics} */
 const COMPACT = Object.freeze({ tabsWidth: 190, gap: 10, tab: Object.freeze({ height: 46, gap: 6 }), title: 34, link: 46 });
@@ -47,6 +50,8 @@ export class InfoScene extends SectionScene {
   #topics;
   /** @type {string} */
   #topicId = InfoTopicId.MECHANICS;
+  /** How far the list of topics is scrolled (a phone's), kept across rebuilds. */
+  #tabsScroll = 0;
   /** How far each topic was read, kept across rebuilds and tab switches. @type {Record<string, number>} */
   #scroll = {};
   /** @type {InfoArticle | null} */
@@ -111,19 +116,25 @@ export class InfoScene extends SectionScene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
+    const scrolled = this.root.findById(TABS_ID);
+    if (scrolled instanceof ScrollList) {
+      this.#tabsScroll = scrolled.scrollY;
+    }
     this.root.clear();
     const { columns, inset, panel: panelOptions, compact } = this.#screen;
     const m = this.#m;
 
     const left = columns.left.x;
     const tabs = this.root.add(new Panel({ ...panelOptions, x: left, y: columns.top, width: m.tabsWidth, height: columns.height }));
+    // The tabs in a list that scrolls when the column is short for them all (a phone's).
+    const list = tabs.add(new ScrollList({ id: TABS_ID, x: inset, y: inset, width: m.tabsWidth - 2 * inset, height: columns.height - 2 * inset }));
     this.#topics.forEach((topic, index) => {
-      tabs.add(
+      list.add(
         new Button({
           id: `info.tab.${topic.id}`,
-          x: inset,
-          y: inset + index * (m.tab.height + m.tab.gap),
-          width: m.tabsWidth - 2 * inset,
+          x: 0,
+          y: index * (m.tab.height + m.tab.gap),
+          width: list.rowWidth,
           height: m.tab.height,
           text: compact ? topic.shortTitle : topic.title,
           textSize: compact ? "small" : "body",
@@ -133,6 +144,8 @@ export class InfoScene extends SectionScene {
         }),
       );
     });
+    list.contentHeight = this.#topics.length * (m.tab.height + m.tab.gap) - m.tab.gap;
+    list.scrollTo(this.#tabsScroll);
 
     this.#buildArticle(left + m.tabsWidth + m.gap);
     this.focus(this.findNode(focusedId) ?? this.backButton);

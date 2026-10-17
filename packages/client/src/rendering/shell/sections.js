@@ -77,7 +77,7 @@ export const SECTIONS = Object.freeze([
     icon: Icon.PLAY,
     tabs: [],
     // Every way to play; without that screen (tools), online play when signed in, else practice against the AI.
-    destination: (context) => firstOf(context, accountReady(context) && context.app.online !== undefined ? [SceneId.PLAY, SceneId.ONLINE, SceneId.DECK_SELECTION] : [SceneId.PLAY, SceneId.DECK_SELECTION]),
+    destination: (context) => firstOf(context, accountReady(context) && context.app.online !== undefined ? [SceneId.PLAY, SceneId.CASUAL, SceneId.DECK_SELECTION] : [SceneId.PLAY, SceneId.DECK_SELECTION]),
   }),
   Object.freeze({
     id: SectionId.DECKS,

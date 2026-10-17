@@ -1,19 +1,20 @@
 /**
  * Play: every way to play, in one place: four tiles, each with what it is
  * for and where the player stands with it: the daily challenges (today's
- * opponent in their portrait), online play (Casual, and Ranked
- * locked until the player may play it), practice against the AI (offline
- * too) and the tutorial. In the bar, the games being played now to watch,
+ * opponent in their portrait), online play (one button: a dialog then
+ * offers Casual or Ranked side by side, saying what each gives and needs,
+ * OnlineChoice), practice against the AI (offline too) and the tutorial. In the bar, the games being played now to watch,
  * and the player's own games and replays. What needs an account or the
  * game server stays in its place, locked, saying why. The deck is chosen
  * where each way to play starts (the challenges, the lobby, practice).
  *
- * One gold button: the challenge's while one is to fight, else Casual, else Practice.
+ * One gold button: the challenge's while one is to fight, else Play online, else Practice.
  */
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { UiPiece } from "../images/UiArt.js";
 import { Icon } from "../ui/icons.js";
 import { PlayViews } from "./home/PlayViews.js";
+import { onlineChoice } from "./play/OnlineChoice.js";
 import { PlayTile } from "./play/PlayTile.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
@@ -43,6 +44,8 @@ export class PlayScene extends SectionScene {
   #minute = -1;
   /** Whether the account was ready when last looked at: becoming ready reads what the tiles show of it. */
   #ready = false;
+  /** Whether the choice between casual and ranked is open (it is built again with the screen). */
+  #choosing = false;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -61,7 +64,7 @@ export class PlayScene extends SectionScene {
     this.routeBack(params);
     const app = this.#app;
     const rebuild = () => this.#rebuild();
-    for (const service of [app.daily, app.ranking, app.online, app.onboarding]) {
+    for (const service of [app.daily, app.ranking, app.online, app.onboarding, app.entries, app.jackpot]) {
       if (typeof service?.subscribe === "function") {
         this.#unsubscribes.push(service.subscribe(rebuild));
       }
@@ -70,12 +73,14 @@ export class PlayScene extends SectionScene {
       this.#unsubscribes.push(app.account.subscribe(() => this.#onAccount()));
     }
     this.#ready = false;
+    this.#choosing = false;
     this.#onAccount();
   }
 
   exit() {
     this.#unsubscribes.forEach((unsubscribe) => unsubscribe());
     this.#unsubscribes = [];
+    this.#choosing = false;
     super.exit();
   }
 
@@ -112,6 +117,9 @@ export class PlayScene extends SectionScene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
+    if (this.modal !== null) {
+      this.closeModal();
+    }
     this.root.clear();
     this.#minute = Math.floor(this.#now() / MINUTE);
     const { viewport } = this.services;
@@ -126,9 +134,40 @@ export class PlayScene extends SectionScene {
     this.root.add(new PlayTile({ id: "play.practice", ...practice, compact, ...this.#practiceTile(gold === "practice") }));
     this.root.add(new PlayTile({ id: "play.tutorial", ...tutorial, compact, ...this.#tutorialTile() }));
     this.#buildLinks();
-    const goldId = { daily: "play.daily.play", online: "play.online.casual", practice: "play.practice.play" }[gold];
+    const goldId = { daily: "play.daily.play", online: "play.online.play", practice: "play.practice.play" }[gold];
     this.focus(this.findNode(focusedId) ?? this.root.findById(goldId) ?? null);
+    if (this.#choosing) {
+      this.#showChoice(focusedId);
+    }
     this.services.requestRender();
+  }
+
+  /** Opens the choice between casual and ranked, with what the player holds read again. */
+  #openChoice() {
+    this.#choosing = true;
+    void this.#app.entries?.refresh();
+    this.#rebuild();
+  }
+
+  /** @param {string} focusedId */
+  #showChoice(focusedId) {
+    const { viewport } = this.services;
+    const compact = viewport.compact === true;
+    const close = () => {
+      this.#choosing = false;
+      this.#rebuild();
+    };
+    const choose = (/** @type {string} */ sceneId) => {
+      this.#choosing = false;
+      this.closeModal();
+      this.services.navigate(sceneId);
+    };
+    const modal = onlineChoice({ viewport, compact, margin: (compact ? FRAME.compact : FRAME.wide).margin, ranked: this.#views.ranked(), choose, close });
+    this.openModal(modal);
+    const focused = modal.findById(focusedId);
+    if (focused !== null && focused.focusable) {
+      this.focus(focused);
+    }
   }
 
   /**
@@ -157,18 +196,14 @@ export class PlayScene extends SectionScene {
   #onlineTile(view, primary) {
     const locked = view.kind === "locked";
     const note = view.kind === "locked" ? view.reason : (view.rankedLock ?? view.note);
-    const play = (/** @type {"casual" | "ranked"} */ mode) => this.services.navigate(SceneId.ONLINE, { mode });
     return {
       picture: { piece: UiPiece.PLAY_ONLINE_ARENA, icon: Icon.PLAY, faction: "ember" },
       kicker: "Online · real players",
       title: "Online",
-      text: "Casual to practise, free. Ranked to climb the season and share its jackpot.",
+      text: "Casual to play for fun, free. Ranked to climb the season and share its jackpot.",
       status: note === null ? null : { text: note },
       primary,
-      actions: [
-        { id: "play.online.casual", text: "Casual", locked, variant: variantOf(primary), onActivate: () => play("casual") },
-        { id: "play.online.ranked", text: "Ranked", locked: locked || view.rankedLock !== null, onActivate: () => play("ranked") },
-      ],
+      actions: [{ id: "play.online.play", text: "Play online", locked, variant: variantOf(primary), onActivate: () => this.#openChoice() }],
     };
   }
 

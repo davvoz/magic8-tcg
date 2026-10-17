@@ -16,6 +16,7 @@
  * The client never computes an amount or a recipient: it forwards the
  * server's instructions to the wallet unchanged.
  */
+import { moneyText } from "../money/moneyText.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { SalePurchaseStatus } from "../ports/SalesApi.contract.js";
 
@@ -236,7 +237,7 @@ export class SalesService {
    * @param {{ copy: string, price: string }} request `price`: a decimal amount of the asset
    */
   async sell({ copy, price }) {
-    const listed = await this.#act(() => this.#api.list({ copy, price: price.trim(), asset: this.#asset, idempotencyKey: this.#newKey() }), (listing) => `On the board for ${listing.price.amount} ${listing.price.asset}: the card is held until it sells.`);
+    const listed = await this.#act(() => this.#api.list({ copy, price: price.trim(), asset: this.#asset, idempotencyKey: this.#newKey() }), (listing) => `On the board for ${moneyText(listing.price.amount, listing.price.asset)}: the card is held until it sells.`);
     return listed.ok;
   }
 

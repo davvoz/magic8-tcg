@@ -54,7 +54,8 @@ const COMPACT = Object.freeze({
   subtitle: Object.freeze({ y: 2, height: 26 }),
   panels: Object.freeze({ top: 30, height: 282, gap: 10, choices: 0 }),
   inset: SMALL_PANEL_INSET,
-  choicesTop: 12,
+  // Below the small painted corners.
+  choicesTop: 16,
   choicesTitle: false,
   deckListTop: 74,
   deckTitle: 34,
@@ -167,7 +168,7 @@ export class StarterScene extends SectionScene {
     const inner = this.#choicesWidth - 2 * INSET;
     const panel = this.root.add(new Panel({ x: SIDE, y: PANELS.top, width: this.#choicesWidth, height: PANELS.height, smallCorners: compact }));
     if (choicesTitle) {
-      panel.add(new Label({ x: INSET, y: INSET, width: inner, height: 40, text: "One deck per faction", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+      panel.add(new Label({ x: INSET, y: INSET, width: inner, height: 40, text: "One deck per faction", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     }
     /** @type {OptionRow | null} */
     let selectedRow = null;
@@ -208,7 +209,9 @@ export class StarterScene extends SectionScene {
     const top = compact ? 8 : INSET;
     const inner = width - 2 * INSET;
     const panel = this.root.add(new Panel({ x, y: PANELS.top, width, height: PANELS.height, smallCorners: compact }));
-    panel.add(new Label({ x: INSET, y: top, width: inner, height: deckTitle, text: choice.name, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    // On a phone the name sits in the panel's top band: clear of its painted corners.
+    const titleX = top < INSET ? panel.titleInset : INSET;
+    panel.add(new Label({ x: titleX, y: top, width: width - 2 * titleX, height: deckTitle, text: choice.name, size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     const summary = deckSummary(choice.size, deckMix(this.#app.content, choice.cards), [`${choice.cards.length} different`]);
     panel.add(new Label({ id: "starter.summary", x: INSET, y: top + deckTitle + 4, width: inner, height: 28, text: summary, size: "small", align: "left", colorKey: "textMuted", fit: true }));
 
@@ -234,9 +237,10 @@ export class StarterScene extends SectionScene {
     panel.add(
       new Button({
         id: `starter.take.${choice.id}`,
-        x: INSET,
+        // On a phone it runs along the panel's foot: clear of its painted corners.
+        x: compact ? panel.titleInset : INSET,
         y: PANELS.height - (compact ? 8 : INSET) - TAKE_HEIGHT,
-        width: inner,
+        width: compact ? width - 2 * panel.titleInset : inner,
         height: TAKE_HEIGHT,
         text: this.#claiming === choice.name ? "Taking…" : `Take ${choice.name}`,
         variant: "primary",

@@ -65,6 +65,8 @@ describe("UiArt", () => {
     }
     const name = readFileSync(new URL("../../../../data/art/Logo_KIJAM.webp", import.meta.url));
     assert.deepEqual([name.toString("latin1", 0, 4), name.toString("latin1", 8, 12)], ["RIFF", "WEBP"], "the name is a WebP (with its alpha)");
+    const steem = readFileSync(new URL("../../../../data/art/Steem_Logo.png", import.meta.url));
+    assert.equal(steem.toString("latin1", 1, 4), "PNG", "STEEM's mark is a PNG (with its alpha)");
   });
 });
 

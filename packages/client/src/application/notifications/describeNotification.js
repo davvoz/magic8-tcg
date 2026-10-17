@@ -5,9 +5,10 @@
  * it up, and the other player it is about (their portrait goes beside it).
  * Pure, so every screen (toasts, the feed) words it the same way.
  */
+import { moneyText } from "../money/moneyText.js";
 
 /** Where a notification leads. */
-export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", ONLINE: "online", REPLAY: "replay" });
+export const NotificationTarget = Object.freeze({ COLLECTION: "collection", TRADES: "trades", MARKET: "market", SHOP: "shop", RANKED: "ranked", REPLAY: "replay" });
 
 /** Kinds after which the player's collection has changed (it should be read again). */
 export const COLLECTION_CHANGING_KINDS = Object.freeze(["shop.fulfilled", "daily.reward", "trade.accepted", "trade.declined", "trade.cancelled", "trade.expired", "sale.sold", "sale.bought", "sale.listing_expired"]);
@@ -39,12 +40,12 @@ const DESCRIBERS = Object.freeze({
     const total = Number.isSafeInteger(data.total) ? data.total : cards.reduce((sum, card) => sum + (card.count ?? 1), 0);
     const entries = Array.isArray(data.entries) ? data.entries.reduce((sum, entry) => sum + (Number.isSafeInteger(entry?.count) ? entry.count : 0), 0) : 0;
     if (entries > 0 && total === 0) {
-      return text({ title: "Your ranked entries are ready", body: `${items}: ${plural(entries, "ranked entry", "ranked entries")} to play with, and in the season's jackpot.`, target: NotificationTarget.ONLINE, tone: "good" });
+      return text({ title: "Your ranked tickets are ready", body: `${items}: ${plural(entries, "ranked ticket", "ranked tickets")} to play with, and in the season's jackpot.`, target: NotificationTarget.RANKED, tone: "good" });
     }
-    const andEntries = entries > 0 ? `, and ${plural(entries, "ranked entry", "ranked entries")} to play with` : "";
+    const andEntries = entries > 0 ? `, and ${plural(entries, "ranked ticket", "ranked tickets")} to play with` : "";
     return text({ title: "Your cards have arrived", body: `${items}: ${plural(total, "card")} added to your collection${andEntries}.`, cards, target: NotificationTarget.COLLECTION, tone: "good" });
   },
-  "shop.refund": ({ data, problem }) => text({ title: "Payment to be refunded", body: `Your payment of ${data.amount ?? "?"} ${data.asset ?? ""} for an order was not accepted: ${problem}. It will be sent back to you.`, target: NotificationTarget.SHOP, tone: "bad" }),
+  "shop.refund": ({ data, problem }) => text({ title: "Payment to be refunded", body: `Your payment of ${moneyOf(data)} for an order was not accepted: ${problem}. It will be sent back to you.`, target: NotificationTarget.SHOP, tone: "bad" }),
   "trade.offered": ({ data, account, list, name }) => {
     const wants = cardsOf(data.wants);
     const asks = wants.length === 0 ? "as a gift" : `for ${cardsSentence(wants, name)}`;
@@ -61,13 +62,13 @@ const DESCRIBERS = Object.freeze({
   },
   "trade.cancelled": ({ data, account, list }) => text({ title: "Offer withdrawn", body: `${account} withdrew their offer of ${list(data.give)}.`, cards: cardsOf(data.give), target: NotificationTarget.TRADES, tone: "info" }),
   "trade.expired": ({ data, account, list }) => text({ title: "Trade expired", body: `The offer of ${list(data.give)} between you and ${account} expired.`, cards: cardsOf(data.give), target: NotificationTarget.TRADES, tone: "info" }),
-  "sale.sold": ({ data, account, single, singleName }) => text({ title: "Card sold", body: `${account} bought your ${singleName} for ${data.price ?? "?"} ${data.asset ?? ""}.`, cards: only(single), target: NotificationTarget.MARKET, tone: "good" }),
+  "sale.sold": ({ data, account, single, singleName }) => text({ title: "Card sold", body: `${account} bought your ${singleName} for ${moneyOf({ amount: data.price, asset: data.asset })}.`, cards: only(single), target: NotificationTarget.MARKET, tone: "good" }),
   "sale.bought": ({ account, single, singleName }) => text({ title: "Card received", body: `${singleName} from ${account} is now in your collection.`, cards: only(single), target: NotificationTarget.COLLECTION, tone: "good" }),
   "sale.listing_expired": ({ single, singleName }) => text({ title: "Listing expired", body: `${singleName} was not sold in time and is back in your collection.`, cards: only(single), target: NotificationTarget.MARKET, tone: "info" }),
   "sale.reservation_expired": ({ account, single, singleName }) => text({ title: "Reservation expired", body: `You did not pay ${account} for ${singleName} in time: it is on sale again.`, cards: only(single), target: NotificationTarget.MARKET, tone: "bad" }),
   "season.prize": ({ data }) => {
     const place = ["1st", "2nd", "3rd"][Number(data.place) - 1] ?? `#${data.place ?? "?"}`;
-    return text({ title: `You finished ${place} in ${data.season ?? "the season"}!`, body: `Your share of the jackpot, ${data.amount ?? "?"} ${data.asset ?? ""}, will be sent to your wallet.`, target: null, tone: "good" });
+    return text({ title: `You finished ${place} in ${data.season ?? "the season"}!`, body: `Your share of the jackpot, ${moneyOf(data)}, will be sent to your wallet.`, target: null, tone: "good" });
   },
   "auto.finished": ({ data }) => {
     const opponent = typeof data.opponent === "string" ? `@${data.opponent}` : "another player";
@@ -79,7 +80,7 @@ const DESCRIBERS = Object.freeze({
   },
   "auto.refunded": ({ data }) => {
     const why = data.reason === "season_ended" ? "The season ended before anyone joined the auto list against you" : "Your auto game could not be played";
-    return text({ title: "Your ranked entry is back", body: `${why}: your ranked entry is back, ready for another game.`, target: NotificationTarget.ONLINE, tone: "info" });
+    return text({ title: "Your ranked ticket is back", body: `${why}: your ranked ticket is back, ready for another game.`, target: NotificationTarget.RANKED, tone: "info" });
   },
   "daily.reward": ({ data }) => {
     const cards = cardsOf(data.cards);
@@ -206,4 +207,13 @@ function cardsSentence(cards, name) {
   const named = cards.slice(0, NAMED_CARDS).map((card) => times(card.count) + name(card.definitionId));
   const rest = cards.slice(NAMED_CARDS).reduce((sum, card) => sum + (card.count ?? 1), 0);
   return rest === 0 ? named.join(", ") : `${named.join(", ")} and ${rest} more`;
+}
+
+/**
+ * "12.5 STEEM" from a notification's amount and asset ("? STEEM" when it gives no amount).
+ * @param {Readonly<Record<string, any>>} data
+ */
+function moneyOf(data) {
+  const asset = String(data.asset ?? "");
+  return (typeof data.amount === "string" ? moneyText(data.amount, asset) : `? ${asset}`).trim();
 }

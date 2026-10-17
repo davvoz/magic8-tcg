@@ -117,6 +117,15 @@ export class SectionScene extends Scene {
     return this.#shell.backButton;
   }
 
+  /**
+   * Moves the shell's light (the logo's) on with the scene's own.
+   * @param {number} dtMs
+   */
+  update(dtMs) {
+    const base = super.update(dtMs);
+    return this.#shell.update(dtMs) || base;
+  }
+
   exit() {
     this.#shell.detach();
     super.exit();

@@ -61,7 +61,7 @@ describe("ranked entries (two real clients, real server)", () => {
     assert.deepEqual(alice.entries.ranked, { kind: "ranked", balance: 0, perGame: 1, season: SEASON });
     assert.equal((await alice.online.queue(alice.deckId, "ranked")).ok, false);
     assert.equal(alice.online.state.error?.code, "ENTRY_REQUIRED");
-    assert.match(alice.online.state.error?.message ?? "", /a ranked game costs 1 ranked entry: buy them in the shop/);
+    assert.match(alice.online.state.error?.message ?? "", /a ranked game costs 1 ranked ticket: buy them in the shop/);
     assert.equal(alice.online.state.status, "idle");
 
     await buyEntries(alice, 3);

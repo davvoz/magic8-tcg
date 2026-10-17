@@ -12,6 +12,7 @@ import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/regist
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { GameEngine } from "@magic8/engine/domain/game/GameEngine.js";
 import { uuidV4 } from "../../src/kernel/random.js";
+import { grantLocalRankedAccess } from "../../src/modules/ranking/application/LocalRankedGrant.js";
 import { buildTestApp, bundledContent, deterministicRandom, keyPair, listen } from "../helpers.js";
 import { ApiClient } from "../support/apiClient.js";
 
@@ -52,6 +53,41 @@ function practiceGame(content, seed) {
 }
 
 describe("practice games", () => {
+  it("applies explicitly recorded local ranked access and entry grants without fabricating gameplay or purchases", async () => {
+    const { setup } = await world();
+    const grant = await grantLocalRankedAccess({
+      database: setup.database,
+      databaseUrl: "pglite:memory",
+      host: "127.0.0.1",
+      publicOrigin: "http://127.0.0.1:8080",
+      value: "im-ridd:5",
+      at: setup.clock.now(),
+    });
+    const user = await setup.users.findByAccount("steem", "im-ridd");
+
+    assert.deepEqual(grant, { account: "im-ridd", entries: 5 });
+    assert.ok(user);
+    await setup.app.ranking.assertEligible(user.id);
+    assert.deepEqual(await setup.app.entries.view(user.id), [{ kind: "ranked", balance: 5, perGame: 1, season: "season-1" }]);
+    assert.equal(await setup.app.practice.countOf(user.id), 0);
+    assert.equal((await setup.database.maybeOne("SELECT count(*)::integer AS n FROM entry_ledger WHERE user_id = $1 AND reason = 'purchase'", [user.id])).n, 0);
+  });
+
+  it("refuses local ranked grants outside the loopback in-memory development server", async () => {
+    const { setup } = await world();
+    await assert.rejects(
+      grantLocalRankedAccess({
+        database: setup.database,
+        databaseUrl: "pglite:.data/pglite",
+        host: "127.0.0.1",
+        publicOrigin: "http://127.0.0.1:8080",
+        value: "im-ridd:5",
+        at: setup.clock.now(),
+      }),
+      /allowed only with pglite:memory and a loopback server origin/,
+    );
+  });
+
   it("counts a game the server plays again to the same end, once, and opens ranked play after enough of them", async () => {
     const { setup, content } = await world();
     const keys = keyPair(7);

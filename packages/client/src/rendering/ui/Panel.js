@@ -34,6 +34,25 @@ export const PANEL_INSET = 34;
 /** The corners of a `smallCorners` panel, and how far its content keeps from its sides. */
 const SMALL_CORNER_SCALE = 0.06;
 export const SMALL_PANEL_INSET = 18;
+/**
+ * Where a line beside a painted corner starts from the panel's side: a title
+ * in its top band, words along its foot (within PANEL_INSET of that edge).
+ * Near the rim the corner's scroll curls further in than PANEL_INSET (about
+ * 40 units at CORNER.maxScale, half that on small corners), so such a line
+ * starts past the curl.
+ */
+export const PANEL_TITLE_INSET = 48;
+export const SMALL_PANEL_TITLE_INSET = 26;
+/** Below this height a screen is a phone's: its dialogs wear the small corners, as its panels do. */
+const PHONE_HEIGHT = 520;
+
+/**
+ * Whether a dialog over a screen this tall wears the small corners (a phone's).
+ * @param {number} screenHeight the logical height of the screen it covers
+ */
+export function dialogSmallCorners(screenHeight) {
+  return screenHeight < PHONE_HEIGHT;
+}
 
 /**
  * A bordered box; a container for other widgets. Drawn as a slab with a
@@ -62,6 +81,11 @@ export class Panel extends UiNode {
     this.style = { fillKey: options.fillKey ?? "panel", strokeKey: options.strokeKey === undefined ? "panelBorder" : options.strokeKey, textured: options.textured ?? false, glowKey: options.glowKey ?? null, smallCorners: options.smallCorners ?? false, corners: options.corners ?? PanelCorners.ALL };
     this.onActivate = options.onActivate ?? null;
     this.interactive = this.onActivate !== null;
+  }
+
+  /** Where a line beside its painted corners starts from its side (a title in its top band): see PANEL_TITLE_INSET. */
+  get titleInset() {
+    return this.style.smallCorners ? SMALL_PANEL_TITLE_INSET : PANEL_TITLE_INSET;
   }
 
   activate() {

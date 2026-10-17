@@ -84,16 +84,16 @@ function rendered(scene) {
 describe("ShopScene", () => {
   it("shows the player's budget in STEEM and offers to pay only what it covers", async () => {
     const { scene, transfers } = await harness({ budget: "0.700" });
-    assert.equal(byId(scene, "shop.budget").text, "Your budget: 0.700 STEEM");
-    assert.equal(byId(scene, "shop.buy").isEffectivelyEnabled, true, "0.500 STEEM is within the budget");
+    assert.equal(byId(scene, "shop.budget").text, "Your budget: 0.7 STEEM");
+    assert.equal(byId(scene, "shop.buy").isEffectivelyEnabled, true, "0.5 STEEM is within the budget");
     click(byId(scene, "shop.more"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 1.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 1 STEEM");
     assert.equal(byId(scene, "shop.buy").isEffectivelyEnabled, false, "two packs are not");
-    assert.equal(byId(scene, "shop.status").text, "Not enough STEEM: this costs 1.000 STEEM, your wallet holds 0.700 STEEM.");
+    assert.equal(byId(scene, "shop.status").text, "Not enough STEEM: this costs 1 STEEM, your wallet holds 0.7 STEEM.");
     click(byId(scene, "shop.addToCart"));
     click(byId(scene, "shop.cart"));
     const cart = (id) => scene.modal.findById(id);
-    assert.equal(cart("cart.budget").text, "Your budget: 0.700 STEEM");
+    assert.equal(cart("cart.budget").text, "Your budget: 0.7 STEEM");
     assert.equal(cart("cart.pay").isEffectivelyEnabled, false);
     assert.match(cart("cart.status").text, /^Not enough STEEM/);
     click(cart("cart.less.core_mini_booster"));
@@ -106,25 +106,25 @@ describe("ShopScene", () => {
     assert.equal(byId(scene, "shop.tab.packs").variant, "primary");
     assert.equal(byId(scene, "shop.tab.packs").text, "Packs (2)");
     const mini = byId(scene, "shop.product.core_mini_booster");
-    assert.equal(mini.subtitle, "3 unknown cards · 0.500 STEEM");
+    assert.equal(mini.subtitle, "3 unknown cards · 0.5 STEEM");
     assert.equal(mini.selected, true, "the first pack is selected");
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 0.500 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 0.5 STEEM");
 
     click(byId(scene, "shop.product.core_booster"));
     const texts = rendered(scene);
     assert.ok(texts.includes("1 × pack of 5 unknown cards, drawn when your payment is final"));
     assert.ok(texts.includes("Pack odds"));
     assert.ok(texts.includes("Slot 3 (1 card): rare 88% · epic 10% · legendary 2%"), "odds commonest first");
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 1.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 1 STEEM");
   });
 
   it("sells complete decks at the sum of their cards as singles", async () => {
     const { scene } = await harness();
     click(byId(scene, "shop.tab.decks"));
     const deck = byId(scene, "shop.product.deck_precon_arcane");
-    assert.equal(deck.subtitle, "30 cards · 49.000 STEEM · arcane 30");
+    assert.equal(deck.subtitle, "30 cards · 49 STEEM · arcane 30");
     assert.deepEqual(deck.stripe.map((band) => band.weight), [30]);
-    assert.equal(byId(scene, "shop.deckTotal").text, "Sum of the cards: 49.000 STEEM · Deck price: 49.000 STEEM");
+    assert.equal(byId(scene, "shop.deckTotal").text, "Sum of the cards: 49 STEEM · Deck price: 49 STEEM");
     const apprentice = byId(scene, "shop.deckCard.arcane_apprentice");
     assert.deepEqual([apprentice.card.id, apprentice.caption, apprentice.rarity], ["arcane_apprentice", "2 × 0.500", "common"], "each card as a thumbnail: copies × price, and its rarity");
     assert.ok(rendered(scene).includes("Common"));
@@ -132,10 +132,10 @@ describe("ShopScene", () => {
     const info = (id) => scene.modal.findById(id);
     assert.equal(info("cardInfo.name").text, content.catalog.get("arcane_apprentice").name);
     assert.equal(info("cardInfo.rarity").text, "Common");
-    assert.deepEqual([0, 1, 2].map((index) => info(`cardInfo.line.${index}`).text), ["In this deck: 2", "As a single: 0.500 STEEM each", "2 in the deck: 1.000 STEEM"]);
+    assert.deepEqual([0, 1, 2].map((index) => info(`cardInfo.line.${index}`).text), ["In this deck: 2", "As a single: 0.5 STEEM each", "2 in the deck: 1 STEEM"]);
     click(info("cardInfo.close"));
     assert.equal(scene.modal, null);
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 49.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 49 STEEM");
   });
 
   it("sells every card by rarity, rarest first, filterable", async () => {
@@ -153,15 +153,15 @@ describe("ShopScene", () => {
     click(byId(scene, "shop.filter.type.creature"));
     assert.ok(singles().some((card) => card.id === "pyre_drake"));
     click(byId(scene, "shop.card.pyre_drake"));
-    assert.equal(byId(scene, "shop.card.pyre_drake").text, "2.500 STEEM");
+    assert.equal(byId(scene, "shop.card.pyre_drake").text, "2.5 STEEM");
     assert.equal(byId(scene, "shop.rarity").text, "Rare");
     assert.ok(byId(scene, "shop.owned"), "a signed-in player sees how many they own");
     assert.ok(rendered(scene).includes("Single prices (STEEM)"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 2.500 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 2.5 STEEM");
     assert.equal(byId(scene, "shop.finish.foil"), null, "one kind of copy only");
 
     click(byId(scene, "shop.more"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 5.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 5 STEEM");
     click(byId(scene, "shop.buy"));
     await settle();
     assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { items: [{ productId: "single_pyre_drake", quantity: 2 }], asset: "STEEM" });
@@ -182,10 +182,10 @@ describe("ShopScene", () => {
     click(byId(scene, "shop.more"));
     click(byId(scene, "shop.more"));
     assert.equal(byId(scene, "shop.quantity").text, "3");
-    assert.equal(byId(scene, "shop.each").text, "3 × 1.000 STEEM");
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 3.000 STEEM");
+    assert.equal(byId(scene, "shop.each").text, "3 × 1 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 3 STEEM");
     click(byId(scene, "shop.less"));
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 2.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 2 STEEM");
   });
 
   it("asks to sign in before buying", async () => {
@@ -219,33 +219,33 @@ describe("ShopScene", () => {
     assert.equal(shop.state.purchase.stage, PurchaseStage.NONE);
   });
 
-  it("sells ranked entries on their own shelf, many with one transfer, and says they go into the jackpot", async () => {
+  it("sells ranked tickets on their own shelf, Tickets, many with one transfer, and says they go into the jackpot", async () => {
     const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 2, perGame: 1, season: "season-1" }]) } });
     await entries.refresh();
-    const { scene, transfers, navigated, shop } = await harness({ listing: LISTING_WITH_ENTRIES, entries, params: { category: "ranked", back: SceneId.ONLINE } });
-    assert.equal(byId(scene, "shop.tab.ranked").text, "Ranked (1)");
-    assert.equal(byId(scene, "shop.product.ranked_entry").subtitle, "1 ranked game · 1.000 STEEM · into the jackpot");
+    const { scene, transfers, navigated, shop } = await harness({ listing: LISTING_WITH_ENTRIES, entries, params: { category: "ranked", back: SceneId.RANKED } });
+    assert.equal(byId(scene, "shop.tab.ranked").text, "Tickets (1)", "the shelf of tickets");
+    assert.equal(byId(scene, "shop.product.ranked_entry").subtitle, "1 ranked game · 1 STEEM · into the jackpot");
     const texts = rendered(scene);
-    assert.ok(texts.includes("1 × ranked entry: one game of ranked play"));
-    assert.ok(texts.includes("Every entry goes into the season's jackpot."));
-    assert.ok(texts.includes("Every ranked game takes one entry from each player."));
-    assert.ok(texts.includes("You have 2 ranked entries."));
+    assert.ok(texts.includes("1 × ranked ticket: one game of ranked play"));
+    assert.ok(texts.includes("Every ticket goes into the season's jackpot."));
+    assert.ok(texts.includes("Every ranked game takes one ticket from each player."));
+    assert.ok(texts.includes("You have 2 ranked tickets."));
     assert.equal(byId(scene, "shop.tickets").count, 2, "the tickets held, as a stack");
-    assert.equal(byId(scene, "shop.tickets.added").text, "+1 ranked entry");
+    assert.equal(byId(scene, "shop.tickets.added").text, "+1 ranked ticket");
     for (let more = 0; more < 4; more += 1) {
       click(byId(scene, "shop.more"));
     }
-    assert.equal(byId(scene, "shop.tickets.added").text, "+5 ranked entries");
+    assert.equal(byId(scene, "shop.tickets.added").text, "+5 ranked tickets");
     assert.equal(byId(scene, "shop.tickets.after").text, "You will hold 7 after this order.");
-    assert.equal(byId(scene, "shop.buy").text, "Buy for 5.000 STEEM");
+    assert.equal(byId(scene, "shop.buy").text, "Buy for 5 STEEM");
     click(byId(scene, "shop.buy"));
     await settle();
     assert.deepEqual(transfers.map((transfer) => transfer.amount), ["5.000"], "one wallet prompt for five games");
     assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
     assert.equal(scene.modal, null, "no cards to reveal");
-    assert.equal(byId(scene, "shop.status").text, "Done: 5 ranked entries are yours, and in the season's jackpot.");
+    assert.equal(byId(scene, "shop.status").text, "Done: 5 ranked tickets are yours, and in the season's jackpot.");
     click(byId(scene, "shell.back"));
-    assert.equal(navigated.at(-1).id, SceneId.ONLINE, "back to the lobby that sent the player here");
+    assert.equal(navigated.at(-1).id, SceneId.RANKED, "back to the lobby that sent the player here");
   });
 
   it("shows ranked entries in the cart as their tickets, not card backs", async () => {
@@ -256,7 +256,7 @@ describe("ShopScene", () => {
     click(byId(scene, "shop.cart"));
     const tickets = scene.modal.findById("cart.visual.ranked_entry");
     assert.ok(tickets instanceof EntryTickets, "a ticket, not a fan of card backs");
-    assert.deepEqual([tickets.count, tickets.face], [3, "1.000 STEEM"], "the seal counts the entries in the cart");
+    assert.deepEqual([tickets.count, tickets.face], [3, "1 STEEM"], "the seal counts the entries in the cart");
     assert.ok(tickets.x + tickets.width <= scene.modal.findById("cart.remove.ranked_entry").x, "clear of ✕");
   });
 
@@ -299,8 +299,8 @@ describe("ShopScene", () => {
     const cart = (id) => scene.modal.findById(id);
     assert.equal(scene.modal.id, "cart");
     assert.equal(cart("cart.name.core_booster").text, "Core Booster");
-    assert.equal(cart("cart.amount.single_pyre_drake").text, "2.500 STEEM");
-    assert.equal(cart("cart.total").text, "Total: 4.500 STEEM");
+    assert.equal(cart("cart.amount.single_pyre_drake").text, "2.5 STEEM");
+    assert.equal(cart("cart.total").text, "Total: 4.5 STEEM");
     assert.equal(cart("cart.count").text, "3 items · 11 cards");
     const booster = cart("cart.visual.core_booster");
     assert.deepEqual([booster.cards.length, booster.backs, booster.badge], [0, 3, "×2"], "a pack shows card backs: its cards are unknown until opened");
@@ -320,8 +320,8 @@ describe("ShopScene", () => {
     click(byId(scene, "shop.card.pyre_drake"));
     click(byId(scene, "shop.addToCart"));
     click(byId(scene, "shop.cart"));
-    assert.equal(cart("cart.total").text, "Total: 5.500 STEEM");
-    assert.equal(cart("cart.pay").text, "Pay 5.500 STEEM");
+    assert.equal(cart("cart.total").text, "Total: 5.5 STEEM");
+    assert.equal(cart("cart.pay").text, "Pay 5.5 STEEM");
 
     click(cart("cart.pay"));
     await settle();
@@ -397,7 +397,7 @@ describe("ShopScene", () => {
     assert.equal(scene.modal?.id, "orders");
     const inDialog = (id) => scene.modal.findById(id);
     assert.equal(inDialog(`orders.items.${second.id}`).text, "3 × core_mini_booster");
-    assert.match(inDialog(`orders.detail.${second.id}`).text, /^3\.000 STEEM · ordered just now · 11 min left to pay$/);
+    assert.match(inDialog(`orders.detail.${second.id}`).text, /^3 STEEM · ordered just now · 11 min left to pay$/);
     assert.equal(scene.focusedNode?.id, `orders.pay.${second.id}`, "the newest first, ready to pay");
 
     click(inDialog(`orders.cancel.${first.id}`));

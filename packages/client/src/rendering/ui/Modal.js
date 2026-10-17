@@ -2,9 +2,11 @@
  * A full-scene backdrop that owns a centred panel. While a modal is open the
  * scene routes focus only inside it; the backdrop itself is interactive so
  * clicks outside the panel dismiss instead of reaching what is underneath.
+ * Over a phone's screen the panel wears the small painted corners, as the
+ * phone's panels do (dialogSmallCorners).
  */
 import { glowRoundedRect, radialGradient } from "./drawing.js";
-import { Panel } from "./Panel.js";
+import { Panel, dialogSmallCorners } from "./Panel.js";
 import { UiNode } from "./UiNode.js";
 import { withAlpha } from "../theme/color.js";
 
@@ -31,6 +33,7 @@ export class Modal extends UiNode {
         y: Math.round((options.height - options.panelHeight) / 2),
         width: options.panelWidth,
         height: options.panelHeight,
+        smallCorners: dialogSmallCorners(options.height),
       }),
     );
   }

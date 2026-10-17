@@ -1,8 +1,9 @@
 /**
- * The online lobby against a real OnlineService and a scripted server:
- * decks with their playability, queueing, handing the match to the match
- * screen once the server starts the game, and — in v2 — saying who has
- * accepted the game with Keychain, and who did not when it is cancelled.
+ * The two online lobbies, Casual and Ranked, against a real OnlineService and a scripted server: decks with their
+ * playability, queueing in the lobby's mode, handing the match to the match screen once the server starts the game,
+ * the players online and the challenges (sent in the lobby's mode, answered from either), and — in v2 — who has
+ * accepted the game with Keychain. Ranked puts first what it needs: the entries held (got right there, in a dialog),
+ * ranked open to the player, a deck; and a ranked game takes entries, never money.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -12,13 +13,16 @@ import { AutoListService } from "../../src/application/auto/AutoListService.js";
 import { EntryService } from "../../src/application/entries/EntryService.js";
 import { LobbyService } from "../../src/application/lobby/LobbyService.js";
 import { RankingService } from "../../src/application/ranking/RankingService.js";
-import { ShopService } from "../../src/application/shop/ShopService.js";
-import { LISTING_WITH_ENTRIES } from "../application/fakeMarketApi.js";
+import { PurchaseStage, ShopService } from "../../src/application/shop/ShopService.js";
+import { LISTING_WITH_ENTRIES, fakeMarketApi } from "../application/fakeMarketApi.js";
 import { OnlineService } from "../../src/application/online/OnlineService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
-import { OnlineScene, matchedText } from "../../src/rendering/scenes/OnlineScene.js";
+import { CasualScene } from "../../src/rendering/scenes/CasualScene.js";
+import { matchedText } from "../../src/rendering/scenes/lobby/lobbyText.js";
 import { rankedSteps } from "../../src/rendering/scenes/online/rankedGuideFor.js";
+import { StepState } from "../../src/rendering/scenes/online/StepList.js";
+import { RankedScene } from "../../src/rendering/scenes/RankedScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
@@ -27,8 +31,8 @@ const theme = loadTheme();
 const content = await loadBundledContent();
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const GAME = "01j8x3r6h2qkq4w0v7m5a9c1dz";
+const DECK = "11111111-1111-4111-8111-111111111111";
 
-/** A player who may play ranked, in a running season. */
 /** The season's jackpot, three places paid. */
 const JACKPOT = Object.freeze({
   season: { id: "season-1", name: "Season 1", startsAt: 0, endsAt: 86_400_000, status: "running" },
@@ -45,14 +49,16 @@ const JACKPOT = Object.freeze({
   ],
 });
 
+/** A player who may play ranked, in a running season. */
 const ELIGIBLE = Object.freeze({ season: { id: "season-1", name: "Season 1" }, rating: 1500, deviation: 350, provisional: true, rank: null, games: 0, wins: 0, losses: 0, draws: 0, eligible: true, casualGamesNeeded: 0, practiceGamesNeeded: 0 });
 
 /**
- * @param {{ lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, shop?: boolean, auto?: boolean, jackpot?: object }} [options] `lobbyReplies`: the scripted server's answers to the lobby's requests;
- *   `ranked`: the player holds these entries (and may play ranked unless `eligible` is false); `shop`: the shop's listing (with ranked entries at 1 STEEM) can be read;
- *   `jackpot`: the season's jackpot, as its service has read it
+ * @param {{ lobby?: "casual" | "ranked", lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, shop?: boolean, auto?: boolean, jackpot?: object, params?: object }} [options]
+ *   `lobby`: which lobby (casual by default); `lobbyReplies`: the scripted server's answers to the lobby's requests;
+ *   `ranked`: the player holds these entries (and may play ranked unless `eligible` is false); `shop`: a shop selling
+ *   ranked entries at 1 STEEM, paid with a wallet that approves; `jackpot`: the season's jackpot, as its service has read it
  */
-async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop = false, auto = false, jackpot: pot } = {}) {
+async function harness({ lobby: which = "casual", lobbyReplies, ranked, eligible = true, shop: withShop = false, auto = false, jackpot: pot, params = {} } = {}) {
   const listeners = new Set();
   const statusListeners = new Set();
   const requests = [];
@@ -77,7 +83,7 @@ async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop =
     randomHex: (bytes) => "ab".repeat(bytes),
     newCommandId: () => "00000000-0000-4000-8000-000000000001",
     accountDecks: () => [
-      { id: "11111111-1111-4111-8111-111111111111", name: "Iron Foundry", mix: [{ faction: "iron", count: 26 }, { faction: "neutral", count: 4 }], totalCards: 30, playable: true, problem: null },
+      { id: DECK, name: "Iron Foundry", mix: [{ faction: "iron", count: 26 }, { faction: "neutral", count: 4 }], totalCards: 30, playable: true, problem: null },
       { id: "22222222-2222-4222-8222-222222222222", name: "Draft", mix: [{ faction: "ember", count: 3 }], totalCards: 3, playable: false, problem: "deck has 3 cards; minimum is 30" },
     ],
     logger: new MemoryLogger(),
@@ -85,20 +91,50 @@ async function harness({ lobbyReplies, ranked, eligible = true, shop: withShop =
   const viewport = new Viewport(theme.layout);
   viewport.resize({ cssWidth: 1600, cssHeight: 900 });
   const navigated = [];
-  const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, params) => navigated.push({ id, params }), hasScene: () => true };
+  const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, navigation) => navigated.push({ id, params: navigation }), hasScene: () => true };
   const lobby = lobbyReplies === undefined ? undefined : new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => 0, logger: new MemoryLogger() });
-  const standing = eligible ? ELIGIBLE : { ...ELIGIBLE, eligible: false, casualGamesNeeded: 2, practiceGamesNeeded: 2 };
-  const ranking = ranked === undefined ? undefined : new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season: ELIGIBLE.season, entries: [] }) } });
-  const unused = async () => ok(null);
-  const shop = withShop ? new ShopService({ api: { listing: async () => ok(LISTING_WITH_ENTRIES), createOrder: unused, getOrder: unused, listOrders: unused, cancelOrder: unused, paymentHint: unused }, wallet: { name: "Steem Keychain" }, account: { state: { account: "alice" }, refresh: async () => undefined }, scheduler: { delay: async () => undefined }, newKey: () => "key" }) : undefined;
-  const entries = ranked === undefined ? undefined : new EntryService({ api: { entries: async () => ok([{ kind: "ranked", ...ranked, season: "season-1" }]) } });
+  const { ranking, entries } = rankedPlay(ranked, eligible);
+  const account = { state: { account: "alice" }, refresh: async () => undefined };
+  const { shop, market, transfers } = shopFor(withShop, account);
   const autoList = auto ? new AutoListService({ connection, randomHex: (bytes) => "cd".repeat(bytes), logger: new MemoryLogger() }) : undefined;
-  const account = { state: { account: "alice" } };
   const jackpot = pot === undefined ? undefined : { state: { loading: false, loaded: true, jackpot: pot, error: null }, subscribe: () => () => undefined, watch: () => () => undefined, now: () => 0 };
-  const scene = new OnlineScene(services, /** @type {any} */ ({ content, online, lobby, ranking, entries, shop, autoList, account, jackpot }), () => 3_600_000);
-  scene.enter({});
+  const app = /** @type {any} */ ({ content, online, lobby, ranking, entries, shop, autoList, account, jackpot });
+  const scene = new LOBBIES[which](services, app, () => 3_600_000);
+  scene.enter(params);
   await flush();
-  return { scene, online, lobby, requests, navigated, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
+  return { scene, online, lobby, shop, market, transfers, requests, navigated, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
+}
+
+/** The lobbies by name. */
+const LOBBIES = Object.freeze({ casual: CasualScene, ranked: RankedScene });
+
+/**
+ * The player's standing and ranked entries: none without `ranked`; a standing that may play ranked unless `eligible` is false.
+ * @param {{ balance: number, perGame: number } | undefined} ranked
+ * @param {boolean} eligible
+ */
+function rankedPlay(ranked, eligible) {
+  if (ranked === undefined) {
+    return { ranking: undefined, entries: undefined };
+  }
+  const standing = eligible ? ELIGIBLE : { ...ELIGIBLE, eligible: false, casualGamesNeeded: 2, practiceGamesNeeded: 2 };
+  return {
+    ranking: new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season: ELIGIBLE.season, entries: [] }) } }),
+    entries: new EntryService({ api: { entries: async () => ok([{ kind: "ranked", ...ranked, season: "season-1" }]) } }),
+  };
+}
+
+/**
+ * A shop selling ranked entries, paid with a wallet that approves every transfer (none when `open` is false).
+ * @param {boolean} open
+ * @param {{ state: { account: string } }} account
+ */
+function shopFor(open, account) {
+  const market = fakeMarketApi({ listing: LISTING_WITH_ENTRIES });
+  const transfers = [];
+  const wallet = { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async (request) => (transfers.push(request), ok("ef".repeat(20))) };
+  const shop = open ? new ShopService({ api: market.api, wallet, account, scheduler: { delay: async () => undefined }, newKey: () => "key" }) : undefined;
+  return { shop, market, transfers };
 }
 
 const byId = (scene, id) => scene.findNode(id);
@@ -110,10 +146,10 @@ function rendered(scene) {
 /** Everything the scene says, as one text (wrapped paragraphs read across their lines). */
 const said = (scene) => rendered(scene).join(" ");
 
-describe("OnlineScene", () => {
+describe("CasualScene", () => {
   it("lists the account's decks, unplayable ones disabled with the reason", async () => {
     const { scene } = await harness();
-    const good = byId(scene, "online.deck.11111111-1111-4111-8111-111111111111");
+    const good = byId(scene, `online.deck.${DECK}`);
     const draft = byId(scene, "online.deck.22222222-2222-4222-8222-222222222222");
     assert.equal(good.selected, true);
     assert.equal(draft.enabled, false);
@@ -121,11 +157,19 @@ describe("OnlineScene", () => {
     assert.match(said(scene), /first player is drawn by lot/);
   });
 
-  it("queues with the selected deck, can stop, and opens the match when the server starts it", async () => {
+  it("says what casual play is, free, in three steps", async () => {
+    const { scene } = await harness({ ranked: { balance: 3, perGame: 1 }, shop: true });
+    assert.match(said(scene), /No rating at stake/);
+    assert.equal(byId(scene, "casual.steps.text.2").text, "Find a match, or click a player online to challenge them.");
+    assert.equal(byId(scene, "online.find").text, "Find a casual match", "casual is free");
+    assert.equal(byId(scene, "online.entries"), null, "entries belong to Ranked");
+  });
+
+  it("queues casual with the selected deck, can stop, and opens the match when the server starts it", async () => {
     const { scene, requests, navigated, push } = await harness();
     byId(scene, "online.find").activate();
     await flush();
-    assert.deepEqual(requests.find((request) => request.t === "queue.join").d, { mode: "casual", deckId: "11111111-1111-4111-8111-111111111111" });
+    assert.deepEqual(requests.find((request) => request.t === "queue.join").d, { mode: "casual", deckId: DECK });
     assert.equal(byId(scene, "online.cancel").text, "Stop searching");
 
     push("match.found", { gameId: GAME, seat: "s1", opponent: { account: "bob" }, seedCommit: "ef".repeat(32) });
@@ -134,115 +178,177 @@ describe("OnlineScene", () => {
     const match = navigated.at(-1);
     assert.equal(match.id, SceneId.MATCH);
     assert.deepEqual(match.params.session.humanPlayerIds, ["s1"]);
-    assert.equal(match.params.againScene, SceneId.ONLINE, "play again leads back to the lobby");
+    assert.equal(match.params.againScene, SceneId.CASUAL, "play again leads back to the casual lobby");
+  });
+
+  it("speaks of casual play only: nothing there of ranked play, locked or open", async () => {
+    for (const eligible of [false, true]) {
+      const { scene } = await harness({ ranked: { balance: 0, perGame: 1 }, eligible });
+      assert.equal(byId(scene, "online.unlockHint"), null);
+      assert.equal(byId(scene, "casual.toRanked"), null);
+      assert.doesNotMatch(said(scene), /Ranked/);
+    }
   });
 });
 
-describe("OnlineScene: the Casual and Ranked tabs", () => {
-  it("opens on Casual, free, with the Ranked tab saying what a game costs", async () => {
-    const { scene } = await harness({ ranked: { balance: 3, perGame: 1 }, shop: true });
-    const casual = byId(scene, "online.mode.casual");
-    const ranked = byId(scene, "online.mode.ranked");
-    assert.equal(casual.selected, true);
-    assert.equal(ranked.selected, false);
-    assert.equal(ranked.subtitle, "1.000 STEEM a game · jackpot");
-    assert.equal(ranked.locked, false);
-    assert.equal(byId(scene, "online.find").text, "Find a match", "casual is free");
-    assert.equal(byId(scene, "online.entries"), null, "entries belong to the Ranked tab");
-    assert.match(said(scene), /No rating at stake/);
-  });
-
-  it("shows in the Ranked tab how ranked works, with the tickets the player holds, and queues ranked", async () => {
-    const { scene, requests } = await harness({ ranked: { balance: 3, perGame: 1 }, shop: true });
-    byId(scene, "online.mode.ranked").activate();
-    assert.equal(byId(scene, "online.mode.ranked").selected, true);
+describe("RankedScene", () => {
+  it("shows the season, the entries held as tickets with what one costs, what playing needs, and queues ranked for entries, not money", async () => {
+    const { scene, requests } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true });
     assert.equal(byId(scene, "online.season").text, "Season 1");
     assert.equal(byId(scene, "online.crest").place, "NEW", "a provisional rating has no place yet");
-    const tickets = byId(scene, "online.guide.tickets");
+    const tickets = byId(scene, "online.tickets");
     assert.equal(tickets.count, 3, "the tickets held, as a stack");
-    assert.equal(tickets.face, "1.000 STEEM", "printed with what an entry costs");
+    assert.equal(tickets.face, "1 STEEM", "printed with what an entry costs");
     assert.ok(rendered(scene).includes("×3"), "sealed with the count");
-    assert.equal(byId(scene, "online.guide.text.1").text, "1.000 STEEM each. Buy many with one payment.");
-    assert.match(byId(scene, "online.guide.text.2").text, /^A game takes 1 entry, given back if it is called off/);
-    assert.match(byId(scene, "online.guide.text.3").text, /^Every entry goes into it\./);
-    assert.equal(byId(scene, "online.entries").text, "You have 3 ranked entries.");
-    assert.ok(byId(scene, "online.moreEntries"), "more can be bought");
-    assert.equal(byId(scene, "online.find").text, "Find a match · 1.000 STEEM");
+    assert.equal(byId(scene, "online.entries").text, "3 tickets");
+    assert.equal(byId(scene, "ranked.band.about").text, "A game uses 1 · 1 STEEM each\nAll go into the season's jackpot");
+    assert.equal(byId(scene, "ranked.buy").text, "Buy", "tickets are bought");
+    const ready = byId(scene, "ranked.ready");
+    assert.deepEqual(ready.steps.map((step) => step.state), [StepState.DONE, StepState.DONE, StepState.DONE]);
+    assert.deepEqual([1, 2, 3].map((n) => byId(scene, `ranked.ready.text.${n}`).text), ["Ranked is open to you.", "3 ranked tickets: enough for 3 games.", "Your deck: “Iron Foundry”."]);
+    const find = byId(scene, "online.find");
+    assert.equal(find.text, "Find a ranked match · 1 ticket", "a game takes an entry: it is not paid for in STEEM");
+    find.activate();
+    await flush();
+    assert.deepEqual(requests.find((request) => request.t === "queue.join").d, { mode: "ranked", deckId: DECK });
+  });
+
+  it("shows how ranked works in the panel while nothing is going on, and the status once something is", async () => {
+    const { scene } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true });
+    assert.ok(byId(scene, "online.guide"), "how ranked works, on the screen itself");
+    assert.equal(byId(scene, "online.status"), null);
     byId(scene, "online.find").activate();
     await flush();
-    assert.deepEqual(requests.find((request) => request.t === "queue.join").d.mode, "ranked");
-    assert.equal(byId(scene, "online.mode.casual").enabled, false, "no switching while in the queue");
+    assert.equal(byId(scene, "online.guide"), null);
+    assert.equal(byId(scene, "online.status").text, "Looking for an opponent…");
   });
 
-  it("puts the season's jackpot on the trophy, and says how many places share it", async () => {
-    const { scene } = await harness({ ranked: { balance: 3, perGame: 1 }, shop: true, jackpot: JACKPOT });
-    byId(scene, "online.mode.ranked").activate();
-    assert.equal(byId(scene, "online.guide.jackpot").text, "866.666 STEEM");
-    assert.equal(byId(scene, "online.guide.text.3").text, "Every entry goes into it. When the season ends, the top 3 share it.");
+  it("puts the season's jackpot by the entries, and leads from the bar to all of how ranked works, in Info", async () => {
+    const { scene, navigated } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true, jackpot: JACKPOT });
+    assert.equal(byId(scene, "ranked.band.about").text, "A game uses 1 · 1 STEEM each\nAll go into the jackpot: 866 STEEM");
+    assert.equal(byId(scene, "online.guide.jackpot").text, "866 STEEM", "how ranked works, in the panel: the pool on the trophy");
+    assert.deepEqual([1, 2, 3].map((n) => byId(scene, `online.guide.title.${n}`).text), ["Buy tickets", "Play ranked", "Win the jackpot"], "each step on a plate of its own");
+    assert.equal(byId(scene, "online.guide.text.1").text, "1 STEEM each: buy them before you play");
+    assert.equal(byId(scene, "online.guide.text.3").text, "Every ticket feeds it: the top 3 share it");
+    byId(scene, "ranked.guide").activate();
+    assert.deepEqual(navigated.at(-1), { id: SceneId.INFO, params: { topic: "ranked", back: SceneId.RANKED, backParams: {} } }, "the bar's How ranked works: all of it, in Info");
   });
 
-  it("offers to get ranked entries in the shop instead of a search the server would refuse", async () => {
-    const { scene, navigated, requests } = await harness({ ranked: { balance: 0, perGame: 1 } });
-    assert.ok(byId(scene, "online.find"), "casual needs no entries");
-    byId(scene, "online.mode.ranked").activate();
-    assert.equal(byId(scene, "online.entries").text, "You have no ranked entries yet.");
+  it("shows the season's prize over the decks: the pool, the podium with each place's share and prize, the player's place and the leaderboard", async () => {
+    const { scene, navigated } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true, jackpot: JACKPOT });
+    const prize = byId(scene, "ranked.prize");
+    assert.ok(prize, "the prize, across the decks and the players");
+    assert.ok(byId(scene, "online.decks").parent.y > prize.y + prize.height, "the decks below it");
+    assert.ok(rendered(scene).includes("866 STEEM"), "the pool, in whole STEEM");
+    assert.equal(byId(scene, "prize.title").text, "SEASON 1 · PRIZE POOL");
+    assert.match(byId(scene, "prize.share").text, /the top 3 of the leaderboard share it: 65% · 25% · 10%/);
+    assert.deepEqual([1, 2, 3].map((n) => byId(scene, `prize.name.${n}`).text), ["@alice · You", "@bob", "Open seat"], "the player is @alice: their place says so");
+    assert.deepEqual([1, 2, 3].map((n) => byId(scene, `prize.amount.${n}`).text), ["65% · 563 STEEM", "25% · 216 STEEM", "10% · 86 STEEM"]);
+    assert.equal(byId(scene, "prize.avatar.1").account, "alice");
+    assert.equal(byId(scene, "prize.you").text, "You: not ranked yet · play a game");
+    assert.equal(byId(scene, "ranked.season"), null, "one way to the leaderboard: the prize's, not a second one in the bar");
+    assert.ok(byId(scene, "ranked.guide"), "how ranked works stays in the bar");
+    byId(scene, "prize.leaderboard").activate();
+    assert.deepEqual(navigated.at(-1), { id: SceneId.SEASON, params: { back: SceneId.RANKED, backParams: {} } });
+
+    const { scene: bare, navigated: went } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 } });
+    byId(bare, "ranked.season").activate();
+    assert.equal(went.at(-1).id, SceneId.SEASON, "without a prize on show, the bar leads to the leaderboard");
+
+    const { scene: casual } = await harness({ ranked: { balance: 3, perGame: 1 }, jackpot: JACKPOT });
+    assert.equal(byId(casual, "ranked.prize"), null, "the prize belongs to Ranked");
+  });
+
+  it("without entries, says so in red and gets them right there instead of a search the server would refuse", async () => {
+    const { scene, requests } = await harness({ lobby: "ranked", ranked: { balance: 0, perGame: 1 }, shop: true });
+    assert.equal(byId(scene, "online.entries").text, "None yet");
     assert.equal(byId(scene, "online.entries").colorKey, "danger");
-    assert.equal(byId(scene, "online.guide.tickets").count, 0, "a faded ticket sealed at 0");
-    assert.equal(byId(scene, "online.moreEntries"), null, "the main button offers them");
+    assert.equal(byId(scene, "online.tickets").count, 0, "a faded ticket sealed at 0");
+    assert.equal(byId(scene, "ranked.ready").steps[1].state, StepState.MISSING);
+    assert.equal(byId(scene, "ranked.ready.text.2").text, "No ranked tickets: a game uses 1. Buy some above.");
+    assert.equal(byId(scene, "online.status"), null, "nothing going on: how ranked works takes the status's place");
+    assert.match(byId(scene, "online.guide.title.1").text, /Tickets/i, "its first step: the tickets");
     assert.equal(byId(scene, "online.find"), null);
     const get = byId(scene, "online.getEntries");
-    assert.equal(get.text, "Get ranked entries");
+    assert.equal(get.text, "Buy ranked tickets");
     get.activate();
-    assert.deepEqual(navigated.at(-1), { id: SceneId.SHOP, params: { category: "ranked", back: SceneId.ONLINE, backParams: { mode: "ranked" } } }, "Back from the shop comes back to the Ranked tab");
+    assert.ok(scene.modal?.findById("tickets.buy"), "the purchase opens over the lobby");
     assert.equal(requests.some((request) => request.t === "queue.join"), false);
   });
 
-  it("opens Ranked before the player may play it: what is missing, how it works, and back to casual", async () => {
-    const { scene } = await harness({ ranked: { balance: 0, perGame: 1 }, eligible: false, shop: true });
-    const tab = byId(scene, "online.mode.ranked");
-    assert.equal(tab.locked, true);
-    assert.equal(tab.subtitle, "2 games to unlock");
-    assert.equal(byId(scene, "online.unlockHint").text, "Every casual game brings Ranked closer: 2 more to go.");
-    tab.activate();
+  it("sells entries in its dialog: how many, what they cost, one payment, and the entries there to play", async () => {
+    const { scene, shop, market, transfers } = await harness({ lobby: "ranked", ranked: { balance: 0, perGame: 1 }, shop: true, params: { buy: true } });
+    const dialog = () => scene.modal;
+    assert.equal(dialog().findById("tickets.title").text, "Buy ranked tickets");
+    assert.equal(dialog().findById("tickets.quantity").text, "5", "five to start with");
+    dialog().findById("tickets.more").activate();
+    dialog().findById("tickets.less").activate();
+    dialog().findById("tickets.less").activate();
+    assert.equal(dialog().findById("tickets.quantity").text, "4");
+    assert.equal(dialog().findById("tickets.added").text, "+4 tickets");
+    assert.equal(dialog().findById("tickets.total").text, "Total 4 STEEM");
+    assert.match(dialog().findById("tickets.status").text, /Keychain shows the exact transfer before anything is paid/);
+    const buy = dialog().findById("tickets.buy");
+    assert.equal(buy.text, "Buy 4 tickets · 4 STEEM");
+    buy.activate();
+    await flush();
+    await flush();
+    assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { items: [{ productId: "ranked_entry", quantity: 4 }], asset: "STEEM" });
+    assert.deepEqual(transfers.map((transfer) => transfer.amount), ["4.000"], "one wallet prompt for four games");
+    assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
+    assert.equal(dialog().findById("tickets.status").text, "Done: 4 ranked tickets added. Good luck in the season!");
+    dialog().findById("tickets.play").activate();
+    assert.equal(scene.modal, null);
+  });
+
+  it("opened from the bar's tickets only to buy, goes back where the player was when the purchase closes", async () => {
+    const { scene, navigated } = await harness({ lobby: "ranked", ranked: { balance: 0, perGame: 1 }, shop: true, params: { buy: true, quick: true, back: SceneId.SHOP } });
+    assert.ok(scene.modal?.findById("tickets.buy"), "the purchase, at once");
+    scene.modal.findById("tickets.close").activate();
+    assert.equal(navigated.at(-1).id, SceneId.SHOP, "back where the player was");
+
+    const { scene: here, navigated: stayed } = await harness({ lobby: "ranked", ranked: { balance: 0, perGame: 1 }, shop: true });
+    byId(here, "online.getEntries").activate();
+    here.modal.findById("tickets.close").activate();
+    assert.equal(here.modal, null);
+    assert.equal(stayed.length, 0, "opened here: it stays here");
+  });
+
+  it("opens before the player may play ranked: what is missing, and back to casual for it", async () => {
+    const { scene, navigated } = await harness({ lobby: "ranked", ranked: { balance: 0, perGame: 1 }, eligible: false, shop: true });
     assert.equal(byId(scene, "online.standing").text, "Ranked opens after 2 more casual game(s), or 2 more practice game(s) vs AI.");
-    assert.equal(byId(scene, "online.guide.text.1").text, "1.000 STEEM each. Buy many with one payment.", "how it works, all the same");
+    assert.equal(byId(scene, "ranked.ready").steps[0].state, StepState.LOCKED);
+    assert.equal(byId(scene, "ranked.ready.text.1").text, "Opens after 2 more casual games.");
     assert.equal(byId(scene, "online.crest"), null, "no rating yet");
     assert.equal(byId(scene, "online.find"), null);
     byId(scene, "online.unlock").activate();
-    assert.equal(byId(scene, "online.mode.casual").selected, true);
+    assert.equal(navigated.at(-1).id, SceneId.CASUAL);
+    byId(scene, "ranked.toCasual").activate();
+    assert.equal(navigated.at(-1).id, SceneId.CASUAL);
   });
 
   it("says nothing of entries while ranked play is free", async () => {
-    const { scene } = await harness({ ranked: { balance: 0, perGame: 0 } });
-    assert.equal(byId(scene, "online.mode.ranked").subtitle, "Rating · leaderboard · jackpot");
-    byId(scene, "online.mode.ranked").activate();
+    const { scene } = await harness({ lobby: "ranked", ranked: { balance: 0, perGame: 0 } });
     assert.equal(byId(scene, "online.entries"), null);
-    assert.equal(byId(scene, "online.guide.tickets").count, null, "a plain ticket, no seal");
-    assert.equal(byId(scene, "online.guide.text.1").text, "Free this season: no entry needed.");
-    assert.ok(byId(scene, "online.find"));
-  });
-
-  it("has no tabs without ranked play", async () => {
-    const { scene } = await harness();
-    assert.equal(byId(scene, "online.mode.ranked"), null);
-    assert.equal(byId(scene, "online.guide"), null);
-    assert.ok(byId(scene, "online.find"));
+    assert.equal(byId(scene, "online.tickets"), null);
+    assert.equal(byId(scene, "ranked.ready.text.2").text, "Free this season: no ticket needed.");
+    assert.equal(byId(scene, "online.find").text, "Find a ranked match");
   });
 });
 
 describe("rankedSteps", () => {
   it("words the three steps from what is known", () => {
     const [buy, play, win] = rankedSteps({ price: "1.000 STEEM", perGame: 2, places: 3 });
-    assert.deepEqual([buy.title, play.title, win.title], ["Get entries", "Play ranked", "Win the jackpot"]);
-    assert.equal(play.text, "A game takes 2 entries, given back if it is called off before it starts.");
-    assert.equal(win.text, "Every entry goes into it. When the season ends, the top 3 share it.");
+    assert.deepEqual([buy.title, play.title, win.title], ["Buy tickets", "Play ranked", "Win the jackpot"]);
+    assert.equal(play.text, "A game takes 2 tickets, given back if it is called off before it starts.");
+    assert.equal(win.text, "Every ticket goes into it. When the season ends, the top 3 share it.");
     const unknown = rankedSteps({ price: null, perGame: null, places: null });
-    assert.equal(unknown[0].text, "From the shop: buy many with one payment.");
-    assert.equal(unknown[2].text, "Every entry goes into it. When the season ends, the best of the season share it.");
+    assert.equal(unknown[0].text, "Buy them first, in the Shop: many with one payment.");
+    assert.equal(unknown[2].text, "Every ticket goes into it. When the season ends, the best of the season share it.");
   });
 });
 
-describe("OnlineScene before a v2 game starts", () => {
+describe("A lobby before a v2 game starts", () => {
   const WAITING = (authorized) => ({ gameId: GAME, seat: "s1", status: "CREATED", protocol: 2, opponent: { account: "bob" }, version: 0, snapshot: null, authorized });
 
   it("says the game starts once both players sign it, and who has", () => {
@@ -267,8 +373,7 @@ describe("OnlineScene before a v2 game starts", () => {
   });
 });
 
-describe("OnlineScene: players online and challenges", () => {
-  const DECK = "11111111-1111-4111-8111-111111111111";
+describe("Lobbies: players online and challenges", () => {
   const CHALLENGE = { id: "c1", from: "carol", to: "me", mode: "casual", expiresAt: 0, expiresInMs: 60_000 };
   const players = [
     { account: "bob", status: "idle" },
@@ -294,12 +399,11 @@ describe("OnlineScene: players online and challenges", () => {
     assert.equal(byId(scene, "online.players.count").text, "3");
   });
 
-  it("challenges a player to a casual or ranked game with the selected deck, and can withdraw it", async () => {
+  it("challenges a player to a game of the lobby's kind with the selected deck, and can withdraw it", async () => {
     const { scene, requests } = await harness({ lobbyReplies });
     byId(scene, "online.player.bob").activate();
-    assert.equal(byId(scene, "challenge.title").text, "Challenge @bob");
-    assert.equal(byId(scene, "challenge.ranked").enabled, false, "ranked needs the player to be eligible");
-    byId(scene, "challenge.casual").activate();
+    assert.equal(byId(scene, "challenge.title").text, "Challenge @bob to a casual game");
+    byId(scene, "challenge.send").activate();
     await flush();
     assert.deepEqual(requests.find((request) => request.t === "challenge.send").d, { to: "bob", mode: "casual", deckId: DECK });
     assert.equal(scene.modal, null);
@@ -311,6 +415,22 @@ describe("OnlineScene: players online and challenges", () => {
     await flush();
     assert.deepEqual(requests.at(-1), { t: "challenge.cancel", d: { challengeId: "c2" } });
     assert.ok(byId(scene, "online.find"));
+  });
+
+  it("proposes ranked games from Ranked, saying what they take, and offers entries to a player who has none", async () => {
+    const { scene, requests } = await harness({ lobby: "ranked", lobbyReplies, ranked: { balance: 2, perGame: 1 }, shop: true });
+    byId(scene, "online.player.bob").activate();
+    assert.equal(byId(scene, "challenge.title").text, "Challenge @bob to a ranked game");
+    assert.match(byId(scene, "challenge.message").text, /The game takes 1 ranked ticket from each of you when it starts\.$/);
+    byId(scene, "challenge.send").activate();
+    await flush();
+    assert.deepEqual(requests.find((request) => request.t === "challenge.send").d, { to: "bob", mode: "ranked", deckId: DECK });
+
+    const { scene: broke } = await harness({ lobby: "ranked", lobbyReplies, ranked: { balance: 0, perGame: 1 }, shop: true });
+    byId(broke, "online.player.bob").activate();
+    assert.equal(byId(broke, "challenge.send").enabled, false);
+    byId(broke, "challenge.getEntries").activate();
+    assert.ok(broke.modal?.findById("tickets.buy"), "the challenge gives way to getting entries");
   });
 
   it("shows a challenge received first, and accepts it with the selected deck", async () => {
@@ -326,6 +446,16 @@ describe("OnlineScene: players online and challenges", () => {
     await flush();
     assert.deepEqual(requests.find((request) => request.t === "challenge.accept").d, { challengeId: "c1", deckId: DECK });
     assert.equal(byId(scene, "online.challenge.c1"), null);
+  });
+
+  it("answers a ranked challenge from the casual lobby too, and sends a player without entries to get them", async () => {
+    const { scene, navigated, push } = await harness({ lobbyReplies, ranked: { balance: 0, perGame: 1 } });
+    push("challenge.received", { ...CHALLENGE, mode: "ranked" });
+    byId(scene, "online.challenge.c1").activate();
+    assert.match(byId(scene, "challenge.message").text, /It takes a ranked ticket, and you have none/);
+    assert.equal(byId(scene, "challenge.accept"), null);
+    byId(scene, "challenge.getEntries").activate();
+    assert.deepEqual(navigated.at(-1), { id: SceneId.RANKED, params: { buy: true, back: SceneId.CASUAL, backParams: {} } });
   });
 
   it("keeps a dialog open while the list refreshes, and closes it when its challenge closes", async () => {
@@ -348,7 +478,7 @@ describe("OnlineScene: players online and challenges", () => {
   });
 });
 
-describe("OnlineScene with the auto list", () => {
+describe("RankedScene with the auto list", () => {
   /** The scripted server of the auto list: joining puts the player in it, waiting since the start of time. */
   const AUTO_REPLIES = Object.freeze({
     "auto.status": () => ({ t: "auto.status", d: { state: "idle", waiting: 2 } }),
@@ -357,10 +487,8 @@ describe("OnlineScene with the auto list", () => {
     "lobby.list": () => ({ t: "lobby.players", d: { players: [], challenges: { incoming: [], outgoing: null } } }),
   });
 
-  it("offers a third mode where the player picks a style and joins, warned there is no way out", async () => {
-    const { scene, requests } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 1, perGame: 1 }, shop: true, auto: true });
-    assert.equal(byId(scene, "online.mode.auto"), null, "a way to play ranked: in the Ranked tab");
-    byId(scene, "online.mode.ranked").activate();
+  it("offers a second way to play ranked where the player picks a style and joins, warned there is no way out", async () => {
+    const { scene, requests } = await harness({ lobby: "ranked", lobbyReplies: AUTO_REPLIES, ranked: { balance: 1, perGame: 1 }, shop: true, auto: true });
     assert.equal(byId(scene, "online.mode.live").variant, "primary", "live until auto is chosen");
     byId(scene, "online.mode.auto").activate();
     assert.equal(byId(scene, "online.mode.auto").variant, "primary");
@@ -370,29 +498,27 @@ describe("OnlineScene with the auto list", () => {
     assert.equal(byId(scene, "online.style.defensive").variant, "primary");
     assert.match(byId(scene, "online.style.hint").text, /blocks often/);
     const join = byId(scene, "online.auto.join");
-    assert.equal(join.text, "Join the auto list · 1.000 STEEM");
+    assert.equal(join.text, "Join the auto list · 1 ticket");
     join.activate();
     assert.notEqual(scene.modal, null);
-    assert.match(scene.modal.findById("challenge.message").text, /“Iron Foundry” defensive.*costs 1.000 STEEM. Once you join you stay in the list until someone plays you./);
+    assert.match(scene.modal.findById("challenge.message").text, /“Iron Foundry” defensive.*It costs 1 ranked ticket. Once you join you stay in the list until someone plays you./);
     assert.equal(requests.some((request) => request.t === "auto.prepare"), false, "nothing happens before the player confirms");
     scene.modal.findById("auto.join").activate();
     await flush();
-    assert.deepEqual(requests.find((request) => request.t === "auto.join").d, { ticket: "33333333-3333-4333-8333-333333333333", deckId: "11111111-1111-4111-8111-111111111111", style: "defensive", entropy: "cd".repeat(16) });
+    assert.deepEqual(requests.find((request) => request.t === "auto.join").d, { ticket: "33333333-3333-4333-8333-333333333333", deckId: DECK, style: "defensive", entropy: "cd".repeat(16) });
     const waiting = byId(scene, "online.auto.waiting");
     assert.equal(waiting.enabled, false, "no way out of the list");
     assert.equal(byId(scene, "online.style.aggressive").enabled, false, "the style is the ticket's");
     assert.match(byId(scene, "online.auto.status").text, /You joined 1 h ago with “Iron Foundry”, defensive..*3 players are in the auto list/);
   });
 
-  it("sends a player without entries to get them, and keeps the mode for those who may play ranked", async () => {
-    const { scene } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 0, perGame: 1 }, shop: true, auto: true });
-    byId(scene, "online.mode.ranked").activate();
+  it("sends a player without entries to get them, and keeps the auto list for those who may play ranked", async () => {
+    const { scene } = await harness({ lobby: "ranked", lobbyReplies: AUTO_REPLIES, ranked: { balance: 0, perGame: 1 }, shop: true, auto: true });
     byId(scene, "online.mode.auto").activate();
     assert.equal(byId(scene, "online.auto.join"), null);
-    assert.equal(byId(scene, "online.getEntries").text, "Get ranked entries");
+    assert.equal(byId(scene, "online.getEntries").text, "Buy ranked tickets");
 
-    const { scene: newcomer } = await harness({ lobbyReplies: AUTO_REPLIES, ranked: { balance: 1, perGame: 1 }, auto: true, eligible: false });
-    byId(newcomer, "online.mode.ranked").activate();
+    const { scene: newcomer } = await harness({ lobby: "ranked", lobbyReplies: AUTO_REPLIES, ranked: { balance: 1, perGame: 1 }, auto: true, eligible: false });
     assert.equal(byId(newcomer, "online.mode.auto").enabled, false, "the same players as ranked");
     assert.equal(byId(newcomer, "online.auto.join"), null, "locked: back to casual instead");
   });

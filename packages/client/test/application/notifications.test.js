@@ -182,7 +182,7 @@ describe("describeNotification", () => {
     assert.equal(fulfilled.account, undefined, "no other player, no portrait");
 
     const sold = describe_("sale.sold", { account: "carol", card: { definitionId: "pyre_drake", serial: 7 }, price: "1.500", asset: "STEEM" });
-    assert.equal(sold.body, "@carol bought your Pyre Drake #7 for 1.500 STEEM.");
+    assert.equal(sold.body, "@carol bought your Pyre Drake #7 for 1.5 STEEM.");
     assert.deepEqual([sold.cards[0].caption, sold.cards[0].serial], ["#7", 7]);
 
     const gift = describe_("trade.offered", { account: "bob", give: [{ definitionId: "ember_imp", count: 1 }], wants: [] });
@@ -201,7 +201,7 @@ describe("describeNotification", () => {
     const lost = describe_("auto.finished", { gameId, opponent: "bob", result: "loss", style: "balanced", opponentStyle: "balanced", rating: null });
     assert.deepEqual([lost.title, lost.body, lost.tone], ["Auto game vs @bob: you lost", "Your deck played Balanced, @bob's Balanced. Watch the game.", "bad"]);
     const back = describe_("auto.refunded", { ticket: "t", entries: 1, reason: "season_ended" });
-    assert.deepEqual([back.title, back.target], ["Your ranked entry is back", NotificationTarget.ONLINE]);
+    assert.deepEqual([back.title, back.target], ["Your ranked ticket is back", NotificationTarget.RANKED]);
     assert.match(back.body, /The season ended before anyone joined the auto list against you/);
     assert.match(describe_("auto.refunded", { reason: "failed" }).body, /could not be played/);
   });

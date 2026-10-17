@@ -223,10 +223,11 @@ export class EditorView {
     const { catalogFilterTop, catalogListTop, filterButton } = this.#metrics;
     const filter = { id: "catalog.filter", filter: this.#filter, options: cardFilterOptions(app), onChange: (/** @type {import("../../../application/content/CardFilter.js").CardFilter} */ chosen) => this.#changeFilter(chosen) };
     if (filterButton) {
-      panel.add(new Label({ x: inset, y: catalogFilterTop, width: COMPACT_SPLIT.title, height: CARD_FILTER_BUTTON_HEIGHT, text: "Cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-      buildCardFilterButton(panel, { ...filter, x: inset + COMPACT_SPLIT.title, y: catalogFilterTop, width: width - COMPACT_SPLIT.title, dialog: this.#host.dialog });
+      const titleInset = this.#screen.titleInset;
+      panel.add(new Label({ x: titleInset, y: catalogFilterTop, width: COMPACT_SPLIT.title - (titleInset - inset), height: CARD_FILTER_BUTTON_HEIGHT, text: "Cards", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+      buildCardFilterButton(panel, { ...filter, x: inset + COMPACT_SPLIT.title, y: catalogFilterTop, width: width - COMPACT_SPLIT.title - (titleInset - inset), dialog: this.#host.dialog });
     } else {
-      panel.add(new Label({ x: inset, y: 14, width, height: 36, text: "Cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+      panel.add(new Label({ x: this.#screen.titleInset, y: 14, width: width - 2 * (this.#screen.titleInset - inset), height: 36, text: "Cards", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
       buildCardFilterBar(panel, { ...filter, x: inset, y: catalogFilterTop, width });
     }
     const list = panel.add(new ScrollList({ id: CATALOG_LIST_ID, x: inset, y: catalogListTop, width, height: this.#screen.columns.height - catalogListTop - inset }));

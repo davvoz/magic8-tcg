@@ -14,7 +14,7 @@
 import { SoundCue } from "../../../application/audio/SoundCue.js";
 import { drawIcon, Icon } from "../../ui/icons.js";
 import { Label } from "../../ui/Label.js";
-import { Panel, PANEL_INSET, PanelCorners, SMALL_PANEL_INSET } from "../../ui/Panel.js";
+import { Panel, PANEL_INSET, PANEL_TITLE_INSET, PanelCorners, SMALL_PANEL_INSET, SMALL_PANEL_TITLE_INSET } from "../../ui/Panel.js";
 import { roundedRectPath } from "../../ui/drawing.js";
 import { TileArt } from "../play/TileArt.js";
 
@@ -75,7 +75,8 @@ export class NavCard extends Panel {
     } else {
       // The words keep clear of the painted corners at the foot.
       art = { x: margin, y: margin, width: frame.width - 2 * margin, height: frame.height - margin - metrics.inset - words - 2 * metrics.gap };
-      this.#text = { x: margin + metrics.pad, y: art.y + art.height + 2 * metrics.gap };
+      // Along the foot, beside the painted corners: past their curl.
+      this.#text = { x: Math.max(margin + metrics.pad, metrics.smallCorners ? SMALL_PANEL_TITLE_INSET : PANEL_TITLE_INSET), y: art.y + art.height + 2 * metrics.gap };
     }
     const { landscape, ...painting } = picture;
     this.add(new TileArt({ id: `${frame.id}.art`, ...art, ...painting, piece: art.width > art.height && landscape !== undefined ? landscape : painting.piece, dim: locked }));

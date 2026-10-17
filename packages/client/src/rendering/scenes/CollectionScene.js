@@ -185,10 +185,11 @@ export class CollectionScene extends SectionScene {
     const inner = this.#screen.columns.left.width - 2 * inset;
     const filter = { id: "collection.filter", filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (/** @type {import("../../application/content/CardFilter.js").CardFilter} */ chosen) => this.#changeFilter(chosen) };
     if (filterButton) {
-      panel.add(new Label({ x: inset, y: filterTop, width: titleWidth, height: CARD_FILTER_BUTTON_HEIGHT, text: "Your cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-      return buildCardFilterButton(panel, { ...filter, x: inset + titleWidth, y: filterTop, width: inner - titleWidth, dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() } });
+      const titleInset = this.#screen.titleInset;
+      panel.add(new Label({ x: titleInset, y: filterTop, width: titleWidth - (titleInset - inset), height: CARD_FILTER_BUTTON_HEIGHT, text: "Your cards", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+      return buildCardFilterButton(panel, { ...filter, x: inset + titleWidth, y: filterTop, width: inner - titleWidth - (titleInset - inset), dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() } });
     }
-    panel.add(new Label({ x: inset, y: 14, width: inner, height: 36, text: "Your cards", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    panel.add(new Label({ x: this.#screen.titleInset, y: 14, width: inner - 2 * (this.#screen.titleInset - inset), height: 36, text: "Your cards", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left" }));
     return buildCardFilterBar(panel, { ...filter, x: inset, y: filterTop, width: inner });
   }
 

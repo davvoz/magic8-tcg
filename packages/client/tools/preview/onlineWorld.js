@@ -5,12 +5,13 @@
  * standing in a running season, ranked entries priced by a one-product
  * listing, the season's jackpot and the auto list. Development only.
  *
- *   /tools/preview/?scene=online                    the Casual tab
- *   /tools/preview/?scene=online&tab=ranked         the Ranked tab
+ *   /tools/preview/?scene=casual                    the casual lobby
+ *   /tools/preview/?scene=ranked                    the ranked lobby
  *   ...&entries=0                                   holding no ranked entries (default 3)
  *   ...&eligible=0                                  ranked not open yet
- *   ...&way=auto                                    the auto list in the Ranked tab
- *   ...&guide=1                                     the phone's dialog on how ranked works
+ *   ...&way=auto                                    the auto list in the ranked lobby
+ *   ...&guide=1                                     the dialog on how ranked works
+ *   ...&buy=1                                       the dialog that gets ranked entries
  */
 import { ok } from "@magic8/engine/shared/Result.js";
 import { AutoListService } from "../../src/application/auto/AutoListService.js";
@@ -82,7 +83,8 @@ export function onlineServices(content, { entries, eligible }, logger) {
     lobby: new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => Date.now(), logger }),
     ranking: new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season: SEASON, entries: LEADERBOARD }) } }),
     entries: new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: entries, perGame: 1, season: SEASON.id }]) } }),
-    shop: { state: { status: "ready", listing: { products: [RANKED_ENTRY] } }, subscribe: quiet, load: async () => undefined },
+    shop: { state: { status: "ready", listing: { products: [RANKED_ENTRY] }, purchase: { stage: "none", order: null, txId: null, error: null, cart: null } }, subscribe: quiet, load: async () => undefined, dismiss: () => undefined, buy: async () => undefined },
+    balance: { state: { loading: false, balances: [{ asset: "STEEM", amount: "12.500" }], error: null }, subscribe: quiet, refresh: async () => undefined, amountOf: () => "12.500", isShort: (/** @type {string} */ amount) => Number(amount) > 12.5 },
     jackpot: { state: { loading: false, loaded: true, jackpot, error: null }, subscribe: quiet, watch: quiet, now: () => Date.now() },
     autoList: new AutoListService({ connection, randomHex: (bytes) => "cd".repeat(bytes), logger }),
     account: { state: { status: "ready", account: "im-ridd", error: null }, subscribe: quiet },

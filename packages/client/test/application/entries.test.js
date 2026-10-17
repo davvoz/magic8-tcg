@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { fail, ok } from "@magic8/engine/shared/Result.js";
-import { EntryService, heldEntriesText, rankedFeeText } from "../../src/application/entries/EntryService.js";
+import { EntryService, rankedEntriesText, rankedFeeText } from "../../src/application/entries/EntryService.js";
 import { describeNotification } from "../../src/application/notifications/describeNotification.js";
 import { rankedEntryPrice, shelvesOf } from "../../src/application/shop/shopCatalog.js";
 import { HttpEntriesApi } from "../../src/infrastructure/api/HttpEntriesApi.js";
@@ -48,17 +48,13 @@ describe("EntryService", () => {
     assert.equal(entries.ranked, null);
   });
 
-  it("tells the lobby what a ranked game costs, in STEEM once the shop's price is known, and what the player has", () => {
-    const price = { asset: "STEEM", amount: "1.000" };
-    assert.equal(heldEntriesText(RANKED), "You have 3 ranked entries.");
-    assert.equal(heldEntriesText({ ...RANKED, balance: 1 }), "You have 1 ranked entry.");
-    assert.equal(heldEntriesText({ ...RANKED, balance: 0 }), "You have no ranked entries yet.");
-    assert.equal(rankedFeeText(RANKED, price), "1.000 STEEM");
-    assert.equal(rankedFeeText({ ...RANKED, perGame: 2 }, price), "2.000 STEEM");
-    assert.equal(rankedFeeText({ ...RANKED, perGame: 2 }), "2 ranked entries");
-    assert.equal(heldEntriesText({ ...RANKED, perGame: 0 }), null, "free: nothing to say");
-    assert.equal(heldEntriesText(null), null);
-    assert.equal(rankedFeeText(null, price), null);
+  it("tells the lobby what a ranked game takes, in entries (never in money), and what the player has", () => {
+    assert.equal(rankedEntriesText(3), "3 ranked tickets");
+    assert.equal(rankedEntriesText(1), "1 ranked ticket");
+    assert.equal(rankedFeeText(RANKED), "1 ranked ticket");
+    assert.equal(rankedFeeText({ ...RANKED, perGame: 2 }), "2 ranked tickets");
+    assert.equal(rankedFeeText({ ...RANKED, perGame: 0 }), null, "free: no fee");
+    assert.equal(rankedFeeText(null), null);
   });
 });
 
@@ -92,10 +88,10 @@ describe("ranked entries in the shop", () => {
 
   it("says what a fulfilled order gave", () => {
     const fulfilment = (entries, cards = []) => ({ txId: null, cards, packs: [], entries });
-    assert.equal(doneText(fulfilment([{ kind: "ranked", count: 5 }])), "Done: 5 ranked entries are yours, and in the season's jackpot.");
-    assert.equal(doneText(fulfilment([{ kind: "ranked", count: 1 }])), "Done: 1 ranked entry is yours, and in the season's jackpot.");
+    assert.equal(doneText(fulfilment([{ kind: "ranked", count: 5 }])), "Done: 5 ranked tickets are yours, and in the season's jackpot.");
+    assert.equal(doneText(fulfilment([{ kind: "ranked", count: 1 }])), "Done: 1 ranked ticket is yours, and in the season's jackpot.");
     const card = { id: "00000000-0000-4000-8000-000000000001", definitionId: "ember_imp", edition: "core-1", serial: 1 };
-    assert.equal(doneText(fulfilment([{ kind: "ranked", count: 2 }], [card])), "Done: 2 ranked entries are yours, and in the season's jackpot. Your cards are in your collection.");
+    assert.equal(doneText(fulfilment([{ kind: "ranked", count: 2 }], [card])), "Done: 2 ranked tickets are yours, and in the season's jackpot. Your cards are in your collection.");
     assert.equal(doneText(fulfilment([], [card])), "Done: your cards are in your collection.");
     assert.equal(doneText(null), "Done: your cards are in your collection.");
   });
@@ -104,11 +100,11 @@ describe("ranked entries in the shop", () => {
     const catalog = new Map();
     const notification = (data) => describeNotification({ id: 1, kind: "shop.fulfilled", data, createdAt: 0, read: false }, catalog);
     const entries = notification({ orderId: "o1", items: [{ productId: "ranked_entry", name: "Ranked Entry", quantity: 5 }], cards: [], total: 0, entries: [{ kind: "ranked", count: 5 }] });
-    assert.deepEqual([entries.title, entries.body, entries.target], ["Your ranked entries are ready", "5× Ranked Entry: 5 ranked entries to play with, and in the season's jackpot.", "online"]);
+    assert.deepEqual([entries.title, entries.body, entries.target], ["Your ranked tickets are ready", "5× Ranked Entry: 5 ranked tickets to play with, and in the season's jackpot.", "ranked"]);
     const one = notification({ items: [{ name: "Ranked Entry", quantity: 1 }], cards: [], total: 0, entries: [{ kind: "ranked", count: 1 }] });
-    assert.equal(one.body, "Ranked Entry: 1 ranked entry to play with, and in the season's jackpot.");
+    assert.equal(one.body, "Ranked Entry: 1 ranked ticket to play with, and in the season's jackpot.");
     const both = notification({ items: [{ name: "Core Booster", quantity: 1 }, { name: "Ranked Entry", quantity: 2 }], cards: [{ definitionId: "ember_imp", count: 5 }], total: 5, entries: [{ kind: "ranked", count: 2 }] });
-    assert.equal(both.body, "Core Booster, 2× Ranked Entry: 5 cards added to your collection, and 2 ranked entries to play with.");
+    assert.equal(both.body, "Core Booster, 2× Ranked Entry: 5 cards added to your collection, and 2 ranked tickets to play with.");
     const cardsOnly = notification({ items: [{ name: "Core Booster", quantity: 1 }], cards: [{ definitionId: "ember_imp", count: 5 }], total: 5 });
     assert.equal(cardsOnly.title, "Your cards have arrived", "an older order says nothing of entries");
   });

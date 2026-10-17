@@ -171,7 +171,7 @@ describe("HomeScene, signed in", () => {
     await signIn(home);
     assert.equal(byId(home.scene, "home.headline.title").text, "Your game against @bob");
     byId(home.scene, "home.resume").activate();
-    assert.deepEqual(home.navigated.at(-1), { id: SceneId.MATCH, params: { session, againScene: SceneId.ONLINE } });
+    assert.deepEqual(home.navigated.at(-1), { id: SceneId.MATCH, params: { session, againScene: SceneId.CASUAL } });
   });
 });
 
@@ -207,13 +207,14 @@ describe("HomeScene on a phone", () => {
     home.scene.enter({});
     await signIn(home);
     assert.equal(byId(home.scene, "home.season"), null, "not the wide Home's season card");
+    assert.equal(home.scene.findNode("shell.logo").interactive, false, "on Home the logo leads nowhere: it is there");
     const cards = ["play", "decks", "market", "season"].map((id) => byId(home.scene, `home.section.${id}`));
     assert.ok(cards.every((card) => card instanceof NavCard));
     const pictures = ["play", "decks", "market", "season"].map((id) => byId(home.scene, `home.section.${id}.art`));
     assert.deepEqual(pictures.map((art) => art?.piece), [UiPiece.PLAY_ONLINE_TALL, UiPiece.DECKS_TALL, UiPiece.MARKET_TALL, UiPiece.SEASON_TALL], "each section shows its upright painting");
     assert.ok(pictures.every((art) => art?.cover), "filling its picture");
     assert.equal(byId(home.scene, "home.section.play.line").text, "Today's challenge: Kael");
-    assert.equal(byId(home.scene, "home.section.season.line").text, "Jackpot 866.666 STEEM");
+    assert.equal(byId(home.scene, "home.section.season.line").text, "Jackpot 866 STEEM");
     cards[0].activate();
     assert.equal(home.navigated.at(-1).id, SceneId.PLAY);
   });

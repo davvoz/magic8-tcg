@@ -6,6 +6,7 @@
  * time alone.
  */
 
+import { roundAmountText, roundMoneyText } from "../money/moneyText.js";
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
@@ -15,7 +16,7 @@ const PAID_TEXT = Object.freeze({ PENDING: "to be paid", SENT: "sent", CONFIRMED
 
 /**
  * @typedef {Readonly<{ label: string, share: string, amount: string, figure: string, holder: string, account: string | null, note: string }>} PlaceText
- *   `figure` the amount without the asset ("563.332")
+ *   `figure` the amount without the asset ("563"), rounded down like `amount`
  *   `holder` who holds (or won) the place, or what it means that nobody does; `note` the payment's state once settled
  * @typedef {Readonly<{ title: string, amount: string, asset: string, countdown: string, source: string, pitch: string, growth: string | null, places: readonly PlaceText[], ticking: boolean }>} JackpotText
  *   `pitch` the source in a few words, for a single line; `ticking`: the countdown changes with time
@@ -29,7 +30,7 @@ const PAID_TEXT = Object.freeze({ PENDING: "to be paid", SENT: "sent", CONFIRMED
 export function describeJackpot(jackpot, now) {
   const { season, asset } = jackpot;
   const settled = season.status === "settled";
-  const amount = jackpot.jackpot === null ? `— ${asset}` : `${jackpot.jackpot} ${asset}`;
+  const amount = jackpot.jackpot === null ? `— ${asset}` : roundMoneyText(jackpot.jackpot, asset);
   const growth = settled ? null : growthText(jackpot);
   return Object.freeze({
     title: settled ? `${season.name} jackpot · final` : `${season.name} jackpot`,
@@ -77,7 +78,7 @@ export function formatDuration(milliseconds) {
 const shareText = ({ numerator, denominator }) => `${numerator}/${denominator}`;
 
 /**
- * "+200.000 STEEM since the season began", when it has grown.
+ * "+200 STEEM since the season began", when it has grown.
  * @param {import("../ports/JackpotApi.contract.js").Jackpot} jackpot
  */
 function growthText({ jackpot, opening, asset, season }) {
@@ -86,7 +87,7 @@ function growthText({ jackpot, opening, asset, season }) {
   }
   const decimals = jackpot.split(".")[1]?.length ?? 0;
   const grown = unitsOf(jackpot, decimals) - unitsOf(opening, decimals);
-  return grown > 0n ? `+${formatUnits(grown, decimals)} ${asset} since the season began` : null;
+  return grown > 0n ? `+${roundMoneyText(formatUnits(grown, decimals), asset)} since the season began` : null;
 }
 
 /**
@@ -100,8 +101,8 @@ function placeText(place, asset, status) {
   return Object.freeze({
     label: ORDINALS[place.place - 1] ?? `${place.place}th`,
     share: `${place.percent}%`,
-    amount: place.amount === null ? `— ${asset}` : `${place.amount} ${asset}`,
-    figure: place.amount ?? "—",
+    amount: place.amount === null ? `— ${asset}` : roundMoneyText(place.amount, asset),
+    figure: place.amount === null ? "—" : roundAmountText(place.amount),
     holder,
     account: place.account,
     note: place.paid === null ? "" : PAID_TEXT[place.paid],

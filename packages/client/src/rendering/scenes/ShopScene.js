@@ -25,6 +25,7 @@
  * to read it), the purchase controls are two rows under the status line,
  * and the cart and the reveal fill the screen.
  */
+import { moneyText } from "../../application/money/moneyText.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
 import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_STAGES, OrdersStatus, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
@@ -44,6 +45,7 @@ import { unknownCard } from "../cards/unknownCard.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Hotspot } from "../ui/Hotspot.js";
+import { Glyph } from "../ui/glyphs.js";
 import { Label } from "../ui/Label.js";
 import { Modal } from "../ui/Modal.js";
 import { OptionRow } from "../ui/OptionRow.js";
@@ -126,7 +128,7 @@ const MINUTE = 60_000;
 /** An unpaid order is offered for payment only while this much of its time is left: a transfer the chain sees after the deadline is refunded, not fulfilled. */
 const PAY_MARGIN_MS = 2 * MINUTE;
 
-const TAB_TITLES = Object.freeze({ [ShopCategory.PACKS]: "Packs", [ShopCategory.DECKS]: "Decks", [ShopCategory.SINGLES]: "Singles", [ShopCategory.RANKED]: "Ranked", [ShopCategory.OFFERS]: "Offers" });
+const TAB_TITLES = Object.freeze({ [ShopCategory.PACKS]: "Packs", [ShopCategory.DECKS]: "Decks", [ShopCategory.SINGLES]: "Singles", [ShopCategory.RANKED]: "Tickets", [ShopCategory.OFFERS]: "Offers" });
 /** Shelves shown only while something is on them. */
 /** @type {readonly string[]} */
 const OPTIONAL_SHELVES = Object.freeze([ShopCategory.RANKED, ShopCategory.OFFERS]);
@@ -136,7 +138,7 @@ const EMPTY_SHELVES = shelvesOf({ products: [], dropTables: [], rarities: [], pr
 /** What the player sees at each step of a purchase. */
 const STAGE_TEXT = Object.freeze({
   [PurchaseStage.ORDERING]: () => "Creating your order…",
-  [PurchaseStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${purchase.order.payment.amount} ${purchase.order.payment.asset} to @${purchase.order.payment.to}.`,
+  [PurchaseStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${moneyText(purchase.order.payment.amount, purchase.order.payment.asset)} to @${purchase.order.payment.to}.`,
   [PurchaseStage.CONFIRMING]: () => "Payment sent. The STEEM blockchain makes it final in about a minute: keep playing, you will be notified when your cards arrive.",
   [PurchaseStage.DONE]: (purchase) => doneText(purchase.order?.fulfilment ?? null),
 });
@@ -150,7 +152,7 @@ const STAGE_TEXT = Object.freeze({
 /** @param {string | null} rarity */
 const rarityColor = (rarity) => rarityColorKey(rarity);
 /** @param {Product} product */
-const priceText = (product) => `${priceOf(product).amount} ${priceOf(product).asset}`;
+const priceText = (product) => moneyText(priceOf(product).amount, priceOf(product).asset);
 /** @param {number} count */
 const cardsText = (count) => `${count} card${count === 1 ? "" : "s"}`;
 
@@ -166,7 +168,7 @@ function describeUnpaid(order, now) {
   const age = Math.max(0, Math.floor((now - order.createdAt) / MINUTE));
   const ordered = age < 1 ? "just now" : `${age} min ago`;
   const when = payable ? `${Math.ceil(left / MINUTE)} min left to pay` : "time to pay is over: it closes on its own";
-  return { detail: `${order.total.amount} ${order.total.asset} · ordered ${ordered} · ${when}`, payable };
+  return { detail: `${moneyText(order.total.amount, order.total.asset)} · ordered ${ordered} · ${when}`, payable };
 }
 
 export class ShopScene extends SectionScene {
@@ -376,7 +378,7 @@ export class ShopScene extends SectionScene {
       this.root.add(new Label({ x: noteX, y: header.y, width: noteWidth, height: header.height, text: "Sign in to buy. Prices are paid in STEEM, straight from your wallet.", size: "small", align: "left", colorKey: "textMuted", fit: true }));
     } else {
       const budget = this.#budgetLine();
-      this.root.add(new Label({ id: "shop.budget", x: noteX, y: header.y, width: noteWidth, height: header.height / 2, text: budget.text, weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
+      this.root.add(new Label({ id: "shop.budget", x: noteX, y: header.y, width: noteWidth, height: header.height / 2, text: budget.text, weight: "bold", align: "left", colorKey: budget.colorKey, fit: true, glyph: budget.glyph ?? null }));
       this.root.add(new Label({ x: noteX, y: header.y + header.height / 2, width: noteWidth, height: header.height / 2, text: `Buying as @${account}. Payments go straight from your wallet; nothing is stored in the game.`, size: "small", align: "left", colorKey: "textMuted", fit: true }));
     }
     const inCart = this.#shop().state.cart.reduce((sum, line) => sum + line.quantity, 0);
@@ -418,7 +420,9 @@ export class ShopScene extends SectionScene {
    */
   #buildTabs(panel, shelves) {
     const categories = [ShopCategory.PACKS, ShopCategory.DECKS, ShopCategory.SINGLES, ...OPTIONAL_SHELVES.filter((category) => productsOn(shelves, category).length > 0)];
-    const inner = this.#screen.columns.left.width - 2 * this.#screen.inset;
+    // The row runs along the panel's top band: clear of its painted corners.
+    const left = this.#screen.titleInset;
+    const inner = this.#screen.columns.left.width - 2 * left;
     const TABS = this.#m.tabs;
     const width = (inner - (categories.length - 1) * TABS.gap) / categories.length;
     /** @type {Button | null} */
@@ -428,7 +432,7 @@ export class ShopScene extends SectionScene {
       const tab = panel.add(
         new Button({
           id: `shop.tab.${category}`,
-          x: this.#screen.inset + index * (width + TABS.gap),
+          x: left + index * (width + TABS.gap),
           y: TABS.top,
           width,
           height: TABS.height,
@@ -598,7 +602,7 @@ export class ShopScene extends SectionScene {
   #buildTickets(panel, product, area) {
     const held = this.#app.entries?.ranked?.balance ?? null;
     const price = priceOf(product);
-    const face = price === undefined ? null : `${price.amount} ${price.asset}`;
+    const face = price === undefined ? null : moneyText(price.amount, price.asset);
     panel.add(new EntryTickets({ id: "shop.tickets", ...area, count: held, title: "Ranked", face: rankedEntriesOf(product) === 1 ? face : null, seed: `shop:${product.id}` }));
     if (this.#screen.compact) {
       return;
@@ -619,7 +623,8 @@ export class ShopScene extends SectionScene {
    */
   #buildTitle(panel, product, described) {
     const { top, line, descriptionLines } = this.#m;
-    panel.add(new Label({ x: this.#screen.inset, y: top.title, width: this.#detailWidth, height: top.titleHeight, text: product.name, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    const indent = this.#screen.titleInset - this.#screen.inset;
+    panel.add(new Label({ x: this.#screen.titleInset, y: top.title, width: this.#detailWidth - indent, height: top.titleHeight, text: product.name, size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     if (described) {
       panel.add(new TextBlock({ x: this.#screen.inset, y: top.description, width: this.#detailWidth, height: descriptionLines * line, text: product.description, size: "small", colorKey: "textMuted" }));
     }
@@ -662,7 +667,7 @@ export class ShopScene extends SectionScene {
       list.add(new Label({ x, y: y + CardThumb.heightFor(DECK_THUMB.width), width: DECK_THUMB.width, height: DECK_THUMB.rarity, text: rarityLabel(rarity), size: "tiny", weight: "bold", colorKey: rarityColor(rarity), fit: true }));
     });
     list.contentHeight = Math.ceil(lines.length / perRow) * cellHeight - DECK_THUMB.gap;
-    const sum = total === null ? "" : `Sum of the cards: ${total} ${priceOf(product).asset} · `;
+    const sum = total === null ? "" : `Sum of the cards: ${moneyText(total, priceOf(product).asset)} · `;
     panel.add(new Label({ id: "shop.deckTotal", x: this.#screen.inset, y: bottom, width: this.#detailWidth, height: LINE, text: `${sum}Deck price: ${priceText(product)}`, size: "small", weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
   }
 
@@ -681,7 +686,7 @@ export class ShopScene extends SectionScene {
     if (line.unit === null) {
       lines.push("Not sold as a single");
     } else {
-      lines.push(`As a single: ${line.unit} ${asset} each`, `${line.count} in the deck: ${line.amount} ${asset}`);
+      lines.push(`As a single: ${moneyText(line.unit, asset)} each`, `${line.count} in the deck: ${moneyText(String(line.amount), asset)}`);
     }
     this.openModal(buildCardInfoModal({ viewport: this.services.viewport, card, rarity: line.rarity ?? rarityOf(this.#app, line.cardId), lines, onClose: () => this.closeModal() }));
   }
@@ -703,8 +708,9 @@ export class ShopScene extends SectionScene {
       this.#buildSingleCard(panel, card, { offer, top, owned });
     }
     const x = this.#screen.inset + SINGLE.card.width + this.#screen.inset;
-    const width = this.#screen.columns.right.width - x - this.#screen.inset;
-    panel.add(new Label({ x, y: top, width, height: SINGLE.nameHeight, text: card?.name ?? offer.cardId, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    // Beside the card, up to the panel's top-right corner: clear of its scroll.
+    const width = this.#screen.columns.right.width - x - (compact ? this.#screen.titleInset : this.#screen.inset);
+    panel.add(new Label({ x, y: top, width, height: SINGLE.nameHeight, text: card?.name ?? offer.cardId, size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     const rarityY = top + SINGLE.nameHeight + 4;
     panel.add(new Label({ id: "shop.rarity", x, y: rarityY, width, height: LINE, text: rarityLabel(offer.rarity), weight: "bold", align: "left", colorKey: rarityColor(offer.rarity) }));
     if (owned !== null) {
@@ -805,7 +811,7 @@ export class ShopScene extends SectionScene {
         y: buyY,
         width: BUY.width,
         height: BUY.height,
-        text: `Buy for ${multiplyAmount(price.amount, this.#quantity)} ${price.asset}`,
+        text: `Buy for ${moneyText(multiplyAmount(price.amount, this.#quantity), price.asset)}`,
         variant: "primary",
         enabled: this.#canBuy() && !this.#isShort(multiplyAmount(price.amount, this.#quantity), price.asset),
         onActivate: () => {
@@ -855,7 +861,7 @@ export class ShopScene extends SectionScene {
     panel.add(new Label({ id: "shop.each", x: eachX, y: quantityY, width: inset + width - eachX, height: quantity.height, text: each, size: "small", align: "left", colorKey: "textMuted", fit: true }));
     const buyY = quantityY + quantity.height + rowGap;
     const buyWidth = Math.round(width * 0.6);
-    const buy = panel.add(new Button({ id: "shop.buy", x: inset, y: buyY, width: buyWidth, height: buyRow.height, text: `Buy for ${amount} ${price.asset}`, variant: "primary", keepPlate: true, enabled: this.#canBuy() && !this.#isShort(amount, price.asset), onActivate: () => {
+    const buy = panel.add(new Button({ id: "shop.buy", x: inset, y: buyY, width: buyWidth, height: buyRow.height, text: `Buy for ${moneyText(amount, price.asset)}`, variant: "primary", keepPlate: true, enabled: this.#canBuy() && !this.#isShort(amount, price.asset), onActivate: () => {
       this.#notice = null;
       shop.buy({ productId: product.id, quantity: this.#quantity, asset: price.asset });
     } }));
@@ -895,13 +901,13 @@ export class ShopScene extends SectionScene {
     return this.#app.balance?.isShort(amount, asset) ?? false;
   }
 
-  /** @returns {{ text: string, colorKey: string }} the player's budget, as far as it is known */
+  /** @returns {{ text: string, colorKey: string, glyph?: string }} the player's budget, as far as it is known (STEEM's mark beside it then) */
   #budgetLine() {
     const balance = this.#app.balance;
     const asset = this.#asset();
     const amount = balance?.amountOf(asset) ?? null;
     if (amount !== null) {
-      return { text: `Your budget: ${amount} ${asset}`, colorKey: "accentLight" };
+      return { text: `Your budget: ${moneyText(amount, asset)}`, colorKey: "accentLight", glyph: Glyph.STEEM };
     }
     if (balance === undefined || balance.state.loading) {
       return { text: "Reading your wallet…", colorKey: "textMuted" };
@@ -919,7 +925,7 @@ export class ShopScene extends SectionScene {
     if (!this.#isShort(amount, asset)) {
       return null;
     }
-    return { text: `Not enough ${asset}: this costs ${amount} ${asset}, your wallet holds ${this.#app.balance?.amountOf(asset)} ${asset}.`, colorKey: "danger" };
+    return { text: `Not enough ${asset}: this costs ${moneyText(amount, asset)}, your wallet holds ${moneyText(this.#app.balance?.amountOf(asset) ?? "0", asset)}.`, colorKey: "danger" };
   }
 
   /**
@@ -963,7 +969,7 @@ export class ShopScene extends SectionScene {
         return `complete deck: ${deck?.name ?? item.ref} (${deck?.totalCards ?? "?"} cards), saved to your account`;
       },
       product: (item) => listing?.products.find((candidate) => candidate.id === item.ref)?.name ?? item.ref,
-      entry: (item) => `${item.ref} entry: ${playsText(item.count)} of ${item.ref} play`,
+      entry: (item) => `${item.ref} ticket: ${playsText(item.count)} of ${item.ref} play`,
     };
     const lines = product.contents.map((item) => ({ text: `${item.count} × ${(describe[item.type] ?? (() => item.ref))(item)}`, colorKey: "text" }));
     return rankedEntriesOf(product) > 0 ? [...lines, ...this.#rankedLines()] : lines;
@@ -973,8 +979,8 @@ export class ShopScene extends SectionScene {
   #rankedLines() {
     const ranked = this.#app.entries?.ranked ?? null;
     const held = ranked === null ? [] : [{ text: `You have ${rankedEntriesText(ranked.balance)}.`, colorKey: "accentLight" }];
-    const cost = ranked === null || ranked.perGame === 0 ? "Ranked games take entries during a season with an entry fee." : `Every ranked game takes ${feeText(ranked.perGame)} from each player.`;
-    return [{ text: "Every entry goes into the season's jackpot.", colorKey: "accent" }, { text: cost, colorKey: "textMuted" }, ...held];
+    const cost = ranked === null || ranked.perGame === 0 ? "Ranked games take tickets during a season that charges for them." : `Every ranked game takes ${feeText(ranked.perGame)} from each player.`;
+    return [{ text: "Every ticket goes into the season's jackpot.", colorKey: "accent" }, { text: cost, colorKey: "textMuted" }, ...held];
   }
 
   /**
@@ -1091,16 +1097,16 @@ export class ShopScene extends SectionScene {
     const { panel } = modal;
     const width = CART.width - 2 * this.#screen.inset;
     const titleY = this.#screen.compact ? 6 : this.#screen.inset;
-    panel.add(new Label({ x: this.#screen.inset, y: titleY, width: width / 2, height: 44, text: "Your cart", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
-    panel.add(new Label({ id: "cart.count", x: this.#screen.inset + width / 2, y: titleY, width: width / 2, height: 44, text: cartCountText(summary), size: "small", align: "right", colorKey: "textMuted" }));
+    panel.add(new Label({ x: panel.titleInset, y: titleY, width: width / 2 - (panel.titleInset - this.#screen.inset), height: 44, text: "Your cart", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    panel.add(new Label({ id: "cart.count", x: this.#screen.inset + width / 2, y: titleY, width: width / 2 - (panel.titleInset - this.#screen.inset), height: 44, text: cartCountText(summary), size: "small", align: "right", colorKey: "textMuted" }));
     const footerY = CART.height - this.#screen.inset - CART.footer;
     const totalY = footerY - (this.#screen.compact ? 4 : this.#screen.inset) - 2 * LINE;
     const listY = titleY + CART.title;
     this.#buildCartLines(panel.add(new ScrollList({ id: CART_LIST_ID, x: this.#screen.inset, y: listY, width, height: totalY - listY - 6 })), summary, scrollY);
-    panel.add(new Label({ id: "cart.total", x: this.#screen.inset, y: totalY, width, height: LINE, text: summary.asset === null ? "" : `Total: ${summary.total} ${summary.asset}`, size: "body", weight: "bold", align: "right", colorKey: "accentLight" }));
+    panel.add(new Label({ id: "cart.total", x: this.#screen.inset, y: totalY, width, height: LINE, text: summary.asset === null ? "" : `Total: ${moneyText(summary.total, summary.asset)}`, size: "body", weight: "bold", align: "right", colorKey: "accentLight" }));
     if (this.#signedIn()) {
       const budget = this.#budgetLine();
-      panel.add(new Label({ id: "cart.budget", x: this.#screen.inset, y: totalY, width: width / 2, height: LINE, text: budget.text, size: "small", weight: "bold", align: "left", colorKey: budget.colorKey, fit: true }));
+      panel.add(new Label({ id: "cart.budget", x: this.#screen.inset, y: totalY, width: width / 2, height: LINE, text: budget.text, size: "small", weight: "bold", align: "left", colorKey: budget.colorKey, fit: true, glyph: budget.glyph ?? null }));
     }
     const hint = this.#cartHint(summary);
     panel.add(new Label({ id: "cart.status", x: this.#screen.inset, y: totalY + LINE, width, height: LINE, text: hint.text, size: "small", align: "right", colorKey: hint.colorKey, fit: true }));
@@ -1161,7 +1167,7 @@ export class ShopScene extends SectionScene {
     list.add(new Label({ id: `cart.quantity.${productId}`, x: x + 10 + step.width, y: controlsY, ...step, text: String(quantity), weight: "bold" }));
     list.add(new Button({ id: `cart.more.${productId}`, x: x + 10 + 2 * step.width, y: controlsY, ...step, text: "+", enabled: quantity < limit, onActivate: () => shop.setCartQuantity(productId, quantity + 1) }));
     const amountX = x + 10 + 3 * step.width + 8;
-    const amount = line.amount === null ? "—" : `${line.amount} ${priceOf(/** @type {Product} */ (product)).asset}`;
+    const amount = line.amount === null ? "—" : moneyText(line.amount, priceOf(/** @type {Product} */ (product)).asset);
     list.add(new Label({ id: `cart.amount.${productId}`, x: amountX, y: controlsY, width: x + width - 10 - amountX, height: step.height, text: amount, size: this.#screen.compact ? "small" : "body", weight: "bold", align: "right", colorKey: "accentLight", fit: true }));
   }
 
@@ -1193,7 +1199,7 @@ export class ShopScene extends SectionScene {
     const height = Math.min(area.height, EntryTickets.heightFor(room));
     const width = EntryTickets.widthFor(height);
     const price = priceOf(product);
-    const face = rankedEntriesOf(product) === 1 && price !== undefined ? `${price.amount} ${price.asset}` : null;
+    const face = rankedEntriesOf(product) === 1 && price !== undefined ? moneyText(price.amount, price.asset) : null;
     const at = { x: area.x + (area.width - width) / 2, y: area.y + (area.height - height) / 2, width, height };
     list.add(new EntryTickets({ id: `cart.visual.${product.id}`, ...at, count: rankedEntriesOf(product) * quantity, title: "Ranked", face, seed: `cart:${product.id}` }));
   }
@@ -1245,7 +1251,7 @@ export class ShopScene extends SectionScene {
         y,
         width: third,
         height,
-        text: summary.payable ? `Pay ${summary.total} ${summary.asset}` : "Pay",
+        text: summary.payable && summary.asset !== null ? `Pay ${moneyText(summary.total, summary.asset)}` : "Pay",
         variant: "primary",
         enabled: summary.payable && this.#canBuy() && !this.#isShort(summary.total, /** @type {string} */ (summary.asset)),
         onActivate: () => this.#checkout(/** @type {string} */ (summary.asset)),
@@ -1320,7 +1326,7 @@ export class ShopScene extends SectionScene {
     const { panel } = modal;
     const width = ORDERS.width - 2 * inset;
     const titleY = compact ? 6 : inset;
-    panel.add(new Label({ x: inset, y: titleY, width, height: 44, text: "Your unpaid orders", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
+    panel.add(new Label({ x: panel.titleInset, y: titleY, width: width - 2 * (panel.titleInset - inset), height: 44, text: "Your unpaid orders", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", glow: true }));
     const footerY = ORDERS.height - inset - ORDERS.footer;
     const noteY = footerY - (compact ? 4 : inset) - LINE;
     const listY = titleY + ORDERS.title;
@@ -1543,8 +1549,8 @@ function rankedEntriesOf(product) {
 /** "one game", "3 games" @param {number} count */
 const playsText = (count) => (count === 1 ? "one game" : `${count} games`);
 
-/** "one entry", "2 entries" @param {number} count */
-const feeText = (count) => (count === 1 ? "one entry" : `${count} entries`);
+/** "one ticket", "2 tickets" @param {number} count */
+const feeText = (count) => (count === 1 ? "one ticket" : `${count} tickets`);
 
 /** "1 ranked game", "10 ranked games" @param {number} count */
 const gamesText = (count) => `${count} ranked game${count === 1 ? "" : "s"}`;
@@ -1566,7 +1572,7 @@ export function doneText(fulfilment) {
   if (fulfilment === null || entries === 0) {
     return "Done: your cards are in your collection.";
   }
-  const added = `Done: ${entries} ranked ${entries === 1 ? "entry is" : "entries are"} yours, and in the season's jackpot.`;
+  const added = `Done: ${entries} ranked ${entries === 1 ? "ticket is" : "tickets are"} yours, and in the season's jackpot.`;
   return cardsReceived(fulfilment) > 0 ? `${added} Your cards are in your collection.` : added;
 }
 

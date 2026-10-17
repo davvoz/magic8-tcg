@@ -38,6 +38,8 @@ export const UiPiece = Object.freeze({
   MARKET_TALL: "marketTall",
   /** Gold, silver and bronze trophies on a podium in a hall, upright, for the Season card on a phone's Home. */
   SEASON_TALL: "seasonTall",
+  /** STEEM's mark (white strokes on its blue disc, on transparency), beside amounts of money. */
+  STEEM_LOGO: "steemLogo",
 });
 
 /**

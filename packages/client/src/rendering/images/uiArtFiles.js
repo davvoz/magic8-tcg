@@ -16,7 +16,7 @@ export const UI_ART = Object.freeze({
     [UiPiece.DIVIDER]: "DIVISORE_TITOLI.jpg",
     [UiPiece.BUTTON_PRIMARY]: "BOTTONE_PRIMARIO.jpg",
     [UiPiece.BUTTON_SECONDARY]: "BOTTONE_SECONDARIO.jpg",
-    // Cut out on transparency (1100×663), not gold on black: the name, "Trading card game" and their scrolls.
+    // Cut out on transparency (1400×288, landscape for the top bar), not gold on black: the name in its frame, the flourishes above and below cut away.
     [UiPiece.TITLE]: "Logo_KIJAM.webp",
     // Plain paintings (620×630, their frames cropped away), drawn to cover the picture of a way to play.
     [UiPiece.PLAY_ONLINE_ARENA]: "Play_Online_Arena.jpg",
@@ -28,9 +28,12 @@ export const UI_ART = Object.freeze({
     [UiPiece.DECKS_TALL]: "Decks_Tall.jpg",
     [UiPiece.MARKET_TALL]: "Market_Tall.jpg",
     [UiPiece.SEASON_TALL]: "Season_Tall.jpg",
+    // STEEM's official mark (256×256, on transparency), its strokes filled white.
+    [UiPiece.STEEM_LOGO]: "Steem_Logo.png",
   }),
   layout: Object.freeze({
-    title: Object.freeze({ top: 0.39, bottom: 0.72, stops: Object.freeze([0.083, 0.285, 0.39, 0.479, 0.68, 0.93]), star: Object.freeze({ x: 0.4943, y: 0.2905 }) }),
+    // The name's letters (measured on Logo_KIJAM.webp: their top and foot, where each of K-I-J-A-M starts and the last ends) and the compass star's heart.
+    title: Object.freeze({ top: 0.12, bottom: 0.85, stops: Object.freeze([0.19, 0.345, 0.405, 0.495, 0.66, 0.835]), star: Object.freeze({ x: 0.171, y: 0.441 }) }),
     corner: Object.freeze({ extent: Object.freeze({ x: 0.0485, y: 0.0274, width: 0.8954, height: 0.9015 }), lines: Object.freeze({ x: 0.1046, y: 0.0702 }) }),
     divider: Object.freeze({ x: 0.1678, y: 0.1684, width: 0.6644, height: 0.6531 }),
     buttons: Object.freeze({

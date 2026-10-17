@@ -108,9 +108,9 @@ describe("InfoScene", () => {
     scene.enter({});
     assert.equal(scene.findNode("shell.back").caption, "Back", "Back is the top bar's");
     scene.onKey(key("Escape"));
-    scene.enter({ back: SceneId.ONLINE });
+    scene.enter({ back: SceneId.RANKED });
     scene.findNode("shell.back").activate();
-    assert.deepEqual(svc.navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.ONLINE]);
+    assert.deepEqual(svc.navigated.map((entry) => entry.id), [SceneId.HOME, SceneId.RANKED]);
   });
 });
 

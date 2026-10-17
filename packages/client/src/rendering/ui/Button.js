@@ -12,14 +12,15 @@ const FOCUS_LINE_WIDTH = 3;
 /**
  * The painted plates: how much of a button's width their two ornate ends may
  * take at most (narrower buttons keep the drawn slab), how far the label
- * keeps from them (a fraction of an end's width), and the washes laid over
+ * keeps from the button's sides (a multiple of an end's width: past the
+ * ornament, with some air), and the washes laid over
  * the plate for each state.
  */
 const PLATE = Object.freeze({
   maxCapsShare: 0.8,
   /** A button that keeps its plate (`keepPlate`) draws the ornate ends no narrower than this share of their width. */
   minEnds: 0.45,
-  textClearance: 0.6,
+  textClearance: 1.3,
   disabledAlpha: 0.55,
   wash: Object.freeze({ hover: 0.1, pressed: 0.3, danger: 0.32, disabled: 0.5, primaryGlow: 0.22 }),
 });
@@ -121,6 +122,16 @@ export class Button extends UiNode {
   }
 
   /**
+   * How far what is written on the button keeps from its sides: clear of its plate's ornate ends when it is laid on
+   * one. For buttons that write their own contents (IconButton).
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   */
+  contentPadding(context, theme) {
+    return this.#laidPlate(context, theme)?.padding ?? TEXT_PADDING[this.textSize];
+  }
+
+  /**
    * The plate this button is drawn on and its label's padding, or null for
    * the drawn slab: the plate when it fits (a body-size label between its
    * whole ends), else, for a button that keeps it, the plate with narrower ends.
@@ -185,9 +196,8 @@ export class Button extends UiNode {
   #keptPlate(context, theme, plate) {
     const widest = Math.max(plate.caps.left, plate.caps.right) * plate.scale;
     const fitFor = (/** @type {ButtonTextSize} */ size) => {
-      context.font = fontFor(theme, size, "bold");
       // The label clears the ends as on a plate that fits: by their width times PLATE.textClearance.
-      const room = (this.width - context.measureText(this.text).width) / 2 / PLATE.textClearance;
+      const room = (this.width - this.labelWidth(context, theme, size)) / 2 / PLATE.textClearance;
       return Math.min(plate.ends, room / widest);
     };
     let ends = fitFor(this.textSize);
@@ -296,8 +306,19 @@ export class Button extends UiNode {
    * @param {number} padding
    */
   #labelFits(context, theme, padding) {
-    context.font = fontFor(theme, this.textSize, "bold");
-    return context.measureText(this.text).width <= this.width - 2 * padding;
+    return this.labelWidth(context, theme, this.textSize) <= this.width - 2 * padding;
+  }
+
+  /**
+   * How wide what is written on the button is, set in `size`: its label. A button that writes something else (an
+   * icon and a caption) says so, so that its plate makes room for it.
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   * @param {ButtonTextSize} size
+   */
+  labelWidth(context, theme, size) {
+    context.font = fontFor(theme, size, "bold");
+    return context.measureText(this.text).width;
   }
 
   #paintText(context, theme, color, padding) {

@@ -46,13 +46,13 @@ describe("season jackpot", () => {
 
   it("says the amount, each place's share, the time left and how much it has grown", () => {
     const text = describeJackpot(JACKPOT, ENDS_AT - (12 * 86_400_000 + 4 * 3_600_000 + 31 * 60_000 + 8_000));
-    assert.equal(text.amount, "866.666 STEEM");
+    assert.equal(text.amount, "866 STEEM");
     assert.equal(text.countdown, "Ends in 12d 04h 31m 08s");
     assert.equal(text.source, "2/3 of @verdu.green's wallet · grows with every pack sold and every ranked game");
-    assert.equal(text.growth, "+200.000 STEEM since the season began");
+    assert.equal(text.growth, "+200 STEEM since the season began");
     assert.deepEqual(
       text.places.map((place) => [place.label, place.share, place.amount, place.holder]),
-      [["1st", "65%", "563.332 STEEM", "@alice"], ["2nd", "25%", "216.666 STEEM", "@bob"], ["3rd", "10%", "86.668 STEEM", "nobody yet · it could be you"]],
+      [["1st", "65%", "563 STEEM", "@alice"], ["2nd", "25%", "216 STEEM", "@bob"], ["3rd", "10%", "86 STEEM", "nobody yet · it could be you"]],
     );
     assert.deepEqual([formatDuration(59_500), formatDuration(3_600_000), formatDuration(0)], ["01m 00s", "01h 00m 00s", "00s"]);
     const settled = describeJackpot({ ...JACKPOT, season: { ...JACKPOT.season, status: "settled" }, places: [{ ...JACKPOT.places[0], paid: "CONFIRMED" }] }, ENDS_AT + 1);
@@ -70,7 +70,7 @@ describe("season jackpot", () => {
     scene.enter({ back: SceneId.HOME });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assert.equal(scene.root.findById("jackpot.amount")?.text, "866.666 STEEM");
+    assert.equal(scene.root.findById("jackpot.amount")?.text, "866 STEEM");
     assert.equal(scene.root.findById("jackpot.countdown")?.text, "Ends in 01m 30s");
     now += 1000;
     assert.equal(scene.update(16), true, "a new second is drawn");

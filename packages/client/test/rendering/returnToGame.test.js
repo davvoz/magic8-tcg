@@ -66,7 +66,7 @@ describe("returnToGame", () => {
     online.set({ status: OnlineStatus.PLAYING, session: session(), opponent: "bob" });
     assert.deepEqual(scenes.visits.map((visit) => visit.sceneId), [SceneId.MATCH]);
     assert.equal(scenes.visits[0].params.session, online.state.session);
-    assert.equal(scenes.visits[0].params.againScene, SceneId.ONLINE);
+    assert.equal(scenes.visits[0].params.againScene, SceneId.CASUAL, "a game of no known mode: back to the casual lobby");
     assert.deepEqual(toasts.shown, []);
   });
 
@@ -118,7 +118,7 @@ describe("returnToGame", () => {
   });
 
   it("reminds again when the player leaves the match while the game runs, and stops when it ends", () => {
-    const { online, scenes, toasts } = world({ scene: SceneId.ONLINE });
+    const { online, scenes, toasts } = world({ scene: SceneId.CASUAL });
     returnToGame({ online, scenes, toasts });
     online.set({ status: OnlineStatus.MATCHED, session: { gameId: "g1", hasSnapshot: false }, opponent: "bob" });
     online.set({ status: OnlineStatus.PLAYING, session: session() });

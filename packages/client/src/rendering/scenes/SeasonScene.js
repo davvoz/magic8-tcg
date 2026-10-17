@@ -3,13 +3,13 @@
  * season on the left — settled ratings ranked first, then provisional ones
  * (listed with no rank yet), each with the player's profile picture, the
  * player's own line lit and where they stand above it; a line opens that
- * player's games. On the right, the season's jackpot (the amount, the time
+ * player's season in a dialog (their figures, and the way to their games). On the right, the season's jackpot (the amount, the time
  * left, what each paying place wins and who holds it now), how ranked play
  * works (the entries, a game, the jackpot) and the way into a ranked game:
  * the screen's gold button, or locked with what is missing.
  *
- * On a phone the jackpot is a banner, where the player stands sits beside
- * the list, and how ranked works opens in a dialog.
+ * On a phone the jackpot is a banner and how ranked works is told in a few
+ * words under it (where the player stands is their lit line in the list).
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { ShopStatus } from "../../application/shop/ShopService.js";
@@ -18,7 +18,6 @@ import { Button } from "../ui/Button.js";
 import { Icon } from "../ui/icons.js";
 import { IconButton } from "../ui/IconButton.js";
 import { Label } from "../ui/Label.js";
-import { Modal } from "../ui/Modal.js";
 import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
@@ -26,8 +25,9 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { JACKPOT_HEIGHT, JackpotPanel } from "./jackpot/JackpotPanel.js";
 import { rankedGuideFor } from "./online/rankedGuideFor.js";
-import { shortStandingText, standingText } from "./OnlineScene.js";
+import { standingText } from "./lobby/lobbyText.js";
 import { SceneId } from "./sceneIds.js";
+import { buildPlayerSeasonDialog } from "./season/PlayerSeasonDialog.js";
 import { SectionScene } from "./SectionScene.js";
 
 const LIST_ID = "season.list";
@@ -36,10 +36,11 @@ const LIST_SHARE = 0.56;
 /** Sizes, wide and compact (a phone in landscape). */
 const WIDE = Object.freeze({ titleY: 14, title: 36, standing: 30, listGap: 10, gap: 16, guide: 236, note: 26, button: 56 });
 const COMPACT = Object.freeze({ titleY: 6, title: 28, standing: 0, listGap: 6, gap: 6, guide: 0, note: 40, button: 46 });
-/** The least room the guide is drawn in (a short window leaves it out). */
-const GUIDE_MIN = 180;
-/** The phone's dialog on how ranked works. */
-const GUIDE_DIALOG = Object.freeze({ margin: 12, maxWidth: 760, height: 290, title: 34, button: 46 });
+/** The least room the guide is drawn in, wide and on a phone (a short window leaves it out). */
+const GUIDE_MIN = Object.freeze({ wide: 160, compact: 120 });
+/** A wide screen's guide: its caption's height, and the most its plates take. */
+const GUIDE_CAPTION = 24;
+const GUIDE_PLATES = 160;
 
 export class SeasonScene extends SectionScene {
   #app;
@@ -48,6 +49,8 @@ export class SeasonScene extends SectionScene {
   #unsubscribes = [];
   /** @type {JackpotPanel | null} */
   #jackpotPanel = null;
+  /** The player whose season is open in a dialog, or null. @type {string | null} */
+  #player = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -87,6 +90,7 @@ export class SeasonScene extends SectionScene {
     this.#unsubscribes.forEach((unsubscribe) => unsubscribe());
     this.#unsubscribes = [];
     this.#jackpotPanel = null;
+    this.#player = null;
     super.exit();
   }
 
@@ -123,13 +127,52 @@ export class SeasonScene extends SectionScene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
+    if (this.modal !== null) {
+      this.closeModal();
+    }
     this.root.clear();
     const state = this.#ranking().state;
     this.setHeading({ title: seasonName(state) });
     const first = this.#buildBoard(state);
-    const play = this.#buildSide(state);
+    const play = this.#buildSide();
     this.focus(this.findNode(focusedId) ?? play ?? first ?? this.backButton);
+    this.#showPlayer(state, focusedId);
     this.services.requestRender();
+  }
+
+  /**
+   * A player's season, from their line: a dialog (kept open across rebuilds while they are on the leaderboard).
+   * @param {string} account
+   */
+  #openPlayer(account) {
+    this.#player = account;
+    this.#rebuild();
+  }
+
+  /**
+   * The dialog of the player whose line was opened, when it still applies.
+   * @param {import("../../application/ranking/RankingService.js").RankingState} state
+   * @param {string} focusedId
+   */
+  #showPlayer(state, focusedId) {
+    const entry = this.#player === null ? undefined : state.leaderboard?.entries.find((candidate) => candidate.account === this.#player);
+    if (entry === undefined) {
+      this.#player = null;
+      return;
+    }
+    const close = () => {
+      this.#player = null;
+      this.closeModal();
+    };
+    const canOpen = this.services.hasScene(SceneId.GAME_HISTORY);
+    const onGames = canOpen ? () => this.services.navigate(SceneId.GAME_HISTORY, { account: entry.account, ...this.backHere() }) : null;
+    const mine = entry.account === (this.#app.identity?.state.user?.account ?? null);
+    const modal = buildPlayerSeasonDialog({ viewport: this.services.viewport, compact: this.#frame.screen.compact, season: seasonName(state), entry, mine, onGames, onClose: close });
+    this.openModal(modal);
+    const focused = modal.findById(focusedId);
+    if (focused !== null && focused.focusable) {
+      this.focus(focused);
+    }
   }
 
   /**
@@ -142,7 +185,7 @@ export class SeasonScene extends SectionScene {
     const { columns, inset } = screen;
     const panel = this.root.add(new Panel({ ...screen.panel, x: column.x, y: columns.top, width: column.width, height: columns.height }));
     const width = column.width - 2 * inset;
-    panel.add(new Label({ id: "season.title", x: inset, y: m.titleY, width, height: m.title, text: "Leaderboard", size: "heading", weight: "bold", colorKey: "accentLight", align: "left" }));
+    panel.add(new Label({ id: "season.title", x: screen.titleInset, y: m.titleY, width: width - 2 * (screen.titleInset - inset), height: m.title, text: "Leaderboard", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left" }));
     let y = m.titleY + m.title + m.listGap;
     if (m.standing > 0) {
       panel.add(new TextBlock({ id: "season.standing", x: inset, y, width, height: m.standing, text: standingText(state), size: "body", colorKey: "text", align: "left" }));
@@ -167,7 +210,6 @@ export class SeasonScene extends SectionScene {
       return null;
     }
     const me = this.#app.identity?.state.user?.account ?? null;
-    const canOpen = this.services.hasScene(SceneId.GAME_HISTORY);
     /** @type {OptionRow | null} */
     let first = null;
     entries.forEach((entry, index) => {
@@ -183,8 +225,7 @@ export class SeasonScene extends SectionScene {
           subtitle: `rating ${entry.rating}${entry.rank === null ? " (provisional)" : ""} · ${entry.wins}–${entry.losses}${draws} in ${entry.games} game(s)`,
           selected: entry.account === me,
           avatar: entry.account,
-          enabled: canOpen,
-          onActivate: () => this.services.navigate(SceneId.GAME_HISTORY, { account: entry.account, ...this.backHere() }),
+          onActivate: () => this.#openPlayer(entry.account),
         }),
       );
       first ??= row;
@@ -195,22 +236,19 @@ export class SeasonScene extends SectionScene {
 
   /**
    * The jackpot, how ranked works, and the way into a ranked game.
-   * @param {import("../../application/ranking/RankingService.js").RankingState} state
    * @returns {Button | null} Play ranked, when it can be pressed
    */
-  #buildSide(state) {
+  #buildSide() {
     const { screen, m, side } = this.#frame;
     const { columns } = screen;
     let y = columns.top;
     y += this.#buildJackpot({ x: side.x, y, width: side.width });
     const bottom = columns.top + columns.height;
     const actionsTop = bottom - m.button - m.note;
-    if (screen.compact) {
-      this.root.add(new TextBlock({ id: "season.standing", x: side.x, y, width: side.width, height: Math.max(0, actionsTop - y - m.button - m.gap), text: shortStandingText(state), size: "small", colorKey: "text", align: "left" }));
-      this.root.add(new Button({ id: "season.guide.open", x: side.x, y: actionsTop - m.button - m.gap, width: side.width, height: m.button, text: "How ranked works", textSize: "small", onActivate: () => this.#openGuide() }));
-    } else {
-      this.#buildGuide({ x: side.x, y, width: side.width, height: Math.min(m.guide, actionsTop - m.gap - y) });
-    }
+    // How ranked works, in the room between the jackpot and Play ranked: in a few words on a phone (the player's
+    // standing is their line on the leaderboard, lit).
+    const room = actionsTop - m.gap - y;
+    this.#buildGuide({ x: side.x, y, width: side.width, height: screen.compact ? room : Math.min(m.guide, room) });
     return this.#buildPlay({ x: side.x, y: actionsTop, width: side.width });
   }
 
@@ -233,13 +271,22 @@ export class SeasonScene extends SectionScene {
   }
 
   /**
-   * How ranked works, under its own header (a wide screen).
+   * How ranked works: under its own header on a wide screen, each step in a few words on a phone.
    * @param {{ x: number, y: number, width: number, height: number }} frame
    */
   #buildGuide(frame) {
-    if (frame.height >= GUIDE_MIN) {
-      this.root.add(rankedGuideFor(this.#app, { id: "season.guide.steps", ...frame, compact: false }, this.#now()));
+    const compact = this.#frame.screen.compact;
+    if (frame.height < (compact ? GUIDE_MIN.compact : GUIDE_MIN.wide)) {
+      return;
     }
+    if (compact) {
+      this.root.add(rankedGuideFor(this.#app, { id: "season.guide.steps", ...frame, compact, brief: true }, this.#now()));
+      return;
+    }
+    // As on the Ranked screen: under its caption, each step on a plate of its own.
+    this.root.add(new Label({ id: "season.guide.caption", x: frame.x, y: frame.y, width: frame.width, height: GUIDE_CAPTION, text: "HOW RANKED WORKS", size: "tiny", weight: "bold", colorKey: "accent", align: "left", fit: true }));
+    const top = frame.y + GUIDE_CAPTION + 4;
+    this.root.add(rankedGuideFor(this.#app, { id: "season.guide.steps", x: frame.x, y: top, width: frame.width, height: Math.min(GUIDE_PLATES, frame.y + frame.height - top), compact: false, plates: true }, this.#now()));
   }
 
   /**
@@ -256,12 +303,12 @@ export class SeasonScene extends SectionScene {
       this.root.add(new IconButton({ ...frame, icon: Icon.LOCK, caption: "Play ranked", enabled: false, onActivate: () => undefined }));
       return null;
     }
-    return this.root.add(new Button({ ...frame, text: "Play ranked", variant: "primary", onActivate: () => this.services.navigate(SceneId.ONLINE, { mode: "ranked", ...this.backHere() }) }));
+    return this.root.add(new Button({ ...frame, text: "Play ranked", variant: "primary", onActivate: () => this.services.navigate(SceneId.RANKED, this.backHere()) }));
   }
 
   /** Why the player cannot go into a ranked game from here, or null when they can. */
   #rankedLock() {
-    if (!this.services.hasScene(SceneId.ONLINE)) {
+    if (!this.services.hasScene(SceneId.RANKED)) {
       return "Not available offline.";
     }
     if (this.#app.account?.state.status !== AccountStatus.READY) {
@@ -276,23 +323,6 @@ export class SeasonScene extends SectionScene {
       return `Ranked unlocks after ${games} more casual game${games === 1 ? "" : "s"}.`;
     }
     return null;
-  }
-
-  /** On a phone: how ranked works, in a dialog. */
-  #openGuide() {
-    const { viewport } = this.services;
-    const { screen } = this.#frame;
-    const width = Math.min(GUIDE_DIALOG.maxWidth, viewport.logicalWidth - 2 * GUIDE_DIALOG.margin);
-    const height = Math.min(GUIDE_DIALOG.height, viewport.logicalHeight - 2 * GUIDE_DIALOG.margin);
-    const close = () => this.closeModal();
-    const modal = new Modal({ id: "season.guideDialog", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: width, panelHeight: height, onDismiss: close });
-    const inner = width - 2 * screen.inset;
-    modal.panel.add(new Label({ x: screen.inset, y: 8, width: inner, height: GUIDE_DIALOG.title, text: "How ranked works", size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
-    const buttonY = height - screen.inset - GUIDE_DIALOG.button;
-    const guideY = 8 + GUIDE_DIALOG.title + 6;
-    modal.panel.add(rankedGuideFor(this.#app, { id: "season.guide.steps", x: screen.inset, y: guideY, width: inner, height: buttonY - 8 - guideY, compact: true }, this.#now()));
-    modal.panel.add(new Button({ id: "season.guide.close", x: screen.inset + inner - 160, y: buttonY, width: 160, height: GUIDE_DIALOG.button, text: "Got it", onActivate: close }));
-    this.openModal(modal);
   }
 
   #ranking() {

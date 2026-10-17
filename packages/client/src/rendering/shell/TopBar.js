@@ -19,7 +19,7 @@ import { withAlpha } from "../theme/color.js";
 /** Back's width with its caption (a phone's Back is the arrow alone). */
 const BACK_WIDTH = 132;
 /** The logo's width at the bar's left end, wide and on a phone (it takes the bar's height). */
-const LOGO_WIDTH = Object.freeze({ wide: 116, compact: 76 });
+const LOGO_WIDTH = Object.freeze({ wide: 270, compact: 150 });
 
 /**
  * Something on the right of the bar: its width, how readily it gives way
@@ -45,15 +45,17 @@ export class TopBar extends UiNode {
    *   heading: Heading,
    *   controls: readonly BarControl[],
    *   tabs?: BarTabs | null,
+   *   onHome?: (() => void) | null,
+   *   light?: import("./LogoLight.js").LogoLight | null,
    * }} options `origin`: where the content starts (the bar is laid out above it); `screen`: the whole canvas, in the same coordinates;
-   *   `tabs`: the section's tabs (null: none)
+   *   `tabs`: the section's tabs (null: none); `onHome`: what the logo does when clicked (Home; null: nothing); `light`: the light that lives in the logo
    */
-  constructor({ layout, origin, screen, heading, controls, tabs = null }) {
+  constructor({ layout, origin, screen, heading, controls, tabs = null, onHome = null, light = null }) {
     const { bar, controls: row, compact } = layout;
     super({ id: "shell.bar", x: bar.x - origin.x, y: bar.y - origin.y, width: bar.width, height: bar.height });
     this.#screen = screen;
     const logoWidth = compact ? LOGO_WIDTH.compact : LOGO_WIDTH.wide;
-    this.add(new GameLogo({ id: "shell.logo", x: row.padding, y: 0, width: logoWidth, height: bar.height }));
+    this.add(new GameLogo({ id: "shell.logo", x: row.padding, y: 0, width: logoWidth, height: bar.height, onActivate: onHome, light }));
     let left = row.padding + logoWidth + row.gap;
     if (heading.back !== null) {
       const width = compact ? row.height : BACK_WIDTH;

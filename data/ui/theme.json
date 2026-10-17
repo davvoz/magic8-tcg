@@ -24,6 +24,8 @@
     "resource": "#4d9dff",
     "attack": "#ff7a45",
     "health": "#5ad36f",
+    "steem": "#171fc9",
+    "steemLight": "#4a52e6",
     "cardFace": "#11141d",
     "cardText": "#1b1f2c",
     "factions": {
@@ -39,7 +41,7 @@
     "family": "system-ui, 'Segoe UI', Roboto, sans-serif",
     "displayFamily": "'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif",
     "titleFamily": "'Cinzel Decorative', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif",
-    "sizes": { "title": 72, "heading": 32, "body": 20, "small": 15, "tiny": 12, "micro": 10 }
+    "sizes": { "title": 72, "heading": 32, "subheading": 32, "body": 20, "small": 15, "tiny": 12, "micro": 10 }
   },
   "spacing": { "unit": 8, "radius": 10 },
   "animation": { "shortMs": 120, "mediumMs": 260, "longMs": 500 }

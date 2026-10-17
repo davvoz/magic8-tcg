@@ -104,6 +104,7 @@ import { SceneManager } from "./rendering/scenes/SceneManager.js";
 import { registerScenes } from "./rendering/scenes/registerScenes.js";
 import { GAME_TOAST_KEY, returnToGame } from "./rendering/scenes/returnToGame.js";
 import { SceneId } from "./rendering/scenes/sceneIds.js";
+import { lobbyOf } from "./rendering/scenes/lobby/lobbyText.js";
 import { SectionScene } from "./rendering/scenes/SectionScene.js";
 import { CardIllustrations } from "./rendering/cards/CardIllustrations.js";
 import { CoinArt } from "./rendering/board/CoinArt.js";
@@ -237,10 +238,10 @@ const FALLBACK_THEME_RAW = Object.freeze({
     text: "#eef0f5", textMuted: "#8f98ad",
     accent: "#e2b25c", accentLight: "#f7dfa0", accentDark: "#8a5f1e", accentText: "#1c1305",
     danger: "#e0483f", success: "#4fc48a", disabled: "#2a3040", disabledText: "#5f677a", focus: "#78c6ff", hover: "#2b3348",
-    resource: "#4d9dff", attack: "#ff7a45", health: "#5ad36f", cardFace: "#11141d", cardText: "#1b1f2c",
+    resource: "#4d9dff", attack: "#ff7a45", health: "#5ad36f", steem: "#171fc9", steemLight: "#4a52e6", cardFace: "#11141d", cardText: "#1b1f2c",
     factions: {},
   },
-  fonts: { family: "system-ui, sans-serif", displayFamily: "Georgia, serif", sizes: { title: 72, heading: 32, body: 20, small: 15, tiny: 12, micro: 10 } },
+  fonts: { family: "system-ui, sans-serif", displayFamily: "Georgia, serif", sizes: { title: 72, heading: 32, subheading: 32, body: 20, small: 15, tiny: 12, micro: 10 } },
   spacing: { unit: 8, radius: 10 },
   animation: { shortMs: 120, mediumMs: 260, longMs: 500 },
 });
@@ -641,14 +642,14 @@ async function boot() {
   });
   sceneManager.setOverlay(toasts);
   // A challenge that arrives has a call of its own: it must be answered within a minute.
-  lobby.onEvent((event) => toasts.show({ ...describeLobbyEvent(event), opens: SceneId.ONLINE, ...(event.kind === "received" ? { cue: SoundCue.CHALLENGE } : {}) }));
+  lobby.onEvent((event) => toasts.show({ ...describeLobbyEvent(event), opens: lobbyOf(event.challenge.mode), ...(event.kind === "received" ? { cue: SoundCue.CHALLENGE } : {}) }));
   // A game found while the player is elsewhere (their challenge was accepted): the lobby shows it and asks Keychain to accept it.
   let onlineStatus = online.state.status;
   online.subscribe((state) => {
     // A daily challenge is started from its own screen, which hands over to the match: not the lobby's business.
-    const elsewhere = sceneManager.currentId !== SceneId.ONLINE && sceneManager.currentId !== SceneId.MATCH && sceneManager.currentId !== SceneId.DAILY;
+    const elsewhere = !(/** @type {readonly string[]} */ ([SceneId.CASUAL, SceneId.RANKED, SceneId.MATCH, SceneId.DAILY]).includes(sceneManager.currentId ?? ""));
     if (state.status === OnlineStatus.MATCHED && onlineStatus !== OnlineStatus.MATCHED && elsewhere && state.mode !== "daily") {
-      sceneManager.navigate(SceneId.ONLINE);
+      sceneManager.navigate(lobbyOf(state.mode));
     }
     onlineStatus = state.status;
   });

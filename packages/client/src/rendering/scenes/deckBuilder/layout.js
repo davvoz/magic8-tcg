@@ -1,4 +1,4 @@
-import { PANEL_INSET, SMALL_PANEL_INSET } from "../../ui/Panel.js";
+import { PANEL_INSET, PANEL_TITLE_INSET, SMALL_PANEL_INSET, SMALL_PANEL_TITLE_INSET } from "../../ui/Panel.js";
 
 /**
  * The frame the deck builder, the collection, the shop and the other
@@ -22,13 +22,15 @@ export const INSPECT = Object.freeze({ width: 900, height: 620, card: Object.fre
  *   header: Readonly<{ y: number, height: number, sideMargin: number, backWidth: number, gap: number }>,
  *   columns: Readonly<{ top: number, height: number, left: Readonly<{ x: number, width: number }>, right: Readonly<{ x: number, width: number }> }>,
  *   inset: number,
+ *   titleInset: number,
  *   row: Readonly<{ height: number, gap: number }>,
  *   action: Readonly<{ width: number, small: number, gap: number }>,
  *   panel: Readonly<{ smallCorners: boolean }>,
  *   rowY: (index: number) => number,
  *   rowsHeight: (count: number) => number,
  * }>} ScreenLayout `header`: the toolbar row (its buttons are `backWidth` wide, `gap` apart, and keep 4 units from its top and
- *   foot); `panel`: options every column panel takes
+ *   foot); `panel`: options every column panel takes; `titleInset`: where a column's title (in its top band, beside the
+ *   painted corner) starts from the column's side
  */
 
 /**
@@ -88,6 +90,7 @@ export function screenLayout(viewport, { toolbar = true } = {}) {
       right: Object.freeze({ x: margin + left + gap, width: inner - left }),
     }),
     inset: frame.inset,
+    titleInset: compact ? SMALL_PANEL_TITLE_INSET : PANEL_TITLE_INSET,
     row,
     action: frame.action,
     panel: Object.freeze({ smallCorners: frame.smallCorners }),

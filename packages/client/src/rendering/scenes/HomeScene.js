@@ -14,6 +14,7 @@
  * its jackpot and where the player stands). A phone has the four side by
  * side.
  */
+import { roundMoneyText } from "../../application/money/moneyText.js";
 import { GUIDE_STEPS, guideFor } from "../../application/onboarding/OnboardingGuide.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { HEADLINE_HEIGHT, HeadlineCard } from "./home/HeadlineCard.js";
@@ -200,7 +201,7 @@ export class HomeScene extends SectionScene {
         return "Packs, cards, trades";
       default: {
         const jackpot = this.#app.jackpot?.state.jackpot ?? null;
-        return jackpot === null ? "Leaderboard and jackpot" : `Jackpot ${jackpot.jackpot} ${jackpot.asset}`;
+        return jackpot === null || jackpot.jackpot === null ? "Leaderboard and jackpot" : `Jackpot ${roundMoneyText(jackpot.jackpot, jackpot.asset)}`;
       }
     }
   }

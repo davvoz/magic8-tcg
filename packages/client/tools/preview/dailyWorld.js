@@ -10,6 +10,7 @@
  */
 import { ok } from "@magic8/engine/shared/Result.js";
 import { DailyService } from "../../src/application/daily/DailyService.js";
+import { deckMix } from "../../src/application/decks/deckMix.js";
 
 const DEFAULT_OPPONENTS = Object.freeze(["kael", "morwen", "gravelord"]);
 const HOUR = 3_600_000;
@@ -34,7 +35,7 @@ export async function dailyServices(content, { opponents, stage }) {
     run: stage === null ? null : { track: "hard", stage, gameId: null, attempts: stage, rewarded: false, last: null, reward: null },
   });
   const api = { today: async () => ok(day), chooseTrack: async () => ok(day), play: async () => ok({ gameId: "preview" }) };
-  const decks = content.preconDecks.map((deck) => ({ id: deck.id, name: deck.name, playable: true }));
+  const decks = content.preconDecks.map((deck) => ({ id: deck.id, name: deck.name, playable: true, totalCards: deck.totalCards, mix: deckMix(content, deck.entries) }));
   const online = {
     state: { status: "idle", session: null, mode: null },
     subscribe: () => () => undefined,

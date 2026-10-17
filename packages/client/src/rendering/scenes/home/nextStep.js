@@ -40,7 +40,7 @@ export function stepCopy(step, { signedIn, standing }) {
     case GuideStep.CHALLENGE:
       return withAccount(signedIn, { title: "Win your first daily challenge", text: "Beat today's first opponent with your deck. Win all three for a pack of cards.", action: { text: "Play the challenge", scene: SceneId.DAILY } });
     case GuideStep.ONLINE:
-      return withAccount(signedIn, { title: "Play your first online game", text: "A casual game against a real player: no rating at stake, just the game.", action: { text: "Play casual", scene: SceneId.ONLINE, params: { mode: "casual" } } });
+      return withAccount(signedIn, { title: "Play your first online game", text: "A casual game against a real player: no rating at stake, just the game.", action: { text: "Play casual", scene: SceneId.CASUAL } });
     default:
       return withAccount(signedIn, rankedCopy(standing));
   }
@@ -54,9 +54,9 @@ export function stepCopy(step, { signedIn, standing }) {
 function rankedCopy(standing) {
   if (standing !== null && !standing.eligible) {
     const games = standing.casualGamesNeeded;
-    return { title: "Play a ranked game", text: `Ranked opens after ${games} more casual game${games === 1 ? "" : "s"}: play them first.`, action: { text: "Play casual", scene: SceneId.ONLINE, params: { mode: "casual" } } };
+    return { title: "Play a ranked game", text: `Ranked opens after ${games} more casual game${games === 1 ? "" : "s"}: play them first.`, action: { text: "Play casual", scene: SceneId.CASUAL } };
   }
-  return { title: "Play a ranked game", text: "Climb the season's leaderboard: the best players share the jackpot.", action: { text: "Play ranked", scene: SceneId.ONLINE, params: { mode: "ranked" } } };
+  return { title: "Play a ranked game", text: "Climb the season's leaderboard: the best players share the jackpot.", action: { text: "Play ranked", scene: SceneId.RANKED } };
 }
 
 /**

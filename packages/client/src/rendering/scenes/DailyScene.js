@@ -7,7 +7,9 @@
  *
  * - First the day's track: Normal (a Core Mini Booster) or Hard (a Core
  *   Booster). It holds until tomorrow, so the screen asks first.
- * - Then, challenge after challenge: one of the player's decks, and Fight.
+ * - Then, challenge after challenge: one of the player's decks (its row
+ *   striped with its factions, as everywhere a deck is chosen; a click
+ *   moves on to the next), and Fight.
  *   The game is an online game the server plays the character in; the
  *   screen hands over to the match as soon as it starts, and the match comes
  *   back here when it ends ("Play again"). A lost challenge is fought again.
@@ -15,8 +17,10 @@
  *   first, as for a pack bought in the shop; the button stays for the day.
  *
  * The opponent's last words (the one the player just played) and the boss's
- * entrance line are told in the status line. On a compact screen (a phone in
- * landscape) the three cards are narrower and keep only what matters.
+ * entrance line are told in the line at the top, in place of what the
+ * challenges are. How the challenges work (the
+ * Info screen) is in the bar. On a compact screen (a phone in landscape) the
+ * three cards are narrower and keep only what matters.
  */
 import { lineFor } from "../../application/daily/characters.js";
 import { InfoTopicId } from "../../application/info/infoTopics.js";
@@ -25,10 +29,13 @@ import { packName } from "../../application/notifications/describeNotification.j
 import { OnlineStatus } from "../../application/online/OnlineService.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
+import { deckSummary, mixBands } from "../cards/deckStripe.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
+import { Icon } from "../ui/icons.js";
 import { Label } from "../ui/Label.js";
+import { OptionRow } from "../ui/OptionRow.js";
 import { COMPACT_CARD, OpponentCard, WIDE_CARD } from "./daily/OpponentCard.js";
-import { deckKey } from "./OnlineScene.js";
+import { deckKey } from "./lobby/LobbyScene.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 
@@ -38,34 +45,28 @@ import { SectionScene } from "./SectionScene.js";
  * @typedef {Readonly<{
  *   side: number, subtitle: { y: number, height: number }, cards: { top: number, height: number, gap: number },
  *   info: { y: number, height: number }, row: { y: number, height: number, gap: number },
- *   footer: { y: number, height: number }, help: number, card: import("./daily/OpponentCard.js").OpponentCardMetrics,
- * }>} DailyLayout laid out in the content area the shell leaves (its title is the shell's); `help`: the width of the button on how the challenges work
+ *   card: import("./daily/OpponentCard.js").OpponentCardMetrics,
+ * }>} DailyLayout laid out in the content area the shell leaves (its title is the shell's)
  */
 
 /** @type {DailyLayout} */
 const WIDE = Object.freeze({
   side: 40,
   subtitle: Object.freeze({ y: 12, height: 30 }),
-  cards: Object.freeze({ top: 52, height: 520, gap: 30 }),
-  info: Object.freeze({ y: 586, height: 30 }),
-  row: Object.freeze({ y: 624, height: 64, gap: 24 }),
-  footer: Object.freeze({ y: 744, height: 56 }),
-  help: 220,
-  card: WIDE_CARD,
+  cards: Object.freeze({ top: 52, height: 638, gap: 30 }),
+  info: Object.freeze({ y: 698, height: 30 }),
+  row: Object.freeze({ y: 736, height: 64, gap: 24 }),
+  card: Object.freeze({ ...WIDE_CARD, portrait: 380 }),
 });
 /** @type {DailyLayout} */
 const COMPACT = Object.freeze({
   side: 8,
   subtitle: Object.freeze({ y: 2, height: 20 }),
-  cards: Object.freeze({ top: 24, height: 204, gap: 6 }),
-  info: Object.freeze({ y: 230, height: 20 }),
-  row: Object.freeze({ y: 252, height: 46, gap: 8 }),
-  footer: Object.freeze({ y: 300, height: 46 }),
-  help: 110,
-  card: COMPACT_CARD,
+  cards: Object.freeze({ top: 24, height: 250, gap: 6 }),
+  info: Object.freeze({ y: 276, height: 20 }),
+  row: Object.freeze({ y: 298, height: 46, gap: 8 }),
+  card: Object.freeze({ ...COMPACT_CARD, portrait: 140 }),
 });
-/** The room between the footer's status line and its buttons. */
-const FOOTER_GAP = 16;
 const MINUTE = 60_000;
 
 export class DailyScene extends SectionScene {
@@ -102,6 +103,7 @@ export class DailyScene extends SectionScene {
       this.#unsubscribes.push(this.#app.online.subscribe((state) => this.#onOnline(state)));
     }
     void daily.refresh();
+    this.setBarActions([{ id: "daily.help", icon: Icon.BOOK, caption: "How it works", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO, { topic: InfoTopicId.CHALLENGES, ...this.backHere() }) }]);
     this.#rebuild();
   }
 
@@ -172,29 +174,16 @@ export class DailyScene extends SectionScene {
     const m = this.#m;
     const width = viewport.logicalWidth;
     const { day } = this.#daily().state;
-    this.root.add(new Label({ id: "daily.subtitle", x: m.side, y: m.subtitle.y, width: width - 2 * m.side, height: m.subtitle.height, text: this.#subtitle(day), size: viewport.compact ? "tiny" : "small", colorKey: "textMuted", fit: true }));
+    // The top line: what just happened (a game's last words, the boss's entrance, an error), else what the challenges are.
+    const status = this.#status(day);
+    const top = status.text === "" ? { id: "daily.subtitle", text: this.#subtitle(day), colorKey: "textMuted" } : { id: "daily.status", ...status };
+    this.root.add(new Label({ ...top, x: m.side, y: m.subtitle.y, width: width - 2 * m.side, height: m.subtitle.height, size: viewport.compact ? "tiny" : "small", fit: true }));
     if (day !== null) {
       this.#buildCards(day);
     }
     const primary = this.#buildActions(day);
-    const help = this.#buildFooter(day);
-    this.focus(this.findNode(focusedId) ?? primary ?? help);
+    this.focus(this.findNode(focusedId) ?? primary ?? this.backButton);
     this.services.requestRender();
-  }
-
-  /**
-   * The status line, and how the challenges work (the Info screen's topic).
-   * @param {DailyDay | null} day
-   * @returns {Button} the way to how they work
-   */
-  #buildFooter(day) {
-    const { viewport } = this.services;
-    const m = this.#m;
-    const width = viewport.logicalWidth;
-    const status = this.#status(day);
-    const helpX = width - m.side - m.help;
-    this.root.add(new Label({ id: "daily.status", x: m.side, y: m.footer.y, width: helpX - m.side - FOOTER_GAP, height: m.footer.height, text: status.text, size: viewport.compact ? "tiny" : "small", colorKey: status.colorKey, align: "left", fit: true }));
-    return this.root.add(new Button({ id: "daily.help", x: helpX, y: m.footer.y, width: m.help, height: m.footer.height, text: viewport.compact ? "Help" : "How it works", enabled: this.services.hasScene(SceneId.INFO), onActivate: () => this.services.navigate(SceneId.INFO, { topic: InfoTopicId.CHALLENGES, ...this.backHere() }) }));
   }
 
   /** @param {DailyDay | null} day */
@@ -296,9 +285,26 @@ export class DailyScene extends SectionScene {
     const decks = this.#decks();
     const deck = this.#chosenDeck(decks);
     const half = (viewport.logicalWidth - 2 * m.side - m.row.gap) / 2;
-    this.root.add(new Button({ id: "daily.deck", x: m.side, y: m.row.y, width: half, height: m.row.height, text: deck === null ? "No playable deck" : `Deck: ${deck.name}`, enabled: decks.length > 1, onActivate: () => this.#nextDeck(decks) }));
+    this.#buildDeck(decks, deck, { x: m.side, width: half });
     const fight = this.#fightButton(run, { next, deck });
     return this.root.add(new Button({ id: "daily.fight", x: m.side + half + m.row.gap, y: m.row.y, width: half, height: m.row.height, ...fight, variant: "primary", onActivate: () => void this.#fight() }));
+  }
+
+  /**
+   * The deck to fight with, as a deck row: its name, its size and factions, striped with them; a click moves on to the
+   * next deck.
+   * @param {readonly import("../../application/online/OnlineService.js").OnlineDeck[]} decks
+   * @param {import("../../application/online/OnlineService.js").OnlineDeck | null} deck
+   * @param {{ x: number, width: number }} place
+   */
+  #buildDeck(decks, deck, { x, width }) {
+    const { row } = this.#m;
+    if (deck === null) {
+      this.root.add(new Button({ id: "daily.deck", x, y: row.y, width, height: row.height, text: "No playable deck", enabled: false, onActivate: () => undefined }));
+      return;
+    }
+    const more = decks.length > 1 ? " · click to change" : "";
+    this.root.add(new OptionRow({ id: "daily.deck", x, y: row.y, width, height: row.height, text: deck.name, subtitle: `${deckSummary(deck.totalCards, deck.mix)}${more}`, stripe: mixBands(this.services.theme, deck.mix), onActivate: () => this.#nextDeck(decks) }));
   }
 
   /**

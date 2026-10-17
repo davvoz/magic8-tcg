@@ -8,7 +8,7 @@ Con pochi giocatori la classificata non parte: chi apre la lobby non trova nessu
 
 1. Il giocatore sceglie **uno dei suoi mazzi**.
 2. Sceglie uno **stile**: *Aggressive*, *Balanced* o *Defensive*.
-3. Preme **Join the auto list · 1.000 STEEM**.
+3. Preme **Join the auto list · 1 ticket**.
 
 Quando un altro giocatore fa lo stesso, anche ore dopo, il server fa giocare **due AI identiche**, una per mazzo, ognuna con lo stile del suo giocatore. Entrambi ricevono il risultato in una notifica e possono guardare la partita sul tavolo, come un replay.
 
@@ -117,11 +117,11 @@ Ogni mazzo contro gli altri nove, per stile:
 
 | Dove | Cosa |
 |---|---|
-| Lobby online | nella scheda *Ranked* (`OnlineScene`, doc 17), accanto a *Live match*: **Auto · the AI plays**, con le stesse condizioni della classificata. A sinistra i mazzi, come sempre; nel pannello Ranked, sotto come funziona la classificata, la spiegazione (*the AI plays it against the next player who joins, even hours from now…*) e quanti sono in lista, tre pulsanti per lo stile con una riga che dice cosa fa, e **Join the auto list · 1.000 STEEM**. Senza ingressi, *Get ranked entries* come nella classificata. Sul telefono gli stili prendono il posto di biglietti e rating, la spiegazione è più corta e il pulsante dice *Join the list · 1.000 STEEM*. |
-| Prima di entrare | una finestra: *The AI plays “Iron Foundry” defensive against the next player who joins, even hours from now. It costs 1.000 STEEM. Once you join you stay in the list until someone plays you.* con *Cancel* e *Join · Defensive*. |
+| Lobby online | nella schermata *Ranked* (`RankedScene`, doc 17), accanto a *Live match*: **Auto · the AI plays**, con le stesse condizioni della classificata. A sinistra i mazzi, come sempre; nel pannello, sotto biglietti e *READY TO PLAY?*, la spiegazione (*the AI plays it against the next player who joins, even hours from now…*) e quanti sono in lista, tre pulsanti per lo stile con una riga che dice cosa fa, e **Join the auto list · 1 ticket**. Senza ingressi, *Get ranked tickets* come nella classificata. Sul telefono la spiegazione è più corta e il pulsante dice *Join the list · 1 ticket*. |
+| Prima di entrare | una finestra: *The AI plays “Iron Foundry” defensive against the next player who joins, even hours from now. It costs 1 ranked ticket. Once you join you stay in the list until someone plays you.* con *Cancel* e *Join · Defensive*. |
 | Lobby, in lista | *You joined 2 h ago with “Iron Foundry”, defensive. The AI plays it against the next player who joins: a notification will tell you the result. 3 players are in the auto list.* Il pulsante dice *In the auto list · waiting for an opponent* ed è spento; anche gli stili sono spenti, sullo stile del biglietto. Nessun modo di uscire. |
-| Dopo | la lobby dice cosa è successo all'ultimo biglietto: partita giocata (*watch it from your notifications or your games*), stagione finita o partita impossibile (*your ranked entry is back*). |
-| Notifica e toast | *Auto game vs @bob: you won* · *Your deck played Aggressive, @bob's Defensive. Rating 1500 → 1503. Watch the game.* Un clic, sul toast o nella lista delle notifiche, apre il replay. Un ingresso restituito: *Your ranked entry is back*. |
+| Dopo | la lobby dice cosa è successo all'ultimo biglietto: partita giocata (*watch it from your notifications or your games*), stagione finita o partita impossibile (*your ranked ticket is back*). |
+| Notifica e toast | *Auto game vs @bob: you won* · *Your deck played Aggressive, @bob's Defensive. Rating 1500 → 1503. Watch the game.* Un clic, sul toast o nella lista delle notifiche, apre il replay. Un ingresso restituito: *Your ranked ticket is back*. |
 | Replay | `ReplayScene` legge la partita (`GET /api/auto/games/:id`), la rigioca per intero in memoria per controllare che arrivi alla fine registrata con le carte di questo client, poi la passa al tavolo di sempre: moneta, carte, suoni. Il giocatore la guarda **dal suo posto, come una sua partita PvP**: la sua mano scoperta e a grandezza piena, *Your turn*, *Victory* o *Defeat*, e il *?* dell'aiuto se lo accende; ma non può muovere nulla, perché i due posti sono dell'AI (niente *End turn* né *Concede*: solo *Leave*). Chi non ha giocato la partita la guarda da spettatore. Nel pannello laterale tre velocità (`ReplayPace`): *Normal* e *Fast* aspettano che il tavolo abbia mostrato tutta la mossa prima, poi una pausa (1 s o 0,3 s); *Very fast* va a ritmo fisso (0,26 s) e il tavolo, se resta indietro, salta le animazioni. Il replay successivo parte dall'ultima velocità scelta. *Leave* o *Watch another* tornano da dove si è venuti. Una partita giocata con carte diverse da quelle del client non si mostra: la schermata lo dice. |
 | Storico | le partite automatiche hanno la modalità *auto* e *click to watch*: un clic apre il replay. |
 | Classifica e jackpot | nessuna differenza: è lo stesso rating. |

@@ -144,7 +144,7 @@ describe("GameHistoryScene", () => {
 });
 
 describe("SeasonScene → game history", () => {
-  it("opens the games of a player picked on the leaderboard, whose Back returns to the season", async () => {
+  it("opens the games of a player picked on the leaderboard (from their season's dialog), whose Back returns to the season", async () => {
     const entries = [{ rank: 1, provisional: false, account: "carol", rating: 1600, games: 12, wins: 8, losses: 4, draws: 0 }];
     const ranking = new RankingService({ api: { standing: async () => fail("NETWORK", "offline"), leaderboard: async () => ok({ season: { id: "s1", name: "Season 1" }, entries }) } });
     const navigated = [];
@@ -153,6 +153,7 @@ describe("SeasonScene → game history", () => {
     scene.enter({});
     await flush();
     scene.root.findById("season.row.1").activate();
+    scene.modal.findById("player.games").activate();
     assert.deepEqual(navigated, [{ id: SceneId.GAME_HISTORY, params: { account: "carol", back: SceneId.SEASON, backParams: {} } }]);
     const history = new GameHistoryScene(services({ navigate }), { identity: signedIn("alice"), gameHistory: fakeApi() }, () => NOW);
     history.enter(navigated[0].params);

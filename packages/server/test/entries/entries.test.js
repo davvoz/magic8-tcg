@@ -61,7 +61,7 @@ describe("ranked entries", () => {
     const { setup, player, give, balance, queue, ledger } = await world();
     const alice = await player("alice");
     const bob = await player("bob", "precon_shadow");
-    await assert.rejects(queue(alice), (error) => error.code === "ENTRY_REQUIRED" && error.status === 402 && /a ranked game costs 1 ranked entry: buy them in the shop/.test(error.message));
+    await assert.rejects(queue(alice), (error) => error.code === "ENTRY_REQUIRED" && error.status === 402 && /a ranked game costs 1 ranked ticket: buy them in the shop/.test(error.message));
     assert.deepEqual(await setup.app.matchmaking.status(alice.id), { state: "idle" });
 
     await give(alice, 3);
@@ -116,7 +116,7 @@ describe("ranked entries", () => {
     const bob = await player("bob");
     await give(alice, 2);
     await give(bob, 1);
-    await assert.rejects(setup.app.entries.charge({ gameId: "g1", mode: "ranked", userIds: [alice.id, bob.id] }), (error) => error.code === "ENTRY_REQUIRED" && /costs 2 ranked entries/.test(error.message));
+    await assert.rejects(setup.app.entries.charge({ gameId: "g1", mode: "ranked", userIds: [alice.id, bob.id] }), (error) => error.code === "ENTRY_REQUIRED" && /costs 2 ranked tickets/.test(error.message));
     assert.deepEqual([await balance(alice), await balance(bob)], [2, 1], "all or nothing");
     assert.equal((await setup.database.rows("SELECT count(*)::integer AS n FROM entry_ledger WHERE reason = 'game'"))[0].n, 0);
   });
@@ -146,7 +146,7 @@ describe("ranked entries", () => {
     const bob = await player("bob", "precon_shadow");
     await assert.rejects(lobby.challenge({ user: alice.party, to: "bob", mode: "ranked", deckId: alice.deckId }), (error) => error.code === "ENTRY_REQUIRED");
     await give(alice, 1);
-    await assert.rejects(lobby.challenge({ user: alice.party, to: "bob", mode: "ranked", deckId: alice.deckId }), /@bob has no ranked entries left/);
+    await assert.rejects(lobby.challenge({ user: alice.party, to: "bob", mode: "ranked", deckId: alice.deckId }), /@bob has no ranked tickets left/);
     await give(bob, 1);
     const sent = await lobby.challenge({ user: alice.party, to: "bob", mode: "ranked", deckId: alice.deckId });
     const { gameId } = await lobby.accept({ user: bob.party, challengeId: sent.id, deckId: bob.deckId });

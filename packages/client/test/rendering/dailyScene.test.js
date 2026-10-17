@@ -45,9 +45,9 @@ async function world({ compact = false, day = DAY } = {}) {
     state: { status: OnlineStatus.IDLE, session: null, mode: null },
     subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
     decks: () => [
-      { id: "d-1", name: "Iron Foundry", playable: true },
-      { id: "d-2", name: "Broken deck", playable: false },
-      { id: "d-3", name: "Ember Vanguard", playable: true },
+      { id: "d-1", name: "Iron Foundry", playable: true, totalCards: 30, mix: [{ faction: "iron", count: 26 }, { faction: "neutral", count: 4 }] },
+      { id: "d-2", name: "Broken deck", playable: false, totalCards: 3, mix: [{ faction: "ember", count: 3 }] },
+      { id: "d-3", name: "Ember Vanguard", playable: true, totalCards: 30, mix: [{ faction: "ember", count: 28 }, { faction: "neutral", count: 2 }] },
     ],
     resume: () => online.state.session,
   };
@@ -118,9 +118,12 @@ describe("DailyScene", () => {
     await settle();
     assert.deepEqual(calls, [["track", "hard"]]);
     assert.equal(byId(scene, "daily.fight").text, "Fight Kael");
-    assert.equal(byId(scene, "daily.deck").text, "Deck: Iron Foundry");
-    click(byId(scene, "daily.deck"));
-    assert.equal(byId(scene, "daily.deck").text, "Deck: Ember Vanguard", "only playable decks come round");
+    const deck = byId(scene, "daily.deck");
+    assert.equal(deck.text, "Iron Foundry");
+    assert.equal(deck.subtitle, "30 cards · iron 26 · neutral 4 · click to change");
+    assert.equal(deck.stripe.length, 2, "striped with its factions, as everywhere a deck is chosen");
+    click(deck);
+    assert.equal(byId(scene, "daily.deck").text, "Ember Vanguard", "only playable decks come round");
   });
 
   it("starts the challenge with the chosen deck and hands over to the match once the game starts", async () => {
@@ -158,9 +161,10 @@ describe("DailyScene", () => {
     });
   });
 
-  it("opens the Info screen on how the challenges work, and comes back here", async () => {
+  it("opens the Info screen on how the challenges work from the bar, and comes back here", async () => {
     const { scene, navigated } = await world();
-    click(byId(scene, "daily.help"));
+    assert.equal(scene.root.findById("daily.help"), null, "not among the screen's own buttons");
+    click(scene.chrome.findById("daily.help"));
     assert.deepEqual(navigated.at(-1), { id: SceneId.INFO, params: { topic: "challenges", back: SceneId.DAILY, backParams: {} } });
   });
 

@@ -1,7 +1,8 @@
 /**
  * The Info screen's topics, in plain English for players new to card games
  * and to the Steem blockchain: how a game is played, how purchases work,
- * how signing in works, ranked games and their entries, the daily
+ * how signing in works, the ways to play (practice, casual, ranked, the
+ * challenges, watching), ranked games and their tickets, the daily
  * challenges, and every way to get cards. Pure: the numbers of the rules come from the game content, so
  * the text cannot drift from the rules the engine plays by.
  *
@@ -15,6 +16,7 @@ export const JOIN_URL = "https://join.cur8.fun";
 
 export const InfoTopicId = Object.freeze({
   MECHANICS: "mechanics",
+  MODES: "modes",
   PURCHASES: "purchases",
   ACCOUNT: "account",
   RANKED: "ranked",
@@ -44,11 +46,12 @@ const steps = (texts) => texts.map((text, index) => Object.freeze({ kind: "bulle
 export function infoTopics(content) {
   return Object.freeze([
     topic({ id: InfoTopicId.MECHANICS, title: "How to play", shortTitle: "How to play" }, mechanics(content)),
-    topic({ id: InfoTopicId.PURCHASES, title: "Purchases", shortTitle: "Purchases" }, purchases()),
-    topic({ id: InfoTopicId.ACCOUNT, title: "Account & sign in", shortTitle: "Sign in", link: { text: "Create a free account: join.cur8.fun", url: JOIN_URL } }, account()),
+    topic({ id: InfoTopicId.MODES, title: "Ways to play", shortTitle: "Modes" }, modes()),
     topic({ id: InfoTopicId.RANKED, title: "Ranked games", shortTitle: "Ranked" }, ranked()),
     topic({ id: InfoTopicId.CHALLENGES, title: "Challenges", shortTitle: "Challenges" }, challenges()),
+    topic({ id: InfoTopicId.PURCHASES, title: "Purchases", shortTitle: "Purchases" }, purchases()),
     topic({ id: InfoTopicId.SHOP, title: "Shop & cards", shortTitle: "Shop" }, shop()),
+    topic({ id: InfoTopicId.ACCOUNT, title: "Account & sign in", shortTitle: "Sign in", link: { text: "Create a free account: join.cur8.fun", url: JOIN_URL } }, account()),
   ]);
 }
 
@@ -195,46 +198,75 @@ function account() {
   ];
 }
 
-function ranked() {
+function modes() {
   return [
-    heading("Ways to play"),
-    bullet("Practice vs AI: free, no account needed, nothing at stake. The best way to learn."),
-    bullet("Casual: online, against other players, free. Your result is recorded, your rating does not change."),
-    bullet("Ranked: online, it changes your rating and your place in the season's leaderboard. Each game costs one ranked entry."),
-    bullet("Challenges: three opponents a day, played alone against the game's characters. Beat all three to win a pack (see \"Challenges\")."),
-    bullet("Watch: follow a game in progress as a spectator. You never see the players' hands."),
+    heading("All in Play"),
+    paragraph("Everything you can play is in the Play section: each way to play has its own place there."),
+
+    heading("Practice vs AI"),
+    bullet("Against the computer, with any of your decks. Free, nothing at stake, and it works offline too: the best way to learn and to try a deck."),
+    bullet("Signed in, your practice games also count towards opening ranked play."),
+
+    heading("Challenges"),
+    bullet("Three opponents a day, played alone against the game's characters. Beat all three to win a pack (see \"Challenges\")."),
+
+    heading("Casual"),
+    bullet("Online, against real players. Free: your result is recorded, your rating does not change."),
+    bullet("Find a match in the queue, or challenge a player you see online."),
+
+    heading("Ranked"),
+    bullet("Online, for the season: it changes your rating and your place on the leaderboard, and the best players share the season's jackpot. Each game uses a ranked ticket (see \"Ranked games\")."),
 
     heading("Starting a game online"),
     ...steps([
       "Sign in, and take your free starter deck in Decks.",
-      "Click \"Play online\".",
+      "In Play, click \"Play online\", then choose Casual or Ranked: each has its own screen.",
       "Pick one of your decks on the left.",
-      "Open the \"Casual\" or the \"Ranked\" tab, then click \"Find a match\". Or click a player in the list of players online to challenge them.",
+      "Click \"Find a match\". Or click a player in the list of players online to challenge them to a game of that kind.",
       "When a match is found, both players confirm it (Keychain asks you to sign; with a posting key it happens on its own), and the game starts.",
     ]),
 
-    heading("Who can play ranked"),
-    bullet("Finish 3 casual games, or 3 practice games against the AI while signed in, first. Until then, Ranked stays locked and the lobby tells you how many games are left. A practice game you concede does not count."),
-    bullet("Have at least one ranked entry."),
+    heading("Watch"),
+    bullet("Follow a game in progress as a spectator, from \"Live games\" in Play. You never see the players' hands."),
+    bullet("\"My games\" in Play lists your own games: watch any of them again."),
+  ];
+}
 
-    heading("Ranked entries: buy them in advance"),
-    paragraph("Each ranked game costs one ranked entry. The price is shown on the Ranked tab (1 STEEM today), which also shows how ranked play works. Instead of paying before every game, you buy entries in advance: as many as you like, up to 50 in one order, with a single transfer. Then each ranked game uses one."),
-    bullet("Buy them in the Shop, on the Ranked shelf. In the lobby, when you have none, the \"Get ranked entries\" button takes you there."),
-    bullet("The lobby shows how many entries you have left."),
-    bullet("An entry is used when the game is created: when the queue finds your opponent, or when a ranked challenge is accepted."),
-    bullet("If the game is cancelled before it starts (a player does not confirm in time), both players get their entry back."),
-    bullet("Once the game has started, the entry is spent, even if you concede, leave or run out of time."),
-    bullet("Entries never expire: the ones you do not use stay for the next seasons. They cannot be refunded, traded or sold."),
-    bullet("Every entry goes into the season's jackpot."),
+function ranked() {
+  return [
+    heading("What ranked is"),
+    paragraph("Ranked games are online games for the season: win to raise your rating and climb the season's leaderboard. When the season ends, the best players share its jackpot. Each game uses one ranked ticket."),
+
+    heading("Playing a ranked game"),
+    ...steps([
+      "In Play, click \"Play online\", then \"Play ranked\".",
+      "Check \"Ready to play?\": ranked open to you, a ticket, a deck.",
+      "Pick one of your decks on the left, then click \"Find a ranked match\". Or click a player online to challenge them to a ranked game.",
+      "Live match plays the game yourself; Auto lets the AI play your deck for you against the next player who joins.",
+    ]),
+
+    heading("Who can play ranked"),
+    bullet("Finish 3 casual games, or 3 practice games against the AI while signed in, first. Until then, Ranked stays locked and its screen tells you how many games are left. A practice game you concede does not count."),
+    bullet("Have at least one ranked ticket."),
+
+    heading("Ranked tickets: buy them in advance"),
+    paragraph("Each ranked game uses one ranked ticket: you never pay for a game itself. Instead, you buy tickets in advance (1 STEEM each today): as many as you like, up to 50 in one order, with a single transfer. Then each ranked game uses one."),
+    bullet("Buy them right on the Ranked screen (\"Buy tickets\", or the tickets in the top bar), or in the Shop, on the Tickets shelf."),
+    bullet("The Ranked screen shows how many tickets you have left, and what you still need before you can play."),
+    bullet("A ticket is used when the game is created: when the queue finds your opponent, or when a ranked challenge is accepted."),
+    bullet("If the game is cancelled before it starts (a player does not confirm in time), both players get their ticket back."),
+    bullet("Once the game has started, the ticket is spent, even if you concede, leave or run out of time."),
+    bullet("Tickets never expire: the ones you do not use stay for the next seasons. They cannot be refunded, traded or sold."),
+    bullet("Every ticket goes into the season's jackpot."),
 
     heading("Rating and seasons"),
     bullet("Everyone starts at 1500. Win to go up, lose to go down. Beating a stronger player is worth more."),
     bullet("A new player's rating moves fast. While it is still uncertain, you appear in the leaderboard as provisional, without a position."),
-    bullet("Every season the ratings start again from scratch. The Leaderboard (in the online lobby) shows the top 100."),
+    bullet("Every season the ratings start again from scratch. The Leaderboard (in Season, and from the Ranked screen) shows the top 100."),
     bullet("Fair play: you can play at most 3 ranked games against the same opponent in 24 hours, so nobody can farm rating off one player. Past that, the queue pairs you with others and ranked challenges between you are refused; both say when you can play ranked together again. Casual games are not limited."),
 
     heading("The season's jackpot"),
-    paragraph("When the season has a jackpot, Home and Season show it: how much it holds, the prize for each place, who is leading and how long is left. It grows with every pack and every ranked entry sold. When the season ends, the top 3 players of the leaderboard share it."),
+    paragraph("When the season has a jackpot, Home and Season show it: how much it holds, the prize for each place, who is leading and how long is left. It grows with every pack and every ranked ticket sold. When the season ends, the top 3 players of the leaderboard share it."),
   ];
 }
 
@@ -275,7 +307,7 @@ function shop() {
     heading("Where cards come from"),
     bullet("Free starter deck: once signed in, pick one of 5 decks, one per faction, ready to play. You get it once per account."),
     bullet("Challenges: beat the day's three opponents and win a free pack (see \"Challenges\")."),
-    bullet("The Shop: packs, complete decks, single cards and ranked entries."),
+    bullet("The Shop: packs, complete decks, single cards and ranked tickets."),
     bullet("The Market: buy cards from other players, or sell your own."),
     bullet("Trades: swap cards with another player."),
     paragraph("Every card you own is a unique copy, with its own serial number (such as \"Ember Imp #4\") and its own history. Your Collection, in Decks, lists them all."),
@@ -285,7 +317,7 @@ function shop() {
     bullet("Packs: cards you do not know in advance. A Core Booster has 5 cards (3 common, 1 uncommon, 1 rare or better), a Core Mini Booster 3 cards (2 common, 1 uncommon or better). The exact odds are shown under \"Pack odds\"."),
     bullet("Decks: complete preconstructed decks, saved in your account ready to play. A deck costs the sum of its cards."),
     bullet("Singles: any card in the game, priced by rarity (common, uncommon, rare, epic, legendary). Filter them by faction, rarity and type."),
-    bullet("Ranked: ranked entries, to play ranked games (see \"Ranked games\")."),
+    bullet("Tickets: ranked tickets, to play ranked games (see \"Ranked games\")."),
     bullet("Offers: special offers, when there are any."),
 
     heading("Buying in the Shop"),

@@ -147,7 +147,7 @@ export class LoginScene extends Scene {
     const left = (size.width - 2 * buttons.width - buttons.gap) / 2;
     this.#submit = panel.add(new Button({ id: "login.submit", x: left, y: buttons.y, width: buttons.width, height: buttons.height, text: "Sign in", variant: "primary", onActivate: () => this.#signIn() }));
     panel.add(new Button({ id: "login.back", x: left + buttons.width + buttons.gap, y: buttons.y, width: buttons.width, height: buttons.height, text: "Back", onActivate: () => this.services.navigate(SceneId.HOME) }));
-    this.#status = panel.add(new Label({ x: inset, y: layout.status.y, width: inner, height: layout.status.height, text: status.text, size: "small", colorKey: status.colorKey, fit: true }));
+    this.#status = panel.add(new Label({ x: panel.titleInset, y: layout.status.y, width: size.width - 2 * panel.titleInset, height: layout.status.height, text: status.text, size: "small", colorKey: status.colorKey, fit: true }));
     this.focus(this.#field.value.length > 0 && this.#key !== null ? this.#key : this.#field);
     this.services.requestRender();
   }

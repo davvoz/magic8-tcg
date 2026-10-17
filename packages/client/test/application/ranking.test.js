@@ -12,7 +12,8 @@ import { HttpRankingApi } from "../../src/infrastructure/api/HttpRankingApi.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { SeasonScene } from "../../src/rendering/scenes/SeasonScene.js";
-import { OnlineScene, standingText } from "../../src/rendering/scenes/OnlineScene.js";
+import { standingText } from "../../src/rendering/scenes/lobby/lobbyText.js";
+import { RankedScene } from "../../src/rendering/scenes/RankedScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
 import { loadBundledContent } from "./fixtures.js";
@@ -120,15 +121,13 @@ function screens(ranking, requests = []) {
 }
 
 describe("ranked screens", () => {
-  it("lets eligible players queue ranked from its tab, and shows newcomers what is missing", async () => {
+  it("lets eligible players queue ranked from its lobby, and shows newcomers what is missing", async () => {
     const eligible = new RankingService({ api: fakeApi() });
     const { services, app, requests, navigated } = screens(eligible);
-    const scene = new OnlineScene(services, app);
+    const scene = new RankedScene(services, app);
     scene.enter({});
     await flush();
-    assert.equal(scene.root.findById("online.mode.ranked").locked, false);
-    scene.root.findById("online.mode.ranked").activate();
-    assert.equal(scene.root.findById("online.mode.ranked").selected, true);
+    assert.equal(scene.root.findById("ranked.ready.text.1").text, "Ranked is open to you.");
     scene.root.findById("online.find").activate();
     await flush();
     assert.deepEqual(requests.at(-1).d, { mode: "ranked", deckId: "11111111-1111-4111-8111-111111111111" });
@@ -136,13 +135,14 @@ describe("ranked screens", () => {
 
     const newcomer = new RankingService({ api: fakeApi({ ...STANDING, eligible: false, casualGamesNeeded: 3, practiceGamesNeeded: 3 }) });
     const other = screens(newcomer);
-    const lobby = new OnlineScene(other.services, other.app);
+    const lobby = new RankedScene(other.services, other.app);
     lobby.enter({});
     await flush();
-    assert.equal(lobby.root.findById("online.mode.ranked").locked, true);
-    lobby.root.findById("online.mode.ranked").activate();
     assert.equal(lobby.root.findById("online.find"), null, "no ranked search before it opens");
     assert.equal(lobby.root.findById("online.standing").text, "Ranked opens after 3 more casual game(s), or 3 more practice game(s) vs AI.");
+    assert.equal(lobby.root.findById("ranked.ready.text.1").text, "Opens after 3 more casual games.");
+    lobby.root.findById("online.unlock").activate();
+    assert.equal(other.navigated.at(-1), SceneId.CASUAL, "the casual games it waits for");
   });
 
   it("shows the season: the leaderboard with the player's own line selected, how ranked works, and Play ranked", async () => {
@@ -157,11 +157,22 @@ describe("ranked screens", () => {
     assert.equal(scene.root.findById("season.row.3").text, "—  @dave", "a provisional player is listed with no rank");
     assert.equal(scene.root.findById("season.standing").text, "Season 1: rating 1612 (#4), 8–4 in 12 game(s).");
     assert.ok(scene.root.findById("season.guide.steps"), "how ranked works");
+    scene.root.findById("season.row.1").activate();
+    const dialog = () => scene.modal;
+    assert.equal(dialog().findById("player.name").text, "@carol");
+    assert.equal(dialog().findById("player.place").text, "Season 1 · 1st place");
+    assert.deepEqual([1, 2, 3, 4, 5, 6].map((n) => dialog().findById(`player.stats.value.${n}`).text), ["#1", "1801", "30", "22", "8", "73%"], "carol's season in figures");
+    dialog().findById("player.games").activate();
+    assert.equal(navigated.at(-1), SceneId.GAME_HISTORY, "and from there, her games");
+    scene.root.findById("season.row.2").activate();
+    assert.equal(dialog().findById("player.name").text, "@alice · You");
+    dialog().findById("player.close").activate();
+    assert.equal(scene.modal, null);
     scene.onKey({ type: "keydown", key: "Escape", repeat: false });
     assert.equal(navigated.at(-1), SceneId.HOME, "the section's own screen goes Back Home");
     assert.equal(scene.root.findById("season.play").variant, "primary");
     scene.root.findById("season.play").activate();
-    assert.equal(navigated.at(-1), SceneId.ONLINE);
+    assert.equal(navigated.at(-1), SceneId.RANKED);
   });
 
   it("keeps Play ranked locked, with what it waits for, until ranked opens", async () => {

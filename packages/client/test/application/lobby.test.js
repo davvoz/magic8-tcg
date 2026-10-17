@@ -121,7 +121,7 @@ describe("LobbyService", () => {
     world.push("challenge.received", CHALLENGE);
     world.push("challenge.received", { ...CHALLENGE, id: "c2", from: "carol", mode: "casual" });
     assert.deepEqual(world.lobby.state.incoming.map((challenge) => challenge.id), ["c1", "c2"]);
-    assert.deepEqual(describeLobbyEvent(world.events[0]), { title: "@alice challenges you", body: "To a ranked game. Open Play online to answer within a minute.", tone: "info", account: "alice" });
+    assert.deepEqual(describeLobbyEvent(world.events[0]), { title: "@alice challenges you", body: "To a ranked game. Click here to answer within a minute.", tone: "info", account: "alice" });
 
     const accepted = await world.lobby.accept("c1", "deck-1");
     assert.deepEqual(accepted, ok({ gameId: "g1" }));

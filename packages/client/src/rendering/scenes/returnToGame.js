@@ -9,19 +9,20 @@
  *   stays until it is clicked (it opens the match) or the game ends.
  */
 import { OnlineStatus } from "../../application/online/OnlineService.js";
+import { lobbyOf } from "./lobby/lobbyText.js";
 import { SceneId } from "./sceneIds.js";
 
 /** The key of the "your game is in progress" toast (its click opens the match: `open`). */
 export const GAME_TOAST_KEY = "online.game";
 
 /**
- * Into the match of the online game in progress. A daily challenge goes back to its own screen when it ends; any
- * other game to the lobby.
+ * Into the match of the online game in progress. When it ends, a daily challenge goes back to its own screen, any
+ * other game to its lobby (Casual or Ranked).
  * @param {(sceneId: string, params?: Readonly<Record<string, unknown>>) => unknown} navigate
  * @param {Pick<import("../../application/online/OnlineService.js").OnlineService, "state" | "resume">} online
  */
 export function resumeGame(navigate, online) {
-  navigate(SceneId.MATCH, { session: online.resume(), againScene: online.state.mode === "daily" ? SceneId.DAILY : SceneId.ONLINE });
+  navigate(SceneId.MATCH, { session: online.resume(), againScene: lobbyOf(online.state.mode) });
 }
 
 /**

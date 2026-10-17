@@ -385,7 +385,7 @@ export class LobbyService {
   async #assertEntries(mode, userId, other) {
     await this.#entries.assertCanEnter(userId, mode);
     await this.#entries.assertCanEnter(other.userId, mode).catch((error) => {
-      throw error instanceof AppError && error.code === "ENTRY_REQUIRED" ? new AppError("CONFLICT", `@${other.account} has no ${mode} entries left`) : error;
+      throw error instanceof AppError && error.code === "ENTRY_REQUIRED" ? new AppError("CONFLICT", `@${other.account} has no ${mode} tickets left`) : error;
     });
   }
 

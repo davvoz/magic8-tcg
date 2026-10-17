@@ -60,13 +60,22 @@ export function shelvesOf(listing) {
 }
 
 /**
+ * The product that gives exactly one ranked entry, bought as many times as wanted; null when none is on sale.
+ * @param {Listing | null} listing
+ * @returns {Product | null}
+ */
+export function rankedEntryProduct(listing) {
+  return listing === null ? null : (shelvesOf(listing).ranked.find((product) => product.contents.length === 1 && product.contents[0].count === 1) ?? null);
+}
+
+/**
  * What one ranked entry costs in the shop: the price of the product that gives exactly one; null when none is on sale.
  * @param {Listing | null} listing
  * @returns {import("../ports/MarketApi.contract.js").Price | null}
  */
 export function rankedEntryPrice(listing) {
-  const single = listing === null ? undefined : shelvesOf(listing).ranked.find((product) => product.contents.length === 1 && product.contents[0].count === 1);
-  return single === undefined ? null : priceOf(single);
+  const single = rankedEntryProduct(listing);
+  return single === null ? null : priceOf(single);
 }
 
 /**

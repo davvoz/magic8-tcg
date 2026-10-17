@@ -291,7 +291,7 @@ describe("OnlineService", () => {
     await online.queue("deck-1", "ranked");
     server.push("queue.status", { state: "idle", reason: "entries" });
     assert.equal(online.state.status, OnlineStatus.IDLE);
-    assert.deepEqual(online.state.error, { code: "ENTRY_REQUIRED", message: "You left the ranked queue: you have no ranked entries left." });
+    assert.deepEqual(online.state.error, { code: "ENTRY_REQUIRED", message: "You left the ranked queue: you have no ranked tickets left." });
   });
 
   it("keeps searching with the server's notice while the ranked queue holds the player apart from those waiting", async () => {

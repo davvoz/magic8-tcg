@@ -166,7 +166,7 @@ describe("SalesService", () => {
     const { api, sales } = market();
     assert.equal(await sales.sell({ copy: uuid(31), price: " 2.25 " }), true);
     assert.deepEqual(api.calls.find((call) => call[0] === "list"), ["list", { copy: uuid(31), price: "2.25", asset: "STEEM", idempotencyKey: "list-key-000000000001" }]);
-    assert.match(sales.state.notice, /On the board for 1\.500 STEEM/);
+    assert.match(sales.state.notice, /On the board for 1\.5 STEEM/);
   });
 });
 
@@ -176,7 +176,7 @@ describe("MarketScene", () => {
     rich.scene.enter({});
     await flush();
     byId(rich.scene, `market.listing.${LISTING.id}`).activate();
-    assert.ok(rendered(rich.scene).includes("Your budget: 20.000 STEEM"));
+    assert.ok(rendered(rich.scene).includes("Your budget: 20 STEEM"));
     assert.equal(byId(rich.scene, "market.buy").enabled, true);
 
     const { scene, wallet } = market({ budget: "1.499" });
@@ -193,7 +193,7 @@ describe("MarketScene", () => {
     scene.enter({ back: "shop" });
     await flush();
     const row = byId(scene, `market.listing.${LISTING.id}`);
-    assert.equal(row.text, "1.500 STEEM");
+    assert.equal(row.text, "1.5 STEEM");
     assert.equal(byId(scene, `market.seller.${LISTING.id}`).account, "alice", "the seller's portrait beside their name");
     assert.equal(byId(scene, `market.listing.${uuid(3)}`).text, "reserved");
     row.activate();
@@ -297,7 +297,7 @@ describe("MarketScene", () => {
     const texts = rendered(scene);
     const imp = content.catalog.get("ember_imp");
     assert.ok(texts.filter((text) => text === imp.name).length >= 2, "each row is the card's strip");
-    assert.ok(["Sold", "to @carol", "Bought", "from @alice", "#4", "1.500 STEEM"].every((text) => texts.includes(text)), texts.join(" | "));
+    assert.ok(["Sold", "to @carol", "Bought", "from @alice", "#4", "1.5 STEEM"].every((text) => texts.includes(text)), texts.join(" | "));
     byId(scene, `market.mine.${sold.id}`).activate();
     assert.equal(byId(scene, `market.mine.${sold.id}`).variant, "primary", "the chosen row's price lights up");
   });

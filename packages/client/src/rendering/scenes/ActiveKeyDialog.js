@@ -159,11 +159,13 @@ export class ActiveKeyDialog {
    */
   #addButtons(panel, checking, buttons) {
     const gap = 14;
-    const width = (SIZE.width - 2 * INSET - gap * (buttons.length - 1)) / buttons.length;
+    // Along the dialog's foot: clear of its painted corners.
+    const side = panel.titleInset;
+    const width = (SIZE.width - 2 * side - gap * (buttons.length - 1)) / buttons.length;
     const y = SIZE.height - INSET - ROW.button + 10;
     buttons.forEach((button, index) => {
       // Cancel stays available while the key is checked: the transfer is not sent until the check is over.
-      panel.add(new Button({ ...button, x: INSET + index * (width + gap), y, width, height: ROW.button, enabled: !checking || index === 0 }));
+      panel.add(new Button({ ...button, x: side + index * (width + gap), y, width, height: ROW.button, enabled: !checking || index === 0 }));
     });
   }
 

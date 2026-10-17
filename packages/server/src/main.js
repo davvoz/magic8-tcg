@@ -17,6 +17,7 @@ import { parseJson } from "./kernel/json.js";
 import { createConsoleLogger, createJsonLogger } from "./kernel/logger.js";
 import { nodeSecureRandom } from "./kernel/random.js";
 import { systemClock } from "./kernel/time.js";
+import { grantLocalRankedAccess } from "./modules/ranking/application/LocalRankedGrant.js";
 import { openDatabase } from "./platform/db/openDatabase.js";
 import { StaticFiles } from "./platform/http/StaticFiles.js";
 
@@ -63,6 +64,17 @@ async function main() {
   const createLogger = config.logFormat === "json" ? createJsonLogger : createConsoleLogger;
   const logger = createLogger({ write: (line) => process.stdout.write(line), level: config.logLevel });
   const database = await openDatabase({ url: config.databaseUrl, baseDirectory: REPOSITORY_ROOT, logger });
+  if (process.env.M8_LOCAL_RANKED_GRANT) {
+    const grant = await grantLocalRankedAccess({
+      database,
+      databaseUrl: config.databaseUrl,
+      host: config.host,
+      publicOrigin: config.publicOrigin,
+      value: process.env.M8_LOCAL_RANKED_GRANT,
+      at: systemClock.now(),
+    });
+    logger.info("local ranked test grant applied", grant);
+  }
   const rpc = new SteemRpcClient({ nodes: config.steemNodes });
   const chain = new SteemBlockchainProvider({ rpc });
   const wallet = new SteemWalletProvider({ chain, appName: config.appName, rpc });
@@ -261,4 +273,3 @@ function ackSignerFrom(config, logger) {
   const key = privateKey;
   return Object.freeze({ publicKey: publicKeyOf(key), sign: (/** @type {string} */ message) => signMessage(message, key) });
 }
-

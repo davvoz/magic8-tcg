@@ -1,7 +1,7 @@
 /**
  * What the toasts say about a challenge that arrives or closes, from the
  * player's side. A toast about a challenge shows the other player's
- * portrait (`account`), and a click on it opens the lobby.
+ * portrait (`account`), and a click on it opens the lobby of its mode.
  */
 import { ChallengeEnd, ChallengeMode } from "./LobbyService.js";
 
@@ -17,7 +17,7 @@ export function describeLobbyEvent(event) {
   const { challenge } = event;
   const game = challenge.mode === ChallengeMode.RANKED ? "a ranked game" : "a casual game";
   if (event.kind === "received") {
-    return toast(`@${challenge.from} challenges you`, `To ${game}. Open Play online to answer within a minute.`, "info", challenge.from);
+    return toast(`@${challenge.from} challenges you`, `To ${game}. Click here to answer within a minute.`, "info", challenge.from);
   }
   const other = event.outgoing ? challenge.to : challenge.from;
   const [title, body, tone] = (event.outgoing ? OUTGOING : INCOMING)[event.reason] ?? ["Challenge with @{other} closed", "", "info"];

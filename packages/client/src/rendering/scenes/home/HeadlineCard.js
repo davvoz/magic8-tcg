@@ -71,7 +71,9 @@ export class HeadlineCard extends Panel {
    * @param {{ id: string, compact: boolean, kicker: string, title: string, text: string, track: readonly { name: string, done: boolean, current: boolean }[] | null, width: number }} parts
    */
   #buildText(m, { id, compact, kicker, title, text, track, width }) {
-    this.add(new Label({ x: m.inset, y: m.kicker.y, width, height: m.kicker.height, text: kicker.toUpperCase(), size: m.sizes.kicker, weight: "bold", colorKey: "accent", align: "left", fit: true }));
+    // The kicker sits in the card's top band: clear of its painted corner.
+    const kickerX = Math.max(m.inset, this.titleInset);
+    this.add(new Label({ x: kickerX, y: m.kicker.y, width: width - (kickerX - m.inset), height: m.kicker.height, text: kicker.toUpperCase(), size: m.sizes.kicker, weight: "bold", colorKey: "accent", align: "left", fit: true }));
     this.add(new Label({ id: `${id}.title`, x: m.inset, y: m.title.y, width, height: m.title.height, text: title, size: m.sizes.title, weight: "bold", colorKey: "accentLight", align: "left", glow: !compact, fit: true }));
     const line = { id: `${id}.text`, x: m.inset, y: m.text.y, width, height: m.text.height, text, size: m.sizes.text, colorKey: "text", align: /** @type {const} */ ("left") };
     // A phone has room for one line, shrunk to fit; a wide card wraps it.

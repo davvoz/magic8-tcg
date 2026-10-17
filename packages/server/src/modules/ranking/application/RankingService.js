@@ -144,6 +144,9 @@ export class RankingService {
    * @param {string} userId
    */
   async #gamesNeeded(userId) {
+    if (await this.#repository.hasEligibilityGrant(userId)) {
+      return Object.freeze({ casualGamesNeeded: 0, practiceGamesNeeded: 0 });
+    }
     const { minFinishedCasualGames, minFinishedPracticeGames } = this.#settings.eligibility;
     const [casual, practice] = await Promise.all([this.#games.countFinished(userId, CASUAL), this.#practice.countOf(userId)]);
     const casualGamesNeeded = Math.max(0, minFinishedCasualGames - casual);

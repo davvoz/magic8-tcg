@@ -13,11 +13,13 @@
  * A screen may put buttons of its own in the bar (`setActions`), left of
  * the player's things: Play's live games and the player's own games.
  */
+import { roundMoneyText } from "../../application/money/moneyText.js";
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
 import { SceneId } from "../scenes/sceneIds.js";
 import { Button } from "../ui/Button.js";
 import { Icon } from "../ui/icons.js";
+import { Glyph } from "../ui/glyphs.js";
 import { IconButton } from "../ui/IconButton.js";
 import { Label } from "../ui/Label.js";
 import { Modal } from "../ui/Modal.js";
@@ -29,6 +31,7 @@ import { Chip } from "./Chip.js";
 import { ProfileButton } from "./ProfileButton.js";
 import { sectionById, sectionTabs } from "./sections.js";
 import { buildSettingsDialog } from "./SettingsDialog.js";
+import { LogoLight } from "./LogoLight.js";
 import { TopBar } from "./TopBar.js";
 
 /** The bar's controls' widths, wide and compact (a phone, where the wallet shows its figure alone and the profile its picture). */
@@ -40,6 +43,9 @@ const WIDTHS = Object.freeze({
 const DROP = Object.freeze({ entries: 1, wallet: 2, action: 3 });
 /** A screen's own button in the bar: its width with its caption (a phone shows the icon alone, square). */
 const ACTION_WIDTH = 190;
+/** A bar button's room besides its caption (the icon, the gap, the plate's ornate ends), and a caption's width per character. */
+const ACTION_CHROME = 124;
+const ACTION_CHARACTER = 8.5;
 const WALLET_ASSET = "STEEM";
 /** The dialog that says why a section is locked. */
 const NOTICE = Object.freeze({ width: 520, height: 230, button: 48 });
@@ -78,6 +84,8 @@ export class Shell {
   #heading;
   /** @type {import("./TopBar.js").TopBar | null} */
   #bar = null;
+  /** The light that lives in the logo: kept across the bar's rebuilds, so it never starts over. */
+  #logoLight = new LogoLight();
   /** The screen's own buttons in the bar. @type {readonly BarAction[]} */
   #actions = [];
   /** @type {Array<() => void>} */
@@ -111,6 +119,15 @@ export class Shell {
   }
 
   /** Stops following the services (the scene is left). */
+  /**
+   * Moves the logo's light on.
+   * @param {number} dtMs
+   * @returns {boolean} whether the bar needs drawing again
+   */
+  update(dtMs) {
+    return this.#logoLight.update(dtMs);
+  }
+
   detach() {
     this.#unsubscribes.forEach((unsubscribe) => unsubscribe());
     this.#unsubscribes = [];
@@ -178,7 +195,9 @@ export class Shell {
     const origin = viewport.origin;
     const screen = () => viewport.bounds;
     const context = { hasScene: this.#host.services.hasScene, app: this.#app };
-    this.#bar = this.node.add(new TopBar({ layout, origin, screen, heading: this.#heading, controls: this.#controls(layout.compact), tabs: this.#tabs(context) }));
+    // The logo leads Home, from every screen but Home itself.
+    const onHome = this.#scene !== SceneId.HOME && this.#host.services.hasScene(SceneId.HOME) ? () => this.#host.services.navigate(SceneId.HOME) : null;
+    this.#bar = this.node.add(new TopBar({ layout, origin, screen, heading: this.#heading, controls: this.#controls(layout.compact), tabs: this.#tabs(context), onHome, light: this.#logoLight }));
     if (focusedId.length > 0) {
       this.#host.focus(this.node.findById(focusedId));
     }
@@ -248,6 +267,19 @@ export class Shell {
    * A screen the bar opens (the notifications, Info), its Back leading back here; nothing when it is the one on show.
    * @param {string} sceneId
    */
+  /**
+   * The tickets in the bar, clicked: buying more, quickly. On the Ranked screen its purchase opens in place; anywhere
+   * else that screen opens on it, and closing it comes back here.
+   */
+  #buyTickets() {
+    const host = /** @type {{ sceneId?: string, getEntries?: () => void }} */ (/** @type {unknown} */ (this.#host));
+    if (host.sceneId === SceneId.RANKED && typeof host.getEntries === "function") {
+      host.getEntries();
+      return;
+    }
+    this.#host.services.navigate(SceneId.RANKED, { buy: true, quick: true, ...this.#host.backHere() });
+  }
+
   #openFromBar(sceneId) {
     if (sceneId !== this.#scene) {
       this.#host.services.navigate(sceneId, this.#host.backHere());
@@ -270,18 +302,18 @@ export class Shell {
     /** @type {import("./TopBar.js").BarControl[]} */
     const controls = this.#actions.map((action) => ({
       id: action.id,
-      width: compact ? square : ACTION_WIDTH,
+      width: compact ? square : actionWidth(action.caption),
       drop: DROP.action,
       make: (/** @type {import("@magic8/engine/shared/geometry.js").Rect} */ box) => new IconButton({ id: action.id, ...box, icon: action.icon, caption: compact ? "" : action.caption, enabled: action.enabled !== false, onActivate: action.onActivate }),
     }));
     const signedIn = this.#signedIn();
     const { balance, entries, notifications } = this.#app;
     if (signedIn && balance?.state !== undefined) {
-      controls.push({ id: "shell.wallet", width: widths.wallet, drop: DROP.wallet, make: (box) => new Chip({ id: "shell.wallet", ...box, label: compact ? "" : "Wallet", value: walletText(balance), valueKey: "accentLight" }) });
+      controls.push({ id: "shell.wallet", width: widths.wallet, drop: DROP.wallet, make: (box) => new Chip({ id: "shell.wallet", ...box, label: compact ? "" : "Wallet", value: walletText(balance), valueKey: "accentLight", glyph: Glyph.STEEM }) });
     }
     const ranked = entries?.ranked ?? null;
     if (signedIn && ranked !== null) {
-      controls.push({ id: "shell.entries", width: widths.entries, drop: DROP.entries, make: (box) => new Chip({ id: "shell.entries", ...box, label: compact ? "Entries" : "Ranked entries", value: String(ranked.balance) }) });
+      controls.push({ id: "shell.entries", width: widths.entries, drop: DROP.entries, make: (box) => new Chip({ id: "shell.entries", ...box, label: compact ? "" : "Ranked tickets", value: String(ranked.balance), glyph: Glyph.TICKET, onActivate: this.#host.services.hasScene(SceneId.RANKED) ? () => this.#buyTickets() : null }) });
     }
     if (signedIn && notifications?.state !== undefined) {
       const badge = unreadBadge(notifications.state.unread);
@@ -362,7 +394,7 @@ export class Shell {
     const width = Math.min(NOTICE.width, viewport.logicalWidth - 20);
     const modal = new Modal({ id: "shell.notice", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: width, panelHeight: NOTICE.height, onDismiss: close });
     const inner = width - 2 * PANEL_INSET;
-    modal.panel.add(new Label({ x: PANEL_INSET, y: PANEL_INSET - 8, width: inner, height: 40, text: title, size: "heading", weight: "bold", colorKey: "accentLight", fit: true }));
+    modal.panel.add(new Label({ x: modal.panel.titleInset, y: PANEL_INSET - 8, width: width - 2 * modal.panel.titleInset, height: 40, text: title, size: "heading", weight: "bold", colorKey: "accentLight", fit: true }));
     modal.panel.add(new TextBlock({ x: PANEL_INSET, y: PANEL_INSET + 40, width: inner, height: 60, text: reason, size: "small", align: "center", colorKey: "textMuted" }));
     modal.panel.add(new Button({ id: "shell.notice.close", x: PANEL_INSET, y: NOTICE.height - PANEL_INSET - NOTICE.button, width: inner, height: NOTICE.button, text: "OK", onActivate: close }));
     this.#host.showOverlay(modal);
@@ -370,13 +402,21 @@ export class Shell {
 }
 
 /**
- * "12.500 STEEM", or a dash while unknown ("…" while it is read).
+ * A screen's button in the bar: wide enough for its icon and caption between the plate's ornate ends.
+ * @param {string} caption
+ */
+function actionWidth(caption) {
+  return Math.max(ACTION_WIDTH, Math.round(ACTION_CHROME + caption.length * ACTION_CHARACTER));
+}
+
+/**
+ * "12 STEEM" (rounded down: at a glance), or a dash while unknown ("…" while it is read).
  * @param {import("../../application/wallet/BalanceService.js").BalanceService} balance
  */
 function walletText(balance) {
   const amount = balance.amountOf(WALLET_ASSET);
   if (amount !== null) {
-    return `${amount} ${WALLET_ASSET}`;
+    return roundMoneyText(amount, WALLET_ASSET);
   }
   return balance.state.loading ? "…" : "—";
 }

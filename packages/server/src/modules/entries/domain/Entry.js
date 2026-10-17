@@ -39,4 +39,4 @@ export const FREE_PLAY = Object.freeze({ feeOf: () => null });
  * @param {number} count
  * @param {string} kind
  */
-export const entriesText = (count, kind) => `${count} ${kind} ${count === 1 ? "entry" : "entries"}`;
+export const entriesText = (count, kind) => `${count} ${kind} ${count === 1 ? "ticket" : "tickets"}`;

@@ -328,7 +328,7 @@ describe("MatchScene coin toss (online)", () => {
   it("shows the server's choice as a toss between the two accounts, then hands the board over", () => {
     const session = openedOnline();
     const scene = new MatchScene(services());
-    scene.enter({ session, againScene: SceneId.ONLINE });
+    scene.enter({ session, againScene: SceneId.CASUAL });
     assert.equal(scene.isTossing, true);
     runUntil(scene, () => scene.isTossing === false || rendered(scene).includes("@bob plays first"), "the verdict");
     const texts = rendered(scene);
@@ -343,7 +343,7 @@ describe("MatchScene coin toss (online)", () => {
     const session = openedOnline();
     session.apply({ version: 2, snapshot: { ...session.snapshotFor("s0"), version: 2 }, events: [] });
     const scene = new MatchScene(services());
-    scene.enter({ session, againScene: SceneId.ONLINE });
+    scene.enter({ session, againScene: SceneId.CASUAL });
     assert.equal(scene.isTossing, false);
   });
 });

@@ -33,12 +33,14 @@ const COLOR_KEYS = Object.freeze([
   "resource",
   "attack",
   "health",
+  "steem",
+  "steemLight",
   "cardFace",
   "cardText",
 ]);
 /** Every faction carries three tones: its identity colour, a highlight and a shadow. */
 const FACTION_TONE_KEYS = Object.freeze(["base", "light", "dark"]);
-const FONT_SIZE_KEYS = Object.freeze(["title", "heading", "body", "small", "tiny", "micro"]);
+const FONT_SIZE_KEYS = Object.freeze(["title", "heading", "subheading", "body", "small", "tiny", "micro"]);
 const ANIMATION_KEYS = Object.freeze(["shortMs", "mediumMs", "longMs"]);
 const LAYOUT_BOUNDS = Object.freeze({ min: 320, max: 8192 });
 const FONT_BOUNDS = Object.freeze({ min: 6, max: 200 });
@@ -48,7 +50,7 @@ const MAX_FACTIONS = 16;
 
 /**
  * @typedef {Readonly<{ base: string, light: string, dark: string }>} FactionTones
- * @typedef {"title" | "heading" | "body" | "small" | "tiny" | "micro"} FontSize
+ * @typedef {"title" | "heading" | "subheading" | "body" | "small" | "tiny" | "micro"} FontSize
  * @typedef {Readonly<{
  *   layout: Readonly<{ logicalWidth: number, logicalHeight: number }>,
  *   colors: Readonly<Record<string, string>> & Readonly<{ factions: Readonly<Record<string, FactionTones>> }>,
@@ -185,7 +187,9 @@ function checkNumbers(issues, raw, { path, keys, bounds }) {
 }
 
 /** Sizes set in the display face (titles and headings read as game type, body text stays a UI face). */
-const DISPLAY_SIZES = Object.freeze(["title", "heading"]);
+const DISPLAY_SIZES = Object.freeze(["title", "heading", "subheading"]);
+/** A phone's column titles (`subheading`), as a share of its headings. */
+const COMPACT_SUBHEADING = 0.78;
 
 /**
  * CSS font shorthand for a theme size.
@@ -204,14 +208,17 @@ const COMPACT_TEXT_FIT = Object.freeze({ minScale: 0.75 });
 const compactThemes = new WeakMap();
 
 /**
- * The theme a compact screen paints with: the same, with labels that shrink to fit before they are cut.
+ * The theme a compact screen paints with: the same, with labels that shrink to fit before they are cut and smaller
+ * column titles (`subheading`).
  * @param {Theme} theme
  * @returns {Theme}
  */
 export function compactTheme(theme) {
   let compact = compactThemes.get(theme);
   if (compact === undefined) {
-    compact = Object.freeze({ ...theme, textFit: COMPACT_TEXT_FIT });
+    // A phone's column titles are smaller than its headings: a wide screen's are as big.
+    const sizes = Object.freeze({ ...theme.fonts.sizes, subheading: Math.round(theme.fonts.sizes.heading * COMPACT_SUBHEADING) });
+    compact = Object.freeze({ ...theme, fonts: Object.freeze({ ...theme.fonts, sizes }), textFit: COMPACT_TEXT_FIT });
     compactThemes.set(theme, compact);
   }
   return compact;

@@ -207,7 +207,7 @@ Le partite delle sfide si giocano **sul server**, come quelle online, con l'IA a
 - **Al tavolo**: il personaggio è chiamato col suo nome ovunque (riquadro, registro, carte lanciate, bersagli; mai `ai_kael`), col suo ritratto (o la sua iniziale); non si chiede a STEEM l'immagine di un account `ai_`. Se la partita ha condizioni, un pulsante *Rules* nel registro (nella finestra del registro, su telefono) le spiega a parole (`describeCondition`), per esempio *Your spells cost 1 more*.
 - **Il personaggio parla** (`DailyCompanion` decide quando, `CharacterVoice` porta la battuta al tavolo): un fumetto accanto al suo riquadro (`board/SpeechBubble`), con nome e battuta, per qualche secondo; non è una notifica e non si clicca. All'inizio (dopo il lancio della moneta), quando scende a 5 vita o meno, e alla fine. Ogni battuta una volta per partita, scelta dall'id della partita; una battuta detta mentre il tavolo si sta aprendo si sente lo stesso.
 - La notifica `daily.reward` dice il pacchetto vinto; *Open* apre la collezione con quelle carte in cima, come per i pacchetti dello shop.
-- **Info**: la sezione *Challenges* (`InfoTopicId.CHALLENGES`) spiega al giocatore come funzionano: tre avversari al giorno, Normal o Hard e il loro pacchetto, riprovare quante volte si vuole, la regola del boss, le carte vinte che sono sue. *Ways to play* e *Where cards come from* la citano. Dalla schermata, *How it works* (*Help* su telefono) apre questa sezione e Back torna alle sfide.
+- **Info**: la sezione *Challenges* (`InfoTopicId.CHALLENGES`) spiega al giocatore come funzionano: tre avversari al giorno, Normal o Hard e il loro pacchetto, riprovare quante volte si vuole, la regola del boss, le carte vinte che sono sue. *Ways to play* e *Where cards come from* la citano. Dalla barra in alto della schermata, *How it works* (solo l'icona su telefono) apre questa sezione e Back torna alle sfide.
 
 ### I ritratti
 
@@ -244,3 +244,7 @@ Le partite delle sfide si giocano **sul server**, come quelle online, con l'IA a
 - Lo starter gratuito resta com'è.
 - Missioni, serie di giorni e campagna con storia sono passi successivi.
 - I bot per la classificata hanno un documento loro: usano la stessa IA ma pongono problemi diversi (rating, jackpot, trasparenza).
+
+## Scegliere il mazzo e la guida
+
+**Stato:** 2026-10-17. Il mazzo con cui combattere è una riga di mazzo come ovunque si sceglie il mazzo prima di giocare (lobby, Practice): nome, carte e fazioni, e la **barra colorata** delle fazioni a sinistra; un clic passa al mazzo successivo (*· click to change*). *How it works* (la sezione Challenges di Info) è nella barra in alto, come *How ranked works* nella Ranked: non c'è più il pulsante *Help* in fondo. La riga di stato (ultime parole dell'avversario, ingresso del boss, errori) sta in alto al posto del sottotitolo; le carte dei personaggi si allungano fino ai pulsanti, senza spazio vuoto in fondo.

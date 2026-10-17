@@ -37,10 +37,15 @@ import { DailyService } from "../../src/application/daily/DailyService.js";
 import { DAY } from "../application/dailyFixtures.js";
 import { NotificationsScene } from "../../src/rendering/scenes/NotificationsScene.js";
 import { SeasonScene } from "../../src/rendering/scenes/SeasonScene.js";
-import { OnlineScene } from "../../src/rendering/scenes/OnlineScene.js";
+import { CasualScene } from "../../src/rendering/scenes/CasualScene.js";
+import { RankedScene } from "../../src/rendering/scenes/RankedScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
 import { StarterScene } from "../../src/rendering/scenes/StarterScene.js";
+import { Button } from "../../src/rendering/ui/Button.js";
+import { Label } from "../../src/rendering/ui/Label.js";
+import { Panel, PANEL_INSET, PanelCorners, SMALL_PANEL_INSET } from "../../src/rendering/ui/Panel.js";
 import { ScrollList } from "../../src/rendering/ui/ScrollList.js";
+import { TextBlock } from "../../src/rendering/ui/TextBlock.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
 import { fakeMarketApi } from "../application/fakeMarketApi.js";
 import { loadBundledContent } from "../application/fixtures.js";
@@ -216,8 +221,6 @@ function withRankedPlay(app, { eligible = true, auto = false } = {}) {
   const connection = { connect: () => undefined, close: () => undefined, status: "open", request: async () => ok({ t: "auto.status", d: { state: "idle", waiting: 2 } }), subscribe: () => () => undefined, onStatus: () => () => undefined };
   Object.assign(app, { ranking, entries, autoList: auto ? new AutoListService({ connection, randomHex: (bytes) => "cd".repeat(bytes), logger: new MemoryLogger() }) : undefined });
 }
-/** @param {any} scene */
-const openRanked = (scene) => scene.root.findById("online.mode.ranked")?.activate();
 
 /** The season's jackpot, three places paying, the season ending in three weeks. @param {any} app */
 function withJackpot(app) {
@@ -252,6 +255,7 @@ const withDailyRun = (run) => (app) => Object.assign(app, { daily: dailyService(
 /** Each screen: its scene, how to enter it, and what to do once there before checking. */
 const SCREENS = Object.freeze([
   { name: "play", make: (s, app) => new PlayScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("play.daily.play")) },
+  { name: "play, casual or ranked", make: (s, app) => new PlayScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => (scene.root.findById("play.online.play")?.activate(), assert.ok(scene.modal?.findById("choice.ranked.play"))) },
   { name: "home, with the guide", make: (s, app) => new HomeScene(s, app), before: (app) => withGuide(app), after: (scene) => assert.ok(scene.root.findById("home.next")) },
   { name: "home, without the guide", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app), withGuide(app).dismiss()), after: (scene) => assert.equal(scene.root.findById("home.next"), null) },
   { name: "home, account dialog", make: (s, app) => new HomeScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },
@@ -272,14 +276,16 @@ const SCREENS = Object.freeze([
   { name: "notifications", make: (s, app) => new NotificationsScene(s, app) },
   { name: "season", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => (assert.ok(scene.root.findById("season.jackpot")), assert.equal(scene.root.findById("season.play")?.isEffectivelyEnabled, true)) },
   { name: "season, ranked locked", make: (s, app) => new SeasonScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("season.play.note")) },
-  { name: "season, how ranked works", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => (scene.root.findById("season.guide.open")?.activate(), assert.ok(scene.modal?.findById("season.guide.close"))) },
-  { name: "online lobby", make: (s, app) => new OnlineScene(s, app) },
-  { name: "online lobby, casual tab", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => assert.equal(scene.root.findById("online.mode.casual")?.selected, true) },
-  { name: "online lobby, ranked tab", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => (openRanked(scene), assert.ok(scene.root.findById("online.tickets"))) },
-  { name: "online lobby, ranked locked", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => (openRanked(scene), assert.ok(scene.root.findById("online.unlock"))) },
-  { name: "online lobby, ranked live", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => (openRanked(scene), assert.ok(scene.root.findById("online.mode.live"))) },
-  { name: "online lobby, auto list", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => (openRanked(scene), scene.root.findById("online.mode.auto")?.activate(), assert.ok(scene.root.findById("online.style.balanced"))) },
-  { name: "online lobby, how ranked works", make: (s, app) => new OnlineScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => (openRanked(scene), scene.root.findById("online.guide.open")?.activate(), assert.ok(scene.modal?.findById("online.guide"))) },
+  { name: "season, how ranked works", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => assert.ok(scene.root.findById("season.guide.steps"), "told on the screen itself, a phone's too") },
+  { name: "casual lobby", make: (s, app) => new CasualScene(s, app), after: (scene) => assert.ok(scene.root.findById("casual.steps")) },
+  { name: "casual lobby, ranked locked", make: (s, app) => new CasualScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.equal(scene.root.findById("online.unlockHint"), null, "nothing of ranked play in the casual lobby") },
+  { name: "ranked lobby", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => (assert.ok(scene.root.findById("online.tickets")), assert.ok(scene.root.findById("ranked.buy"))) },
+  { name: "ranked lobby, the season's prize", make: (s, app) => new RankedScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => assertInside(scene.root.findById("ranked.prize")) },
+  { name: "ranked lobby, locked", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("online.unlock")) },
+  { name: "ranked lobby, live", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => assert.ok(scene.root.findById("online.mode.live")) },
+  { name: "ranked lobby, auto list", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => (scene.root.findById("online.mode.auto")?.activate(), assert.ok(scene.root.findById("online.style.balanced"))) },
+  { name: "ranked lobby, how ranked works", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => assert.ok(scene.findNode("ranked.guide"), "in the bar: the Info screen's Ranked topic") },
+  { name: "ranked lobby, getting entries", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app), params: { buy: true }, after: (scene) => assert.ok(scene.modal?.findById("tickets.buy")) },
   { name: "sign in", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: true, signIn: async () => ok(null) } }) },
   { name: "sign in with a posting key", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }) },
   { name: "shop asking for the active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, false), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.key")) },
@@ -291,6 +297,86 @@ const SCREENS = Object.freeze([
   { name: "info on signing in", make: (s, app) => new InfoScene({ ...s, openLink: () => undefined }, app), params: { topic: "account" }, after: (scene) => assert.ok(scene.root.findById("info.link")) },
   { name: "error", make: (s) => new ErrorScene(s), params: { title: "Something went wrong", message: "A long explanation of what went wrong." }, controls: false },
 ]);
+
+/**
+ * Everything a card holds stays inside it (the podium of the season's prize, its portraits and the crown's room).
+ * @param {import("../../src/rendering/ui/UiNode.js").UiNode | null} card
+ */
+function assertInside(card) {
+  assert.ok(card !== null, "the card is there");
+  const outside = walk(card).filter(({ node }) => node !== card && !within(node.bounds, card.bounds));
+  assert.deepEqual(outside.map(({ node }) => node.id || node.constructor.name), [], "inside its card");
+}
+
+/** Panels smaller than this (either side) are too small for painted corners worth keeping clear. */
+const CORNERED = 120;
+
+/**
+ * The painted corners of every panel on show (its top ones and its foot's, or its foot's only), as the zones words and
+ * buttons keep off: as wide as the panel's title inset (where the scroll curls), as tall as its content inset.
+ * @param {import("../../src/rendering/ui/UiNode.js").UiNode} layer
+ */
+function cornerZones(layer) {
+  return walk(layer).flatMap(({ node, clip }) => {
+    if (!(node instanceof Panel) || clip !== null || node.style.textured || node.width < CORNERED || node.height < CORNERED) {
+      return [];
+    }
+    const { x, y, width, height } = node.bounds;
+    const zone = { width: node.titleInset - 6, height: (node.style.smallCorners ? SMALL_PANEL_INSET : PANEL_INSET) - 4 };
+    const foot = [{ x, y: y + height - zone.height }, { x: x + width - zone.width, y: y + height - zone.height }];
+    const top = [{ x, y }, { x: x + width - zone.width, y }];
+    return (node.style.corners === PanelCorners.FOOT ? foot : [...top, ...foot]).map((at) => ({ panel: node, ...at, ...zone }));
+  });
+}
+
+/**
+ * What would sit on a painted corner: words (a label or a paragraph with something to say) and buttons, outside the
+ * scrolling lists (their rows pass under the corners as they scroll).
+ * @param {import("../../src/rendering/ui/UiNode.js").UiNode} layer
+ */
+function wordsAndButtons(layer) {
+  return walk(layer)
+    .filter(({ node, clip }) => clip === null && ((node instanceof Label && node.text !== "") || (node instanceof TextBlock && node.text !== "") || node instanceof Button))
+    .map(({ node }) => ({ node, area: node instanceof Label ? wordsOf(node) : node.bounds }));
+}
+
+/** A glyph's width in its font's size, about (the body face's average). */
+const GLYPH = 0.55;
+
+/**
+ * Where a label's words are, about: its box is often wider than they are (a title's runs across the panel).
+ * @param {Label} label
+ */
+function wordsOf(label) {
+  const box = label.bounds;
+  const width = Math.min(box.width, label.text.length * theme.fonts.sizes[label.size] * GLYPH);
+  const offset = { left: 0, center: (box.width - width) / 2, right: box.width - width }[label.align] ?? 0;
+  return { x: box.x + offset, y: box.y, width, height: box.height };
+}
+
+/** Screens checked for words on the painted corners: the phones, and a desktop's window. */
+const SCREENS_FOR_CORNERS = Object.freeze([...PHONES, Object.freeze({ name: "desktop", cssWidth: 1600, cssHeight: 900 })]);
+
+for (const size of SCREENS_FOR_CORNERS) {
+  describe(`No words on the painted corners, on a ${size.name}`, () => {
+    for (const screen of SCREENS.filter((candidate) => candidate.controls !== false && !(candidate.phoneOnly === true && size.cssHeight > 600))) {
+      it(`keeps the ${screen.name}'s words and buttons off the corners`, async () => {
+        const { app, services } = await world(size, { starter: screen.starter ?? true });
+        screen.before?.(app);
+        const scene = screen.make(services, app);
+        scene.enter(screen.params ?? {});
+        await settle();
+        screen.after?.(scene);
+        await settle();
+        scene.render(new FakeContext2D());
+        const layer = scene.overlay ?? scene.modal ?? scene.root;
+        const zones = cornerZones(layer);
+        const crossing = wordsAndButtons(layer).flatMap(({ node, area }) => zones.filter((zone) => zone.panel !== node && isAncestor(zone.panel, node) && overlap(area, zone)).map(() => node.id || `${node.constructor.name} "${node.text ?? ""}"`));
+        assert.deepEqual([...new Set(crossing)], [], `${size.name} ${screen.name}: on a painted corner`);
+      });
+    }
+  });
+}
 
 for (const phone of PHONES) {
   describe(`Every screen on an ${phone.name}`, () => {

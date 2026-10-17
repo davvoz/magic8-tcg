@@ -306,7 +306,7 @@ export class OnlineService {
     }
     // Taken out of the ranked queue: the entries a game takes ran out while waiting.
     if (status.reason === "entries") {
-      this.#set({ error: { code: "ENTRY_REQUIRED", message: "You left the ranked queue: you have no ranked entries left." } });
+      this.#set({ error: { code: "ENTRY_REQUIRED", message: "You left the ranked queue: you have no ranked tickets left." } });
     }
   }
 

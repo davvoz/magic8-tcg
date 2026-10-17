@@ -12,7 +12,10 @@ export const SceneId = Object.freeze({
   STARTER: "starter",
   COLLECTION: "collection",
   SHOP: "shop",
-  ONLINE: "online",
+  /** The casual lobby: free online games against real players. */
+  CASUAL: "casual",
+  /** The ranked lobby: the season's games, which take ranked entries. */
+  RANKED: "ranked",
   DAILY: "daily",
   /** The Season section: the leaderboard, the jackpot, how ranked works. */
   SEASON: "season",

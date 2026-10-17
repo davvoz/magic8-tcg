@@ -8,9 +8,9 @@ const content = await loadBundledContent();
 const textOf = (topic) => topic.blocks.map((block) => block.text).join("\n");
 
 describe("infoTopics", () => {
-  it("covers how to play, purchases, sign-in, ranked, the challenges and the shop, in that order", () => {
+  it("covers how to play, the ways to play, ranked, the challenges, purchases, the shop and sign-in, in that order", () => {
     const topics = infoTopics(content);
-    assert.deepEqual(topics.map((topic) => topic.id), [InfoTopicId.MECHANICS, InfoTopicId.PURCHASES, InfoTopicId.ACCOUNT, InfoTopicId.RANKED, InfoTopicId.CHALLENGES, InfoTopicId.SHOP]);
+    assert.deepEqual(topics.map((topic) => topic.id), [InfoTopicId.MECHANICS, InfoTopicId.MODES, InfoTopicId.RANKED, InfoTopicId.CHALLENGES, InfoTopicId.PURCHASES, InfoTopicId.SHOP, InfoTopicId.ACCOUNT]);
     for (const topic of topics) {
       assert.ok(topic.title.length > 0 && topic.shortTitle.length > 0, `${topic.id} is named`);
       assert.equal(topic.blocks[0].kind, "heading", `${topic.id} opens with a heading`);
@@ -56,11 +56,22 @@ describe("infoTopics", () => {
     assert.deepEqual(topics.filter((topic) => topic.link !== null).map((topic) => topic.id), [InfoTopicId.ACCOUNT]);
   });
 
-  it("explains that ranked entries are bought in advance and go into the jackpot", () => {
+  it("keeps every way to play in their own topic, and ranked to ranked", () => {
+    const topics = infoTopics(content);
+    const modes = topics.find((topic) => topic.id === InfoTopicId.MODES).blocks.filter((block) => block.kind === "heading").map((block) => block.text);
+    for (const mode of ["Practice vs AI", "Challenges", "Casual", "Ranked", "Watch"]) {
+      assert.ok(modes.includes(mode), `the ways to play: ${mode}`);
+    }
+    const ranked = topics.find((topic) => topic.id === InfoTopicId.RANKED);
+    assert.ok(!ranked.blocks.some((block) => block.kind === "heading" && block.text === "Ways to play"), "ranked speaks of ranked only");
+    assert.ok(!/Practice vs AI: free|Watch: follow/.test(textOf(ranked)));
+  });
+
+    it("explains that ranked entries are bought in advance and go into the jackpot", () => {
     const text = textOf(infoTopics(content).find((topic) => topic.id === InfoTopicId.RANKED));
-    assert.ok(text.includes("buy entries in advance"));
-    assert.ok(text.includes("get their entry back"));
-    assert.ok(text.includes("Every entry goes into the season's jackpot."));
+    assert.ok(text.includes("buy tickets in advance"));
+    assert.ok(text.includes("get their ticket back"));
+    assert.ok(text.includes("Every ticket goes into the season's jackpot."));
   });
 
   it("explains the challenges: the day's three opponents, the two prizes, retries, the boss's rule and a prize that is the player's", () => {

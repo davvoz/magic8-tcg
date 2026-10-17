@@ -5,6 +5,7 @@
  * collection) need a game server and exist only when the app has one.
  */
 import { nextStepAfter } from "../../application/daily/characters.js";
+import { CasualScene } from "./CasualScene.js";
 import { CollectionScene } from "./CollectionScene.js";
 import { DailyScene } from "./DailyScene.js";
 import { DeckBuilderScene } from "./DeckBuilderScene.js";
@@ -14,13 +15,13 @@ import { ErrorScene } from "./ErrorScene.js";
 import { GameHistoryScene } from "./GameHistoryScene.js";
 import { HomeScene } from "./HomeScene.js";
 import { PlayScene } from "./PlayScene.js";
+import { RankedScene } from "./RankedScene.js";
 import { InfoScene } from "./InfoScene.js";
 import { LiveGamesScene } from "./LiveGamesScene.js";
 import { LoginScene } from "./LoginScene.js";
 import { MarketScene } from "./MarketScene.js";
 import { MatchScene } from "./MatchScene.js";
 import { NotificationsScene } from "./NotificationsScene.js";
-import { OnlineScene } from "./OnlineScene.js";
 import { ReplayScene } from "./ReplayScene.js";
 import { SceneId } from "./sceneIds.js";
 import { SeasonScene } from "./SeasonScene.js";
@@ -70,13 +71,14 @@ export function registerScenes(sceneManager, app) {
 }
 
 /**
- * The screens of online play: the lobby, the games to watch, the replays of auto games.
+ * The screens of online play: the casual and ranked lobbies, the games to watch, the replays of auto games.
  * @param {import("./SceneManager.js").SceneManager} sceneManager
  * @param {import("../../application/AppContext.js").AppContext} app
  */
 function registerOnlineScenes(sceneManager, app) {
   if (app.online !== undefined) {
-    sceneManager.register(SceneId.ONLINE, (services) => new OnlineScene(services, app));
+    sceneManager.register(SceneId.CASUAL, (services) => new CasualScene(services, app));
+    sceneManager.register(SceneId.RANKED, (services) => new RankedScene(services, app));
   }
   if (app.online !== undefined && app.daily !== undefined) {
     sceneManager.register(SceneId.DAILY, (services) => new DailyScene(services, app));

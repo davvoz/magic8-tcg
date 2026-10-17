@@ -72,9 +72,11 @@ export class OpponentCard extends Panel {
     y += m.band + 8;
 
     const rules = opponent.conditions.length * (m.ruleTitle + m.ruleText);
+    // The quote and the rules run down to the card's foot: clear of its painted corners.
+    const side = Math.max(m.inset, this.titleInset);
     const quoteRoom = Math.min(m.quote, frame.height - m.inset / 2 - y - rules);
     if (quote !== null && quoteRoom >= m.minQuote) {
-      this.add(new TextBlock({ id: `${frame.id}.quote`, x: m.inset, y, width: inner, height: quoteRoom, text: `“${quote}”`, size: m.sizes.text, colorKey: "accentLight" }));
+      this.add(new TextBlock({ id: `${frame.id}.quote`, x: side, y, width: frame.width - 2 * side, height: quoteRoom, text: `“${quote}”`, size: m.sizes.text, colorKey: "accentLight" }));
       y += quoteRoom;
     }
     for (const [index, condition] of opponent.conditions.entries()) {
@@ -82,10 +84,10 @@ export class OpponentCard extends Panel {
       if (room < m.ruleTitle) {
         break;
       }
-      this.add(new Label({ id: `${frame.id}.rule.${index}`, x: m.inset, y, width: inner, height: m.ruleTitle, text: `${condition.name} (for ${SCOPES[/** @type {keyof typeof SCOPES} */ (condition.scope)] ?? condition.scope})`, size: m.sizes.text, weight: "bold", colorKey: "danger", align: "left", fit: true }));
+      this.add(new Label({ id: `${frame.id}.rule.${index}`, x: side, y, width: frame.width - 2 * side, height: m.ruleTitle, text: `${condition.name} (for ${SCOPES[/** @type {keyof typeof SCOPES} */ (condition.scope)] ?? condition.scope})`, size: m.sizes.text, weight: "bold", colorKey: "danger", align: "left", fit: true }));
       y += m.ruleTitle;
       const textHeight = Math.min(room - m.ruleTitle, m.ruleText);
-      this.add(new TextBlock({ x: m.inset, y, width: inner, height: textHeight, text: condition.text, size: m.sizes.text, colorKey: "text" }));
+      this.add(new TextBlock({ x: side, y, width: frame.width - 2 * side, height: textHeight, text: condition.text, size: m.sizes.text, colorKey: "text" }));
       y += textHeight;
     }
   }

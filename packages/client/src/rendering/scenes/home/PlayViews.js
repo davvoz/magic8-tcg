@@ -7,6 +7,7 @@
 import { AccountStatus } from "../../../application/account/AccountService.js";
 import { IdentityStatus } from "../../../application/identity/IdentityService.js";
 import { Milestone } from "../../../application/onboarding/OnboardingProgress.js";
+import { jackpotAmountText } from "../online/rankedGuideFor.js";
 import { SceneId } from "../sceneIds.js";
 
 /** Why what needs the game server is locked. */
@@ -24,6 +25,12 @@ const MINUTE = 60_000;
  * What online play shows.
  * @typedef {Readonly<{ kind: "locked", reason: string }> | Readonly<{ kind: "open", rankedLock: string | null, note: string | null }>} OnlineView
  *   `rankedLock`: why ranked is not open yet (null: it is)
+ */
+/**
+ * What ranked play asks of the player, as the choice between casual and ranked says it.
+ * @typedef {Readonly<{ lock: string | null, entries: Readonly<{ held: number, perGame: number }> | null, jackpot: string | null }>} RankedView
+ *   `lock`: why it is not open yet (null: it is, or not known yet); `entries`: what the player holds and a game takes (null:
+ *   free, or not known yet); `jackpot`: what the season's jackpot holds ("866.666 STEEM"), when known
  */
 
 /** Who stands for the challenges before today's opponents are known: the Archmage, veiled. */
@@ -95,7 +102,7 @@ export class PlayViews {
 
   /** @returns {OnlineView} */
   online() {
-    if (!this.server || this.#app.online === undefined || !this.#hasScene(SceneId.ONLINE)) {
+    if (!this.server || this.#app.online === undefined || !this.#hasScene(SceneId.CASUAL)) {
       return { kind: "locked", reason: OFFLINE_REASON };
     }
     if (!this.signedIn) {
@@ -105,14 +112,19 @@ export class PlayViews {
     if (standing === null) {
       return { kind: "open", rankedLock: null, note: null };
     }
-    if (standing.season === null) {
-      return { kind: "open", rankedLock: "No ranked season is running.", note: null };
-    }
-    if (!standing.eligible) {
-      const games = standing.casualGamesNeeded;
-      return { kind: "open", rankedLock: `Ranked opens after ${games} more casual game${games === 1 ? "" : "s"}.`, note: null };
-    }
-    return { kind: "open", rankedLock: null, note: "Ranked games count for the season." };
+    const lock = rankedLock(standing);
+    return { kind: "open", rankedLock: lock, note: lock === null ? "Ranked games count for the season." : null };
+  }
+
+  /** @returns {RankedView} */
+  ranked() {
+    const standing = this.#app.ranking?.state.standing ?? null;
+    const ranked = this.#app.entries?.ranked ?? null;
+    return {
+      lock: standing === null ? null : rankedLock(standing),
+      entries: ranked === null || ranked.perGame === 0 ? null : { held: ranked.balance, perGame: ranked.perGame },
+      jackpot: jackpotAmountText(this.#app, this.#now()),
+    };
   }
 
   /** @returns {import("./SeasonCard.js").SeasonView} */
@@ -124,8 +136,32 @@ export class PlayViews {
     const jackpot = this.#app.jackpot;
     const { standing, error } = ranking.state;
     const season = standing?.season?.name ?? jackpot?.state.jackpot?.season.name ?? null;
-    return { kind: "open", season, jackpot: jackpot?.state.jackpot ?? null, now: () => jackpot?.now() ?? this.#now(), standing: this.signedIn ? standingLine(standing, error) : "Sign in to take part in the season." };
+    const mine = this.signedIn ? { standing: standingLine(standing, error), figures: figuresOf(standing) } : { standing: "Sign in to take part in the season.", figures: null };
+    return { kind: "open", season, jackpot: jackpot?.state.jackpot ?? null, now: () => jackpot?.now() ?? this.#now(), ...mine };
   }
+}
+
+/**
+ * The player's season in figures: their standing, once they may play ranked in a running season; else null.
+ * @param {import("../../../application/ports/RankingApi.contract.js").Standing | null} standing
+ */
+function figuresOf(standing) {
+  return standing !== null && standing.season !== null && standing.eligible ? standing : null;
+}
+
+/**
+ * Why ranked play is not open to the player yet; null when it is.
+ * @param {import("../../../application/ports/RankingApi.contract.js").Standing} standing
+ */
+function rankedLock(standing) {
+  if (standing.season === null) {
+    return "No ranked season is running.";
+  }
+  if (!standing.eligible) {
+    const games = standing.casualGamesNeeded;
+    return `Ranked opens after ${games} more casual game${games === 1 ? "" : "s"}.`;
+  }
+  return null;
 }
 
 /**

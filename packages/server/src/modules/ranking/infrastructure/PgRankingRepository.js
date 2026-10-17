@@ -27,6 +27,11 @@ export class PgRankingRepository {
     return row === null ? null : toRating(row);
   }
 
+  /** @param {string} userId */
+  async hasEligibilityGrant(userId) {
+    return (await this.#db.maybeOne("SELECT 1 AS found FROM ranked_eligibility_grants WHERE user_id = $1", [userId])) !== null;
+  }
+
   /**
    * Creates the row with the starting rating if missing, then locks it until the unit of work ends.
    * @param {{ season: string, userId: string, account: string, rating: number, rd: number, volatility: number, at: number }} initial

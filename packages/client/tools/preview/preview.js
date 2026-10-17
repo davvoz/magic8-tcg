@@ -26,7 +26,9 @@
  *   /tools/preview/?scene=sharecard          the picture a shared game carries, as the JPEG it is saved to
  *   /tools/preview/?scene=info&topic=ranked  the Info screen on a topic (default: how to play)
  *   /tools/preview/?scene=tutorial&next=5    the tutorial, after N clicks as the coach asks (Next, or what it points at)
- *   /tools/preview/?scene=online&tab=ranked  the online lobby against a scripted server (onlineWorld.js lists its options)
+ *   /tools/preview/?scene=casual             the casual lobby against a scripted server (onlineWorld.js lists its options)
+ *   /tools/preview/?scene=ranked&buy=1       the ranked lobby, getting entries (onlineWorld.js lists its options)
+ *   /tools/preview/?scene=play&press=play.online.play   Play, with the choice between casual and ranked open
  *   /tools/preview/?scene=daily&stage=1      the challenges screen over a day of the real roster (dailyWorld.js lists its options)
  *   ...&art=procedural                       every card and the table with procedural art, ignoring data/art/
  *   ...&press=settings                       then presses a control of the screen by id (the shell's too: settings, profile, shell.nav.market)
@@ -404,26 +406,24 @@ async function showMatch(sceneManager, app, { turns, inspect, deckId, say, share
   }
 }
 
-/** @typedef {{ tab: string | null, way: string | null, guide: boolean, entries: number, eligible: boolean }} OnlineRequest */
+/** @typedef {{ way: string | null, guide: boolean, buy: boolean, entries: number, eligible: boolean }} OnlineRequest */
 
 /**
- * The online lobby, on the tab (and the way to play ranked) asked for, with the phone's guide open if asked.
+ * A lobby (casual or ranked), with the way to play ranked asked for, and the guide or the purchase of entries open if asked.
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
+ * @param {string} sceneId
  * @param {OnlineRequest} request
  */
-async function showOnline(sceneManager, { tab, way, guide }) {
-  sceneManager.navigate(SceneId.ONLINE);
+async function showLobby(sceneManager, sceneId, { way, guide, buy }) {
+  sceneManager.navigate(sceneId, buy ? { buy: true } : {});
   // The standing and the entries come from the scripted server first: ranked opens once they have.
   await new Promise((resolve) => window.setTimeout(resolve, 100));
-  const press = (/** @type {string} */ id) => sceneManager.current?.root.findById(id)?.activate();
-  if (tab === "ranked") {
-    press("online.mode.ranked");
-  }
+  const press = (/** @type {string} */ id) => sceneManager.current?.findNode(id)?.activate();
   if (way === "auto") {
     press("online.mode.auto");
   }
   if (guide) {
-    press("online.guide.open");
+    press("ranked.guide");
   }
 }
 
@@ -512,7 +512,7 @@ async function appFor(request, content) {
     // The day's services stand in for a server: casting them is the harness's business.
     return Object.freeze({ ...app, .../** @type {any} */ (await dailyServices(content, request.daily)) });
   }
-  if (request.scene === "online") {
+  if (request.scene === "casual" || request.scene === "ranked") {
     // The lobby's services stand in for a server: casting them is the harness's business.
     return Object.freeze({ ...app, .../** @type {any} */ (onlineServices(content, request.online, logger)) });
   }
@@ -546,7 +546,7 @@ async function boot() {
     next: countParam(query, "next", 0),
     procedural: query.get("art") === "procedural",
     help: query.get("help") !== "0",
-    online: { tab: query.get("tab"), way: query.get("way"), guide: query.get("guide") === "1", entries: countParam(query, "entries", 3), eligible: query.get("eligible") !== "0" },
+    online: { way: query.get("way"), guide: query.get("guide") === "1", buy: query.get("buy") === "1", entries: countParam(query, "entries", 3), eligible: query.get("eligible") !== "0" },
     daily: { opponents: query.get("opponents"), stage: optionalCount(query, "stage") },
     press: query.get("press"),
     home: { done: countParam(query, "done", 0), hidden: query.get("hidden") === "1" },
@@ -586,8 +586,8 @@ async function present(theme, app, request) {
   registerScenes(sceneManager, app);
   if (request.scene === "tutorial") {
     await showTutorial(sceneManager, app, request.next);
-  } else if (request.scene === "online") {
-    await showOnline(sceneManager, request.online);
+  } else if (request.scene === "casual" || request.scene === "ranked") {
+    await showLobby(sceneManager, request.scene === "casual" ? SceneId.CASUAL : SceneId.RANKED, request.online);
   } else {
     await show(sceneManager, app, request);
   }

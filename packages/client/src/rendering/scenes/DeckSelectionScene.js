@@ -192,12 +192,13 @@ export class DeckSelectionScene extends SectionScene {
           ? [{ spec: builder, width: COMPACT_FOOTER.builder }]
           : [{ spec: opponent, width: COMPACT_FOOTER_WITH_OPPONENT.opponent }, { spec: builder, width: COMPACT_FOOTER_WITH_OPPONENT.builder }];
       const y = size.height - inset / 2 - footer.height;
-      let x = inset;
+      // Along the panel's foot: clear of its painted corners.
+      let x = panel.titleInset;
       for (const button of row) {
         panel.add(new Button({ ...button.spec, x, y, width: button.width, height: footer.height }));
         x += button.width + footer.gap;
       }
-      return panel.add(new Button({ ...startSpec, x, y, width: inset + width - x, height: footer.height }));
+      return panel.add(new Button({ ...startSpec, x, y, width: size.width - panel.titleInset - x, height: footer.height }));
     }
     const top = size.height - listBottom + 20;
     const start = panel.add(new Button({ ...startSpec, x: inset, y: top, width, height: footer.height }));

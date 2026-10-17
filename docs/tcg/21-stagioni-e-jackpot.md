@@ -25,7 +25,7 @@ Dove si vede:
 | Schermata | Come |
 |---|---|
 | Home | scheda *Season* a destra (su telefono l'importo e il tempo rimasto); *Open the leaderboard* apre Season |
-| Season (27) | scheda accanto alla classifica (su telefono un banner di tre righe), con *How ranked works* e *Play ranked* |
+| Season (27) | scheda accanto alla classifica (su telefono un banner di tre righe), con *How ranked works* e *Play ranked*; sul telefono le tre figure di *How ranked works* stanno sotto il banner, con i passi in poche parole (*1 STEEM each*, *1 ticket a game, back if called off*, *The top 3 share it*), senza dialogo |
 | Notifiche | al vincitore: *You finished 1st in Season 1!* con l'importo |
 
 Il pannello si vede anche senza accesso: il jackpot è pubblico. Il client lo rilegge ogni minuto finché è sullo schermo; il conto alla rovescia si aggiorna ogni secondo dall'orologio del dispositivo.

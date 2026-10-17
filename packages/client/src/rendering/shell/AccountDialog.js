@@ -30,11 +30,13 @@ export function buildAccountDialog({ viewport, user, method, onSignOut, onClose 
   const textX = inset + avatar + 16;
   panel.add(new Label({ x: textX, y: inset, width: width - textX - inset, height: avatar / 2, text: `@${user.account}`, size: "heading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
   panel.add(new Label({ x: textX, y: inset + avatar / 2, width: width - textX - inset, height: avatar / 2, text: signedInWith(method, user.network), size: "small", colorKey: "textMuted", align: "left", fit: true }));
-  const half = (width - 2 * inset - 12) / 2;
+  // Along the dialog's foot: clear of its painted corners.
+  const side = panel.titleInset;
+  const half = (width - 2 * side - 12) / 2;
   const buttonY = height - inset - SIZE.button;
   // Close first, so that it takes the focus: Enter never signs out by accident.
-  panel.add(new Button({ id: "account.close", x: inset + half + 12, y: buttonY, width: half, height: SIZE.button, text: "Close", onActivate: onClose }));
-  panel.add(new Button({ id: "signOut", x: inset, y: buttonY, width: half, height: SIZE.button, text: "Sign out", variant: "danger", onActivate: onSignOut }));
+  panel.add(new Button({ id: "account.close", x: side + half + 12, y: buttonY, width: half, height: SIZE.button, text: "Close", onActivate: onClose }));
+  panel.add(new Button({ id: "signOut", x: side, y: buttonY, width: half, height: SIZE.button, text: "Sign out", variant: "danger", onActivate: onSignOut }));
   return modal;
 }
 
