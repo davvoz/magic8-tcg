@@ -70,6 +70,16 @@ const DESCRIBERS = Object.freeze({
     const place = ["1st", "2nd", "3rd"][Number(data.place) - 1] ?? `#${data.place ?? "?"}`;
     return text({ title: `You finished ${place} in ${data.season ?? "the season"}!`, body: `Your share of the jackpot, ${moneyOf(data)}, will be sent to your wallet.`, target: null, tone: "good" });
   },
+  "ranking.decay": ({ data }) => {
+    const place = ["1st", "2nd", "3rd"][Number(data.place) - 1] ?? `#${data.place ?? "?"}`;
+    const rating = Number.isFinite(data.before) && Number.isFinite(data.after) ? ` Rating ${data.before} → ${data.after}.` : "";
+    return text({
+      title: `−${data.points ?? "?"} rating: a day without ranked`,
+      body: `You were ${place} in ${data.season ?? "the season"} and played no ranked game on ${data.day ?? "that day"} (UTC).${rating} The top 3 lose rating each day they do not play a ranked game by hand.`,
+      target: NotificationTarget.RANKED,
+      tone: "bad",
+    });
+  },
   "auto.finished": ({ data }) => {
     const opponent = typeof data.opponent === "string" ? `@${data.opponent}` : "another player";
     const outcome = AUTO_OUTCOMES[/** @type {keyof typeof AUTO_OUTCOMES} */ (data.result)] ?? AUTO_OUTCOMES.draw;

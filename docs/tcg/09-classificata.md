@@ -13,7 +13,38 @@
 - **Rating provvisorio:** finché un giocatore non ha 3 partite classificate valutate nella stagione, il suo rating è provvisorio: compare in classifica dopo i rating assestati, senza posizione, e non vince premi. Alla terza partita diventa "assestato" e riceve una posizione.
 - **Stagioni:** i rating ripartono da capo a ogni stagione. Il calendario sta nel database (tabella `seasons`, migrazione 018). Al primo avvio su una tabella vuota il server ci copia le `seasons` del file dei dati; da lì in poi il file non viene più letto per le stagioni e le si gestisce dal pannello `/admin.html` (sezione *Seasons*, doc 07). Una stagione futura si crea, si modifica e si cancella liberamente; di una in corso si cambiano solo il nome e la fine (sempre nel futuro); una finita non cambia più, così nessun rating e nessun jackpot viene riscritto. Ogni modifica è nell'audit (`admin.season_created`, `admin.season_changed`, `admin.season_deleted`) e arriva subito a tutti i processi (NOTIFY `m8_seasons`). Una partita conta nella stagione in cui è finita. Una stagione finisce al suo `endsAt`, o altrimenti quando comincia la successiva; fra una stagione finita e la prossima la classificata è chiusa. Una stagione può avere un jackpot (doc 21).
 - **Classificata automatica** (23): le partite che il server fa giocare all'AI con il mazzo e lo stile di ogni giocatore contano nello stesso rating, ma spostano solo il 20% della variazione Glicko-2 (`auto.ratingWeightPercent`). Contano per diventare assestati; il limite giornaliero per coppia si conta a parte.
+- **Deterioramento** (dal 2026-10-27): chi sta in cima deve giocare. Vedi sotto.
 - **Ricalcolabile:** ogni partita finita pubblica il suo risultato sulla catena (`m8tcg_result`: account, `m = "ranked"` o `"auto"`, vincitore; 03 §9), quindi chiunque può ricalcolare i rating. Il ricalcolo coincide a meno di arrotondamenti, perché le funzioni matematiche possono differire di un bit fra motori JavaScript diversi.
+
+## Deterioramento del rating
+
+**Perché:** chi arrivava primo poteva smettere di giocare e restare primo fino alla fine della stagione, con il 65% del jackpot (doc 21). Nessuno poteva batterlo, perché non entrava più in coda.
+
+**La regola:**
+
+- Ogni giorno UTC, i primi tre rating **assestati** della stagione che quel giorno **non hanno giocato una classificata a mano valida** perdono: **1° −50, 2° −15, 3° −5** (`decay.places`).
+- **Valida:** una partita `ranked` (coda o sfida diretta, anche contro un bot, doc 25), che ha contato per il rating (non oltre il limite per coppia) e che **non è finita con una resa entro il turno `earlyConcedeTurn`** (2), di chiunque dei due. Chi abbandona una partita la perde per resa, quindi anche l'abbandono rapido non salva. Vinta o persa non importa.
+- **Le partite automatiche non salvano** (doc 23).
+- Le posizioni sono quelle della classifica **a mezzanotte, prima del deterioramento del giorno**. Se primo e secondo sono vicini e nessuno dei due gioca, possono scambiarsi il posto ogni giorno: è voluto, chi gioca li supera.
+- **Si ferma da solo:** fuori dai primi tre non si perde niente, quindi non serve un minimo. I provvisori non hanno posizione e non perdono niente.
+- Conta solo un giorno che la stagione copre per intero, da `decay.from` (la prima mezzanotte UTC in cui vale) alla fine della stagione.
+
+**Come funziona:**
+
+- Un job ogni 5 minuti (`rating decay`) prende ogni giorno finito da almeno 5 minuti e non ancora trattato. Prima recupera le partite sfuggite (come il job di recupero), così una partita finita alle 23:59 conta.
+- Ogni giorno si tratta **una sola volta**, anche con più processi: chi inserisce la riga in `rating_decay_days` (migrazione 024) lo fa, gli altri saltano. I rating si bloccano nello stesso ordine di quando si registra una partita, così non c'è deadlock.
+- Ogni perdita è in `rating_decays` (append-only: giorno, posto, punti, rating prima e dopo) e arriva al giocatore come notifica `ranking.decay` (doc 15).
+- **Prima di chiudere il jackpot** di una stagione finita, il modulo jackpot fa girare il deterioramento: i premi si calcolano sempre dopo l'ultimo giorno.
+- `GET /api/ranking/me` restituisce `decay`: `{ points, safe, at }` se il giocatore oggi è fra i primi tre (`safe` se ha già giocato una partita valida, `at` la mezzanotte del controllo), altrimenti `null`. La lobby avvisa: *Play a ranked game by 00:00 UTC or lose 50 rating.* Anche la scheda Season della Home e le info *Ranked games* lo dicono.
+- **Ricalcolo dalla catena:** le posizioni dipendono solo dai rating, e le partite di ogni giorno sono sulla catena. Il turno in cui una partita è finita invece non è nel record `m8tcg_result` (03 §9): per sapere se una resa era "entro il turno 2" serve la storia della partita, che il server mostra.
+
+**Configurazione** (`data/ranked/ranked.json`; senza `decay`, nessun deterioramento):
+
+```json
+"decay": { "from": "2026-10-27T00:00:00Z", "places": [50, 15, 5] }
+```
+
+`from` deve essere una mezzanotte UTC; `places` da 1 a 10 valori, punti da 0 a 1000 (0: quel posto non perde niente).
 
 ## Coda classificata
 
@@ -43,7 +74,7 @@
 | Richiesta | Cosa |
 |---|---|
 | `GET /api/ranking/leaderboard[?season=id]` | i primi 100 rating della stagione: prima gli assestati con posizione (`rank`), poi i provvisori con `rank: null` e `provisional: true` (pubblica, in cache 30 s) |
-| `GET /api/ranking/me` | rating, deviazione, provvisorio, posizione, partite vinte e perse, se si può giocare in classificata |
+| `GET /api/ranking/me` | rating, deviazione, provvisorio, posizione, partite vinte e perse, se si può giocare in classificata, cosa costa oggi il deterioramento (`decay`) |
 | `GET /api/admin/seasons` | (operatori) il calendario: ogni stagione con fase e fine effettiva, e i prize pool che si possono assegnare |
 | `POST /api/admin/seasons` · `PUT /api/admin/seasons/:id` · `DELETE /api/admin/seasons/:id` | (operatori) crea, modifica, cancella una stagione; orari UTC al secondo (`2026-10-08T00:00:00Z`), `endsAt` null = finisce quando comincia la successiva |
 | `queue.join` con `mode: "ranked"` | coda classificata (WebSocket) |

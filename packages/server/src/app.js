@@ -162,7 +162,7 @@ export async function createServerApp(deps) {
   const { seasons, pools } = await buildSeasons({ initial: rankedSettings.value, database, publish, listen, audit, clock, unitOfWork, logger });
   // Practice games against the AI, played in the browser: counted toward ranked play once the server has played them again.
   const practice = new PracticeService({ repository: new PgPracticeRepository(database), currentContent, effects: createCoreEffectRegistry(), clock, logger });
-  const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: seasons.settings, games, practice, clock, unitOfWork, logger });
+  const ranking = new RankingService({ repository: new PgRankingRepository(database), settings: seasons.settings, games, practice, clock, unitOfWork, logger, notifications });
   games.onGameFinished((summary) => ranking.record(summary).then(() => undefined));
   // Ranked entries: bought in the shop (paid to the bank, so they feed the jackpot), taken by each ranked game of a season with an entry fee.
   const entries = new EntryService({ repository: new PgEntryRepository(database), fees: { feeOf: (mode) => ranking.entryFeeOf(mode) }, clock, unitOfWork, logger, kinds: ENTRY_KINDS });

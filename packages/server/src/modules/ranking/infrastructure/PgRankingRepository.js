@@ -169,6 +169,60 @@ export class PgRankingRepository {
     return row?.n ?? 0;
   }
 
+  /**
+   * The days of a season already decayed.
+   * @param {string} season
+   * @returns {Promise<ReadonlySet<string>>} "2026-10-27"
+   */
+  async decayedDays(season) {
+    const rows = await this.#db.rows("SELECT to_char(day, 'YYYY-MM-DD') AS day FROM rating_decay_days WHERE season = $1", [season]);
+    return new Set(rows.map((row) => row.day));
+  }
+
+  /**
+   * Takes a day of a season for decay.
+   * @param {{ season: string, day: string, at: number }} day
+   * @returns {Promise<boolean>} false when it was already taken
+   */
+  async takeDecayDay({ season, day, at }) {
+    const row = await this.#db.maybeOne("INSERT INTO rating_decay_days (season, day, processed_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING day", [season, day, toTimestamp(at)]);
+    return row !== null;
+  }
+
+  /**
+   * Which of these players played a ranked game by hand that saves them from decay, in [from, to): counted, and not
+   * ended by a concession at or before `turn` (a player who abandons a game concedes it).
+   * @param {{ season: string, userIds: readonly string[], from: number, to: number, turn: number }} query
+   * @returns {Promise<ReadonlySet<string>>}
+   */
+  async playedRanked({ season, userIds, from, to, turn }) {
+    const rows = await this.#db.rows(
+      `SELECT DISTINCT user_id FROM rating_changes
+        WHERE season = $1 AND user_id = ANY($2::uuid[]) AND mode = 'ranked' AND counted AND finished_at >= $3 AND finished_at < $4
+          AND NOT (end_reason = 'concede' AND end_turn <= $5)`,
+      [season, userIds, toTimestamp(from), toTimestamp(to), turn],
+    );
+    return new Set(rows.map((row) => row.user_id));
+  }
+
+  /**
+   * Records what a day's decay took from a player, and takes it from their rating.
+   * @param {{ season: string, day: string, userId: string, place: number, points: number, before: number, after: number, at: number }} decay
+   */
+  async applyDecay({ season, day, userId, place, points, before, after, at }) {
+    await this.#db.query("INSERT INTO rating_decays (season, day, user_id, place, points, rating_before, rating_after, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", [
+      season,
+      day,
+      userId,
+      place,
+      points,
+      before,
+      after,
+      toTimestamp(at),
+    ]);
+    await this.#db.query("UPDATE ratings SET rating = $3 WHERE season = $1 AND user_id = $2", [season, userId, after]);
+  }
+
   /** @param {number} limit */
   async openFlags(limit) {
     const rows = await this.#db.rows("SELECT * FROM ranking_flags WHERE resolved_at IS NULL ORDER BY id DESC LIMIT $1", [limit]);

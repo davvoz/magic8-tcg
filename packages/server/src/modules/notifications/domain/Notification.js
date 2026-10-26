@@ -32,6 +32,8 @@ export const NotificationKind = Object.freeze({
   AUTO_REFUNDED: "auto.refunded",
   /** To a player: they won the day's three challenges, and the pack (docs/tcg/24-sfide.md). */
   DAILY_REWARD: "daily.reward",
+  /** To a player among the season's first: a day without a ranked game cost them rating (docs/tcg/09-classificata.md). */
+  RATING_DECAY: "ranking.decay",
 });
 
 /** @type {ReadonlySet<string>} */

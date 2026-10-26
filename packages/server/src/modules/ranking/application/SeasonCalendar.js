@@ -78,6 +78,7 @@ export class SeasonCalendar {
       eligibility: initial.eligibility,
       fairPlay: initial.fairPlay,
       auto: initial.auto,
+      decay: initial.decay,
     });
   }
 

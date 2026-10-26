@@ -19,10 +19,17 @@
  * - Results arrive from the gameplay module right after a game ends; a
  *   periodic catch-up records any game that was missed (a restart, a failed
  *   write). Recording is idempotent, so both paths can see the same game.
+ * - Rating decay: after each UTC day of a season, the first settled ratings
+ *   (`decay.places`) lose points unless they played a ranked game by hand
+ *   that day that counted and was not given up early (an auto game does not
+ *   save them). The places are taken from the leaderboard before any of the
+ *   day's decay; each day is decayed once (rating_decay_days), and before a
+ *   season's jackpot is settled.
  */
 import { AppError } from "../../../kernel/AppError.js";
+import { NotificationKind } from "../../notifications/index.js";
 import { DEFAULT_RATING, rateGame } from "../domain/Glicko2.js";
-import { seasonAt } from "../domain/RankedSettings.js";
+import { seasonAt, seasonEnd } from "../domain/RankedSettings.js";
 
 export const RANKED = "ranked";
 export const AUTO = "auto";
@@ -32,6 +39,8 @@ const CASUAL = "casual";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CATCH_UP_WINDOW_MS = 2 * DAY_MS;
 const LEADERBOARD_SIZE = 100;
+/** A day is decayed this long after it ends: a game that ended just before midnight is recorded first. */
+const DECAY_GRACE_MS = 5 * 60 * 1000;
 /** A rating is provisional (listed, but with no rank yet) until this many rated games. */
 export const SETTLED_GAMES = 3;
 
@@ -58,6 +67,9 @@ const scoreOf = (winnerSeat, seat) => {
  * @param {number} milliseconds
  * @returns {string} "4h 05m", or "12m" under an hour (never less than a minute)
  */
+/** "2026-10-27": the UTC day starting at `midnight`. @param {number} midnight */
+const dayOf = (midnight) => new Date(midnight).toISOString().slice(0, 10);
+
 const waitText = (milliseconds) => {
   const minutes = Math.max(1, Math.ceil(milliseconds / 60_000));
   const hours = Math.floor(minutes / 60);
@@ -72,6 +84,7 @@ export class RankingService {
   #clock;
   #unitOfWork;
   #logger;
+  #notifications;
 
   /**
    * @param {{
@@ -82,9 +95,10 @@ export class RankingService {
    *   clock: import("../../../kernel/time.js").Clock,
    *   unitOfWork: import("../../../kernel/unitOfWork.js").UnitOfWork,
    *   logger: import("../../../kernel/logger.js").Logger,
+   *   notifications: Pick<import("../../notifications/index.js").NotificationService, "notify">,
    * }} deps `practice`: the practice games against the AI counted for a player (modules/practice)
    */
-  constructor({ repository, settings, games, practice, clock, unitOfWork, logger }) {
+  constructor({ repository, settings, games, practice, clock, unitOfWork, logger, notifications }) {
     this.#repository = repository;
     this.#settings = settings;
     this.#games = games;
@@ -92,6 +106,7 @@ export class RankingService {
     this.#clock = clock;
     this.#unitOfWork = unitOfWork;
     this.#logger = logger;
+    this.#notifications = notifications;
   }
 
   get settings() {
@@ -355,6 +370,7 @@ export class RankingService {
     const rank = provisional || rating.season === null ? null : (await this.#repository.countAbove({ season: rating.season, minGames: SETTLED_GAMES, rating: rating.rating })) + 1;
     const { casualGamesNeeded, practiceGamesNeeded } = await this.#gamesNeeded(userId);
     const season = this.currentSeason();
+    const decay = season === null || rank === null ? null : await this.#decayToday(season, userId, rank);
     return Object.freeze({
       season: season === null ? null : Object.freeze({ id: season.id, name: season.name }),
       rating: Math.round(rating.rating),
@@ -368,7 +384,103 @@ export class RankingService {
       eligible: season !== null && casualGamesNeeded === 0 && practiceGamesNeeded === 0,
       casualGamesNeeded,
       practiceGamesNeeded,
+      decay,
     });
+  }
+
+  /**
+   * What today's decay will take from a player at `rank` (null when nothing): the points, and whether a ranked game
+   * they played today already saves them.
+   * @param {import("../domain/RankedSettings.js").Season} season
+   * @param {string} userId
+   * @param {number} rank
+   * @returns {Promise<Readonly<{ points: number, safe: boolean, at: number }> | null>} `at`: when the day is decayed (its end)
+   */
+  async #decayToday(season, userId, rank) {
+    const decay = this.#settings.decay;
+    const today = Math.floor(this.#clock.now() / DAY_MS) * DAY_MS;
+    const points = decay?.places[rank - 1] ?? 0;
+    if (decay === null || points === 0 || !this.#decays(season, today)) {
+      return null;
+    }
+    const played = await this.#repository.playedRanked({ season: season.id, userIds: [userId], from: today, to: today + DAY_MS, turn: this.#settings.fairPlay.earlyConcedeTurn });
+    return Object.freeze({ points, safe: played.has(userId), at: today + DAY_MS });
+  }
+
+  /**
+   * Whether the UTC day starting at `midnight` decays in `season`: from `decay.from`, a day the season runs whole.
+   * @param {import("../domain/RankedSettings.js").Season} season
+   * @param {number} midnight
+   */
+  #decays(season, midnight) {
+    const decay = this.#settings.decay;
+    const end = seasonEnd(this.#settings, season);
+    return decay !== null && midnight >= decay.from && midnight >= season.startsAt && (end === null || midnight + DAY_MS <= end);
+  }
+
+  /**
+   * Decays every day that ended and was not decayed yet, in order, after recording any game that was missed.
+   * @returns {Promise<number>} the ratings decayed
+   */
+  async decay() {
+    const decay = this.#settings.decay;
+    if (decay === null) {
+      return 0;
+    }
+    await this.catchUp();
+    const due = this.#clock.now() - DECAY_GRACE_MS;
+    let decayed = 0;
+    for (const season of this.#settings.seasons) {
+      const first = Math.max(decay.from, Math.ceil(season.startsAt / DAY_MS) * DAY_MS);
+      if (first + DAY_MS > due || !this.#decays(season, first)) {
+        continue;
+      }
+      const done = await this.#repository.decayedDays(season.id);
+      for (let midnight = first; midnight + DAY_MS <= due && this.#decays(season, midnight); midnight += DAY_MS) {
+        if (!done.has(dayOf(midnight))) {
+          decayed += await this.#decayDay(season, midnight);
+        }
+      }
+    }
+    return decayed;
+  }
+
+  /**
+   * One day's decay, once: the places as the leaderboard has them now, each losing its points unless it played.
+   * @param {import("../domain/RankedSettings.js").Season} season
+   * @param {number} midnight
+   */
+  async #decayDay(season, midnight) {
+    const { places } = /** @type {import("../domain/RankedSettings.js").Decay} */ (this.#settings.decay);
+    const day = dayOf(midnight);
+    const at = this.#clock.now();
+    const decayed = await this.#unitOfWork(async () => {
+      if (!(await this.#repository.takeDecayDay({ season: season.id, day, at }))) {
+        return [];
+      }
+      const leaders = await this.podium(season.id, places.length);
+      const played = await this.#repository.playedRanked({
+        season: season.id,
+        userIds: leaders.map((leader) => leader.userId),
+        from: midnight,
+        to: midnight + DAY_MS,
+        turn: this.#settings.fairPlay.earlyConcedeTurn,
+      });
+      const idle = leaders.filter((leader) => places[leader.rank - 1] > 0 && !played.has(leader.userId));
+      // Lock in the order record() does: a game ending now never deadlocks with the decay.
+      for (const leader of [...idle].sort((left, right) => (left.userId < right.userId ? -1 : 1))) {
+        const points = places[leader.rank - 1];
+        const before = await this.#repository.lock({ season: season.id, userId: leader.userId, account: leader.account, ...DEFAULT_RATING, at });
+        const after = before.rating - points;
+        await this.#repository.applyDecay({ season: season.id, day, userId: leader.userId, place: leader.rank, points, before: before.rating, after, at });
+        await this.#notifications.notify(leader.userId, NotificationKind.RATING_DECAY, { season: season.name, day, place: leader.rank, points, before: Math.round(before.rating), after: Math.round(after) });
+      }
+      return idle;
+    });
+    if (decayed.length > 0) {
+      this.#logger.info("ratings decayed", { season: season.id, day, players: decayed.map((leader) => leader.account) });
+    }
+    return decayed.length;
   }
 
   /**

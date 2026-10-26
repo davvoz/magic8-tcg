@@ -265,6 +265,12 @@ function ranked() {
     bullet("Every season the ratings start again from scratch. The Leaderboard (in Season, and from the Ranked screen) shows the top 100."),
     bullet("Fair play: you can play at most 3 ranked games against the same opponent in 24 hours, so nobody can farm rating off one player. Past that, the queue pairs you with others and ranked challenges between you are refused; both say when you can play ranked together again. Casual games are not limited."),
 
+    heading("Stay active at the top"),
+    paragraph("The top 3 of the leaderboard must play to keep their place. Each day (UTC) you are among them without playing a ranked game by hand, you lose rating at midnight UTC: 50 points as 1st, 15 as 2nd, 5 as 3rd."),
+    bullet("Any ranked game you play by hand that day saves you, won or lost: from the queue or a ranked challenge."),
+    bullet("Auto games do not save you, and neither does a game conceded or abandoned by either player within the first 2 turns."),
+    bullet("The places are those of the leaderboard at midnight. Below the top 3 nothing is lost. A notification tells you what you lost; the lobby tells you, during the day, if you are at risk."),
+
     heading("The season's jackpot"),
     paragraph("When the season has a jackpot, Home and Season show it: how much it holds, the prize for each place, who is leading and how long is left. It grows with every pack and every ranked ticket sold. When the season ends, the top 3 players of the leaderboard share it."),
   ];

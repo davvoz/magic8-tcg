@@ -78,7 +78,12 @@ export function standingText(state) {
   const draws = standing.draws > 0 ? `–${standing.draws}` : "";
   const record = `${standing.wins}–${standing.losses}${draws}`;
   const place = standing.provisional ? "provisional" : `#${standing.rank}`;
-  return `${standing.season.name}: rating ${standing.rating} (${place}), ${record} in ${standing.games} game(s).`;
+  const line = `${standing.season.name}: rating ${standing.rating} (${place}), ${record} in ${standing.games} game(s).`;
+  const decay = standing.decay ?? null;
+  if (decay === null) {
+    return line;
+  }
+  return decay.safe ? `${line}\nSafe today: you played a ranked game.` : `${line}\nPlay a ranked game by 00:00 UTC or lose ${decay.points} rating.`;
 }
 
 /**
@@ -98,7 +103,9 @@ export function shortStandingText(state) {
   }
   const draws = standing.draws > 0 ? `–${standing.draws}` : "";
   const place = standing.provisional ? "new" : `#${standing.rank}`;
-  return `Rating ${standing.rating} · ${place}\n${standing.wins}–${standing.losses}${draws} in ${standing.games} game(s)`;
+  const decay = standing.decay ?? null;
+  const below = decay !== null && !decay.safe ? `Play ranked today or −${decay.points}` : `${standing.wins}–${standing.losses}${draws} in ${standing.games} game(s)`;
+  return `Rating ${standing.rating} · ${place}\n${below}`;
 }
 
 /**

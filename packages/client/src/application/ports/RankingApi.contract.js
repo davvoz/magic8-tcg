@@ -6,7 +6,11 @@
  * @typedef {Readonly<{
  *   season: Season | null, rating: number, deviation: number, provisional: boolean, rank: number | null,
  *   games: number, wins: number, losses: number, draws: number, eligible: boolean, casualGamesNeeded: number, practiceGamesNeeded: number,
- * }>} Standing not `eligible` yet: ranked opens after `casualGamesNeeded` more casual games, or `practiceGamesNeeded` more practice games against the AI
+ *   decay?: Decay | null,
+ * }>} Standing not `eligible` yet: ranked opens after `casualGamesNeeded` more casual games, or `practiceGamesNeeded` more practice games against the AI;
+ *   `decay`: what today costs the player if they play no ranked game by hand (null when nothing; left out by an older server)
+ * @typedef {Readonly<{ points: number, safe: boolean, at: number }>} Decay the rating lost at `at` (the end of the UTC day),
+ *   unless `safe`: a ranked game today already saved it
  * @typedef {Readonly<{ rank: number | null, provisional: boolean, account: string, rating: number, games: number, wins: number, losses: number, draws: number }>} LeaderboardEntry
  * @typedef {Readonly<{ season: Season | null, entries: readonly LeaderboardEntry[] }>} Leaderboard
  *

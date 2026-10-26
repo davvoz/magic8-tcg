@@ -9,6 +9,7 @@
 - **Ingresso:** già dalla Beta season, e in Season 1, ogni partita classificata costa un ingresso ranked (1 STEEM) a giocatore (doc 22). Ai giocatori diciamo solo che gli ingressi finiscono nel jackpot.
 - **Ripartizione:** 65% al 1°, 25% al 2°, al 3° il resto (10%, più quello che resta dagli arrotondamenti per difetto). La somma delle tre quote è sempre esattamente il jackpot.
 - **Chi vince:** le prime tre posizioni della classifica della stagione, contando **solo i rating assestati** (con posizione, doc 09). Un rating provvisorio non vince niente.
+- **Bisogna giocare per restare in cima:** dal 2026-10-27, ogni giorno senza una classificata a mano costa rating ai primi tre (−50, −15, −5; doc 09, *Deterioramento*). Alla chiusura, il deterioramento dell'ultimo giorno è già applicato.
 - **Posizioni senza vincitore** (meno di tre rating assestati): la loro quota resta nella banca, per la stagione successiva.
 
 ## Cosa vede il giocatore
@@ -35,7 +36,7 @@ Il pannello si vede anche senza accesso: il jackpot è pubblico. Il client lo ri
 - **Valore live.** `GET /api/jackpot` (pubblico, in cache 15 s) legge il saldo della banca dalla catena al massimo una volta al minuto (`balanceMaxAgeMs`) e calcola jackpot e quote. Se la catena non risponde mostra l'ultimo saldo letto, o nessun importo.
 - **Saldo di apertura.** Un job ogni minuto registra il saldo della banca la prima volta che vede la stagione in corso (`season_jackpots.opening_balance`): serve a mostrare quanto è cresciuto il jackpot.
 - **Chiusura.** Finita la stagione, il job aspetta `settleAfterMinutes` (30) perché tutte le partite finite in tempo siano registrate (il recupero delle partite perse gira ogni 10 minuti, doc 09). Poi, **una sola volta** (compare-and-set sul database, anche con più processi):
-  1. legge il saldo della banca (se la catena non risponde riprova al giro dopo);
+  1. legge il saldo della banca (se la catena non risponde riprova al giro dopo) e applica il deterioramento dei giorni non ancora trattati (doc 09);
   2. congela il jackpot (`season_jackpots.jackpot`) e lo divide;
   3. scrive un premio `PENDING` per ogni vincitore (`season_prizes`) e gli manda la notifica `season.prize`;
   4. registra tutto nell'audit (`jackpot.settled`).

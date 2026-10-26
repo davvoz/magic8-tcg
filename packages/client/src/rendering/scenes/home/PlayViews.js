@@ -179,7 +179,12 @@ function standingLine(standing, error) {
   if (standing.games === 0) {
     return "You: not ranked yet";
   }
-  return standing.provisional || standing.rank === null ? `You: provisional · rating ${standing.rating}` : `You: #${standing.rank} · rating ${standing.rating}`;
+  if (standing.provisional || standing.rank === null) {
+    return `You: provisional · rating ${standing.rating}`;
+  }
+  const decay = standing.decay ?? null;
+  const warning = decay !== null && !decay.safe ? ` · play ranked today or −${decay.points}` : "";
+  return `You: #${standing.rank} · rating ${standing.rating}${warning}`;
 }
 
 /** "4h 12m" @param {number} ms */

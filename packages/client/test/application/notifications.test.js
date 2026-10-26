@@ -205,6 +205,19 @@ describe("describeNotification", () => {
     assert.match(back.body, /The season ended before anyone joined the auto list against you/);
     assert.match(describe_("auto.refunded", { reason: "failed" }).body, /could not be played/);
   });
+
+  it("words rating decay: the place, the day, the rating and why", () => {
+    const decayed = describe_("ranking.decay", { season: "Season 1", day: "2026-10-27", place: 1, points: 50, before: 1812, after: 1762 });
+    assert.deepEqual(
+      [decayed.title, decayed.body, decayed.target, decayed.tone],
+      [
+        "−50 rating: a day without ranked",
+        "You were 1st in Season 1 and played no ranked game on 2026-10-27 (UTC). Rating 1812 → 1762. The top 3 lose rating each day they do not play a ranked game by hand.",
+        NotificationTarget.RANKED,
+        "bad",
+      ],
+    );
+  });
 });
 
 describe("CardRarities", () => {

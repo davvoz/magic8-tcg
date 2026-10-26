@@ -12,7 +12,7 @@ import { HttpRankingApi } from "../../src/infrastructure/api/HttpRankingApi.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { SeasonScene } from "../../src/rendering/scenes/SeasonScene.js";
-import { standingText } from "../../src/rendering/scenes/lobby/lobbyText.js";
+import { shortStandingText, standingText } from "../../src/rendering/scenes/lobby/lobbyText.js";
 import { RankedScene } from "../../src/rendering/scenes/RankedScene.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
@@ -96,6 +96,16 @@ describe("RankingService (client)", () => {
     assert.equal(standingText({ ...base, standing: { ...STANDING, season: null } }), "No ranked season is running.");
     assert.equal(standingText({ ...base, standing: null }), "Loading your ranked standing…");
     assert.equal(standingText({ ...base, standing: null, error: "offline" }), "Ranked standing unavailable: offline");
+  });
+
+  it("warns a player among the first that a day without a ranked game costs rating", () => {
+    const base = { loading: false, leaderboard: null, error: null };
+    const leader = { ...STANDING, rank: 1, decay: { points: 50, safe: false, at: Date.UTC(2026, 9, 28) } };
+    assert.equal(standingText({ ...base, standing: leader }), "Season 1: rating 1612 (#1), 8–4 in 12 game(s).\nPlay a ranked game by 00:00 UTC or lose 50 rating.");
+    assert.equal(shortStandingText({ ...base, standing: leader }), "Rating 1612 · #1\nPlay ranked today or −50");
+    const safe = { ...leader, decay: { ...leader.decay, safe: true } };
+    assert.equal(standingText({ ...base, standing: safe }), "Season 1: rating 1612 (#1), 8–4 in 12 game(s).\nSafe today: you played a ranked game.");
+    assert.equal(shortStandingText({ ...base, standing: safe }), "Rating 1612 · #1\n8–4 in 12 game(s)");
   });
 });
 

@@ -12,7 +12,10 @@
  * fee (`entryFee`): the entries each player spends on a ranked game, bought in
  * the shop (the entries module); without it ranked play is free. Auto games
  * (docs/tcg/23-automatica.md) move ratings by `auto.ratingWeightPercent` of
- * what a game played by hand would (20 when left out).
+ * what a game played by hand would (20 when left out). Rating decay
+ * (`decay`, left out: none): from the UTC day `decay.from`, each day the
+ * season's first settled ratings lose `decay.places[i]` points (1st, 2nd…)
+ * unless they played a ranked game by hand that day.
  *
  * The seasons of the file are only the first calendar: the server copies them
  * into the database once, then operators change the calendar from the admin
@@ -23,7 +26,7 @@
 import { Issues, allDefined, checkArrayOf, checkInteger, checkObject, checkString } from "@magic8/engine/shared/validation.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
-const TOP_KEYS = Object.freeze(["v", "seasons", "prizePools", "eligibility", "fairPlay", "auto"]);
+const TOP_KEYS = Object.freeze(["v", "seasons", "prizePools", "eligibility", "fairPlay", "auto", "decay"]);
 /** The share of a Glicko-2 change an auto game applies when ranked.json does not say. */
 export const DEFAULT_AUTO_RATING_WEIGHT_PERCENT = 20;
 const SEASON_KEYS = Object.freeze(["id", "name", "startsAt", "endsAt", "prizePool", "entryFee"]);
@@ -37,6 +40,10 @@ const MAX_SEASONS = 1000;
 /** Where a season is at a given time. */
 export const SeasonPhase = Object.freeze({ UPCOMING: "upcoming", RUNNING: "running", ENDED: "ended" });
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Most places rating decay may reach, and most points a place may lose in a day. */
+const MAX_DECAY_PLACES = 10;
+const MAX_DECAY_POINTS = 1000;
 
 /**
  * @typedef {Readonly<{ id: string, name: string, startsAt: number, endsAt: number | null, prizePool: string | null, entryFee: number }>} Season `endsAt` as written in the data (see seasonEnd); `prizePool` an id of `prizePools`;
@@ -47,7 +54,10 @@ const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
  *   eligibility: Readonly<{ minFinishedCasualGames: number, minFinishedPracticeGames: number }>,
  *   fairPlay: Readonly<{ maxRatedGamesPerPairPerDay: number, earlyConcedeTurn: number, earlyConcedesToFlag: number, earlyConcedeWindowDays: number }>,
  *   auto: Readonly<{ ratingWeightPercent: number }>,
+ *   decay: Decay | null,
  * }>} RankedSettings
+ * @typedef {Readonly<{ from: number, places: readonly number[] }>} Decay `from`: the first UTC day (its midnight) that
+ *   decays; `places[i]`: what the season's (i+1)-th settled rating loses a day without a ranked game by hand
  */
 
 /**
@@ -82,10 +92,37 @@ export function validateRankedSettings(raw) {
   const eligibility = integers(issues, top.eligibility, "ranked.eligibility", ["minFinishedCasualGames", "minFinishedPracticeGames"]);
   const fairPlay = integers(issues, top.fairPlay, "ranked.fairPlay", ["maxRatedGamesPerPairPerDay", "earlyConcedeTurn", "earlyConcedesToFlag", "earlyConcedeWindowDays"]);
   const auto = checkAuto(issues, top.auto);
-  if (!issues.isEmpty || seasons === undefined || eligibility === undefined || fairPlay === undefined || auto === undefined) {
+  const decay = checkDecay(issues, top.decay);
+  if (!issues.isEmpty || seasons === undefined || eligibility === undefined || fairPlay === undefined || auto === undefined || decay === undefined) {
     return fail("VALIDATION", issues.list()[0], { problems: issues.list() });
   }
-  return ok(Object.freeze({ seasons: Object.freeze(seasons), prizePools: top.prizePools ?? null, eligibility: Object.freeze(eligibility), fairPlay: Object.freeze(fairPlay), auto }));
+  return ok(Object.freeze({ seasons: Object.freeze(seasons), prizePools: top.prizePools ?? null, eligibility: Object.freeze(eligibility), fairPlay: Object.freeze(fairPlay), auto, decay }));
+}
+
+/**
+ * Rating decay; left out, none.
+ * @param {Issues} issues
+ * @param {unknown} value
+ * @returns {Decay | null | undefined}
+ */
+function checkDecay(issues, value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const decay = checkObject(issues, value, "ranked.decay", ["from", "places"]);
+  if (decay === undefined) {
+    return undefined;
+  }
+  const from = checkTime(issues, decay.from, "ranked.decay.from");
+  if (from !== undefined && from % DAY_MS !== 0) {
+    issues.add("ranked.decay.from", "must be a midnight (UTC)");
+  }
+  const places = checkArrayOf(issues, decay.places, "ranked.decay.places", {
+    minLength: 1,
+    maxLength: MAX_DECAY_PLACES,
+    item: (item, path) => checkInteger(issues, item, path, { min: 0, max: MAX_DECAY_POINTS }),
+  });
+  return from === undefined || places === undefined || from % DAY_MS !== 0 ? undefined : Object.freeze({ from, places: Object.freeze(places) });
 }
 
 /**

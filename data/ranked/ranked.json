@@ -15,5 +15,6 @@
   },
   "eligibility": { "minFinishedCasualGames": 3, "minFinishedPracticeGames": 3 },
   "fairPlay": { "maxRatedGamesPerPairPerDay": 3, "earlyConcedeTurn": 2, "earlyConcedesToFlag": 2, "earlyConcedeWindowDays": 7 },
-  "auto": { "ratingWeightPercent": 20 }
+  "auto": { "ratingWeightPercent": 20 },
+  "decay": { "from": "2026-10-27T00:00:00Z", "places": [50, 15, 5] }
 }

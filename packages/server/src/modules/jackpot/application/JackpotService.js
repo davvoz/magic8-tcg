@@ -59,7 +59,7 @@ export class JackpotService {
    *   bankFor: (network: string) => string,
    *   readBalance: (network: string, account: string, asset: string) => Promise<number | null>,
    *   formatAmount: (units: number, asset: string) => string,
-   *   ranking: Pick<RankingService, "podium">,
+   *   ranking: Pick<RankingService, "podium" | "decay">,
    *   repository: import("../infrastructure/PgJackpotRepository.js").PgJackpotRepository,
    *   notifications: Pick<import("../../notifications/index.js").NotificationService, "notify">,
    *   audit: import("../../../kernel/audit/AuditTrail.js").AuditTrail,
@@ -213,6 +213,8 @@ export class JackpotService {
     }
     const jackpot = pool.jackpotOf(reading.balance);
     const shares = pool.split(jackpot);
+    // The season's last days are decayed before its winners are read.
+    await this.#ranking.decay();
     const winners = await this.#ranking.podium(season.id, pool.places);
     const bank = this.#bankFor(pool.network);
     const at = this.#clock.now();
