@@ -23,6 +23,7 @@
  *   /tools/preview/?scene=match&say=Kneel.   the opponent speaks, as a daily challenge's character does (a bubble by its seat)
  *   /tools/preview/?scene=match&chat=gl|ty   an online game's chat: the opponent says the first line, the player the second (bubbles by both seats)
  *   /tools/preview/?scene=match&chat=gl|ty&press=chat.open   ...with the chat dialog open
+ *   /tools/preview/?scene=match&chat=gl|~wow|~nice   ...a line starting with ~ is a spectator's comment (bubbles stacked in a corner)
  *   /tools/preview/?scene=match&share=1      the match conceded, its result shared as a ping on cur8.fun (the dialog; nothing is posted)
  *   /tools/preview/?scene=match&over=1       the match conceded, its result closed: the board, with See result
  *   /tools/preview/?scene=sharecard          the picture a shared game carries, as the JPEG it is saved to
@@ -427,7 +428,8 @@ function chatAt(session, lines) {
   /** @param {string} seat @param {string} text */
   const say = (seat, text) => {
     at += 1;
-    chat.hear({ gameId: "preview", from: "player", seat, account: accounts[seat], text, at });
+    const comment = text.startsWith("~");
+    chat.hear({ gameId: "preview", from: comment ? "spectator" : "player", seat: comment ? null : seat, account: comment ? "dave" : accounts[seat], text: comment ? text.slice(1) : text, at });
   };
   const chat = new MatchChat({ gameId: "preview", account: () => "alice", request: async (_type, data) => (say(me, data.text), ok({ t: "game.chatted", d: {} })) });
   Object.defineProperty(session, "chat", { value: chat });

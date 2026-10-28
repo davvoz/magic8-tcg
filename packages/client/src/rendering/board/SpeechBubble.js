@@ -73,23 +73,75 @@ export class SpeechBubble {
     const m = compact ? COMPACT : WIDE;
     const placed = place(m, seat, stage);
     context.save();
-    context.font = fontFor(theme, m.text);
-    const measure = (/** @type {string} */ text) => context.measureText(text).width;
-    const textWidth = placed.width - 2 * m.padding;
-    const lines = clip(measure, wrapText(measure, `“${said.line}”`, textWidth), textWidth);
-    const height = 2 * m.padding + m.nameHeight + lines.length * m.lineHeight;
+    const lines = linesOf(context, theme, { m, line: said.line, width: placed.width });
+    const height = heightOf(m, lines);
     const over = bottom && !placed.beside;
     const frame = { x: placed.x, y: over ? seat.y - m.gap - height : placed.y, width: placed.width, height };
-    context.globalAlpha *= Math.max(0, Math.min(1, said.ageMs / FADE_MS, (said.lifeMs - said.ageMs) / FADE_MS));
-    const radius = theme.spacing.radius;
-    glowRoundedRect(context, frame, { color: withAlpha(theme.colors.accent, 0.45), radius, blur: 16, lineWidth: 1.5 });
-    fillRoundedRect(context, frame, { fill: withAlpha(theme.colors.panelDark, 0.95), stroke: withAlpha(theme.colors.accent, 0.8), radius, lineWidth: 1.5 });
-    paintTail(context, theme, { frame, towards: tailTowards(placed.beside, over), size: m.tail });
-    const x = frame.x + m.padding;
-    drawTextInRect(context, said.name, { x, y: frame.y + m.padding, width: textWidth, height: m.nameHeight }, { font: fontFor(theme, m.name, "bold"), color: theme.colors.accentLight, align: "left" });
-    lines.forEach((text, index) => drawTextInRect(context, text, { x, y: frame.y + m.padding + m.nameHeight + index * m.lineHeight, width: textWidth, height: m.lineHeight }, { font: fontFor(theme, m.text), color: theme.colors.text, align: "left" }));
+    paintBubble(context, theme, { said, m, frame, lines, tail: tailTowards(placed.beside, over) });
     context.restore();
   }
+
+  /**
+   * Drawn where it is put, with no point to a seat (a spectator's comment): its bottom-left corner at `x`, `bottom`.
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   * @param {{ x: number, bottom: number, width: number, compact: boolean }} where
+   * @returns {number} the height it took (0: nothing to say)
+   */
+  paintAt(context, theme, { x, bottom, width, compact }) {
+    const said = this.#said;
+    if (said === null) {
+      return 0;
+    }
+    const m = compact ? COMPACT : WIDE;
+    context.save();
+    const lines = linesOf(context, theme, { m, line: said.line, width });
+    const height = heightOf(m, lines);
+    paintBubble(context, theme, { said, m, frame: { x, y: bottom - height, width, height }, lines, tail: null });
+    context.restore();
+    return height;
+  }
+}
+
+/**
+ * The words, wrapped to the bubble's width and clipped to its lines.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {{ m: BubbleMetrics, line: string, width: number }} words `width`: the bubble's
+ */
+function linesOf(context, theme, { m, line, width }) {
+  context.font = fontFor(theme, m.text);
+  const measure = (/** @type {string} */ text) => context.measureText(text).width;
+  const textWidth = width - 2 * m.padding;
+  return clip(measure, wrapText(measure, `“${line}”`, textWidth), textWidth);
+}
+
+/**
+ * @param {BubbleMetrics} m
+ * @param {readonly string[]} lines
+ */
+function heightOf(m, lines) {
+  return 2 * m.padding + m.nameHeight + lines.length * m.lineHeight;
+}
+
+/**
+ * The bubble itself, faded in or out by its age: its frame, its point (if any), the speaker's name and the words.
+ * @param {CanvasRenderingContext2D} context
+ * @param {import("../theme/Theme.js").Theme} theme
+ * @param {{ said: { name: string, ageMs: number, lifeMs: number }, m: BubbleMetrics, frame: import("@magic8/engine/shared/geometry.js").Rect, lines: readonly string[], tail: "left" | "up" | "down" | null }} bubble
+ */
+function paintBubble(context, theme, { said, m, frame, lines, tail }) {
+  context.globalAlpha *= Math.max(0, Math.min(1, said.ageMs / FADE_MS, (said.lifeMs - said.ageMs) / FADE_MS));
+  const radius = theme.spacing.radius;
+  glowRoundedRect(context, frame, { color: withAlpha(theme.colors.accent, 0.45), radius, blur: 16, lineWidth: 1.5 });
+  fillRoundedRect(context, frame, { fill: withAlpha(theme.colors.panelDark, 0.95), stroke: withAlpha(theme.colors.accent, 0.8), radius, lineWidth: 1.5 });
+  if (tail !== null) {
+    paintTail(context, theme, { frame, towards: tail, size: m.tail });
+  }
+  const x = frame.x + m.padding;
+  const textWidth = frame.width - 2 * m.padding;
+  drawTextInRect(context, said.name, { x, y: frame.y + m.padding, width: textWidth, height: m.nameHeight }, { font: fontFor(theme, m.name, "bold"), color: theme.colors.accentLight, align: "left" });
+  lines.forEach((text, index) => drawTextInRect(context, text, { x, y: frame.y + m.padding + m.nameHeight + index * m.lineHeight, width: textWidth, height: m.lineHeight }, { font: fontFor(theme, m.text), color: theme.colors.text, align: "left" }));
 }
 
 /**

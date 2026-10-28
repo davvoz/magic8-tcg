@@ -40,10 +40,10 @@ Una riga: `{ "gameId", "from": "player" | "spectator", "seat": "s0" | "s1" | nul
 
 - **Il pulsante** è il fumetto accanto al **?** dell'aiuto, sopra il tavolo (al posto del **?** per gli spettatori, che non hanno l'aiuto); il tasto **C** fa lo stesso. Un pallino rosso conta le righe arrivate a chat chiusa (fino a *9+*).
 - **Il dialogo** si apre sopra il tavolo, che intanto continua: il titolo, chi legge, il campo e *Send*, sei frasi pronte da mandare con un tocco (*Hello!*, *Good luck!*, *Nice move!*, *Oops!*, *Well played!*, *Thanks!*; per gli spettatori *Wow!*, *Close game!*, *GG* al posto di alcune), poi le righe. Il campo è in alto, così la tastiera del telefono non lo copre. Una riga partita chiude il dialogo, così la si vede comparire nel fumetto; una rifiutata dice perché al posto della riga "chi legge". Le mosse dell'avversario ricostruiscono il dialogo senza perdere quello che si sta scrivendo.
-- **I fumetti:** la riga di un giocatore compare accanto al suo posto, in alto per l'avversario e in basso per sé (per uno spettatore: in basso il primo giocatore). Il proprio fumetto dura meno (3,5 s invece di 6) perché copre la mano. Non prendono clic e non si disegnano sopra un dialogo. Le righe degli spettatori non hanno fumetto: vanno nel registro (più tenui) e nel dialogo.
+- **I fumetti:** la riga di un giocatore compare accanto al suo posto, in alto per l'avversario e in basso per sé (per uno spettatore: in basso il primo giocatore). Il proprio fumetto dura meno (3,5 s invece di 6) perché copre la mano. Non prendono clic e non si disegnano sopra un dialogo. Le righe degli spettatori, che non hanno un posto, compaiono (solo agli spettatori) come fumetti impilati nell'angolo in basso a destra del tavolo, sopra la mano coperta del giocatore in basso: al massimo tre, il più recente in basso, *@account · watching*, ciascuno sparisce da solo dopo 6 secondi (`CommentStack`). Vanno anche nel registro (più tenui) e nel dialogo.
 - **Il registro di battaglia** ha due tipi nuovi: `CHAT` (giocatori) e `COMMENT` (spettatori), *@account: testo*.
 - **Il campo** accetta lettere, segni, punteggiatura e simboli (emoji comprese): un insieme più largo di quello degli altri campi (`TextField`, `characters: "chat"`).
-- Anteprima: `tools/preview/?scene=match&chat=Good luck!|Thanks!` (con `&press=chat.open` il dialogo aperto).
+- Anteprima: `tools/preview/?scene=match&chat=Good luck!|Thanks!` (con `&press=chat.open` il dialogo aperto; una riga che comincia con `~` è il commento di uno spettatore).
 
 ## Minacce
 

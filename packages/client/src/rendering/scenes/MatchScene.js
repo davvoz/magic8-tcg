@@ -78,7 +78,8 @@
  * count of the lines not read yet. What a player says shows as a bubble by
  * their seat, as a challenge's character speaks; every line also goes in the
  * battle log. Those watching chat among themselves too: their lines reach
- * only one another, in the log and the dialog.
+ * only one another, as bubbles stacked in a corner of the table
+ * (CommentStack), in the log and in the dialog.
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
@@ -107,6 +108,7 @@ import { MatchSoundscape } from "../board/MatchSoundscape.js";
 import { PickedCardNode } from "../board/PickedCardNode.js";
 import { PlayerNode, lifeCrystalCentre, resourceRects } from "../board/PlayerNode.js";
 import { SpeechBubble } from "../board/SpeechBubble.js";
+import { CommentStack } from "../board/CommentStack.js";
 import { buildShareDialog } from "../board/ShareDialog.js";
 import { buildChatDialog } from "../board/ChatDialog.js";
 import { ChatFrom, MAX_CHAT_LENGTH } from "../../application/online/MatchChat.js";
@@ -255,6 +257,8 @@ export class MatchScene extends Scene {
   #speech = new SpeechBubble();
   /** The line showing by the bottom seat: the viewer's own in the chat (a spectator's: the first player's). */
   #ownSpeech = new SpeechBubble();
+  /** What those watching say, as a spectator sees it: bubbles in a corner of the table. */
+  #comments = new CommentStack();
   /** The online game's chat, when the board offers it. @type {import("../../application/online/MatchChat.js").MatchChat | null} */
   #chat = null;
   /** @type {(() => void) | null} */
@@ -420,6 +424,7 @@ export class MatchScene extends Scene {
    */
   #listenToChat(session) {
     this.#ownSpeech = new SpeechBubble();
+    this.#comments = new CommentStack();
     this.#chat = "chat" in session ? session.chat : null;
     this.#chatUnread = 0;
     this.#chatDraft = "";
@@ -435,7 +440,8 @@ export class MatchScene extends Scene {
   }
 
   /**
-   * A line said at the table: by its speaker's seat when a player said it, in the log either way.
+   * A line said at the table: by its speaker's seat when a player said it,
+   * stacked in a corner of the table when someone watching did; in the log either way.
    * @param {import("../../application/online/MatchChat.js").ChatLine} line
    */
   #hearChat(line) {
@@ -445,6 +451,8 @@ export class MatchScene extends Scene {
       const bottom = line.seat === (this.#layout?.me.id ?? this.#playerId);
       const own = bottom && !this.#spectating;
       (bottom ? this.#ownSpeech : this.#speech).say({ name: `@${line.account}`, line: line.text, ...(own ? { lifeMs: OWN_LINE_MS } : {}) });
+    } else {
+      this.#comments.say({ name: `@${line.account} · watching`, line: line.text });
     }
     if (this.modal?.id !== "chat" && !chat.isOwn(line)) {
       this.#chatUnread += 1;
@@ -596,7 +604,8 @@ export class MatchScene extends Scene {
     const ending = this.#ending?.update(dtMs) ?? false;
     const speaking = this.#speech.update(dtMs, this.isTossing);
     const answering = this.#ownSpeech.update(dtMs, this.isTossing);
-    return ending || speaking || answering;
+    const commenting = this.#comments.update(dtMs, this.isTossing);
+    return ending || speaking || answering || commenting;
   }
 
   /** True while moves are held back: the toss, the board playing out what happened, or a move awaiting the server. */
@@ -721,6 +730,10 @@ export class MatchScene extends Scene {
     const { theme, viewport } = this.services;
     this.#speech.paint(context, theme, { seat: layout.opponent.hud, stage: viewport.safeBounds, compact: viewport.compact });
     this.#ownSpeech.paint(context, theme, { seat: layout.me.hud, stage: viewport.safeBounds, compact: viewport.compact, bottom: true });
+    // Over the bottom half of the table, on the right: for a spectator the bottom hand is only card backs.
+    const top = layout.banner.y + layout.banner.height;
+    const { hand, battlefield } = layout.me;
+    this.#comments.paint(context, theme, { area: { x: battlefield.x, y: top, width: battlefield.width, height: hand.y + hand.height - top }, compact: viewport.compact });
   }
 
   /** @param {import("../../input/InputManager.js").KeyInput} input */

@@ -232,7 +232,7 @@ describe("MatchScene: chat", () => {
     assert.equal(chat.lines.length, 0);
   });
 
-  it("lets a spectator read both players and the stands, the stands' lines dimmer and never by a seat", () => {
+  it("lets a spectator read both players and the stands: the stands' lines dimmer in the log, their bubbles stacked in a corner", () => {
     const { scene, chat, names } = board({ seat: null });
     assert.ok(scene.root.findById("chat.open") !== null, "the button takes the help's place");
     chat.hear(line({ from: "spectator", seat: null, account: "dave", text: "what a game" }));
@@ -241,7 +241,12 @@ describe("MatchScene: chat", () => {
     assert.deepEqual(log.entries.slice(-2).map((entry) => entry.kind), [LogKind.COMMENT, LogKind.CHAT]);
     const texts = rendered(scene);
     assert.ok(texts.some((text) => text.includes("thanks")));
-    assert.ok(!texts.some((text) => text.includes("what a game") && text.startsWith("“")), "no bubble for the stands");
+    assert.ok(texts.includes("@dave · watching"), "a bubble for the stands, saying who is watching");
+    assert.ok(texts.some((text) => text.startsWith("“what a game")));
+    for (let step = 0; step < 140; step += 1) {
+      scene.update(50);
+    }
+    assert.ok(!rendered(scene).includes("@dave · watching"), "it fades after a few seconds");
     scene.root.findById("chat.open").activate();
     assert.equal(scene.modal.findById("chat.quick.1").text, "Wow!");
   });
