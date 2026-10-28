@@ -28,6 +28,8 @@ const KIND_COLORS = Object.freeze({
   [LogKind.HEAL]: "health",
   [LogKind.END]: "accentLight",
   [LogKind.REJECTED]: "danger",
+  [LogKind.CHAT]: "text",
+  [LogKind.COMMENT]: "textMuted",
 });
 /** @type {ReadonlySet<string>} */
 const BOLD_KINDS = new Set([LogKind.TURN, LogKind.END]);

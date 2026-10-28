@@ -31,9 +31,14 @@
  * Watching (docs/tcg/10-spettatori.md) runs beside those states: one game
  * at a time, shown through a seatless RemoteMatchSession, resumed after a
  * reconnection until it ends or the player stops watching.
+ *
+ * Every session, a player's or a spectator's, carries the game's chat
+ * (MatchChat, docs/tcg/28-chat.md); the lines the server sends go to the
+ * session of their game.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { cancellationNotice } from "./cancellation.js";
+import { MatchChat } from "./MatchChat.js";
 import { RemoteMatchSession } from "./RemoteMatchSession.js";
 import { AuthorizationState, SessionAuthorizer } from "./SessionAuthorizer.js";
 
@@ -188,7 +193,7 @@ export class OnlineService {
     if (session === null || !session.isStopped) {
       return session;
     }
-    const fresh = this.#playerSession(session.gameId, /** @type {string} */ (session.seat));
+    const fresh = this.#playerSession(session.gameId, /** @type {string} */ (session.seat), session.chat);
     if (this.#lastView !== null) {
       fresh.apply(this.#lastView);
     }
@@ -219,7 +224,9 @@ export class OnlineService {
       return fail(error.details?.code ?? error.code, error.message);
     }
     const previous = this.#state.watching;
-    const session = new RemoteMatchSession({ gameId, seat: null, request: (type, data) => this.#connection.request(type, data), newCommandId: this.#newCommandId, onStop: () => this.#watchStopped(session) });
+    const request = /** @type {import("../ports/Realtime.contract.js").RealtimeConnection["request"]} */ ((type, data) => this.#connection.request(type, data));
+    const chat = new MatchChat({ gameId, request, account: () => this.#account, lines: reply.value.d.chat ?? [] });
+    const session = new RemoteMatchSession({ gameId, seat: null, request, newCommandId: this.#newCommandId, onStop: () => this.#watchStopped(session), chat });
     session.apply(reply.value.d);
     this.#set({ watching: session });
     if (previous !== null && previous.gameId !== gameId) {
@@ -316,17 +323,30 @@ export class OnlineService {
       this.#onQueueStatus(d);
     } else if (t === "match.found") {
       this.#matched(d);
-    } else if (t === "game.events" || t === "game.state") {
+    } else if (t.startsWith("game.")) {
+      this.#onGameMessage(t, d);
+    } else if (t.startsWith("watch.")) {
+      this.#onWatchMessage(t, d);
+    } else if (t === "session.replaced") {
+      this.#set({ error: { code: "REPLACED", message: "the game was opened in another tab" } });
+    }
+  }
+
+  /**
+   * News of the game we play: a view of it, a chat line, its end, or its calling off.
+   * @param {string} t
+   * @param {any} d
+   */
+  #onGameMessage(t, d) {
+    if (t === "game.events" || t === "game.state") {
       this.#adopt(d);
+    } else if (t === "game.chat") {
+      this.#state.session?.chat?.hear(d);
     } else if (t === "game.over") {
       this.#state.session?.finish(d);
       this.#set({ status: OnlineStatus.OVER });
     } else if (t === "game.aborted") {
       this.#cancelled(d);
-    } else if (t.startsWith("watch.")) {
-      this.#onWatchMessage(t, d);
-    } else if (t === "session.replaced") {
-      this.#set({ error: { code: "REPLACED", message: "the game was opened in another tab" } });
     }
   }
 
@@ -342,6 +362,8 @@ export class OnlineService {
     }
     if (t === "watch.events") {
       watching.apply(d);
+    } else if (t === "watch.chat") {
+      watching.chat?.hear(d);
     } else if (t === "watch.over") {
       watching.finish(d);
     }
@@ -356,6 +378,7 @@ export class OnlineService {
     this.#connection.request("watch.start", { gameId: watching.gameId }).then((reply) => {
       if (reply.ok && reply.value.t === "watch.state") {
         watching.apply(reply.value.d);
+        watching.chat?.catchUp(reply.value.d.chat ?? []);
       }
     });
   }
@@ -364,15 +387,19 @@ export class OnlineService {
    * A session for our seat, whose acks are checked and kept.
    * @param {string} gameId
    * @param {string} seat
+   * @param {MatchChat | null} [chat] the game's chat so far (a session made again on the same game keeps it)
    */
-  #playerSession(gameId, seat) {
+  #playerSession(gameId, seat, chat = null) {
+    /** @type {import("../ports/Realtime.contract.js").RealtimeConnection["request"]} */
+    const request = (type, data) => this.#connection.request(type, data);
     return new RemoteMatchSession({
       gameId,
       seat,
-      request: (type, data) => this.#connection.request(type, data),
+      request,
       newCommandId: this.#newCommandId,
       onAck: (ack) => this.#keepAck(gameId, ack),
       signMove: (move) => this.#signMove(gameId, move),
+      chat: chat ?? new MatchChat({ gameId, request, account: () => this.#account }),
     });
   }
 

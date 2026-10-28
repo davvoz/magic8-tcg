@@ -41,10 +41,17 @@
  * perspective: no hand, no drawn card. That is less than either player
  * sees, so a spectator relaying what they watch to a player tells them
  * nothing new, and the stream needs no delay.
+ *
+ * The table has a chat (docs/tcg/28-chat.md). What a player says reaches
+ * both players and the spectators; what a spectator says reaches only the
+ * spectators, so nobody can coach a player from the stands. Lines never go
+ * through the mailbox nor into the record: they touch no game state. The
+ * last few are kept in memory for whoever starts watching.
  */
 import { SPECTATOR, redactEventsFor } from "@magic8/engine/domain/game/GameSnapshot.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
 import { EntropySource, EventKind, ForcedMoveReason, GameProtocol, LIMITS, MOVE_SIGNATURE_PATTERN, SEATS, SESSION_KEY_PATTERN, bytesToHex, canonicalize, commandOfMove, createGameEngine, gameResultRecord, moveMessage, sessionAuthorization, utf8Length } from "@magic8/protocol";
+import { ChatThrottle, cleanChatLine } from "../domain/chat.js";
 import { CONCEDE_COMMAND, forcedCommandFor } from "../domain/forcedCommand.js";
 import { TurnClock } from "../domain/TurnClock.js";
 
@@ -70,7 +77,16 @@ export const GameError = Object.freeze({
   /** v2: the session key's authorisation, or a move's signature, does not check out. */
   INVALID_SIGNATURE: "INVALID_SIGNATURE",
   SPECTATORS_FULL: "SPECTATORS_FULL",
+  /** A chat line with nothing printable in it. */
+  INVALID_CHAT: "INVALID_CHAT",
+  /** Chat lines sent faster than the table allows. */
+  CHAT_TOO_FAST: "CHAT_TOO_FAST",
+  /** Chat in a game with nobody to read it: the other seat is the server's AI. */
+  CHAT_CLOSED: "CHAT_CLOSED",
 });
+
+/** Who said a chat line: one of the players, or someone watching. */
+export const ChatFrom = Object.freeze({ PLAYER: "player", SPECTATOR: "spectator" });
 
 /** Spectators one game streams to (each move is sent to every one of them). */
 export const MAX_SPECTATORS = 50;
@@ -82,11 +98,14 @@ const AUTHORIZATION_PATTERN = /^[0-9a-f]{130}$/;
 const MAX_FORCED_PER_TICK = 20;
 /** Acks of rejected commands kept in memory for idempotent re-sends (accepted ones are in the database). */
 const REJECTED_ACK_CACHE = 64;
+/** Chat lines kept for whoever starts watching. */
+const CHAT_HISTORY = 30;
 
 /**
  * @typedef {import("./ports.js").StoredGame} StoredGame
  * @typedef {Readonly<{ commandId: string, ok: boolean, version?: number, head?: string, seq?: number, at?: number, key?: string, sig?: string, error?: Readonly<{ code: string, message: string }> }>} Ack
  * @typedef {(fields: { gameId: string, commandId: string, seq: number, head: string, version: number }) => Readonly<{ at?: number, key?: string, sig?: string }>} AckSignature
+ * @typedef {Readonly<{ gameId: string, from: string, seat: string | null, account: string, text: string, at: number }>} ChatLine `seat`: the player's, null for a spectator
  */
 
 export class GameActor {
@@ -128,6 +147,9 @@ export class GameActor {
   #ais;
   /** An AI move is queued in the mailbox (one at a time). */
   #aiQueued = false;
+  /** The latest chat lines, oldest first. @type {ChatLine[]} */
+  #chat = [];
+  #chatThrottle = new ChatThrottle();
 
   /**
    * @param {{
@@ -535,6 +557,60 @@ export class GameActor {
   }
 
   /**
+   * A line said at the table. A player's reaches both players and the
+   * spectators, and may still be said once the game is over (the service
+   * keeps a finished game a little while for that); a spectator's reaches
+   * the spectators only, while they watch.
+   * @param {{ userId: string, account: string }} speaker
+   * @param {unknown} text
+   */
+  chat({ userId, account }, text) {
+    const seat = this.seatOf(userId);
+    const refused = this.#chatRefusal(userId, seat);
+    if (refused !== null) {
+      return refused;
+    }
+    const said = cleanChatLine(text);
+    if (said === null) {
+      return fail(GameError.INVALID_CHAT, "nothing to say");
+    }
+    const at = this.#clock.now();
+    if (!this.#chatThrottle.take(userId, at)) {
+      return fail(GameError.CHAT_TOO_FAST, "slow down: wait a moment before the next line");
+    }
+    /** @type {ChatLine} */
+    const line = Object.freeze({ gameId: this.id, from: seat === null ? ChatFrom.SPECTATOR : ChatFrom.PLAYER, seat, account, text: said, at });
+    this.#chat = [...this.#chat, line].slice(-CHAT_HISTORY);
+    if (seat !== null) {
+      for (const player of this.#humans()) {
+        this.#notifier.send(/** @type {string} */ (player.userId), "game.chat", line);
+      }
+    }
+    for (const spectator of this.#spectators) {
+      this.#notifier.send(spectator, "watch.chat", line);
+    }
+    return Object.freeze({ ok: true, line });
+  }
+
+  /**
+   * Why `userId` may not chat at this table now, or null when they may.
+   * @param {string} userId
+   * @param {string | null} seat theirs, if they play
+   */
+  #chatRefusal(userId, seat) {
+    if (seat === null && !this.#spectators.has(userId)) {
+      return fail(GameError.NOT_IN_GAME, "only the players and those watching can chat");
+    }
+    if (seat !== null && this.#humans().length < 2) {
+      return fail(GameError.CHAT_CLOSED, "nobody else plays this game");
+    }
+    if (this.#status === GameStatus.CREATED || this.#status === GameStatus.ABORTED) {
+      return fail(GameError.GAME_NOT_ACTIVE, "the game has not started");
+    }
+    return null;
+  }
+
+  /**
    * @param {string} seat
    * @param {"timeout" | "disconnect" | "abandon"} why
    */
@@ -740,6 +816,7 @@ export class GameActor {
       snapshot: this.#engine === null ? null : this.#engine.getSnapshot(SPECTATOR),
       clock: this.#turnClock.view(),
       spectators: this.#spectators.size,
+      chat: this.#chat,
     });
   }
 

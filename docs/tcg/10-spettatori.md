@@ -33,8 +33,9 @@
 | client → server | `watch.stop {}` | risposta `watch.stopped` |
 | server → client | `watch.events` | la vista dello spettatore più `events` redatti, dopo ogni mossa |
 | server → client | `watch.over` | `{ "gameId", "winner", "reason" }` |
+| server → client | `watch.chat` | una riga della chat, di un giocatore o di uno spettatore (28) |
 
-Vista dello spettatore: `{ "gameId", "mode", "status", "players": [{ "seat", "account" }], "version", "lastSeq", "head", "snapshot": <snapshot SPECTATOR>, "clock", "spectators" }`. Come per i giocatori, il client sostituisce il suo stato con lo snapshot ricevuto.
+Vista dello spettatore: `{ "gameId", "mode", "status", "players": [{ "seat", "account" }], "version", "lastSeq", "head", "snapshot": <snapshot SPECTATOR>, "clock", "spectators", "chat" }` (`chat`: le ultime righe, 28). Come per i giocatori, il client sostituisce il suo stato con lo snapshot ricevuto.
 
 ## Client
 
@@ -45,6 +46,7 @@ Vista dello spettatore: `{ "gameId", "mode", "status", "players": [{ "seat", "ac
   - il banner dice di chi è il turno per nome;
   - l'unico pulsante è "Leave";
   - a fine partita: "@bob wins", poi "Watch another".
+- Gli spettatori chattano fra loro e leggono i giocatori; i giocatori non leggono gli spettatori (28-chat.md).
 - La sessione è una `RemoteMatchSession` senza posto: `submit` rifiuta tutto (`SPECTATOR`) senza contattare il server.
 
 ## Minacce

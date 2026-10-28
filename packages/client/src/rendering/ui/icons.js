@@ -1,6 +1,6 @@
 /**
  * The line icons of the navigation shell: the five sections, and the bar's notifications,
- * settings, Back and the lock of what is not available yet. Each is drawn
+ * settings, Back and the lock of what is not available yet; and the match board's chat. Each is drawn
  * on a 24-unit grid, scaled into the box it is given, in one stroke colour;
  * pure drawing, no images to wait for.
  */
@@ -23,6 +23,8 @@ export const Icon = Object.freeze({
   TARGET: "target",
   /** Learning the game: an open book. */
   BOOK: "book",
+  /** Chatting at the table: a speech bubble. */
+  CHAT: "chat",
 });
 
 const GRID = 24;
@@ -185,6 +187,23 @@ const PAINTERS = Object.freeze({
     pen.line(17, 4.5);
     pen.line(12, 6.5);
     pen.stroke();
+  },
+  [Icon.CHAT]: (pen) => {
+    pen.move(6.5, 4);
+    pen.line(17.5, 4);
+    pen.arc(17.5, 7.5, 3.5, { from: -QUARTER_TURN, to: 0 });
+    pen.line(21, 13.5);
+    pen.arc(17.5, 13.5, 3.5, { from: 0, to: QUARTER_TURN });
+    pen.line(11.5, 17);
+    pen.line(6.5, 21);
+    pen.line(7, 17);
+    pen.arc(6.5, 13.5, 3.5, { from: QUARTER_TURN, to: HALF_TURN });
+    pen.line(3, 7.5);
+    pen.arc(6.5, 7.5, 3.5, { from: HALF_TURN, to: HALF_TURN + QUARTER_TURN });
+    pen.stroke();
+    pen.dot(8, 10.5, 0.6);
+    pen.dot(12, 10.5, 0.6);
+    pen.dot(16, 10.5, 0.6);
   },
   [Icon.LOCK]: (pen) => {
     pen.move(6, 11);

@@ -10,6 +10,8 @@ const GAME_ID = Object.freeze({ minLength: 26, maxLength: 26 });
 const SESSION_KEY = Object.freeze({ minLength: 130, maxLength: 130 });
 const AUTHORIZATION = Object.freeze({ minLength: 130, maxLength: 130 });
 const MOVE_SIGNATURE = Object.freeze({ minLength: 128, maxLength: 128 });
+/** A chat line as typed (UTF-16 units); the game cleans and cuts it (domain/chat.js). */
+const CHAT_TEXT = Object.freeze({ minLength: 1, maxLength: 600 });
 
 /**
  * A move's signature (v2) is optional on the wire: the game decides whether it is required.
@@ -101,6 +103,19 @@ export function registerGameMessages({ router, games }) {
       throw new AppError(result.error.code === "NOT_IN_GAME" ? "NOT_FOUND" : "CONFLICT", result.error.message, { code: result.error.code });
     }
     return { t: "watch.state", d: result.view };
+  });
+
+  // A line at the table (docs/tcg/28-chat.md): a player's, or a spectator's; the server tells which from the user.
+  router.on("game.chat", async ({ principal }, data) => {
+    const body = validated(data, ["gameId", "text"], (issues, object) => {
+      checkString(issues, object.gameId, "d.gameId", GAME_ID);
+      checkString(issues, object.text, "d.text", CHAT_TEXT);
+    });
+    const result = await games.chat({ userId: principal.user.id, account: principal.user.account }, body.gameId, body.text);
+    if (!result.ok) {
+      throw new AppError(result.error.code === "NOT_IN_GAME" ? "NOT_FOUND" : "CONFLICT", result.error.message, { code: result.error.code });
+    }
+    return { t: "game.chatted", d: { gameId: body.gameId } };
   });
 
   router.on("watch.stop", async ({ principal }, data) => {

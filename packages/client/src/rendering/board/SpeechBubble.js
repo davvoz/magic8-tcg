@@ -1,9 +1,11 @@
 /**
- * A challenge character's line at the table: a speech bubble by its seat
- * (beside the opponent's HUD, or under it when there is no room beside),
- * with its name and its words. It fades in, stays a few seconds and fades
- * out; it never takes a click, so the game goes on under it. It waits while
- * the coin is tossed, so the opening line is not lost behind the toss.
+ * A line said at the table — a challenge character's, or a player's in the
+ * chat of an online game (docs/tcg/28-chat.md): a speech bubble by the
+ * speaker's seat (beside its HUD, or under the top seat's and over the
+ * bottom seat's when there is no room beside), with the speaker's name and
+ * their words. It fades in, stays a few seconds and fades out; it never
+ * takes a click, so the game goes on under it. It waits while the coin is
+ * tossed, so the opening line is not lost behind the toss.
  */
 import { ellipsize, wrapText } from "../text/textUtils.js";
 import { withAlpha } from "../theme/color.js";
@@ -23,15 +25,15 @@ const WIDE = Object.freeze({ maxWidth: 440, minWidth: 220, padding: 14, gap: 14,
 const COMPACT = Object.freeze({ maxWidth: 260, minWidth: 150, padding: 8, gap: 8, tail: 7, nameHeight: 16, lineHeight: 16, name: "tiny", text: "tiny" });
 
 export class SpeechBubble {
-  /** @type {{ name: string, line: string, ageMs: number } | null} */
+  /** @type {{ name: string, line: string, ageMs: number, lifeMs: number } | null} */
   #said = null;
 
   /**
    * A new line: it replaces the one showing.
-   * @param {{ name: string, line: string }} speech
+   * @param {{ name: string, line: string, lifeMs?: number }} speech `lifeMs`: how long it stays (a few seconds when not said)
    */
-  say({ name, line }) {
-    this.#said = { name, line, ageMs: 0 };
+  say({ name, line, lifeMs = LIFE_MS }) {
+    this.#said = { name, line, ageMs: 0, lifeMs };
   }
 
   get isShowing() {
@@ -51,7 +53,7 @@ export class SpeechBubble {
     if (!waiting) {
       said.ageMs += dtMs;
     }
-    if (said.ageMs >= LIFE_MS) {
+    if (said.ageMs >= said.lifeMs) {
       this.#said = null;
     }
     return true;
@@ -60,10 +62,10 @@ export class SpeechBubble {
   /**
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
-   * @param {{ seat: import("@magic8/engine/shared/geometry.js").Rect, stage: import("@magic8/engine/shared/geometry.js").Rect, compact: boolean }} where
-   *   `seat`: the character's HUD; `stage`: the screen the bubble keeps within
+   * @param {{ seat: import("@magic8/engine/shared/geometry.js").Rect, stage: import("@magic8/engine/shared/geometry.js").Rect, compact: boolean, bottom?: boolean }} where
+   *   `seat`: the speaker's HUD; `stage`: the screen the bubble keeps within; `bottom`: the seat is the bottom one (no room beside: the bubble goes over it)
    */
-  paint(context, theme, { seat, stage, compact }) {
+  paint(context, theme, { seat, stage, compact, bottom = false }) {
     const said = this.#said;
     if (said === null) {
       return;
@@ -75,12 +77,14 @@ export class SpeechBubble {
     const measure = (/** @type {string} */ text) => context.measureText(text).width;
     const textWidth = placed.width - 2 * m.padding;
     const lines = clip(measure, wrapText(measure, `“${said.line}”`, textWidth), textWidth);
-    const frame = { x: placed.x, y: placed.y, width: placed.width, height: 2 * m.padding + m.nameHeight + lines.length * m.lineHeight };
-    context.globalAlpha *= Math.max(0, Math.min(1, said.ageMs / FADE_MS, (LIFE_MS - said.ageMs) / FADE_MS));
+    const height = 2 * m.padding + m.nameHeight + lines.length * m.lineHeight;
+    const over = bottom && !placed.beside;
+    const frame = { x: placed.x, y: over ? seat.y - m.gap - height : placed.y, width: placed.width, height };
+    context.globalAlpha *= Math.max(0, Math.min(1, said.ageMs / FADE_MS, (said.lifeMs - said.ageMs) / FADE_MS));
     const radius = theme.spacing.radius;
     glowRoundedRect(context, frame, { color: withAlpha(theme.colors.accent, 0.45), radius, blur: 16, lineWidth: 1.5 });
     fillRoundedRect(context, frame, { fill: withAlpha(theme.colors.panelDark, 0.95), stroke: withAlpha(theme.colors.accent, 0.8), radius, lineWidth: 1.5 });
-    paintTail(context, theme, { frame, towards: placed.beside ? "left" : "up", size: m.tail });
+    paintTail(context, theme, { frame, towards: tailTowards(placed.beside, over), size: m.tail });
     const x = frame.x + m.padding;
     drawTextInRect(context, said.name, { x, y: frame.y + m.padding, width: textWidth, height: m.nameHeight }, { font: fontFor(theme, m.name, "bold"), color: theme.colors.accentLight, align: "left" });
     lines.forEach((text, index) => drawTextInRect(context, text, { x, y: frame.y + m.padding + m.nameHeight + index * m.lineHeight, width: textWidth, height: m.lineHeight }, { font: fontFor(theme, m.text), color: theme.colors.text, align: "left" }));
@@ -119,22 +123,38 @@ function clip(measure, lines, width) {
 }
 
 /**
- * The bubble's point, towards the seat: out of its left side, or out of its top.
+ * Where the bubble points: left to a seat it is beside, down to the seat it is over, up to the seat it is under.
+ * @param {boolean} beside
+ * @param {boolean} over
+ * @returns {"left" | "up" | "down"}
+ */
+function tailTowards(beside, over) {
+  if (beside) {
+    return "left";
+  }
+  return over ? "down" : "up";
+}
+
+/**
+ * The bubble's point, towards the seat: out of its left side, its top, or its bottom.
  * @param {CanvasRenderingContext2D} context
  * @param {import("../theme/Theme.js").Theme} theme
- * @param {{ frame: import("@magic8/engine/shared/geometry.js").Rect, towards: "left" | "up", size: number }} tail
+ * @param {{ frame: import("@magic8/engine/shared/geometry.js").Rect, towards: "left" | "up" | "down", size: number }} tail
  */
 function paintTail(context, theme, { frame, towards, size }) {
-  const at = towards === "left" ? { x: frame.x, y: frame.y + size * 2.5 } : { x: frame.x + size * 4, y: frame.y };
   context.beginPath();
   if (towards === "left") {
+    const at = { x: frame.x, y: frame.y + size * 2.5 };
     context.moveTo(at.x + 1, at.y - size);
     context.lineTo(at.x - size, at.y);
     context.lineTo(at.x + 1, at.y + size);
   } else {
-    context.moveTo(at.x - size, at.y + 1);
-    context.lineTo(at.x, at.y - size);
-    context.lineTo(at.x + size, at.y + 1);
+    // Out of the top (pointing up), or out of the bottom (pointing down).
+    const sign = towards === "up" ? 1 : -1;
+    const at = { x: frame.x + size * 4, y: towards === "up" ? frame.y : frame.y + frame.height };
+    context.moveTo(at.x - size, at.y + sign);
+    context.lineTo(at.x, at.y - sign * size);
+    context.lineTo(at.x + size, at.y + sign);
   }
   context.closePath();
   context.fillStyle = withAlpha(theme.colors.panelDark, 0.95);

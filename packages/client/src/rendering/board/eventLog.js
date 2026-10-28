@@ -17,6 +17,10 @@ export const LogKind = Object.freeze({
   HEAL: "heal",
   END: "end",
   REJECTED: "rejected",
+  /** A line said at the table by a player (docs/tcg/28-chat.md). */
+  CHAT: "chat",
+  /** A line said by someone watching. */
+  COMMENT: "comment",
 });
 
 /**

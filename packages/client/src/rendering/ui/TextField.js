@@ -1,7 +1,9 @@
 /**
  * Single-line text entry driven by keydown events routed through the scene.
  * Deliberately minimal: append/backspace at the end, a fixed character
- * allow-list and a hard length cap. The value is presentation state; the
+ * allow-list and a hard length cap. A chat line (`characters: "chat"`)
+ * takes any letter, mark, punctuation or symbol (emoji too); every other
+ * field keeps to the narrow list below. The value is presentation state; the
  * owner validates it through the application service on change/submit.
  *
  * On a phone there are no keydown events to route: played by touch, a real
@@ -18,12 +20,16 @@ import { fontFor } from "../theme/Theme.js";
 
 /** Letters and digits of any script, space and a few punctuation marks; nothing that needs escaping anywhere. */
 const ALLOWED_CHARACTER = /^[\p{L}\p{N} \-_'.!?&()]$/u;
+/** A chat line: any printable character, and the joiner that holds an emoji together; the server cleans it again. */
+const CHAT_CHARACTER = /^[\p{L}\p{N}\p{M}\p{P}\p{S} ‍]$/u;
+const CHARACTER_SETS = Object.freeze({ plain: ALLOWED_CHARACTER, chat: CHAT_CHARACTER });
 const HARD_MAX_LENGTH = 200;
 const PADDING = 14;
 const CARET = "|";
 const SECRET_DOT = "•";
 
 /** @typedef {"text" | "account" | "decimal" | "secret"} KeyboardKind plain text, a lower-case account name (no capitals, no corrections), a number, a key or a PIN (hidden) */
+/** @typedef {keyof typeof CHARACTER_SETS} CharacterSet */
 
 export class TextField extends UiNode {
   /** @type {string} */
@@ -38,12 +44,15 @@ export class TextField extends UiNode {
   onSubmit;
   /** @type {KeyboardKind} */
   keyboard;
+  /** What may be typed. @type {RegExp} */
+  #allowed;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, value?: string, placeholder?: string, maxLength?: number, keyboard?: KeyboardKind, onChange?: (value: string) => void, onSubmit?: () => void }} options
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, value?: string, placeholder?: string, maxLength?: number, keyboard?: KeyboardKind, characters?: CharacterSet, onChange?: (value: string) => void, onSubmit?: () => void }} options
    */
   constructor(options) {
     super(options);
+    this.#allowed = CHARACTER_SETS[options.characters ?? "plain"];
     this.maxLength = Math.min(HARD_MAX_LENGTH, Math.max(1, options.maxLength ?? HARD_MAX_LENGTH));
     this.value = (options.value ?? "").slice(0, this.maxLength);
     this.placeholder = options.placeholder ?? "";
@@ -63,7 +72,7 @@ export class TextField extends UiNode {
    */
   enter(text) {
     if (this.isEffectivelyEnabled) {
-      this.#setValue(allowed(text).slice(0, this.maxLength));
+      this.#setValue(allowed(text, this.#allowed).slice(0, this.maxLength));
     }
     return this.value;
   }
@@ -76,7 +85,7 @@ export class TextField extends UiNode {
     if (!this.isEffectivelyEnabled) {
       return false;
     }
-    this.#setValue((this.value + allowed(String(text).trim())).slice(0, this.maxLength));
+    this.#setValue((this.value + allowed(String(text).trim(), this.#allowed)).slice(0, this.maxLength));
     return true;
   }
 
@@ -103,7 +112,7 @@ export class TextField extends UiNode {
       this.onSubmit();
       return true;
     }
-    if (ALLOWED_CHARACTER.test(input.key)) {
+    if (this.#allowed.test(input.key)) {
       if (this.value.length < this.maxLength) {
         this.#setValue(this.value + input.key);
       }
@@ -149,8 +158,9 @@ export class TextField extends UiNode {
 
 /**
  * @param {string} text
+ * @param {RegExp} allowList
  * @returns {string} its characters the allow-list accepts
  */
-function allowed(text) {
-  return Array.from(String(text)).filter((character) => ALLOWED_CHARACTER.test(character)).join("");
+function allowed(text, allowList) {
+  return Array.from(String(text)).filter((character) => allowList.test(character)).join("");
 }

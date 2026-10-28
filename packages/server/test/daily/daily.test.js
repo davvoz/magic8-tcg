@@ -158,6 +158,7 @@ describe("daily challenges", () => {
     assert.equal(found.opponent.account, aiAccountOf(opponent.id));
 
     await started(w, alice, gameId);
+    assert.equal((await w.games.chat({ userId: alice.id, account: "alice" }, gameId, "hello?")).error.code, "CHAT_CLOSED", "nobody reads the chat against the AI");
     const winner = await playOut(w, alice, gameId);
     await new Promise((resolve) => setTimeout(resolve, 20));
     const [row] = await w.setup.database.rows("SELECT result FROM daily_games WHERE game_id = $1", [gameId]);

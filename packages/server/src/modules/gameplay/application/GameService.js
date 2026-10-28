@@ -17,6 +17,10 @@
  * Anyone signed in may watch one live game at a time (docs/tcg/10); the
  * watch ends when they stop, disconnect, or the game ends.
  *
+ * Players and spectators chat at the table (docs/tcg/28-chat.md). A
+ * finished game's actor stays a minute before it is let go, so the players
+ * can still say "good game" once the result is in.
+ *
  * An auto game (docs/tcg/23-automatica.md) has no actor: the AI plays both
  * seats to the end inside the unit of work that creates it, and the game is
  * stored finished. Its result goes on chain like any other.
@@ -39,6 +43,8 @@ import { GAME_REPOSITORY_METHODS } from "./ports.js";
 const SECRET_BYTES = 32;
 /** Modes whose results stay off chain: games against the house. */
 const UNPUBLISHED_MODES = Object.freeze(/** @type {string[]} */ ([GameMode.DAILY]));
+/** How long a finished game's players may still chat before the game is let go. */
+const CHAT_AFTER_GAME_MS = 60_000;
 
 /**
  * @typedef {Readonly<{ userId: string | null, account: string, deckId: string | null, deck: readonly { cardId: string, count: number }[], ai?: import("./ports.js").AiProfile }>} Entrant
@@ -73,6 +79,8 @@ export class GameService {
   #actors = new Map();
   /** @type {Map<string, string>} spectator user id → game id */
   #watching = new Map();
+  /** @type {Map<string, number>} finished game id → when a tick first found it over */
+  #overSince = new Map();
   /** @type {Map<string, Promise<GameActor | null>>} actors being rebuilt */
   #loading = new Map();
 
@@ -542,12 +550,30 @@ export class GameService {
     await actor?.presence(userId, connected);
   }
 
-  /** Runs every live game's timers; forgets finished games. */
+  /**
+   * A line said at a game's table, by one of its players or by someone watching it.
+   * @param {{ userId: string, account: string }} speaker
+   * @param {unknown} gameId
+   * @param {unknown} text
+   */
+  async chat(speaker, gameId, text) {
+    const actor = await this.#actorFor(gameId);
+    return actor === null ? notInGame() : actor.chat(speaker, text);
+  }
+
+  /** Runs every live game's timers; forgets finished games once their players had time for a last word. */
   async tick() {
+    const now = this.#clock.now();
     for (const actor of [...this.#actors.values()]) {
       if (actor.isOver) {
-        this.#actors.delete(actor.id);
         this.#forgetSpectators(actor.id);
+        const since = this.#overSince.get(actor.id) ?? now;
+        this.#overSince.set(actor.id, since);
+        // A game called off before it started has no chat to keep it.
+        if (actor.status === GameStatus.ABORTED || now - since >= CHAT_AFTER_GAME_MS) {
+          this.#actors.delete(actor.id);
+          this.#overSince.delete(actor.id);
+        }
         continue;
       }
       try {

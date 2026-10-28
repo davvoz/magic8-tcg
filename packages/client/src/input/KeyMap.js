@@ -9,6 +9,8 @@ export const KeyMap = Object.freeze({
   INSPECT: Object.freeze(["i", "I"]),
   /** The match help off and on again, on the board. */
   HELP: Object.freeze(["h", "H"]),
+  /** The chat of an online game, on the board. */
+  CHAT: Object.freeze(["c", "C"]),
   /** Sound off and on again, on any screen. */
   MUTE: Object.freeze(["m", "M"]),
 });

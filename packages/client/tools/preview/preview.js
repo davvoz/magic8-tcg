@@ -21,6 +21,8 @@
  *   /tools/preview/?scene=match&inspect=1    plus the inspect overlay on a hand card
  *   /tools/preview/?scene=match&help=0       with the match help off (it is on, as for a new player)
  *   /tools/preview/?scene=match&say=Kneel.   the opponent speaks, as a daily challenge's character does (a bubble by its seat)
+ *   /tools/preview/?scene=match&chat=gl|ty   an online game's chat: the opponent says the first line, the player the second (bubbles by both seats)
+ *   /tools/preview/?scene=match&chat=gl|ty&press=chat.open   ...with the chat dialog open
  *   /tools/preview/?scene=match&share=1      the match conceded, its result shared as a ping on cur8.fun (the dialog; nothing is posted)
  *   /tools/preview/?scene=match&over=1       the match conceded, its result closed: the board, with See result
  *   /tools/preview/?scene=sharecard          the picture a shared game carries, as the JPEG it is saved to
@@ -48,6 +50,7 @@ import { BasicAiController } from "../../src/application/match/BasicAiController
 import { TutorialService } from "../../src/application/tutorial/TutorialService.js";
 import { HelpSettings } from "../../src/application/help/HelpSettings.js";
 import { CharacterVoice } from "../../src/application/daily/CharacterVoice.js";
+import { MatchChat } from "../../src/application/online/MatchChat.js";
 import { pingText } from "../../src/application/social/pingText.js";
 import { shareCardOf } from "../../src/application/social/shareCard.js";
 import { CanvasShareImage } from "../../src/rendering/share/ShareCard.js";
@@ -57,6 +60,7 @@ import { declareAttackers, declareBlockers, endTurn, playCard } from "@magic8/en
 import { CommandType } from "@magic8/engine/domain/commands/CommandType.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
+import { ok } from "@magic8/engine/shared/Result.js";
 import { dailyServices } from "./dailyWorld.js";
 import { Milestone, OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
 import { IdentityStatus } from "../../src/application/identity/IdentityService.js";
@@ -385,13 +389,15 @@ async function show(sceneManager, app, request) {
  * A match after a few turns, with what the request adds: the opponent speaking, a card inspected, the match ended and its result shared or closed.
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
  * @param {import("../../src/application/AppContext.js").AppContext} app
- * @param {{ turns: number, inspect: boolean, deckId: string | null, say: string | null, share: boolean, over: boolean }} request
+ * @param {{ turns: number, inspect: boolean, deckId: string | null, say: string | null, chat: string | null, share: boolean, over: boolean }} request
  */
-async function showMatch(sceneManager, app, { turns, inspect, deckId, say, share, over }) {
+async function showMatch(sceneManager, app, { turns, inspect, deckId, say, chat, share, over }) {
   const session = await createMatch(app, { turns, deckId });
   // The game stands for an online one (a challenge's), so the character's line is heard at its table.
   Object.defineProperty(session, "gameId", { value: "preview" });
+  const talk = chat === null ? null : chatAt(session, chat.split("|"));
   sceneManager.navigate(SceneId.MATCH, { session });
+  talk?.();
   if (say !== null) {
     // Said again every few seconds, so a screenshot taken whenever catches it.
     const speak = () => app.voice?.say({ opponent: /** @type {any} */ ({ name: "The Gravelord" }), kind: "intro", line: say, gameId: "preview" });
@@ -404,6 +410,33 @@ async function showMatch(sceneManager, app, { turns, inspect, deckId, say, share
   if (share || over) {
     endMatch(sceneManager, session, (board) => (share ? board.modal?.findById("gameOver.share")?.activate() : board.onCancel()));
   }
+}
+
+/**
+ * Makes the local match stand for an online one between @alice (the player) and @bob, with its chat:
+ * the lines are said in turn, the opponent first, and again every few seconds for a screenshot.
+ * @param {any} session
+ * @param {readonly string[]} lines
+ * @returns {() => void} starts the talking, once the board is open
+ */
+function chatAt(session, lines) {
+  const me = session.humanPlayerIds[0];
+  const opponent = session.snapshotFor(me).players.find((/** @type {{ id: string }} */ player) => player.id !== me).id;
+  const accounts = { [me]: "alice", [opponent]: "bob" };
+  let at = 0;
+  /** @param {string} seat @param {string} text */
+  const say = (seat, text) => {
+    at += 1;
+    chat.hear({ gameId: "preview", from: "player", seat, account: accounts[seat], text, at });
+  };
+  const chat = new MatchChat({ gameId: "preview", account: () => "alice", request: async (_type, data) => (say(me, data.text), ok({ t: "game.chatted", d: {} })) });
+  Object.defineProperty(session, "chat", { value: chat });
+  Object.defineProperty(session, "accountOf", { value: (/** @type {string} */ playerId) => accounts[playerId] ?? null });
+  return () => {
+    const talk = () => lines.forEach((text, index) => window.setTimeout(() => say(index % 2 === 0 ? opponent : me, text), index * 300));
+    talk();
+    window.setInterval(talk, 4000);
+  };
 }
 
 /** @typedef {{ way: string | null, guide: boolean, buy: boolean, entries: number, eligible: boolean }} OnlineRequest */
@@ -539,6 +572,7 @@ async function boot() {
     turns: countParam(query, "turns", 6),
     inspect: query.get("inspect") === "1",
     say: query.get("say"),
+    chat: query.get("chat"),
     share: query.get("share") === "1",
     over: query.get("over") === "1",
     deckId: query.get("deck"),

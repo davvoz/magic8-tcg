@@ -72,6 +72,13 @@
  * pulsing ring, a bouncing arrow and a one-word label of what it does
  * ("BLOCK", "CLICK!"), in the colour of the move (matchHelp). Unlike the
  * tutorial it allows everything and never holds the board.
+ *
+ * An online game between two people has a chat (docs/tcg/28-chat.md): the
+ * speech bubble beside the help's "?" (or C) opens it over the board, with a
+ * count of the lines not read yet. What a player says shows as a bubble by
+ * their seat, as a challenge's character speaks; every line also goes in the
+ * battle log. Those watching chat among themselves too: their lines reach
+ * only one another, in the log and the dialog.
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
@@ -101,6 +108,8 @@ import { PickedCardNode } from "../board/PickedCardNode.js";
 import { PlayerNode, lifeCrystalCentre, resourceRects } from "../board/PlayerNode.js";
 import { SpeechBubble } from "../board/SpeechBubble.js";
 import { buildShareDialog } from "../board/ShareDialog.js";
+import { buildChatDialog } from "../board/ChatDialog.js";
+import { ChatFrom, MAX_CHAT_LENGTH } from "../../application/online/MatchChat.js";
 import { boardFaceProfile } from "../cards/CardRenderer.js";
 import { cardFaceLayout } from "../cards/CardFace.js";
 import { splitIntoBeats } from "../board/StepBeats.js";
@@ -109,6 +118,8 @@ import { CardDetail } from "../cards/CardDetail.js";
 import { StatBreakdown, statLines } from "../cards/StatBreakdown.js";
 import { drawTableBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
+import { IconButton } from "../ui/IconButton.js";
+import { Icon } from "../ui/icons.js";
 import { buildConfirmModal } from "../ui/ConfirmModal.js";
 import { buildAudioSettingsModal } from "./audioSettings.js";
 import { Label } from "../ui/Label.js";
@@ -148,6 +159,17 @@ const INSPECT_STATS = Object.freeze({ wideRow: 26, compactRow: 22, gap: 12 });
 const INVITING = new Set([Highlight.PLAYABLE, Highlight.TARGETABLE]);
 /** How far the help's headline keeps from the help button and the clock either side of it. */
 const HELP_GAP = 6;
+/** How long the viewer's own chat line stays by their seat (it covers their hand), in ms. */
+const OWN_LINE_MS = 3500;
+/** What the unread count on the chat button shows at most. */
+const MAX_UNREAD_SHOWN = 9;
+/** Why a chat line did not go, in the player's words. @type {Readonly<Record<string, string>>} */
+const CHAT_REFUSALS = Object.freeze({
+  CHAT_TOO_FAST: "Slow down a moment, then try again.",
+  NOT_IN_GAME: "The chat of this game is closed.",
+  GAME_NOT_ACTIVE: "The chat opens once the game has started.",
+  CHAT_CLOSED: "Nobody else reads this chat.",
+});
 /** A replay's speeds, as its side panel names them. */
 const SPEED_TEXT = Object.freeze({ [ReplaySpeed.NORMAL]: "Normal", [ReplaySpeed.FAST]: "Fast", [ReplaySpeed.VERY_FAST]: "Very fast" });
 
@@ -229,8 +251,24 @@ export class MatchScene extends Scene {
   #voice;
   /** @type {(() => void) | null} */
   #unsubscribeVoice = null;
-  /** The character's line showing by its seat. */
+  /** The line showing by the opponent's seat (the top one): a challenge's character's, or the player's in the chat. */
   #speech = new SpeechBubble();
+  /** The line showing by the bottom seat: the viewer's own in the chat (a spectator's: the first player's). */
+  #ownSpeech = new SpeechBubble();
+  /** The online game's chat, when the board offers it. @type {import("../../application/online/MatchChat.js").MatchChat | null} */
+  #chat = null;
+  /** @type {(() => void) | null} */
+  #unsubscribeChat = null;
+  /** Lines said while the chat was closed. */
+  #chatUnread = 0;
+  /** The line being typed, kept while the board rebuilds the dialog. */
+  #chatDraft = "";
+  /** Why the last line did not go; null once one goes. @type {import("../board/ChatDialog.js").ChatNotice | null} */
+  #chatNotice = null;
+  /** A line on its way to the server. */
+  #chatSending = false;
+  /** Where the dialog's lines are scrolled to. */
+  #chatScroll = createLogScroll();
   /** The online game on the board (null: a local one). @type {string | null} */
   #gameId = null;
   /** Sharing a finished online game as a ping on cur8.fun, when the game offers it. @type {Pick<import("../../application/social/GameSharing.js").GameSharing, "canShare" | "textFor" | "cardFor" | "pictureFor" | "share"> | undefined} */
@@ -308,6 +346,7 @@ export class MatchScene extends Scene {
     this.#shared = false;
     this.#sharePicture = null;
     this.#listenToCharacter();
+    this.#listenToChat(session);
     this.#taken = session.snapshotFor(this.#playerId);
     this.#show({ snapshot: this.#taken, events: [], chained: false }, false);
     if (this.#coinFlip === null) {
@@ -337,6 +376,8 @@ export class MatchScene extends Scene {
     this.#unsubscribeHelp = null;
     this.#unsubscribeVoice?.();
     this.#unsubscribeVoice = null;
+    this.#unsubscribeChat?.();
+    this.#unsubscribeChat = null;
     this.#coinFlip = null;
   }
 
@@ -372,6 +413,148 @@ export class MatchScene extends Scene {
     this.#unsubscribeVoice = voice.subscribe(hear);
   }
 
+  /**
+   * Hears the game's chat, when it has one (an online game): what was said
+   * before the board opened goes in the log, then each new line as it comes.
+   * @param {import("../../application/match/MatchSession.js").MatchSession | import("../../application/online/RemoteMatchSession.js").RemoteMatchSession} session
+   */
+  #listenToChat(session) {
+    this.#ownSpeech = new SpeechBubble();
+    this.#chat = "chat" in session ? session.chat : null;
+    this.#chatUnread = 0;
+    this.#chatDraft = "";
+    this.#chatNotice = null;
+    this.#chatSending = false;
+    this.#chatScroll = createLogScroll();
+    const chat = this.#chat;
+    if (chat === null) {
+      return;
+    }
+    this.#log = [...this.#log, ...chat.lines.map(chatEntry)].slice(-MAX_LOG_ENTRIES);
+    this.#unsubscribeChat = chat.subscribe((line) => this.#hearChat(line));
+  }
+
+  /**
+   * A line said at the table: by its speaker's seat when a player said it, in the log either way.
+   * @param {import("../../application/online/MatchChat.js").ChatLine} line
+   */
+  #hearChat(line) {
+    const chat = /** @type {import("../../application/online/MatchChat.js").MatchChat} */ (this.#chat);
+    this.#log = [...this.#log, chatEntry(line)].slice(-MAX_LOG_ENTRIES);
+    if (line.from === ChatFrom.PLAYER) {
+      const bottom = line.seat === (this.#layout?.me.id ?? this.#playerId);
+      const own = bottom && !this.#spectating;
+      (bottom ? this.#ownSpeech : this.#speech).say({ name: `@${line.account}`, line: line.text, ...(own ? { lifeMs: OWN_LINE_MS } : {}) });
+    }
+    if (this.modal?.id !== "chat" && !chat.isOwn(line)) {
+      this.#chatUnread += 1;
+    }
+    this.#rebuild();
+  }
+
+  /** Whether the board offers the chat: an online game with someone to read it (not a challenge's character), not a replay. */
+  get #offersChat() {
+    const snapshot = this.#snapshot;
+    if (this.#chat === null || this.#watching || snapshot === null) {
+      return false;
+    }
+    return snapshot.players.every((player) => {
+      const account = this.#accountOf(player.id);
+      return account !== null && this.#characterName(account) === null;
+    });
+  }
+
+  /**
+   * The chat's button, beside the help's (in its place when the help is not offered), with the lines not read yet.
+   * @param {import("../board/BoardLayout.js").BoardLayout} layout
+   */
+  #buildChatButton(layout) {
+    if (!this.#offersChat) {
+      return;
+    }
+    const unread = this.#chatUnread;
+    const badge = unread === 0 ? null : unreadText(unread);
+    this.root.add(new IconButton({ id: "chat.open", ...this.#chatButtonArea(layout), icon: Icon.CHAT, badge, variant: "secondary", enabled: !this.isTossing, onActivate: () => this.#showChat() }));
+  }
+
+  /** @param {import("../board/BoardLayout.js").BoardLayout} layout */
+  #chatButtonArea(layout) {
+    return this.#offersHelp ? layout.chat : layout.help;
+  }
+
+  /** The chat over the board; the match plays on underneath. */
+  #showChat() {
+    const chat = this.#chat;
+    if (chat === null) {
+      return;
+    }
+    this.#chatUnread = 0;
+    const dialog = buildChatDialog({
+      viewport: this.services.viewport,
+      spectating: this.#spectating,
+      entries: chat.lines.map(chatEntry),
+      scroll: this.#chatScroll,
+      draft: this.#chatDraft,
+      maxLength: MAX_CHAT_LENGTH,
+      notice: this.#chatNotice,
+      muted: chat.muted,
+      sending: this.#chatSending,
+      onDraft: (text) => {
+        this.#chatDraft = text;
+      },
+      onSend: (text) => void this.#sendChat(text),
+      onMute: () => {
+        chat.setMuted(!chat.muted);
+        this.#showChat();
+      },
+      onClose: () => this.#closeChat(),
+    });
+    const reopened = this.modal?.id === "chat";
+    this.openModal(dialog);
+    // Typed straight away with a keyboard; on a phone the field is tapped (it opens the phone's own).
+    if (!reopened && this.#keyHints()) {
+      this.focus(dialog.findById("chat.input"));
+    }
+  }
+
+  #closeChat() {
+    this.closeModal();
+    this.#rebuild();
+  }
+
+  /**
+   * Says a line; once it has gone the dialog closes, so the board shows it by the seat.
+   * @param {string} text
+   */
+  async #sendChat(text) {
+    const chat = this.#chat;
+    if (chat === null || this.#chatSending || text.trim().length === 0) {
+      return;
+    }
+    this.#chatSending = true;
+    this.#chatNotice = null;
+    this.#refreshChat();
+    const sent = await chat.say(text);
+    this.#chatSending = false;
+    if (sent.ok) {
+      this.#chatDraft = "";
+      if (this.modal?.id === "chat") {
+        this.#closeChat();
+      }
+      return;
+    }
+    this.#chatNotice = { text: CHAT_REFUSALS[sent.error.code] ?? sent.error.message, error: true };
+    this.#refreshChat();
+  }
+
+  /** The dialog again, as things now stand, if it is open. */
+  #refreshChat() {
+    if (this.modal?.id === "chat") {
+      this.#showChat();
+    }
+    this.services.requestRender();
+  }
+
   /** The sound settings this board opens, if the game has sound. */
   get audio() {
     return this.#audio;
@@ -405,7 +588,8 @@ export class MatchScene extends Scene {
   #advanceOverlays(dtMs) {
     const ending = this.#ending?.update(dtMs) ?? false;
     const speaking = this.#speech.update(dtMs, this.isTossing);
-    return ending || speaking;
+    const answering = this.#ownSpeech.update(dtMs, this.isTossing);
+    return ending || speaking || answering;
   }
 
   /** True while moves are held back: the toss, the board playing out what happened, or a move awaiting the server. */
@@ -518,16 +702,18 @@ export class MatchScene extends Scene {
   }
 
   /**
-   * The character's line, by its seat, over the board (it takes no clicks).
+   * What is said at the table, by each speaker's seat, over the board (it
+   * takes no clicks); not over a dialog, which has the player's eyes then.
    * @param {CanvasRenderingContext2D} context
    */
   #paintSpeech(context) {
     const layout = this.#layout;
-    if (!this.#speech.isShowing || layout === null || this.isTossing) {
+    if (layout === null || this.isTossing || this.modal !== null) {
       return;
     }
     const { theme, viewport } = this.services;
     this.#speech.paint(context, theme, { seat: layout.opponent.hud, stage: viewport.safeBounds, compact: viewport.compact });
+    this.#ownSpeech.paint(context, theme, { seat: layout.me.hud, stage: viewport.safeBounds, compact: viewport.compact, bottom: true });
   }
 
   /** @param {import("../../input/InputManager.js").KeyInput} input */
@@ -541,7 +727,7 @@ export class MatchScene extends Scene {
   }
 
   /**
-   * The board's own keys: E ends the turn, H turns the help off and on.
+   * The board's own keys: E ends the turn, H turns the help off and on, C opens the chat.
    * @param {string} key
    * @returns {boolean} whether the key was the board's
    */
@@ -551,8 +737,21 @@ export class MatchScene extends Scene {
       this.#submit(endTurn(this.#playerId));
       return true;
     }
+    return this.#onBoardButtonKey(key);
+  }
+
+  /**
+   * The keys of the buttons beside the banner: H for the help, C for the chat.
+   * @param {string} key
+   * @returns {boolean} whether the key was theirs
+   */
+  #onBoardButtonKey(key) {
     if (isKey(key, KeyMap.HELP) && this.#offersHelp) {
       this.#help?.toggle();
+      return true;
+    }
+    if (isKey(key, KeyMap.CHAT) && this.#offersChat) {
+      this.#showChat();
       return true;
     }
     return false;
@@ -774,6 +973,7 @@ export class MatchScene extends Scene {
     this.#buildPicked(snapshot, layout, interaction);
     // Under what the board announces ("Your turn", a cast): the help waits its turn to be read.
     this.#buildHelpHeadline(snapshot, layout);
+    this.#buildChatButton(layout);
     this.root.add(new EffectsNode({ presenter: this.#presenter, layout, blocks: allBlocks(snapshot, interaction), turnLabel: (playerId) => this.#turnLabel(snapshot, playerId) }));
     this.#buildSidebar(snapshot, layout, interaction);
     this.#buildLog(layout, snapshot);
@@ -790,7 +990,7 @@ export class MatchScene extends Scene {
 
   /**
    * Opens again, over the rebuilt board, the dialogs that outlive a rebuild:
-   * the result, and the sound settings (they stay open while the opponent plays on).
+   * the result, the sound settings and the chat (they stay open while the opponent plays on).
    * @param {string | null} modalId the dialog open before the rebuild
    * @param {Snapshot} snapshot
    */
@@ -799,6 +999,8 @@ export class MatchScene extends Scene {
       this.#showGameOver(snapshot);
     } else if (modalId === "audio") {
       this.#showAudioSettings();
+    } else if (modalId === "chat") {
+      this.#showChat();
     }
   }
 
@@ -1072,7 +1274,8 @@ export class MatchScene extends Scene {
     const help = this.#helpHeadline(snapshot);
     if (help !== null) {
       const { banner, clock } = layout;
-      const side = Math.max(layout.help.x + layout.help.width - banner.x, banner.x + banner.width - clock.x) + HELP_GAP;
+      const buttons = this.#offersChat ? this.#chatButtonArea(layout) : layout.help;
+      const side = Math.max(buttons.x + buttons.width - banner.x, banner.x + banner.width - clock.x) + HELP_GAP;
       const area = { x: banner.x + side, y: banner.y, width: banner.width - 2 * side, height: banner.height };
       this.root.add(new HelpHeadline({ text: help.headline, tone: help.tone, area, compact: layout.compact, clock: () => this.#elapsedMs }));
     }
@@ -1770,6 +1973,23 @@ function allBlocks(snapshot, interaction) {
  */
 function activeSeatFor(snapshot) {
   return snapshot.isOver ? null : snapshot.activePlayerId;
+}
+
+/**
+ * A chat line as the battle log and the chat dialog show it: a player's, or (dimmer) a spectator's.
+ * @param {import("../../application/online/MatchChat.js").ChatLine} line
+ * @returns {import("../board/eventLog.js").LogEntry}
+ */
+function chatEntry(line) {
+  return Object.freeze({ text: `@${line.account}: ${line.text}`, kind: line.from === ChatFrom.PLAYER ? LogKind.CHAT : LogKind.COMMENT });
+}
+
+/**
+ * The count on the chat button: up to MAX_UNREAD_SHOWN, then "9+".
+ * @param {number} unread
+ */
+function unreadText(unread) {
+  return unread > MAX_UNREAD_SHOWN ? `${MAX_UNREAD_SHOWN}+` : String(unread);
 }
 
 /** @typedef {Readonly<{ playerId: string, spectating: boolean, nameOf: (snapshot: Snapshot, playerId: string) => string }>} Viewer `nameOf`: a player as the screen names them (a challenge's character by its name, others as @account) */

@@ -124,6 +124,8 @@ Nelle partite di allenamento contro l'IA non c'è timer.
 
 **Spettatori:** vedono il tavolo ma **mai le mani** (solo quante carte ha ciascuno), quindi non possono aiutare nessuno dei due giocatori. Al massimo 50 per partita, una partita alla volta.
 
+**Chat:** i due giocatori si scrivono durante la partita (e per un minuto dopo, per il "gg"); le loro frasi compaiono come fumetto accanto al loro posto. Gli spettatori leggono i giocatori e commentano fra loro, ma i giocatori non leggono gli spettatori. Niente viene salvato.
+
 ---
 
 ## 4. Il percorso del giocatore
@@ -327,6 +329,7 @@ Anche se il server venisse compromesso, un attaccante non potrebbe spostare fond
 | Stagioni e jackpot | [21 — Stagioni e jackpot](21-stagioni-e-jackpot.md) |
 | Ingressi ranked | [22 — Ingressi ranked](22-ingressi-ranked.md) |
 | Spettatori | [10 — Spettatori](10-spettatori.md) |
+| Chat al tavolo | [28 — Chat](28-chat.md) |
 | Mosse firmate | [12 — Mosse firmate](12-mosse-firmate.md) |
 | Scambi | [13 — Scambi](13-scambi.md) |
 | Vendite | [14 — Vendite](14-vendite.md) |

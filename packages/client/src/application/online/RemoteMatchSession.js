@@ -14,6 +14,9 @@
  * With no seat it is a spectator's session: it shows what the server
  * streams to spectators (no hand on either side) and submits nothing.
  *
+ * Players and spectators alike may chat at the table: `chat` is the game's
+ * MatchChat (docs/tcg/28-chat.md), when the session has one.
+ *
  * Who plays first was settled by the server's committed seed; the opening
  * update says who (GAME_STARTED). Until anyone moves, the session offers that
  * outcome as a coin toss to show (`openingToss`), with the faces drawn from
@@ -41,6 +44,8 @@ export class RemoteMatchSession {
   #onStop;
   #onAck;
   #signMove;
+  /** The table's chat, when there is one. @type {import("./MatchChat.js").MatchChat | null} */
+  #chat;
   /** Game protocol version, from the server's views. */
   #protocol = 1;
   /** @type {any} */
@@ -61,9 +66,10 @@ export class RemoteMatchSession {
    *   gameId: string, seat: string | null, request: import("../ports/Realtime.contract.js").RealtimeConnection["request"], newCommandId: () => string,
    *   onStop?: () => void, onAck?: (ack: Readonly<Record<string, unknown>>) => void,
    *   signMove?: (move: import("../ports/SessionKeys.contract.js").MoveToSign) => Promise<string | null>,
-   * }} deps seat null: watching; onAck: every accepted command's ack (signed by the server, docs/tcg/11); signMove: v2 signatures
+   *   chat?: import("./MatchChat.js").MatchChat | null,
+   * }} deps seat null: watching; onAck: every accepted command's ack (signed by the server, docs/tcg/11); signMove: v2 signatures; chat: the table's chat
    */
-  constructor({ gameId, seat, request, newCommandId, onStop = () => undefined, onAck = () => undefined, signMove = async () => null }) {
+  constructor({ gameId, seat, request, newCommandId, onStop = () => undefined, onAck = () => undefined, signMove = async () => null, chat = null }) {
     this.#gameId = gameId;
     this.#seat = seat;
     this.#request = request;
@@ -71,6 +77,7 @@ export class RemoteMatchSession {
     this.#onStop = onStop;
     this.#onAck = onAck;
     this.#signMove = signMove;
+    this.#chat = chat;
   }
 
   get gameId() {
@@ -87,6 +94,11 @@ export class RemoteMatchSession {
 
   get isSpectating() {
     return this.#seat === null;
+  }
+
+  /** The table's chat, or null when the session has none. */
+  get chat() {
+    return this.#chat;
   }
 
   get version() {
