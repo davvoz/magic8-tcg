@@ -1,7 +1,6 @@
 /**
- * Chat at the table (docs/tcg/28-chat.md) on the real services: a player's
- * line reaches both players and the spectators, a spectator's only the
- * spectators; who may chat, what a line is cleaned to, how fast one may
+ * Chat at the table (docs/tcg/28-chat.md) on the real services: a line,
+ * a player's or a spectator's, reaches both players and the spectators; who may chat, what a line is cleaned to, how fast one may
  * type, the history a new spectator gets, and the players' last word once
  * the game is over.
  */
@@ -40,7 +39,7 @@ async function start(w) {
 const said = (inbox, type) => inbox.filter((message) => message.t === type).map((message) => message.d);
 
 describe("chat at the table", () => {
-  it("brings a player's line to both players and the spectators, a spectator's to the spectators only", async () => {
+  it("brings every line, a player's or a spectator's, to both players and the spectators", async () => {
     const w = await world();
     await start(w);
     const carol = await w.person("carol");
@@ -59,8 +58,9 @@ describe("chat at the table", () => {
     const comment = said(dave.inbox, "watch.chat").at(-1);
     assert.deepEqual({ ...comment, at: undefined }, { gameId: w.gameId, from: "spectator", seat: null, account: "carol", text: "what a start", at: undefined });
     assert.equal(said(carol.inbox, "watch.chat").length, 2);
-    assert.equal(said(w.alice.inbox, "game.chat").length + said(w.bob.inbox, "game.chat").length, 2, "the players never hear the stands");
-    assert.equal(said(w.alice.inbox, "watch.chat").length, 0);
+    assert.deepEqual(said(w.alice.inbox, "game.chat").at(-1), comment, "the players read the stands");
+    assert.deepEqual(said(w.bob.inbox, "game.chat").at(-1), comment);
+    assert.equal(said(w.alice.inbox, "watch.chat").length, 0, "as players, on their own channel");
   });
 
   it("gives whoever starts watching the latest lines", async () => {

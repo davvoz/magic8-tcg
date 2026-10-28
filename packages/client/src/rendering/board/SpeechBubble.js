@@ -82,13 +82,13 @@ export class SpeechBubble {
   }
 
   /**
-   * Drawn where it is put, with no point to a seat (a spectator's comment): its bottom-left corner at `x`, `bottom`.
+   * Drawn where it is put, with no point to a seat (a spectator's comment): its top-left corner at `x`, `top`.
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
-   * @param {{ x: number, bottom: number, width: number, compact: boolean }} where
+   * @param {{ x: number, top: number, width: number, compact: boolean }} where
    * @returns {number} the height it took (0: nothing to say)
    */
-  paintAt(context, theme, { x, bottom, width, compact }) {
+  paintAt(context, theme, { x, top, width, compact }) {
     const said = this.#said;
     if (said === null) {
       return 0;
@@ -97,7 +97,7 @@ export class SpeechBubble {
     context.save();
     const lines = linesOf(context, theme, { m, line: said.line, width });
     const height = heightOf(m, lines);
-    paintBubble(context, theme, { said, m, frame: { x, y: bottom - height, width, height }, lines, tail: null });
+    paintBubble(context, theme, { said, m, frame: { x, y: top, width, height }, lines, tail: null });
     context.restore();
     return height;
   }

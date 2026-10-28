@@ -46,7 +46,7 @@ Vista dello spettatore: `{ "gameId", "mode", "status", "players": [{ "seat", "ac
   - il banner dice di chi è il turno per nome;
   - l'unico pulsante è "Leave";
   - a fine partita: "@bob wins", poi "Watch another".
-- Gli spettatori chattano fra loro e leggono i giocatori; i giocatori non leggono gli spettatori (28-chat.md).
+- Gli spettatori chattano: li leggono gli altri spettatori e i giocatori, e leggono i giocatori (28-chat.md).
 - La sessione è una `RemoteMatchSession` senza posto: `submit` rifiuta tutto (`SPECTATOR`) senza contattare il server.
 
 ## Minacce

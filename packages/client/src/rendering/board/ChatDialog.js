@@ -1,9 +1,9 @@
 /**
  * The chat of an online game, over the board (docs/tcg/28-chat.md): a line
  * to type and Send, quick lines sent with one tap, what was said so far,
- * and muting the others. Under the title, who reads what: the players read
- * each other (and those watching read them); those watching also read one
- * another. A line that did not go says why in that place instead.
+ * and muting the others. Under the title, who reads what: everyone at the
+ * table, players and those watching. A line that did not go says why in
+ * that place instead.
  *
  * The board plays on underneath: the scene builds the dialog again with
  * every change, from what it keeps (the line being typed, the scroll).
@@ -86,5 +86,5 @@ function readersOf(spectating, muted) {
   if (muted) {
     return "Muted: you do not see what the others say.";
   }
-  return spectating ? "Everyone watching reads you; the players do not." : "Your opponent and anyone watching read you.";
+  return spectating ? "The players and everyone watching read you." : "Your opponent and anyone watching read you.";
 }

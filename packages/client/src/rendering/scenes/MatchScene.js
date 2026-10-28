@@ -77,9 +77,10 @@
  * speech bubble beside the help's "?" (or C) opens it over the board, with a
  * count of the lines not read yet. What a player says shows as a bubble by
  * their seat, as a challenge's character speaks; every line also goes in the
- * battle log. Those watching chat among themselves too: their lines reach
- * only one another, as bubbles stacked in a corner of the table
- * (CommentStack), in the log and in the dialog.
+ * battle log. Those watching chat too, and everyone at the table reads
+ * them: having no seat, their lines show as bubbles stacked in the top
+ * corner of the table (CommentStack), and in the log and the dialog. A
+ * challenge has the chat too: the player talks with those watching.
  */
 import { concede, endPhase, endTurn } from "@magic8/engine/domain/commands/commandFactories.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
@@ -170,7 +171,6 @@ const CHAT_REFUSALS = Object.freeze({
   CHAT_TOO_FAST: "Slow down a moment, then try again.",
   NOT_IN_GAME: "The chat of this game is closed.",
   GAME_NOT_ACTIVE: "The chat opens once the game has started.",
-  CHAT_CLOSED: "Nobody else reads this chat.",
 });
 /** A replay's speeds, as its side panel names them. */
 const SPEED_TEXT = Object.freeze({ [ReplaySpeed.NORMAL]: "Normal", [ReplaySpeed.FAST]: "Fast", [ReplaySpeed.VERY_FAST]: "Very fast" });
@@ -257,7 +257,7 @@ export class MatchScene extends Scene {
   #speech = new SpeechBubble();
   /** The line showing by the bottom seat: the viewer's own in the chat (a spectator's: the first player's). */
   #ownSpeech = new SpeechBubble();
-  /** What those watching say, as a spectator sees it: bubbles in a corner of the table. */
+  /** What those watching say: bubbles in the top corner of the table. */
   #comments = new CommentStack();
   /** The online game's chat, when the board offers it. @type {import("../../application/online/MatchChat.js").MatchChat | null} */
   #chat = null;
@@ -460,23 +460,9 @@ export class MatchScene extends Scene {
     this.#rebuild();
   }
 
-  /**
-   * Whether the board offers the chat: an online game, not a replay. A
-   * player needs someone to read them (not a challenge's character); those
-   * watching always have one another, whoever plays.
-   */
+  /** Whether the board offers the chat: an online game (a challenge too: those watching read the player), not a replay. */
   get #offersChat() {
-    const snapshot = this.#snapshot;
-    if (this.#chat === null || this.#watching || snapshot === null) {
-      return false;
-    }
-    if (this.#spectating) {
-      return true;
-    }
-    return snapshot.players.every((player) => {
-      const account = this.#accountOf(player.id);
-      return account !== null && this.#characterName(account) === null;
-    });
+    return this.#chat !== null && !this.#watching && this.#snapshot !== null;
   }
 
   /**
@@ -730,10 +716,10 @@ export class MatchScene extends Scene {
     const { theme, viewport } = this.services;
     this.#speech.paint(context, theme, { seat: layout.opponent.hud, stage: viewport.safeBounds, compact: viewport.compact });
     this.#ownSpeech.paint(context, theme, { seat: layout.me.hud, stage: viewport.safeBounds, compact: viewport.compact, bottom: true });
-    // Over the bottom half of the table, on the right: for a spectator the bottom hand is only card backs.
-    const top = layout.banner.y + layout.banner.height;
-    const { hand, battlefield } = layout.me;
-    this.#comments.paint(context, theme, { area: { x: battlefield.x, y: top, width: battlefield.width, height: hand.y + hand.height - top }, compact: viewport.compact });
+    // Over the top half of the table, on the right: the opponent's hand is only card backs, and nobody's hand is covered.
+    const { hand, battlefield } = layout.opponent;
+    const top = Math.max(hand.y, viewport.safeBounds.y);
+    this.#comments.paint(context, theme, { area: { x: battlefield.x, y: top, width: battlefield.width, height: layout.banner.y - top }, compact: viewport.compact });
   }
 
   /** @param {import("../../input/InputManager.js").KeyInput} input */

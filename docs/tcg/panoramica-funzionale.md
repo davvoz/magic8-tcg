@@ -124,7 +124,7 @@ Nelle partite di allenamento contro l'IA non c'è timer.
 
 **Spettatori:** vedono il tavolo ma **mai le mani** (solo quante carte ha ciascuno), quindi non possono aiutare nessuno dei due giocatori. Al massimo 50 per partita, una partita alla volta.
 
-**Chat:** i due giocatori si scrivono durante la partita (e per un minuto dopo, per il "gg"); le loro frasi compaiono come fumetto accanto al loro posto. Gli spettatori leggono i giocatori e commentano fra loro, ma i giocatori non leggono gli spettatori. Niente viene salvato.
+**Chat:** i due giocatori si scrivono durante la partita (e per un minuto dopo, per il "gg"); le loro frasi compaiono come fumetto accanto al loro posto. Gli spettatori commentano e tutti leggono tutti, anche nelle Sfide contro l'IA. Niente viene salvato.
 
 ---
 

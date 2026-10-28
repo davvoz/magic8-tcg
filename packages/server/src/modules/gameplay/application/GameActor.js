@@ -42,11 +42,11 @@
  * sees, so a spectator relaying what they watch to a player tells them
  * nothing new, and the stream needs no delay.
  *
- * The table has a chat (docs/tcg/28-chat.md). What a player says reaches
- * both players and the spectators; what a spectator says reaches only the
- * spectators, so nobody can coach a player from the stands. Lines never go
- * through the mailbox nor into the record: they touch no game state. The
- * last few are kept in memory for whoever starts watching.
+ * The table has a chat (docs/tcg/28-chat.md): whatever a player or a
+ * spectator says reaches both players and every spectator (a seat the AI
+ * plays reads nothing). Lines never go through the mailbox nor into the
+ * record: they touch no game state. The last few are kept in memory for
+ * whoever starts watching.
  */
 import { SPECTATOR, redactEventsFor } from "@magic8/engine/domain/game/GameSnapshot.js";
 import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
@@ -81,8 +81,6 @@ export const GameError = Object.freeze({
   INVALID_CHAT: "INVALID_CHAT",
   /** Chat lines sent faster than the table allows. */
   CHAT_TOO_FAST: "CHAT_TOO_FAST",
-  /** Chat in a game with nobody to read it: the other seat is the server's AI. */
-  CHAT_CLOSED: "CHAT_CLOSED",
 });
 
 /** Who said a chat line: one of the players, or someone watching. */
@@ -557,10 +555,10 @@ export class GameActor {
   }
 
   /**
-   * A line said at the table. A player's reaches both players and the
-   * spectators, and may still be said once the game is over (the service
-   * keeps a finished game a little while for that); a spectator's reaches
-   * the spectators only, while they watch.
+   * A line said at the table, by a player or a spectator: it reaches both
+   * players and every spectator. The players may still talk once the game
+   * is over (the service keeps a finished game a little while for that);
+   * the spectators, while they watch.
    * @param {{ userId: string, account: string }} speaker
    * @param {unknown} text
    */
@@ -581,10 +579,8 @@ export class GameActor {
     /** @type {ChatLine} */
     const line = Object.freeze({ gameId: this.id, from: seat === null ? ChatFrom.SPECTATOR : ChatFrom.PLAYER, seat, account, text: said, at });
     this.#chat = [...this.#chat, line].slice(-CHAT_HISTORY);
-    if (seat !== null) {
-      for (const player of this.#humans()) {
-        this.#notifier.send(/** @type {string} */ (player.userId), "game.chat", line);
-      }
+    for (const player of this.#humans()) {
+      this.#notifier.send(/** @type {string} */ (player.userId), "game.chat", line);
     }
     for (const spectator of this.#spectators) {
       this.#notifier.send(spectator, "watch.chat", line);
@@ -600,9 +596,6 @@ export class GameActor {
   #chatRefusal(userId, seat) {
     if (seat === null && !this.#spectators.has(userId)) {
       return fail(GameError.NOT_IN_GAME, "only the players and those watching can chat");
-    }
-    if (seat !== null && this.#humans().length < 2) {
-      return fail(GameError.CHAT_CLOSED, "nobody else plays this game");
     }
     if (this.#status === GameStatus.CREATED || this.#status === GameStatus.ABORTED) {
       return fail(GameError.GAME_NOT_ACTIVE, "the game has not started");

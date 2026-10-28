@@ -1,9 +1,9 @@
 /**
- * What those watching say (docs/tcg/28-chat.md), as a spectator sees it:
- * speech bubbles stacked up from a corner of the table, the newest at the
- * bottom, a few at a time; each fades out on its own, like a player's line
- * by their seat. A spectator has no seat, so the bubbles point at nobody.
- * The players never see them (the server does not send them the stands).
+ * What those watching say (docs/tcg/28-chat.md), as everyone at the table
+ * sees it: speech bubbles stacked down from a corner of the table, the
+ * newest at the bottom, a few at a time; each fades out on its own, like a
+ * player's line by their seat. A spectator has no seat, so the bubbles
+ * point at nobody.
  */
 import { SpeechBubble } from "./SpeechBubble.js";
 
@@ -40,7 +40,7 @@ export class CommentStack {
   }
 
   /**
-   * Up from the bottom-right corner of `area`, as many as fit in it.
+   * Down from the top-right corner of `area`, oldest first.
    * @param {CanvasRenderingContext2D} context
    * @param {import("../theme/Theme.js").Theme} theme
    * @param {{ area: import("@magic8/engine/shared/geometry.js").Rect, compact: boolean }} where
@@ -49,12 +49,9 @@ export class CommentStack {
     const m = compact ? COMPACT : WIDE;
     const width = Math.min(m.width, area.width);
     const x = area.x + area.width - width;
-    let bottom = area.y + area.height;
-    for (const bubble of [...this.#bubbles].reverse()) {
-      if (bottom <= area.y) {
-        return;
-      }
-      bottom -= bubble.paintAt(context, theme, { x, bottom, width, compact }) + m.gap;
+    let top = area.y;
+    for (const bubble of this.#bubbles) {
+      top += bubble.paintAt(context, theme, { x, top, width, compact }) + m.gap;
     }
   }
 }

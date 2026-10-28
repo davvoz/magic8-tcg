@@ -1,8 +1,8 @@
 /**
  * Chat at the table end to end (docs/tcg/28-chat.md): two real clients in
- * a game on a real server, and a third watching it. What a player says
- * reaches the other player and the spectator; what the spectator says
- * reaches only the spectators; the line the server refuses says why.
+ * a game on a real server, and a third watching it. Whatever a player or
+ * the spectator says reaches everyone at the table; the line the server
+ * refuses says why.
  */
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
@@ -18,7 +18,7 @@ describe("chat at the table (two real clients and a spectator, real server)", ()
     }
   });
 
-  it("brings the players' lines to each other and to the stands, and the stands' only to the stands", async () => {
+  it("brings every line to the players and to the stands", async () => {
     const w = await onlineWorld();
     worlds.push(w);
     const alice = await w.player("alice");
@@ -49,9 +49,9 @@ describe("chat at the table (two real clients and a spectator, real server)", ()
     assert.equal((await carolChat.say("what a match")).ok, true);
     await until(() => carolChat.lines.length === 3, "the spectator reads herself");
     assert.deepEqual(carolChat.lines.at(-1).from, "spectator");
+    await until(() => aliceChat.lines.length === 3 && bobChat.lines.length === 3, "the players read the stands");
+    assert.deepEqual(aliceChat.lines.map((line) => line.text), ["good luck, have fun 🙂", "thanks!", "what a match"]);
     await settle();
-    assert.deepEqual(aliceChat.lines.map((line) => line.text), ["good luck, have fun 🙂", "thanks!"], "the players never read the stands");
-    assert.deepEqual(bobChat.lines.map((line) => line.text), ["good luck, have fun 🙂", "thanks!"]);
 
     for (let line = 0; line < 3; line += 1) {
       await aliceChat.say(`spam ${line}`);

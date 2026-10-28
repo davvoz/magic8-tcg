@@ -158,10 +158,11 @@ describe("daily challenges", () => {
     assert.equal(found.opponent.account, aiAccountOf(opponent.id));
 
     await started(w, alice, gameId);
-    assert.equal((await w.games.chat({ userId: alice.id, account: "alice" }, gameId, "hello?")).error.code, "CHAT_CLOSED", "nobody reads the chat against the AI");
     const carol = await w.player("carol");
     assert.equal((await w.games.watch(carol.id, gameId)).ok, true);
-    assert.equal((await w.games.chat({ userId: carol.id, account: "carol" }, gameId, "go alice!")).ok, true, "those watching comment among themselves");
+    assert.equal((await w.games.chat({ userId: carol.id, account: "carol" }, gameId, "go alice!")).ok, true, "those watching comment a challenge");
+    assert.equal(alice.inbox.filter((message) => message.t === "game.chat").at(-1)?.d.text, "go alice!", "and the player reads them");
+    assert.equal((await w.games.chat({ userId: alice.id, account: "alice" }, gameId, "thanks!")).ok, true, "the player answers those watching");
     w.games.unwatch(carol.id);
     const winner = await playOut(w, alice, gameId);
     await new Promise((resolve) => setTimeout(resolve, 20));
