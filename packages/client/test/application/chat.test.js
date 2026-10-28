@@ -246,10 +246,15 @@ describe("MatchScene: chat", () => {
     assert.equal(scene.modal.findById("chat.quick.1").text, "Wow!");
   });
 
-  it("has no chat against a challenge's character", () => {
-    const { scene } = board({ scene: { characterName: (account) => (account.length > 0 ? "Kael" : null) } });
+  it("has no chat for the player against a challenge's character, but those watching still comment", () => {
+    const character = { characterName: (account) => (account.length > 0 ? "Kael" : null) };
+    const { scene } = board({ scene: character });
     assert.equal(scene.root.findById("chat.open"), null);
     scene.onKey({ type: "keydown", key: "c" });
     assert.equal(scene.modal, null);
+    const watched = board({ seat: null, scene: character });
+    assert.ok(watched.scene.root.findById("chat.open") !== null);
+    watched.scene.onKey({ type: "keydown", key: "c" });
+    assert.equal(watched.scene.modal?.id, "chat");
   });
 });

@@ -452,11 +452,18 @@ export class MatchScene extends Scene {
     this.#rebuild();
   }
 
-  /** Whether the board offers the chat: an online game with someone to read it (not a challenge's character), not a replay. */
+  /**
+   * Whether the board offers the chat: an online game, not a replay. A
+   * player needs someone to read them (not a challenge's character); those
+   * watching always have one another, whoever plays.
+   */
   get #offersChat() {
     const snapshot = this.#snapshot;
     if (this.#chat === null || this.#watching || snapshot === null) {
       return false;
+    }
+    if (this.#spectating) {
+      return true;
     }
     return snapshot.players.every((player) => {
       const account = this.#accountOf(player.id);

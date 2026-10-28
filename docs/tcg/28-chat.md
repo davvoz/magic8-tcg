@@ -19,7 +19,7 @@ I giocatori **non leggono** gli spettatori: nessuno può suggerire mosse dagli s
 
 - **Chi può scrivere:** i due giocatori, e chi sta guardando la partita (`watch.start`). Gli altri ricevono `NOT_IN_GAME`.
 - **Quando:** da quando la partita è cominciata (`GAME_NOT_ACTIVE` prima). I giocatori possono ancora scriversi per **un minuto dopo la fine** (il "gg"): il server tiene l'attore della partita finita per quel tempo. Gli spettatori smettono con la partita (`watch.over`).
-- **Contro l'IA no:** in una partita contro l'IA del server (Sfide) non c'è nessuno a leggere: `CHAT_CLOSED`, e il client non mostra il pulsante.
+- **Contro l'IA no:** in una partita contro l'IA del server (Sfide) il giocatore non ha nessuno che lo legga: `CHAT_CLOSED`, e il suo client non mostra il pulsante. Chi guarda una Sfida invece commenta come in ogni altra partita.
 - **Il testo** (`cleanChatLine`): testo semplice su una riga, al massimo **140 caratteri**. Spariscono i caratteri di controllo e di formattazione (per esempio quelli che invertono la direzione del testo), tranne il joiner che tiene insieme le emoji; gli spazi ripetuti diventano uno. Una riga vuota dopo la pulizia è `INVALID_CHAT`.
 - **Quanto spesso** (`ChatThrottle`): 4 righe di fila, poi una ogni 2 secondi, per persona. Oltre: `CHAT_TOO_FAST`. Si somma al limite di messaggi della connessione.
 - **Niente viene salvato.** Le righe vivono nella memoria dell'attore finché la partita è in corso: non entrano negli eventi della partita, nel DB né sulla catena. Le ultime 30 vanno a chi comincia a guardare.
