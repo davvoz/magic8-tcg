@@ -166,7 +166,7 @@ describe("MatchInteraction with confirmPlays", () => {
 
 describe("MatchScene on a phone", () => {
   for (const [label, size] of [["iPhone 14", PHONE], ["iPhone SE", SMALL_PHONE]]) {
-  it(`lays out the compact board on an ${label}: mini cards, an action column with the log at its top and concede at its foot, no log panel`, async () => {
+  it(`lays out the compact board on an ${label}: mini cards, an action column with the log and concede side by side at its foot, no log panel`, async () => {
     const { scene } = await phoneMatch({ p1: { hand: ["lava_brute"], resources: 5 }, p2: { battlefield: ["ember_imp"] } }, size);
     const { viewport } = scene.services;
     assert.equal(viewport.compact, true);
@@ -179,8 +179,9 @@ describe("MatchScene on a phone", () => {
       assert.ok(inside(button.bounds, viewport.safeBounds), `${button.id} is on screen`);
     }
     const [log, leave, endTurn] = ["log.open", "leave", "endTurn"].map((id) => byId(scene, id));
-    assert.ok(log.bounds.y + log.bounds.height <= byId(scene, "prompt").bounds.y, "the log at the top, beside the turn");
-    assert.equal(leave.width, endTurn.width, "concede alone at the foot, the column's width");
+    assert.equal(log.bounds.y, leave.bounds.y, "the log beside concede");
+    assert.ok(log.bounds.x + log.width < leave.bounds.x, "the log before concede");
+    assert.ok(leave.bounds.y >= endTurn.bounds.y + endTurn.height, "both at the column's foot");
     const context = new FakeContext2D();
     scene.render(context);
     assert.ok(["Log", "Concede"].every((text) => context.texts.includes(text)), "both labels written whole");
