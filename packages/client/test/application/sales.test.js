@@ -121,7 +121,7 @@ function market({ account = "bob", wallet = fakeWallet(), budget } = {}) {
   let reloads = 0;
   const copy = (id, serial, tradeable, status = "active") => ({ id: uuid(id), edition: "core-1", serial, status, tradeable });
   const accountService = { state: { account }, collection: { state: { cards: [{ definitionId: "iron_watcher", copies: [copy(31, 1, true), copy(32, 2, false), copy(33, 3, true, "locked")] }] } } };
-  const sales = new SalesService({ api, wallet, account: accountService, scheduler: immediateScheduler, newKey: () => "list-key-000000000001", onCollectionChanged: () => (reloads += 1), connection });
+  const sales = new SalesService({ api, wallet, account: accountService, scheduler: immediateScheduler, now: () => NOW, newKey: () => "list-key-000000000001", onCollectionChanged: () => (reloads += 1), connection });
   const viewport = new Viewport(theme.layout);
   viewport.resize({ cssWidth: 1600, cssHeight: 900 });
   const navigated = [];
@@ -202,7 +202,8 @@ describe("MarketScene", () => {
     await flush();
     await flush();
     assert.equal(wallet.requests.length, 1);
-    assert.ok(rendered(scene).some((text) => text.includes("the card is in your collection")));
+    assert.equal(byId(scene, "market.tracker.title").text, "Delivered!", "the purchase's steps all ticked");
+    assert.equal(byId(scene, "market.tracker.note").text, "The card is in your collection.");
     assert.ok(byId(scene, "market.buying.collection"), "the card bought can be seen in the collection");
     byId(scene, "market.buying.close").activate();
     assert.equal(byId(scene, "market.buying.close"), null);

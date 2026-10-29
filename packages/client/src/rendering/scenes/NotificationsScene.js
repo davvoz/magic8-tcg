@@ -7,6 +7,11 @@
  * and marked "New" until the player opens it. Cards received are handed to
  * the collection, which lights them. What the feed is doing (loading, a
  * failure) is said in the toolbar.
+ *
+ * The challenges other players have sent the player lead the feed while they
+ * are open, with the time left to answer: they live a minute, so they are
+ * not kept with the rest, and Answer opens the lobby of their mode, where
+ * they are answered.
  */
 import { NotificationTarget, describeNotification } from "../../application/notifications/describeNotification.js";
 import { NotificationStatus } from "../../application/notifications/NotificationService.js";
@@ -21,6 +26,7 @@ import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
+import { answerTimeText, lobbyOf, modeName } from "./lobby/lobbyText.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 
@@ -35,6 +41,7 @@ const WIDE = Object.freeze({ entry: Object.freeze({ height: 140, gap: 12, textWi
 const COMPACT = Object.freeze({ entry: Object.freeze({ height: 110, gap: 8, textWidth: null, open: 96, openHeight: 46, avatar: 40 }), thumb: Object.freeze({ width: 48, gap: 6, max: 3 }) });
 
 const LIST_ID = "notifications.list";
+const CHALLENGE_TIME_ID = "notifications.challenge.time";
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -104,8 +111,8 @@ export class NotificationsScene extends SectionScene {
 
   #app;
   #now;
-  /** @type {(() => void) | null} */
-  #unsubscribe = null;
+  /** @type {Array<() => void>} */
+  #unsubscribes = [];
   #scrollY = 0;
 
   /**
@@ -123,15 +130,36 @@ export class NotificationsScene extends SectionScene {
   enter(params = {}) {
     this.routeBack(params);
     const notifications = this.#notifications();
-    this.#unsubscribe = notifications.subscribe(() => this.#rebuild());
+    this.#unsubscribes = [notifications.subscribe(() => this.#rebuild())];
+    if (this.#app.lobby !== undefined) {
+      this.#unsubscribes.push(this.#app.lobby.subscribe(() => this.#rebuild()));
+    }
     notifications.refresh().then(() => notifications.markAllRead());
     this.#rebuild();
   }
 
   exit() {
-    this.#unsubscribe?.();
-    this.#unsubscribe = null;
+    this.#unsubscribes.forEach((unsubscribe) => unsubscribe());
+    this.#unsubscribes = [];
     super.exit();
+  }
+
+  /**
+   * Moves the time left to answer each open challenge on.
+   * @param {number} dtMs
+   */
+  update(dtMs) {
+    let changed = super.update(dtMs);
+    const lobby = this.#app.lobby;
+    for (const challenge of lobby?.state.incoming ?? []) {
+      const label = this.root.findById(`${CHALLENGE_TIME_ID}.${challenge.id}`);
+      const text = answerTimeText(challenge.mode, /** @type {NonNullable<typeof lobby>} */ (lobby).secondsLeft(challenge));
+      if (label instanceof Label && label.text !== text) {
+        label.text = text;
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -166,15 +194,19 @@ export class NotificationsScene extends SectionScene {
   #buildList(panel, width, state) {
     const ENTRY = this.#m.entry;
     const list = panel.add(new ScrollList({ id: LIST_ID, x: this.#screen.inset, y: this.#screen.inset, width, height: this.#panel.height - 2 * this.#screen.inset }));
+    const challenges = this.#app.lobby?.state.incoming ?? [];
+    challenges.forEach((challenge, index) => this.#buildChallenge(list, challenge, index * (ENTRY.height + ENTRY.gap)));
+    const top = challenges.length * (ENTRY.height + ENTRY.gap);
     if (state.items.length === 0) {
       const empty = state.status === NotificationStatus.LOADING ? "Loading…" : "Nothing yet. When your cards arrive, someone answers a trade or buys your card, you will find it here.";
-      list.add(new TextBlock({ id: "notifications.empty", x: 0, y: 0, width: list.rowWidth, height: 80, text: empty, size: "body", colorKey: "textMuted" }));
-      list.contentHeight = 80;
+      list.add(new TextBlock({ id: "notifications.empty", x: 0, y: top, width: list.rowWidth, height: 80, text: empty, size: "body", colorKey: "textMuted" }));
+      list.contentHeight = top + 80;
+      list.scrollTo(this.#scrollY);
       return;
     }
     const now = this.#now();
-    state.items.forEach((item, index) => this.#buildEntry(list, item, index * (ENTRY.height + ENTRY.gap), now));
-    let height = state.items.length * (ENTRY.height + ENTRY.gap) - ENTRY.gap;
+    state.items.forEach((item, index) => this.#buildEntry(list, item, top + index * (ENTRY.height + ENTRY.gap), now));
+    let height = top + state.items.length * (ENTRY.height + ENTRY.gap) - ENTRY.gap;
     if (state.more) {
       list.add(new Button({ id: "notifications.more", x: 0, y: height + ENTRY.gap, width: list.rowWidth, height: 52, text: "Show older", onActivate: () => this.#notifications().loadMore() }));
       height += ENTRY.gap + 52;
@@ -225,6 +257,30 @@ export class NotificationsScene extends SectionScene {
     });
     if (open !== null) {
       list.add(new Button({ id: `notifications.open.${item.id}`, x: list.rowWidth - ENTRY.open - 16, y: y + (ENTRY.height - ENTRY.openHeight) / 2, width: ENTRY.open, height: ENTRY.openHeight, text: "Open", variant: fresh ? "primary" : "secondary", onActivate: open }));
+    }
+  }
+
+  /**
+   * A challenge another player has sent, while it is open: who, the time left to answer, and Answer, which opens the
+   * lobby of its mode (Back comes back here).
+   * @param {ScrollList} list
+   * @param {import("../../application/lobby/LobbyService.js").Challenge} challenge
+   * @param {number} y
+   */
+  #buildChallenge(list, challenge, y) {
+    const { entry: ENTRY } = this.#m;
+    const lobby = /** @type {import("../../application/lobby/LobbyService.js").LobbyService} */ (this.#app.lobby);
+    const scene = lobbyOf(challenge.mode);
+    const answer = this.services.hasScene(scene) ? () => this.services.navigate(scene, this.backHere()) : null;
+    list.add(new Panel({ id: `notifications.challenge.${challenge.id}`, x: 0, y, width: list.rowWidth, height: ENTRY.height, glowKey: "accent", onActivate: answer, smallCorners: this.#screen.compact }));
+    list.add(new AvatarNode({ id: `notifications.challenge.avatar.${challenge.id}`, x: 16, y: y + 12, size: ENTRY.avatar, account: challenge.from }));
+    const x = 16 + ENTRY.avatar + 16;
+    const textWidth = list.rowWidth - x - ENTRY.open - 2 * 16;
+    list.add(new Label({ id: `notifications.challenge.title.${challenge.id}`, x, y: y + 10, width: textWidth, height: 30, text: `@${challenge.from} challenges you`, weight: "bold", align: "left", colorKey: "accent", fit: true }));
+    list.add(new Label({ id: `${CHALLENGE_TIME_ID}.${challenge.id}`, x, y: y + 40, width: textWidth, height: 22, text: answerTimeText(challenge.mode, lobby.secondsLeft(challenge)), size: "tiny", align: "left", colorKey: "accentLight" }));
+    list.add(new TextBlock({ id: `notifications.challenge.body.${challenge.id}`, x, y: y + 64, width: textWidth, height: ENTRY.height - 72, text: `Answer it in the ${modeName(challenge.mode)} lobby: choose your deck, then accept or decline.`, size: "small", colorKey: "text" }));
+    if (answer !== null) {
+      list.add(new Button({ id: `notifications.challenge.answer.${challenge.id}`, x: list.rowWidth - ENTRY.open - 16, y: y + (ENTRY.height - ENTRY.openHeight) / 2, width: ENTRY.open, height: ENTRY.openHeight, text: "Answer", variant: "primary", onActivate: answer }));
     }
   }
 

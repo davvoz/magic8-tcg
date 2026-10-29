@@ -3,7 +3,7 @@
 **Stato:** M7.6, 2026-09-26.
 - **Server:** modulo `sales` (`SalesService`: annunci, prenotazioni, bacheca; `SaleSettlement`: osserva la catena e consegna la carta). Escrow nel modulo collection, come per gli scambi.
 - **Protocollo:** record `m8tcg_sale` in `@magic8/protocol` (`saleRecord`, `parseSaleRecord`).
-- **Client:** schermata "Market", raggiungibile dal negozio ("Market") e dalla collezione ("Market").
+- **Client:** schermata "Market", raggiungibile dal negozio ("Market") e dalla collezione ("Market"). L'acquisto in corso si segue come nel negozio: le tappe *Reserve*, *Payment*, *Blockchain*, *Delivered* accanto alla carta, con la barra dell'attesa della blockchain (`DETECTED` la fa avanzare) e il tempo che manca; finché è pagato e non consegnato, la barra in alto lo mostra da ogni schermata (panoramica §6.3).
 
 ## L'idea
 

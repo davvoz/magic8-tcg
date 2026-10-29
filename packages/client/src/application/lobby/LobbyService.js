@@ -212,6 +212,14 @@ export class LobbyService {
     return this.#failure(reply, "challenge.cancelled") ?? ok(undefined);
   }
 
+  /**
+   * The whole seconds left to answer a challenge (0 once it lapses), on this browser's clock.
+   * @param {Challenge} challenge
+   */
+  secondsLeft(challenge) {
+    return Math.max(0, Math.ceil((challenge.deadline - this.#now()) / 1000));
+  }
+
   /** Forgets the last error shown. */
   clearError() {
     this.#set({ error: null });

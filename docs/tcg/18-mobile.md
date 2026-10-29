@@ -40,7 +40,7 @@ Le scene si ridispongono (`Scene.relayout`) solo quando cambia lo spazio di prog
 `computeBoardLayout(…, { compact: true })`:
 
 - HUD a sinistra (larghi 156, l'interno scala con la piastra: `lifeCrystalCentre`/`hudStackCentre` restano coerenti con gli effetti);
-- colonna azioni a destra (150) con turno, fase, suggerimento, bottoni e in fondo **Log** (il registro si apre in un modale) e **Concede**;
+- colonna azioni a destra (150) con turno e fase (accanto, in alto, il pulsante **Log**: il registro si apre in un modale), suggerimento, bottoni e in fondo **Concede** a tutta larghezza. Log non sta più in fondo accanto a Concede: era troppo stretto per leggersi, e una seconda riga in fondo non ci sta quando una carta scelta mette quattro bottoni nella colonna;
 - campi al centro con carte 76×106, mano in basso con carte 80×112, mano avversaria che spunta dal bordo alto;
 - carte disegnate con il profilo **MINI** di `CardFace`: nome, costo e statistiche più grandi, solo le keyword nel riquadro del testo. Il testo completo si legge con il long-press (ispezione) o nell'anteprima della carta scelta;
 - il lancio della moneta e la scritta di fine partita si rimpiccioliscono per stare nell'area sicura.

@@ -109,7 +109,7 @@ export class RankedScene extends LobbyScene {
    */
   constructor(services, app, now = () => Date.now()) {
     super(services, app, { scene: SceneId.RANKED, title: "Ranked", now });
-    this.#purchase = new EntryPurchaseDialog(app, { onClose: () => this.#closePurchase(), onPlay: () => this.#playAfterPurchase(), refresh: () => this.rebuild() });
+    this.#purchase = new EntryPurchaseDialog(app, { onClose: () => this.#closePurchase(), onPlay: () => this.#playAfterPurchase(), refresh: () => this.rebuild(), now });
   }
 
   /**
@@ -137,7 +137,9 @@ export class RankedScene extends LobbyScene {
   /** @param {number} dtMs */
   update(dtMs) {
     const ticked = this.#showcase?.tick() ?? false;
-    return super.update(dtMs) || ticked;
+    // The tickets being bought: their purchase's steps and the blockchain's wait move on.
+    const tracked = this.dialog?.kind === "tickets" && this.#purchase.tick(dtMs);
+    return super.update(dtMs) || ticked || tracked;
   }
 
   /** The season's prize, when the season has a jackpot. */
@@ -284,7 +286,7 @@ export class RankedScene extends LobbyScene {
 
   /**
    * The season and the standing, the entries held, what playing needs (wide), the ways to play, then the status and
-   * the big button (or the auto list's).
+   * the big button (or the auto list's); a ranked challenge received, answered in place of the ways and what follows.
    * @param {import("../ui/Panel.js").Panel} panel
    * @param {{ width: number, height: number }} room
    */
@@ -293,6 +295,10 @@ export class RankedScene extends LobbyScene {
     const { width } = room;
     const auto = this.rankedAllowed() && this.#way === RankedWay.AUTO && this.app.autoList !== undefined;
     const top = this.screen.compact ? this.#buildHeadCompact(panel, width) : this.#buildHead(panel, width);
+    if (this.incomingChallenge() !== null) {
+      // A challenge received: answered under the tickets, in place of the ways to play.
+      return this.buildPlay(panel, room, { top, fair: false, foot: null });
+    }
     const y = this.#buildWays(panel, width, top);
     if (auto) {
       return this.#buildAuto(panel, room, y);

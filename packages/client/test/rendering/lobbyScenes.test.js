@@ -1,7 +1,7 @@
 /**
  * The two online lobbies, Casual and Ranked, against a real OnlineService and a scripted server: decks with their
  * playability, queueing in the lobby's mode, handing the match to the match screen once the server starts the game,
- * the players online and the challenges (sent in the lobby's mode, answered from either), and — in v2 — who has
+ * the players online and the challenges (sent and answered in the lobby's mode, in its panel), and — in v2 — who has
  * accepted the game with Keychain. Ranked puts first what it needs: the entries held (got right there, in a dialog),
  * ranked open to the player, a deck; and a ranked game takes entries, never money.
  */
@@ -133,7 +133,7 @@ function shopFor(open, account) {
   const market = fakeMarketApi({ listing: LISTING_WITH_ENTRIES });
   const transfers = [];
   const wallet = { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async (request) => (transfers.push(request), ok("ef".repeat(20))) };
-  const shop = open ? new ShopService({ api: market.api, wallet, account, scheduler: { delay: async () => undefined }, newKey: () => "key" }) : undefined;
+  const shop = open ? new ShopService({ now: () => 0, api: market.api, wallet, account, scheduler: { delay: async () => undefined }, newKey: () => "key" }) : undefined;
   return { shop, market, transfers };
 }
 
@@ -296,7 +296,9 @@ describe("RankedScene", () => {
     assert.deepEqual(market.calls.find((call) => call.name === "createOrder").args[0], { items: [{ productId: "ranked_entry", quantity: 4 }], asset: "STEEM" });
     assert.deepEqual(transfers.map((transfer) => transfer.amount), ["4.000"], "one wallet prompt for four games");
     assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
-    assert.equal(dialog().findById("tickets.status").text, "Done: 4 ranked tickets added. Good luck in the season!");
+    assert.equal(dialog().findById("tickets.tracker.title").text, "Delivered!", "the purchase's steps all ticked, where the quantity was");
+    assert.equal(dialog().findById("tickets.tracker.note").text, "4 ranked tickets added. Good luck in the season!");
+    assert.equal(dialog().findById("tickets.quantity"), null);
     dialog().findById("tickets.play").activate();
     assert.equal(scene.modal, null);
   });
@@ -433,48 +435,71 @@ describe("Lobbies: players online and challenges", () => {
     assert.ok(broke.modal?.findById("tickets.buy"), "the challenge gives way to getting entries");
   });
 
-  it("shows a challenge received first, and accepts it with the selected deck", async () => {
+  it("answers a challenge received in the panel, accepting it with the selected deck", async () => {
     const { scene, requests, push } = await harness({ lobbyReplies });
     push("challenge.received", CHALLENGE);
-    const row = byId(scene, "online.challenge.c1");
-    assert.equal(row.text, "@carol challenges you");
-    assert.equal(row.avatar, "carol");
-    row.activate();
-    assert.equal(byId(scene, "challenge.title").text, "@carol challenges you");
-    assert.match(byId(scene, "challenge.message").text, /You play with “Iron Foundry”/);
-    byId(scene, "challenge.accept").activate();
+    assert.equal(byId(scene, "online.answer.title").text, "@carol challenges you");
+    assert.equal(byId(scene, "online.answer.time").text, "Casual game · 1:00 to answer");
+    assert.match(byId(scene, "online.answer.message").text, /You play with “Iron Foundry”/);
+    assert.equal(byId(scene, "online.find"), null, "Accept takes the big button's place");
+    assert.equal(scene.modal, null, "no dialog to open");
+    byId(scene, "online.answer.accept").activate();
     await flush();
     assert.deepEqual(requests.find((request) => request.t === "challenge.accept").d, { challengeId: "c1", deckId: DECK });
-    assert.equal(byId(scene, "online.challenge.c1"), null);
+    assert.equal(byId(scene, "online.answer.accept"), null);
+    assert.ok(byId(scene, "online.find"), "the panel is the lobby's again");
   });
 
-  it("answers a ranked challenge from the casual lobby too, and sends a player without entries to get them", async () => {
-    const { scene, navigated, push } = await harness({ lobbyReplies, ranked: { balance: 0, perGame: 1 } });
-    push("challenge.received", { ...CHALLENGE, mode: "ranked" });
-    byId(scene, "online.challenge.c1").activate();
-    assert.match(byId(scene, "challenge.message").text, /It takes a ranked ticket, and you have none/);
-    assert.equal(byId(scene, "challenge.accept"), null);
-    byId(scene, "challenge.getEntries").activate();
-    assert.deepEqual(navigated.at(-1), { id: SceneId.RANKED, params: { buy: true, back: SceneId.CASUAL, backParams: {} } });
-  });
-
-  it("keeps a dialog open while the list refreshes, and closes it when its challenge closes", async () => {
-    const listed = { t: "lobby.players", d: { players, challenges: { incoming: [CHALLENGE], outgoing: null } } };
-    const { scene, lobby, requests, push } = await harness({ lobbyReplies: { ...lobbyReplies, "lobby.list": () => listed } });
-    push("challenge.received", CHALLENGE);
-    byId(scene, "online.challenge.c1").activate();
-    await lobby?.refresh();
-    assert.notEqual(scene.modal, null, "a refresh does not close it");
-    assert.equal(byId(scene, "challenge.title").text, "@carol challenges you");
-    push("challenge.closed", { challengeId: "c1", reason: "cancelled" });
+  it("lists each player once: a challenger's row says so and leads to the answer", async () => {
+    const listed = { t: "lobby.players", d: { players: [...players, { account: "carol", status: "idle" }], challenges: { incoming: [CHALLENGE], outgoing: null } } };
+    const { scene } = await harness({ lobbyReplies: { ...lobbyReplies, "lobby.list": () => listed } });
+    assert.equal(byId(scene, "online.challenge.c1"), null, "no row of its own");
+    const carol = byId(scene, "online.player.carol");
+    assert.match(carol.subtitle, /Challenging you/);
+    carol.activate();
+    assert.equal(scene.focusedNode?.id, "online.answer.accept");
     assert.equal(scene.modal, null);
+  });
 
-    push("challenge.received", { ...CHALLENGE, id: "c3" });
-    byId(scene, "online.challenge.c3").activate();
-    byId(scene, "challenge.decline").activate();
+  it("counts the time left down", async () => {
+    let now = 0;
+    const { scene, lobby, push } = await harness({ lobbyReplies });
+    Object.assign(lobby, { secondsLeft: (challenge) => Math.max(0, Math.ceil((challenge.deadline - now) / 1000)) });
+    push("challenge.received", CHALLENGE);
+    now = 18_500;
+    assert.equal(scene.update(16), true);
+    assert.equal(byId(scene, "online.answer.time").text, "Casual game · 0:42 to answer");
+    assert.equal(scene.update(16), false, "nothing to draw again within the second");
+  });
+
+  it("answers a challenge in its own mode's lobby only, and offers tickets in place of Accept to a player who has none", async () => {
+    const { scene, push } = await harness({ lobbyReplies, ranked: { balance: 0, perGame: 1 } });
+    push("challenge.received", { ...CHALLENGE, mode: "ranked" });
+    assert.equal(byId(scene, "online.answer.title"), null, "nothing of ranked play in the casual lobby");
+
+    const { scene: ranked, push: pushRanked } = await harness({ lobby: "ranked", lobbyReplies, ranked: { balance: 0, perGame: 1 }, shop: true });
+    pushRanked("challenge.received", { ...CHALLENGE, mode: "ranked" });
+    assert.equal(byId(ranked, "online.answer.time").text, "Ranked game · 1:00 to answer");
+    assert.match(byId(ranked, "online.answer.message").text, /you have none/);
+    assert.equal(byId(ranked, "online.answer.accept"), null);
+    byId(ranked, "challenge.getEntries").activate();
+    assert.ok(ranked.modal?.findById("tickets.buy"), "the purchase opens right there");
+  });
+
+  it("keeps the answer while the list refreshes, goes on to the next challenge, and declines", async () => {
+    const second = { ...CHALLENGE, id: "c3", from: "dave" };
+    const listed = { t: "lobby.players", d: { players, challenges: { incoming: [CHALLENGE, second], outgoing: null } } };
+    const { scene, lobby, requests, push } = await harness({ lobbyReplies: { ...lobbyReplies, "lobby.list": () => listed } });
+    push("challenge.received", second);
+    assert.match(byId(scene, "online.answer.message").text, /1 more challenge after this one/);
+    await lobby?.refresh();
+    assert.equal(byId(scene, "online.answer.title").text, "@carol challenges you");
+    push("challenge.closed", { challengeId: "c1", reason: "cancelled" });
+    assert.equal(byId(scene, "online.answer.title").text, "@dave challenges you");
+    byId(scene, "online.answer.decline").activate();
     await flush();
     assert.deepEqual(requests.at(-1), { t: "challenge.decline", d: { challengeId: "c3" } });
-    assert.equal(scene.modal, null);
+    assert.equal(byId(scene, "online.answer.title"), null);
   });
 });
 

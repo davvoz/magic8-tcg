@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 
 import { ok } from "@magic8/engine/shared/Result.js";
 import { BalanceService } from "../../src/application/wallet/BalanceService.js";
+import { PurchaseStage } from "../../src/application/shop/ShopService.js";
 import { EntryService } from "../../src/application/entries/EntryService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
@@ -44,9 +45,9 @@ class ProbeScene extends SectionScene {
   button = null;
   pressed = 0;
 
-  /** @param {{ scene?: string, title?: string, back?: (() => void) | null }} [heading] a screen of the Decks section by default (not one of its own) */
-  constructor(services, app, { scene = SceneId.DECK_BUILDER, title = "Probe", back = null } = {}) {
-    super(services, app, { scene, title });
+  /** @param {{ scene?: string, title?: string, back?: (() => void) | null, now?: () => number }} [heading] a screen of the Decks section by default (not one of its own) */
+  constructor(services, app, { scene = SceneId.DECK_BUILDER, title = "Probe", back = null, now } = {}) {
+    super(services, app, { scene, title, now });
     if (back !== null) {
       this.setHeading({ back });
     }
@@ -270,6 +271,33 @@ describe("The top bar", () => {
     new ProbeScene(services, app);
     await settle();
     assert.equal(reads, 1, "a known wallet is not read again by the next screen");
+  });
+
+  it("shows a purchase paid and on its way from any screen, the time left counting down, and opens where it is followed", async () => {
+    const listeners = new Set();
+    let purchase = { stage: PurchaseStage.SIGNING, order: { status: "PAYMENT_PENDING", payment: null }, txId: null, paidAt: null, error: null, cart: null };
+    const shop = { get state() { return { purchase }; }, subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)) };
+    const changeTo = (next) => ((purchase = next), listeners.forEach((listener) => listener()));
+    const { app, services, identity, navigated } = world({ app: { shop } });
+    identity.become(ALICE);
+    await settle();
+    let clock = 21_000;
+    const scene = new ProbeScene(services, app, { now: () => clock });
+    assert.equal(scene.findNode("shell.arrival"), null, "nothing paid yet");
+    changeTo({ ...purchase, stage: PurchaseStage.CONFIRMING, paidAt: 1000 });
+    const arrival = scene.findNode("shell.arrival");
+    assert.deepEqual([arrival.label, arrival.value], ["Arriving", "0:40"]);
+    clock += 10_000;
+    assert.equal(scene.update(100), true);
+    assert.equal(scene.findNode("shell.arrival").value, "0:30", "counting down");
+    clock += 60_000;
+    scene.update(100);
+    assert.equal(scene.findNode("shell.arrival").value, "any moment", "late, but on its way");
+    scene.findNode("shell.arrival").activate();
+    assert.equal(navigated.at(-1).id, SceneId.SHOP, "the shop follows it step by step");
+    assert.equal(new ProbeScene(services, app, { scene: SceneId.SHOP }).findNode("shell.arrival"), null, "not on the shop itself");
+    changeTo({ ...purchase, stage: PurchaseStage.DONE });
+    assert.equal(scene.findNode("shell.arrival"), null, "delivered: the notification says so");
   });
 
   it("fits everything on the smallest phone, the player's picture without the name", async () => {

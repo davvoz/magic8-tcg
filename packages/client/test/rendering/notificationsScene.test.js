@@ -1,6 +1,7 @@
 /**
  * Notifications and rarity on screen: the feed (new markers, cards that open
- * their details, the way to the follow-up screen, marking read), the toasts
+ * their details, the way to the follow-up screen, marking read, the
+ * challenges open at its head), the toasts
  * over any scene, the top bar's bell, and a card's rarity shown on its
  * face, on its strip and in the details of every screen that lists cards.
  */
@@ -9,6 +10,7 @@ import { describe, it } from "node:test";
 
 import { ok } from "@magic8/engine/shared/Result.js";
 import { buildCardRarities } from "../../src/application/content/CardRarities.js";
+import { LobbyService } from "../../src/application/lobby/LobbyService.js";
 import { NotificationService } from "../../src/application/notifications/NotificationService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
@@ -52,6 +54,25 @@ function harness() {
   const services = { theme, viewport, logger: world.logger, requestRender: () => undefined, navigate: (id, params) => navigated.push({ id, params }), hasScene: () => true };
   return { ...world, api, notifications, app, services, navigated, viewport };
 }
+
+/**
+ * A lobby on a scripted connection: `push` delivers a server message, `clock.now` is its time.
+ * @param {{ now: number }} clock
+ */
+function lobbyWith(clock) {
+  const listeners = new Set();
+  const connection = {
+    status: "closed",
+    connect: () => undefined,
+    request: async () => ok({ t: "lobby.players", d: { players: [], challenges: { incoming: [], outgoing: null } } }),
+    subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+    onStatus: () => () => undefined,
+  };
+  const lobby = new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => clock.now, logger: new MemoryLogger() });
+  lobby.start();
+  return { lobby, push: (t, d) => listeners.forEach((listener) => listener({ t, d })) };
+}
+const CHALLENGE = Object.freeze({ id: "c1", from: "carol", to: "alice", mode: "ranked", expiresAt: 0, expiresInMs: 60_000 });
 
 /** Every node in the tree, depth first. */
 function nodes(root) {
@@ -161,6 +182,33 @@ describe("NotificationsScene", () => {
     assert.match(byId(scene, "notifications.empty").text, /Nothing yet/);
   });
 
+  it("leads with the challenges open, counting their time down, and answers them in their lobby", async () => {
+    const h = harness();
+    const clock = { now: 0 };
+    const { lobby, push } = lobbyWith(clock);
+    h.notifications.start();
+    await settle();
+    const scene = new NotificationsScene(h.services, { ...h.app, lobby }, () => NOW);
+    scene.enter({});
+    await settle();
+    push("challenge.received", CHALLENGE);
+    assert.equal(byId(scene, "notifications.challenge.title.c1").text, "@carol challenges you");
+    assert.equal(byId(scene, "notifications.challenge.time.c1").text, "Ranked game · 1:00 to answer");
+    assert.ok(byId(scene, "notifications.challenge.c1").y < byId(scene, "notifications.entry.3").y, "ahead of the feed");
+    clock.now = 15_000;
+    assert.equal(scene.update(16), true);
+    assert.equal(byId(scene, "notifications.challenge.time.c1").text, "Ranked game · 0:45 to answer");
+    byId(scene, "notifications.challenge.answer.c1").activate();
+    assert.deepEqual(h.navigated.at(-1), { id: SceneId.RANKED, params: { back: SceneId.NOTIFICATIONS, backParams: {} } });
+    scene.exit();
+
+    const again = new NotificationsScene(h.services, { ...h.app, lobby }, () => NOW);
+    again.enter({});
+    push("challenge.closed", { challengeId: "c1", reason: "expired" });
+    assert.equal(byId(again, "notifications.challenge.c1"), null, "gone once it closes");
+    again.exit();
+  });
+
   it("words elapsed time", () => {
     assert.deepEqual([timeAgo(NOW - 1000, NOW), timeAgo(NOW - 90 * 60 * 1000, NOW), timeAgo(NOW - 24 * 60 * 60 * 1000, NOW), timeAgo(NOW - 3 * 24 * 60 * 60 * 1000, NOW)], ["just now", "1 h ago", "1 day ago", "3 days ago"]);
   });
@@ -179,6 +227,22 @@ describe("the top bar's notifications", () => {
     assert.equal(byId(menu, "notifications").badge, "2", "the bell counts what is unread");
     byId(menu, "notifications").activate();
     assert.equal(h.navigated.at(-1).id, SceneId.NOTIFICATIONS);
+    menu.exit();
+  });
+
+  it("count the challenges open too, while they are", async () => {
+    const h = harness();
+    const { lobby, push } = lobbyWith({ now: 0 });
+    h.identity.become(ALICE);
+    await settle();
+    h.notifications.start();
+    await settle();
+    const menu = new HomeScene(h.services, { ...h.app, lobby });
+    menu.enter({});
+    push("challenge.received", CHALLENGE);
+    assert.equal(byId(menu, "notifications").badge, "3");
+    push("challenge.closed", { challengeId: "c1", reason: "cancelled" });
+    assert.equal(byId(menu, "notifications").badge, "2");
     menu.exit();
   });
 });

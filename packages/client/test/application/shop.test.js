@@ -14,7 +14,7 @@ const content = await loadBundledContent();
 function shopFor(account) {
   const market = fakeMarketApi();
   const wallet = { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => fail("X", "x"), requestTransfer: async () => ok(TX) };
-  return { market, shop: new ShopService({ api: market.api, wallet, account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" }) };
+  return { market, shop: new ShopService({ now: () => 0, api: market.api, wallet, account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" }) };
 }
 
 function world({ account = "alice", transfer = async () => ok(TX), ...options } = {}) {
@@ -24,7 +24,7 @@ function world({ account = "alice", transfer = async () => ok(TX), ...options } 
   const wallet = { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => fail("X", "x"), requestTransfer: async (request) => (transfers.push(request), transfer(request)) };
   const accountService = { state: { account }, refresh: async () => refreshes.push(true) };
   let keys = 0;
-  const shop = new ShopService({ api: market.api, wallet, account: accountService, scheduler: { delay: async () => undefined }, newKey: () => `key-${String((keys += 1)).padStart(12, "0")}`, maxPolls: 10 });
+  const shop = new ShopService({ now: () => 0, api: market.api, wallet, account: accountService, scheduler: { delay: async () => undefined }, newKey: () => `key-${String((keys += 1)).padStart(12, "0")}`, maxPolls: 10 });
   return { shop, market, transfers, refreshes, accountService };
 }
 

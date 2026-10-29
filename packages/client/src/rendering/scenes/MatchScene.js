@@ -139,10 +139,12 @@ const MAX_LOG_ENTRIES = 200;
 const MAX_BACKLOG = 6;
 const TOSS_BANNER = "Coin toss · who plays first?";
 const SIDEBAR = Object.freeze({ inset: 12, buttonHeight: 48, gap: 8, titleHeight: 36, phaseHeight: 26, promptTop: 84, promptHeight: 64, buttonsTop: 156, footerHeight: 0 });
-/** The compact board's action column; its footer row holds the log and leave buttons. */
-/** How much of the compact footer the log button takes; leaving (Concede) has the rest. */
-const COMPACT_LOG_SHARE = 0.36;
-const COMPACT_SIDEBAR = Object.freeze({ inset: 8, buttonHeight: 46, gap: 6, titleHeight: 30, phaseHeight: 20, promptTop: 54, promptHeight: 58, buttonsTop: 116, footerHeight: 46 });
+/**
+ * The compact board's action column: the log button at its top, beside the turn and phase (`logWidth`), and leaving
+ * (Concede) alone in its footer row. The column has no room for a second footer row: picking a card already fills it
+ * with four buttons.
+ */
+const COMPACT_SIDEBAR = Object.freeze({ inset: 8, buttonHeight: 46, gap: 6, titleHeight: 30, phaseHeight: 20, promptTop: 54, promptHeight: 58, buttonsTop: 116, footerHeight: 46, logWidth: 52 });
 const LOG = Object.freeze({ inset: 8, headerHeight: 30 });
 /** The Sound button in the log panel's header, and in the log dialog beside Close. */
 const SOUND_BUTTON = Object.freeze({ width: 84, height: 26, dialogWidth: 110 });
@@ -1125,13 +1127,20 @@ export class MatchScene extends Scene {
     const metrics = layout.compact ? COMPACT_SIDEBAR : SIDEBAR;
     const panel = this.root.add(new Panel({ id: "sidebar", ...sidebar, textured: true }));
     const width = sidebar.width - 2 * metrics.inset;
-    this.#sidebarHeading(panel, snapshot, { metrics, width, compact: layout.compact });
+    if (layout.compact) {
+      // The log's button stands beside the heading, as tall as its two lines.
+      const logWidth = COMPACT_SIDEBAR.logWidth;
+      panel.add(new Button({ id: "log.open", x: metrics.inset + width - logWidth, y: metrics.inset, width: logWidth, height: metrics.titleHeight + metrics.phaseHeight - 4, text: "Log", textSize: "small", onActivate: () => this.#showLog() }));
+      this.#sidebarHeading(panel, snapshot, { metrics, width: width - logWidth - metrics.gap, compact: true });
+    } else {
+      this.#sidebarHeading(panel, snapshot, { metrics, width, compact: false });
+    }
     const prompt = this.#promptFor(snapshot, interaction);
     const promptArea = { id: "prompt", x: metrics.inset, y: metrics.promptTop, width, height: metrics.promptHeight, text: prompt, size: /** @type {const} */ ("small"), colorKey: "accent" };
     // The tutorial's lines name cards and buttons in colour.
     panel.add(this.#coach === null ? new TextBlock(promptArea) : new RichTextBlock({ ...promptArea, colorKey: "text" }));
     const specs = this.#sidebarButtons(snapshot, interaction).filter((spec) => spec.visible);
-    // The compact column keeps leaving for its footer, beside the log.
+    // The compact column keeps leaving for its footer.
     const footer = layout.compact ? specs.filter((spec) => spec.id === "leave") : [];
     let y = metrics.buttonsTop;
     for (const spec of specs.filter((candidate) => !footer.includes(candidate))) {
@@ -1145,17 +1154,15 @@ export class MatchScene extends Scene {
   }
 
   /**
-   * The compact column's last row: the battle log, and leaving the match.
+   * The compact column's last row: leaving the match, the whole width.
    * @param {Panel} panel
    * @param {{ id: string, text: string, shortText?: string, enabled: boolean, variant: import("../ui/Button.js").ButtonVariant, onActivate: () => void }[]} leave the leave button's spec, when shown
-   * @param {{ width: number, height: number, metrics: { inset: number, gap: number, footerHeight: number } }} column its inner width, its height, and its metrics
+   * @param {{ width: number, height: number, metrics: { inset: number, footerHeight: number } }} column its inner width, its height, and its metrics
    */
   #buildFooter(panel, leave, { width, height, metrics }) {
     const footerY = height - metrics.inset - metrics.footerHeight;
-    const logWidth = Math.round(width * COMPACT_LOG_SHARE);
-    panel.add(new Button({ id: "log.open", x: metrics.inset, y: footerY, width: logWidth, height: metrics.footerHeight, text: "Log", textSize: "small", keepPlate: true, onActivate: () => this.#showLog() }));
     for (const spec of leave) {
-      panel.add(new Button({ id: spec.id, x: metrics.inset + logWidth + metrics.gap, y: footerY, width: width - logWidth - metrics.gap, height: metrics.footerHeight, text: spec.shortText ?? spec.text, enabled: spec.enabled && !this.isTossing, variant: spec.variant, textSize: "small", keepPlate: true, onActivate: spec.onActivate }));
+      panel.add(new Button({ id: spec.id, x: metrics.inset, y: footerY, width, height: metrics.footerHeight, text: spec.shortText ?? spec.text, enabled: spec.enabled && !this.isTossing, variant: spec.variant, keepPlate: true, onActivate: spec.onActivate }));
     }
   }
 

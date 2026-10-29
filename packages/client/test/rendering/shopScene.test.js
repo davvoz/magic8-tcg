@@ -37,7 +37,7 @@ async function harness({ signedIn = true, budget, listing = LISTING, entries, pa
   const market = fakeMarketApi({ listing });
   const transfers = [];
   const wallet = { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async (request) => (transfers.push(request), ok("ef".repeat(20))) };
-  const shop = new ShopService({ api: market.api, wallet, account: world.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" });
+  const shop = new ShopService({ now: () => 0, api: market.api, wallet, account: world.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" });
   const viewport = new Viewport(theme.layout);
   viewport.resize(size);
   const navigated = [];
@@ -229,6 +229,39 @@ describe("ShopScene", () => {
     assert.equal(shop.state.purchase.stage, PurchaseStage.NONE);
   });
 
+  it("follows a purchase step by step in place of Buy, the blockchain's wait counting down", async () => {
+    const world = await harness();
+    let clock = 1000;
+    /** @type {(value: unknown) => void} */
+    let approve = () => undefined;
+    world.app.shop = new ShopService({
+      api: world.market.api,
+      wallet: { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: () => new Promise((resolve) => (approve = resolve)) },
+      account: world.account,
+      // One look at the order, then it waits: the chain has seen the payment, not made it final.
+      scheduler: { delay: () => new Promise(() => undefined) },
+      newKey: () => "key-000000000000003",
+      now: () => clock,
+    });
+    const scene = new ShopScene(world.services, world.app, () => clock);
+    scene.enter({});
+    await settle();
+    click(byId(scene, "shop.buy"));
+    await settle();
+    assert.equal(byId(scene, "shop.buy"), null, "the steps in its place");
+    assert.equal(byId(scene, "shop.tracker.title").text, "Approve the transfer in Keychain");
+    assert.match(byId(scene, "shop.tracker.note").text, /^1 STEEM to @verdu.green. Nothing is paid until you approve it.$/);
+    approve(ok("ef".repeat(20)));
+    await settle();
+    assert.equal(byId(scene, "shop.tracker.title").text, "The blockchain has your payment: making it final");
+    assert.equal(byId(scene, "shop.tracker.left").text, "about 1:00 left");
+    assert.match(byId(scene, "shop.tracker.note").text, /keep playing/);
+    clock += 15_000;
+    assert.equal(scene.update(100), true, "it moves while the chain confirms");
+    assert.equal(byId(scene, "shop.tracker.left").text, "about 0:45 left");
+    assert.ok(rendered(scene).includes("Blockchain"), "the steps named");
+  });
+
   it("sells ranked tickets on their own shelf, Tickets, many with one transfer, and says they go into the jackpot", async () => {
     const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 2, perGame: 1, season: "season-1" }]) } });
     await entries.refresh();
@@ -378,6 +411,7 @@ describe("ShopScene", () => {
       account: world.account,
       scheduler: { delay: async () => undefined },
       newKey: () => "key-000000000000002",
+      now: () => 0,
     });
     const scene = new ShopScene(world.services, world.app);
     scene.enter({});

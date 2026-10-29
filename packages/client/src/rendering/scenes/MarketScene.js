@@ -10,6 +10,8 @@
  *
  * Paying goes through the wallet (Keychain shows the exact transfer, to the
  * seller's own account); the card arrives once the chain makes it final.
+ * The purchase in progress is followed step by step (PurchaseTracker, as in
+ * the shop: the blockchain's wait as a bar, with the time left).
  * Every price and status shown is the server's. Beside a card on sale, the
  * buyer sees their budget, what their wallet holds: a card it cannot pay
  * for cannot be bought.
@@ -20,7 +22,7 @@
  */
 import { moneyText } from "../../application/money/moneyText.js";
 import { NO_CARD_FILTER, cardFilterOptions, cardIdsMatching, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
-import { BUSY_BUY_STAGES, BuyStage, PROBLEM_TEXT } from "../../application/sales/SalesService.js";
+import { BUSY_BUY_STAGES, BuyStage, PROBLEM_TEXT, buyingTrack } from "../../application/sales/SalesService.js";
 import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
 import { CardOption } from "../cards/CardOption.js";
@@ -40,6 +42,7 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
+import { PurchaseTracker } from "./purchase/PurchaseTracker.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 import { approveTransferText } from "./walletText.js";
@@ -96,13 +99,8 @@ const PRICE_PATTERN = /^\d{1,6}(\.\d{1,3})?$/;
 const Tab = Object.freeze({ BOARD: "board", MINE: "mine" });
 /** @typedef {typeof Tab[keyof typeof Tab]} MarketTab */
 
-/** What the buyer sees at each step of a purchase. */
-const STAGE_TEXT = Object.freeze({
-  [BuyStage.RESERVING]: () => "Reserving the card for you…",
-  [BuyStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${moneyText(purchase.payment.amount, purchase.payment.asset)} to @${purchase.payment.to}, the seller.`,
-  [BuyStage.CONFIRMING]: () => "Payment sent to the seller. The STEEM blockchain makes it final in about a minute: keep playing, you will be notified when the card is yours.",
-  [BuyStage.DONE]: () => "Done: the card is in your collection.",
-});
+/** What the tracker of a purchase says of its first step, and once the card is delivered. */
+const TRACKER_WORDS = Object.freeze({ first: "Reserve", ordering: "Reserving the card for you…", done: "The card is in your collection." });
 
 /**
  * One line about a listing for the lists.
@@ -167,18 +165,6 @@ export function purchaseActivity(purchase) {
   }
 }
 
-/**
- * What is happening to a purchase in progress, or what went wrong.
- * @param {string} stage
- * @param {import("../../application/ports/SalesApi.contract.js").Purchase} purchase
- * @param {Readonly<{ message: string }> | null} error
- * @param {import("../../application/AppContext.js").AppContext} app
- */
-function stageText(stage, purchase, error, app) {
-  const describe = STAGE_TEXT[/** @type {keyof typeof STAGE_TEXT} */ (stage)];
-  return error?.message ?? (describe === undefined ? "" : describe(purchase, app));
-}
-
 /** @param {string} problem */
 const problemText = (problem) => PROBLEM_TEXT[/** @type {keyof typeof PROBLEM_TEXT} */ (problem)] ?? problem;
 
@@ -197,6 +183,8 @@ export class MarketScene extends SectionScene {
   /** The active key a payment with the player's own keys needs, asked for over the market. @type {ActiveKeyDialog | null} */
   #activeKey = null;
   #now;
+  /** The purchase in progress, step by step, as last built (null: none on show). @type {PurchaseTracker | null} */
+  #tracker = null;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
   /** @type {MarketTab} */
@@ -249,6 +237,7 @@ export class MarketScene extends SectionScene {
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#tracker = null;
     this.#activeKey?.stop();
     this.#activeKey = null;
     super.exit();
@@ -257,6 +246,15 @@ export class MarketScene extends SectionScene {
   relayout() {
     this.#rebuild();
     this.#activeKey?.relayout();
+  }
+
+  /**
+   * The purchase's steps move on, and the blockchain's wait with them.
+   * @param {number} dtMs
+   */
+  update(dtMs) {
+    const tracked = this.#tracker?.tick(dtMs) ?? false;
+    return super.update(dtMs) || tracked;
   }
 
   onCancel() {
@@ -281,6 +279,7 @@ export class MarketScene extends SectionScene {
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     this.root.clear();
+    this.#tracker = null;
     const sell = this.#buildToolbar();
     const listPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width: this.#screen.columns.left.width, height: this.#screen.columns.height }));
     const firstTab = this.#buildTabs(listPanel);
@@ -605,35 +604,79 @@ export class MarketScene extends SectionScene {
    * @param {import("../../application/sales/SalesService.js").Buying} buying
    */
   #buildBuying(panel, buying) {
-    const sales = this.#sales();
-    const { purchase, stage, error } = buying;
-    const fullWidth = this.#screen.columns.right.width - 2 * this.#screen.inset;
+    const { purchase, stage } = buying;
+    const { inset, columns } = this.#screen;
+    const fullWidth = columns.right.width - 2 * inset;
+    const buttonY = columns.height - inset - this.#m.button;
+    const gap = this.#screen.compact ? 6 : 12;
     if (purchase === null) {
-      panel.add(new TextBlock({ id: "market.buying", x: this.#screen.inset, y: this.#screen.inset, width: fullWidth, height: 90, text: error?.message ?? STAGE_TEXT[BuyStage.RESERVING](), size: "body", colorKey: error === null ? "text" : "danger" }));
-      panel.add(new Button({ keepPlate: true, id: "market.buying.close", x: this.#screen.inset, y: this.#screen.columns.height - this.#screen.inset - this.#m.button, width: fullWidth, height: this.#m.button, text: "Close", enabled: stage === BuyStage.FAILED, onActivate: () => sales.dismiss() }));
+      // Nothing reserved yet: the steps (or why it failed) over the whole panel.
+      this.#buildProgress(panel, buying, { x: inset, y: inset, width: fullWidth, height: buttonY - gap - inset });
+      const sales = this.#sales();
+      panel.add(new Button({ keepPlate: true, id: "market.buying.close", x: inset, y: buttonY, width: fullWidth, height: this.#m.button, text: "Close", enabled: stage === BuyStage.FAILED, onActivate: () => sales.dismiss() }));
       return;
     }
-    const { x, width } = this.#cardWithLines(panel, purchase.card.definitionId, this.#buyingLines(purchase));
-    panel.add(new TextBlock({ id: "market.buying", x, y: this.#screen.inset + 6 * this.#m.line, width, height: 4 * this.#m.line, text: stageText(stage, purchase, error, this.#app), size: "small", colorKey: error === null ? "text" : "danger" }));
-    if (purchase.problem !== null && stage !== BuyStage.DONE) {
-      panel.add(new TextBlock({ x, y: this.#screen.inset + 10 * this.#m.line, width, height: 3 * this.#m.line, text: `Note: ${problemText(purchase.problem)}.`, size: "small", colorKey: "danger" }));
+    // A phone's column beside the card is short: while the steps show, only the card's name and price.
+    const lines = this.#buyingLines(buying, { brief: this.#screen.compact && this.#followed(buying) });
+    const { x, width } = this.#cardWithLines(panel, purchase.card.definitionId, lines);
+    // Under the lines beside the card (its rarity's among them), down to the note of a problem, or the buttons.
+    const top = inset + (lines.length + 1) * this.#m.line + gap;
+    const problem = purchase.problem !== null && stage !== BuyStage.DONE;
+    const bottom = (problem ? buttonY - 3 * this.#m.line : buttonY) - gap;
+    this.#buildProgress(panel, buying, { x, y: top, width, height: bottom - top });
+    if (problem) {
+      panel.add(new TextBlock({ x, y: bottom, width, height: 3 * this.#m.line, text: `Note: ${problemText(/** @type {string} */ (purchase.problem))}.`, size: "small", colorKey: "danger" }));
     }
     this.#buildBuyingActions(panel, buying, fullWidth);
   }
 
   /**
-   * What the buyer is buying, beside the card.
-   * @param {import("../../application/ports/SalesApi.contract.js").Purchase} purchase
+   * Where the purchase stands: step by step while it is under way (or delivered), else why it failed.
+   * @param {Panel} panel
+   * @param {import("../../application/sales/SalesService.js").Buying} buying
+   * @param {{ x: number, y: number, width: number, height: number }} area
    */
-  #buyingLines(purchase) {
+  #buildProgress(panel, buying, area) {
+    if (this.#followed(buying)) {
+      this.#tracker = panel.add(this.#trackerAt(area));
+      return;
+    }
+    panel.add(new TextBlock({ id: "market.buying", ...area, text: buying.error?.message ?? "", size: "small", colorKey: "danger" }));
+  }
+
+  /**
+   * Whether the purchase is followed step by step: under way (or delivered), not failed.
+   * @param {import("../../application/sales/SalesService.js").Buying} buying
+   */
+  #followed(buying) {
+    return buyingTrack(buying) !== null && (buying.error === null || buying.stage === BuyStage.CONFIRMING);
+  }
+
+  /**
+   * The purchase in progress, step by step.
+   * @param {{ x: number, y: number, width: number, height: number }} area
+   */
+  #trackerAt(area) {
+    const sales = this.#sales();
+    return new PurchaseTracker({ id: "market.tracker", ...area, compact: this.#screen.compact, track: () => buyingTrack(sales.state.buying), now: this.#now, approve: approveTransferText(this.#app), ...TRACKER_WORDS });
+  }
+
+  /**
+   * What the buyer is buying, beside the card; how long the reservation has left while it is still to be paid.
+   * @param {import("../../application/sales/SalesService.js").Buying} buying with its purchase
+   * @param {{ brief: boolean }} options `brief`: the name and the price alone
+   */
+  #buyingLines({ purchase: reserved, stage }, { brief }) {
+    const purchase = /** @type {import("../../application/ports/SalesApi.contract.js").Purchase} */ (reserved);
+    const name = { text: this.#cardName(purchase.card.definitionId), bold: true, colorKey: "accentLight" };
+    const price = { text: moneyText(purchase.price.amount, purchase.price.asset), bold: true, colorKey: "accent" };
+    if (brief) {
+      return [name, price];
+    }
     /** @type {{ text: string, colorKey?: string, bold?: boolean, avatar?: string | null }[]} */
-    const lines = [
-      { text: this.#cardName(purchase.card.definitionId), bold: true, colorKey: "accentLight" },
-      { text: `Copy #${purchase.card.serial}` },
-      { text: `From @${purchase.seller}`, avatar: purchase.seller },
-      { text: moneyText(purchase.price.amount, purchase.price.asset), bold: true, colorKey: "accent" },
-    ];
-    if (purchase.payment !== null) {
+    const lines = [name, { text: `Copy #${purchase.card.serial}` }, { text: `From @${purchase.seller}`, avatar: purchase.seller }, price];
+    const unpaid = stage === BuyStage.SIGNING || stage === BuyStage.FAILED;
+    if (unpaid && purchase.payment !== null) {
       const minutes = Math.max(0, Math.ceil((purchase.payment.expiresAt - this.#now()) / MINUTE));
       lines.push({ text: `Reserved for you: ${minutes} min left to pay`, colorKey: "textMuted" });
     }

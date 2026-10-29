@@ -30,6 +30,7 @@ import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { PlayScene } from "../../src/rendering/scenes/PlayScene.js";
 import { OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
+import { LobbyService } from "../../src/application/lobby/LobbyService.js";
 import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStore.js";
 import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnboarding.js";
 import { DailyScene } from "../../src/rendering/scenes/DailyScene.js";
@@ -47,7 +48,7 @@ import { Panel, PANEL_INSET, PanelCorners, SMALL_PANEL_INSET } from "../../src/r
 import { ScrollList } from "../../src/rendering/ui/ScrollList.js";
 import { TextBlock } from "../../src/rendering/ui/TextBlock.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
-import { fakeMarketApi } from "../application/fakeMarketApi.js";
+import { LISTING_WITH_ENTRIES, fakeMarketApi } from "../application/fakeMarketApi.js";
 import { loadBundledContent } from "../application/fixtures.js";
 import { FakeContext2D, loadTheme } from "./fakes.js";
 
@@ -88,7 +89,7 @@ async function world(phone, { starter = true } = {}) {
     environment: { version: "test", release: "v0 test", storage: "local" },
     identity: account.identity,
     account: account.account,
-    shop: new ShopService({ api: fakeMarketApi().api, wallet, account: account.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" }),
+    shop: new ShopService({ now: () => 0, api: fakeMarketApi().api, wallet, account: account.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000001" }),
     online: new OnlineService({ connection, randomHex: (bytes) => "ab".repeat(bytes), newCommandId: () => "00000000-0000-4000-8000-000000000001", accountDecks: () => [{ id: "11111111-1111-4111-8111-111111111111", name: "Iron Foundry", mix: [{ faction: "iron", count: 30 }], totalCards: 30, playable: true, problem: null }], logger }),
     notifications: new NotificationService({ api: { list: async () => ok({ notifications: feed, unread: 1, more: false }), markRead: async () => ok({ unread: 0 }) }, connection, logger }),
     daily: dailyService(DAY),
@@ -204,9 +205,18 @@ function withUnpaidOrders(app) {
   for (const [productId, quantity] of [["core_booster", 1], ["core_mini_booster", 3], ["core_booster_box", 1]]) {
     void market.api.createOrder({ items: [{ productId, quantity }], asset: "STEEM" }, `key-${productId}`);
   }
-  Object.assign(app, { shop: new ShopService({ api: market.api, wallet: { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async () => ok("ef".repeat(20)) }, account: app.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000002" }) });
+  Object.assign(app, { shop: new ShopService({ now: () => 0, api: market.api, wallet: { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async () => ok("ef".repeat(20)) }, account: app.account, scheduler: { delay: async () => undefined }, newKey: () => "key-000000000000002" }) });
 }
 const BEFORE_DUE = () => -10 * 60_000;
+
+/**
+ * A shop whose purchases stay on the blockchain's wait: the wallet pays, the server sees the payment, it is never final.
+ * @param {any} app
+ */
+function withPendingPurchase(app) {
+  const market = fakeMarketApi({ listing: LISTING_WITH_ENTRIES, progression: ["PAYMENT_DETECTED"] });
+  Object.assign(app, { shop: new ShopService({ now: () => 0, api: market.api, wallet: { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: async () => ok("ef".repeat(20)) }, account: app.account, scheduler: { delay: () => new Promise(() => undefined) }, newKey: () => "key-000000000000003" }) });
+}
 
 /**
  * Ranked play in a running season: the player's standing, three ranked entries, and (with `auto`) the auto list.
@@ -229,6 +239,31 @@ function withJackpot(app) {
   const jackpot = { season: { id: "season-1", name: "Season 1", startsAt: now - 86_400_000, endsAt: now + 21 * 86_400_000, status: "running" }, bank: "bank", asset: "STEEM", share: { numerator: 2, denominator: 3 }, jackpot: "866.666", opening: "666.666", readAt: now, places };
   Object.assign(app, { jackpot: { state: { loading: false, loaded: true, jackpot, error: null }, subscribe: () => () => undefined, watch: () => () => undefined, now: () => Date.now() } });
 }
+
+/**
+ * A challenge received from another player, open, in this mode.
+ * @param {"casual" | "ranked"} mode
+ */
+const withChallenge = (mode) => (/** @type {any} */ app) => {
+  const challenge = { id: "c1", from: "carol", to: "alice", mode, expiresAt: 0, expiresInMs: 42_000 };
+  const players = [{ account: "carol", status: "idle" }, { account: "bob", status: "searching" }];
+  const statusListeners = new Set();
+  const replies = { hello: { t: "welcome", d: { user: {}, serverTime: 0, activeGame: null, queue: { state: "idle" } } }, "lobby.list": { t: "lobby.players", d: { players, challenges: { incoming: [challenge], outgoing: null } } } };
+  // Connected, so that the player is free to answer.
+  const connection = {
+    status: "open",
+    connect: () => statusListeners.forEach((listener) => listener("open", { code: null })),
+    close: () => undefined,
+    request: async (/** @type {string} */ t) => ok(replies[/** @type {keyof typeof replies} */ (t)] ?? { t: "ok", d: {} }),
+    subscribe: () => () => undefined,
+    onStatus: (/** @type {any} */ listener) => (statusListeners.add(listener), () => statusListeners.delete(listener)),
+  };
+  const logger = new MemoryLogger();
+  const lobby = new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => 0, logger });
+  const online = new OnlineService({ connection, randomHex: (bytes) => "ab".repeat(bytes), newCommandId: () => "00000000-0000-4000-8000-000000000001", accountDecks: app.online.decks.bind(app.online), logger });
+  lobby.start();
+  Object.assign(app, { lobby, online });
+};
 
 /** The first-time guide, nothing done in this browser. @param {any} app */
 function withGuide(app) {
@@ -258,6 +293,7 @@ const SCREENS = Object.freeze([
   { name: "play, casual or ranked", make: (s, app) => new PlayScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => (scene.root.findById("play.online.play")?.activate(), assert.ok(scene.modal?.findById("choice.ranked.play"))) },
   { name: "home, with the guide", make: (s, app) => new HomeScene(s, app), before: (app) => withGuide(app), after: (scene) => assert.ok(scene.root.findById("home.next")) },
   { name: "home, without the guide", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app), withGuide(app).dismiss()), after: (scene) => assert.equal(scene.root.findById("home.next"), null) },
+  { name: "home, a purchase on its way", make: (s, app) => new HomeScene(s, app), before: (app) => (withPendingPurchase(app), void app.shop.load().then(() => app.shop.buy({ productId: "core_booster", quantity: 1, asset: "STEEM" }))), shows: "shell.arrival" },
   { name: "home, account dialog", make: (s, app) => new HomeScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },
   { name: "home, settings", make: (s, app) => new HomeScene(s, app), before: (app) => Object.assign(app, { audio: fakeAudio() }), after: (scene) => (scene.findNode("settings")?.activate(), assert.ok(scene.overlay?.findById("audio.music.up")), assert.ok(scene.overlay?.findById("settings.about.3"))) },
   { name: "deck selection", make: (s, app) => new DeckSelectionScene(s, app) },
@@ -270,6 +306,7 @@ const SCREENS = Object.freeze([
   { name: "shop", make: (s, app) => new ShopScene(s, app) },
   { name: "shop singles", make: (s, app) => new ShopScene(s, app), after: (scene) => scene.root.findById("shop.tab.singles")?.activate() },
   { name: "shop decks", make: (s, app) => new ShopScene(s, app), after: (scene) => scene.root.findById("shop.tab.decks")?.activate() },
+  { name: "shop, a purchase under way", make: (s, app) => new ShopScene(s, app, () => 20_000), before: withPendingPurchase, after: (scene) => scene.root.findById("shop.buy")?.activate(), shows: "shop.tracker" },
   { name: "shop with unpaid orders", make: (s, app) => new ShopScene(s, app, BEFORE_DUE), before: withUnpaidOrders, after: (scene) => assert.ok(scene.root.findById("shop.orders")) },
   { name: "shop's unpaid orders", make: (s, app) => new ShopScene(s, app, BEFORE_DUE), before: withUnpaidOrders, after: (scene) => scene.root.findById("shop.orders")?.activate() },
   { name: "starter", make: (s, app) => new StarterScene(s, app), starter: false },
@@ -278,6 +315,9 @@ const SCREENS = Object.freeze([
   { name: "season, ranked locked", make: (s, app) => new SeasonScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("season.play.note")) },
   { name: "season, how ranked works", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => assert.ok(scene.root.findById("season.guide.steps"), "told on the screen itself, a phone's too") },
   { name: "casual lobby", make: (s, app) => new CasualScene(s, app), after: (scene) => assert.ok(scene.root.findById("casual.steps")) },
+  { name: "casual lobby, a challenge received", make: (s, app) => new CasualScene(s, app), before: withChallenge("casual"), after: (scene) => assert.ok(scene.root.findById("online.answer.accept")) },
+  { name: "ranked lobby, a challenge received", make: (s, app) => new RankedScene(s, app), before: (app) => (withRankedPlay(app), withChallenge("ranked")(app)), after: (scene) => assert.ok(scene.root.findById("online.answer.accept")) },
+  { name: "notifications, a challenge open", make: (s, app) => new NotificationsScene(s, app), before: withChallenge("casual"), after: (scene) => assert.ok(scene.root.findById("notifications.challenge.answer.c1")) },
   { name: "casual lobby, ranked locked", make: (s, app) => new CasualScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.equal(scene.root.findById("online.unlockHint"), null, "nothing of ranked play in the casual lobby") },
   { name: "ranked lobby", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => (assert.ok(scene.root.findById("online.tickets")), assert.ok(scene.root.findById("ranked.buy"))) },
   { name: "ranked lobby, the season's prize", make: (s, app) => new RankedScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => assertInside(scene.root.findById("ranked.prize")) },
@@ -285,6 +325,7 @@ const SCREENS = Object.freeze([
   { name: "ranked lobby, live", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => assert.ok(scene.root.findById("online.mode.live")) },
   { name: "ranked lobby, auto list", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => (scene.root.findById("online.mode.auto")?.activate(), assert.ok(scene.root.findById("online.style.balanced"))) },
   { name: "ranked lobby, how ranked works", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => assert.ok(scene.findNode("ranked.guide"), "in the bar: the Info screen's Ranked topic") },
+  { name: "ranked lobby, tickets on their way", make: (s, app) => new RankedScene(s, app, () => 20_000), before: (app) => (withRankedPlay(app), withPendingPurchase(app)), params: { buy: true }, after: (scene) => scene.modal?.findById("tickets.buy")?.activate(), shows: "tickets.tracker" },
   { name: "ranked lobby, getting entries", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app), params: { buy: true }, after: (scene) => assert.ok(scene.modal?.findById("tickets.buy")) },
   { name: "sign in", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: true, signIn: async () => ok(null) } }) },
   { name: "sign in with a posting key", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }) },
@@ -393,6 +434,9 @@ for (const phone of PHONES) {
         if (screen.controls === false) {
           scene.render(new FakeContext2D());
           return;
+        }
+        if (screen.shows !== undefined) {
+          assert.ok(scene.findNode(screen.shows) ?? scene.modal?.findById(screen.shows), `${screen.name}: ${screen.shows} on show`);
         }
         assertFitsPhone(scene, viewport, `${phone.name} ${screen.name}`);
       });

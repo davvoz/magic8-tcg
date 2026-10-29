@@ -1,11 +1,14 @@
 /**
  * What the two online lobbies, Casual and Ranked, have in common: pick one
- * of your account decks (left), see who else is online (middle) — the
- * challenges you received first, each answered from here — and, on the
+ * of your account decks (left), see who else is online (middle) and, on the
  * right, the lobby's own panel: how its games work, where the player stands
  * and its big button, which finds an opponent in the queue of that lobby's
  * mode. A click on a player proposes a game of that mode with the selected
- * deck. The match screen takes over when the server starts the game; a game
+ * deck. A challenge received of the lobby's mode takes the status's place in
+ * the panel (who, the time left to answer, the deck the player would play
+ * with) and its big button becomes Accept, beside Decline; one of the other
+ * mode is answered in that mode's lobby (the toast and the notifications
+ * lead there). The match screen takes over when the server starts the game; a game
  * already running (after a reload or a dropped connection) is offered for
  * resuming. The list of players is read again every few seconds while a
  * lobby is shown.
@@ -14,14 +17,13 @@
  * with Keychain: the lobby says who has. If either does not, the game is
  * cancelled, the lobby says who did not accept, and a new search can start.
  *
- * A challenge received of the other mode is answered here all the same: a
- * ranked one the player holds no entries for offers to get them (the Ranked
- * lobby, its purchase open).
+ * A ranked challenge the player holds no entries for offers to get them in
+ * place of Accept (the Ranked lobby's purchase).
  *
  * The lobbies extend this: `queueMode`, the panel (`buildGame`) and what it
  * says when nothing is going on (`idleText`); the hooks below have defaults.
  */
-import { ChallengeMode, PlayerActivity } from "../../../application/lobby/LobbyService.js";
+import { PlayerActivity } from "../../../application/lobby/LobbyService.js";
 import { OnlineStatus } from "../../../application/online/OnlineService.js";
 import { deckSummary, mixBands } from "../../cards/deckStripe.js";
 import { AvatarNode } from "../../ui/AvatarNode.js";
@@ -36,10 +38,11 @@ import { TextBlock } from "../../ui/TextBlock.js";
 import { screenLayout } from "../deckBuilder/layout.js";
 import { SceneId } from "../sceneIds.js";
 import { SectionScene } from "../SectionScene.js";
-import { ACTIVITY_TEXT, STATUS_TEXT, lobbyOf, modeName } from "./lobbyText.js";
+import { ACTIVITY_TEXT, STATUS_TEXT, answerTimeText, lobbyOf, modeName } from "./lobbyText.js";
 
 const LIST_ID = "online.decks";
 const PLAYERS_ID = "online.players";
+const ANSWER_TIME_ID = "online.answer.time";
 /**
  * Sizes of a lobby, wide and compact (a phone in landscape: the three columns share its width).
  * @typedef {Readonly<{ button: number, row: { height: number, gap: number }, playerRow: { height: number, gap: number }, titleY: number, listTop: number, statusSize: "body" | "small", note: boolean, top: number }>} LobbyMetrics
@@ -58,9 +61,18 @@ const COLUMN_SPLIT = Object.freeze({
 /** The status and the error under it, on a wide screen: what a line at the foot of the panel must leave them. */
 const STATUS_ROOM = 176;
 const DIALOG = Object.freeze({ width: 680, height: 320, avatar: 72, buttonHeight: 52, gap: 14 });
+/**
+ * A challenge received, in the panel: the challenger's portrait, the title beside it, the line of the time left under
+ * it, the gap before the words, a line of an error over the buttons, and how much of the buttons' row Accept takes (its
+ * plate's ornate ends are wider than Decline's: on a phone, half the row would set its word smaller).
+ */
+const ANSWER = Object.freeze({
+  wide: Object.freeze({ avatar: 64, title: 34, line: 26, gap: 14, errorLine: 26, titleSize: "subheading", lineSize: "small", acceptShare: 0.5 }),
+  compact: Object.freeze({ avatar: 40, title: 22, line: 18, gap: 6, errorLine: 20, titleSize: "body", lineSize: "tiny", acceptShare: 0.56 }),
+});
 
 /**
- * @typedef {{ kind: "challenge", account: string } | { kind: "answer", challengeId: string } | { kind: string }} Dialog
+ * @typedef {{ kind: "challenge", account: string } | { kind: string }} Dialog
  *   a lobby's own dialogs are named by their `kind`
  * @typedef {{ id: string, text: string, colorKey: string }} Foot a line at the foot of the panel, over its button
  * @typedef {{ id: string, text: string, variant?: import("../../ui/Button.js").ButtonVariant, enabled?: boolean, onActivate: () => void }} MainAction
@@ -238,6 +250,19 @@ export class LobbyScene extends SectionScene {
     return status !== OnlineStatus.MATCHED && status !== OnlineStatus.PLAYING && status !== OnlineStatus.OFFLINE && status !== OnlineStatus.CONNECTING;
   }
 
+  /**
+   * The challenge the panel answers: the oldest received in the lobby's mode, while the player is free to take it; else null.
+   * @returns {import("../../../application/lobby/LobbyService.js").Challenge | null}
+   */
+  incomingChallenge() {
+    return this.free() ? this.#incoming()[0] ?? null : null;
+  }
+
+  /** The challenges received in the lobby's mode, oldest first. */
+  #incoming() {
+    return (this.#app.lobby?.state.incoming ?? []).filter((challenge) => challenge.mode === this.queueMode);
+  }
+
   /** Whether the player is looking for an opponent. */
   searching() {
     return this.online().state.status === OnlineStatus.SEARCHING;
@@ -298,7 +323,7 @@ export class LobbyScene extends SectionScene {
 
   /**
    * The status of the panel and its big button; on a wide screen, the paragraph on fair play and a line at the foot,
-   * over the button (left out where an error would cover it).
+   * over the button (left out where an error would cover it). A challenge received takes their place.
    * @param {Panel} panel
    * @param {{ width: number, height: number }} room
    * @param {{ top: number, fair: boolean, foot: Foot | null }} options `top`: where the status starts; `fair`: the
@@ -309,6 +334,10 @@ export class LobbyScene extends SectionScene {
     const { button, note } = this.metrics;
     const buttonY = height - inset - button;
     const error = this.#error();
+    const challenge = this.incomingChallenge();
+    if (challenge !== null) {
+      return this.#buildAnswer(panel, challenge, { width, top, buttonY, error });
+    }
     this.#buildStatus(panel, width, { top, bottom: buttonY - 6, error });
     if (note && fair) {
       panel.add(new TextBlock({ x: inset, y: top + 190, width, height: 5 * 26, text: "The server runs the game and checks every move. Both players add randomness to the shuffle after the server has committed to its own, and every move of the game is recorded.", size: "small", colorKey: "textMuted" }));
@@ -430,6 +459,25 @@ export class LobbyScene extends SectionScene {
     super.render(context);
   }
 
+  /**
+   * Moves the time left to answer a challenge on.
+   * @param {number} dtMs
+   */
+  update(dtMs) {
+    const base = super.update(dtMs);
+    const label = this.root.findById(ANSWER_TIME_ID);
+    const challenge = this.incomingChallenge();
+    if (!(label instanceof Label) || challenge === null || this.#app.lobby === undefined) {
+      return base;
+    }
+    const text = answerTimeText(challenge.mode, this.#app.lobby.secondsLeft(challenge), { short: this.screen.compact });
+    if (label.text === text) {
+      return base;
+    }
+    label.text = text;
+    return true;
+  }
+
   /** Back: out of the queue first, when the player is in it. */
   goBack() {
     if (this.searching()) {
@@ -541,7 +589,7 @@ export class LobbyScene extends SectionScene {
     return first;
   }
 
-  /** The players online, the challenges received first. */
+  /** The players online, each once: one challenging the player in the lobby's mode says so (the panel answers it). */
   #buildPlayers() {
     const screen = this.screen;
     const column = this.#columns.players;
@@ -560,32 +608,27 @@ export class LobbyScene extends SectionScene {
     if (lobby === undefined) {
       return;
     }
-    const { incoming, outgoing } = lobby.state;
+    const { outgoing } = lobby.state;
     const canChallenge = this.free();
+    const answering = this.incomingChallenge();
+    const challengers = new Set(answering === null ? [] : this.#incoming().map((challenge) => challenge.from));
     /** @type {{ id: string, text: string, subtitle: string, avatar: string, selected: boolean, enabled: boolean, onActivate: () => void }[]} */
-    const rows = [
-      ...incoming.map((challenge) => ({
-        id: `online.challenge.${challenge.id}`,
-        text: `@${challenge.from} challenges you`,
-        subtitle: `${modeName(challenge.mode)} game · click to answer`,
-        avatar: challenge.from,
-        selected: true,
-        enabled: this.online().state.status !== OnlineStatus.PLAYING,
-        onActivate: () => this.openDialog({ kind: "answer", challengeId: challenge.id }),
-      })),
-      ...players.map((player) => {
-        const challenged = outgoing?.to === player.account;
-        return {
-          id: `online.player.${player.account}`,
-          text: `@${player.account}`,
-          subtitle: challenged ? `${modeName(outgoing.mode)} challenge sent · waiting for an answer` : (ACTIVITY_TEXT[/** @type {keyof typeof ACTIVITY_TEXT} */ (player.status)] ?? ""),
-          avatar: player.account,
-          selected: challenged,
-          enabled: canChallenge && !challenged && player.status !== PlayerActivity.PLAYING,
-          onActivate: () => this.openDialog({ kind: "challenge", account: player.account }),
-        };
-      }),
-    ];
+    const rows = players.map((player) => {
+      const challenged = outgoing?.to === player.account;
+      const challenger = challengers.has(player.account);
+      const base = { id: `online.player.${player.account}`, text: `@${player.account}`, avatar: player.account };
+      if (challenger) {
+        // Answered in the panel: the row leads there.
+        return { ...base, subtitle: "Challenging you", selected: true, enabled: true, onActivate: () => this.#focusAnswer() };
+      }
+      return {
+        ...base,
+        subtitle: challenged ? `${modeName(outgoing.mode)} challenge sent · waiting for an answer` : (ACTIVITY_TEXT[/** @type {keyof typeof ACTIVITY_TEXT} */ (player.status)] ?? ""),
+        selected: challenged,
+        enabled: canChallenge && !challenged && player.status !== PlayerActivity.PLAYING,
+        onActivate: () => this.openDialog({ kind: "challenge", account: player.account }),
+      };
+    });
     rows.forEach((row, index) => list.add(new OptionRow({ ...row, x: 0, y: index * (PLAYER_ROW.height + PLAYER_ROW.gap), width: list.rowWidth, height: PLAYER_ROW.height })));
     if (rows.length === 0) {
       const text = lobby.state.loaded ? "Nobody else is online right now. Find a match in the queue, or wait here: players appear as they arrive." : "Looking for players online…";
@@ -697,10 +740,6 @@ export class LobbyScene extends SectionScene {
    */
   #dialogModal(dialog) {
     const lobby = this.#app.lobby;
-    if (dialog.kind === "answer" && "challengeId" in dialog) {
-      const challenge = lobby?.state.incoming.find((open) => open.id === dialog.challengeId);
-      return challenge === undefined ? null : this.#answerModal(challenge);
-    }
     if (dialog.kind === "challenge" && "account" in dialog) {
       const player = lobby?.state.players.find((candidate) => candidate.account === dialog.account);
       return player === undefined || player.status === PlayerActivity.PLAYING || !this.free() ? null : this.#challengeModal(player.account);
@@ -735,51 +774,60 @@ export class LobbyScene extends SectionScene {
   }
 
   /**
-   * Accepts (with the selected deck) or declines a challenge received; a ranked one the player holds no entries for
-   * offers to get them.
+   * A challenge received, where the status would be: the challenger's portrait and name, the time left to answer, the
+   * deck the player would play with (and what the game takes); then Decline and Accept (with the selected deck) in
+   * place of the big button. What accepting needs and the player lacks (ranked tickets) takes Accept's place.
+   * @param {Panel} panel
    * @param {import("../../../application/lobby/LobbyService.js").Challenge} challenge
+   * @param {{ width: number, top: number, buttonY: number, error: { message: string } | null }} room
+   * @returns {Button} Accept, or what takes its place
    */
-  #answerModal(challenge) {
-    const deck = this.selectedDeck();
-    const game = `A ${modeName(challenge.mode).toLowerCase()} game.`;
-    const payable = challenge.mode !== ChallengeMode.RANKED || this.hasEntries();
-    const accepting = deck === null ? `${game} Choose one of your playable decks to accept it.` : `${game} You play with “${deck.name}”; the game starts as soon as you accept.`;
-    const message = payable ? accepting : `${game} It takes a ranked ticket, and you have none: buy some, then accept it.`;
+  #buildAnswer(panel, challenge, { width, top, buttonY, error }) {
+    const { inset, compact } = this.screen;
+    const sizes = compact ? ANSWER.compact : ANSWER.wide;
     const lobby = /** @type {import("../../../application/lobby/LobbyService.js").LobbyService} */ (this.#app.lobby);
-    /** @type {DialogButton} */
+    panel.add(new AvatarNode({ id: "online.answer.avatar", x: inset, y: top, size: sizes.avatar, account: challenge.from }));
+    const textX = inset + sizes.avatar + (compact ? 8 : 16);
+    const textWidth = inset + width - textX;
+    panel.add(new Label({ id: "online.answer.title", x: textX, y: top, width: textWidth, height: sizes.title, text: `@${challenge.from} challenges you`, size: sizes.titleSize, weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
+    panel.add(new Label({ id: ANSWER_TIME_ID, x: textX, y: top + sizes.title, width: textWidth, height: sizes.line, text: answerTimeText(challenge.mode, lobby.secondsLeft(challenge), { short: compact }), size: sizes.lineSize, colorKey: "accent", align: "left", fit: true }));
+    const deck = this.selectedDeck();
+    const terms = this.challengeTerms(deck);
+    const others = this.#incoming().length - 1;
+    const deckLine = deck === null ? "Choose one of your playable decks on the left to accept." : `You play with “${deck.name}” (or choose another on the left). The game starts as soon as you accept.`;
+    const more = others > 0 ? ` ${moreChallenges(others)} after this one.` : "";
+    const wordsY = top + Math.max(sizes.avatar, sizes.title + sizes.line) + sizes.gap;
+    const errorHeight = error === null ? 0 : 2 * sizes.errorLine + 4;
+    const wordsBottom = buttonY - 6 - errorHeight;
+    panel.add(new TextBlock({ id: "online.answer.message", x: inset, y: wordsY, width, height: Math.max(0, wordsBottom - wordsY), text: `${deckLine}${terms.note}${more}`, size: "small", colorKey: "text" }));
+    if (error !== null) {
+      panel.add(new TextBlock({ id: "online.error", x: inset, y: wordsBottom, width, height: errorHeight - 4, text: error.message, size: "small", colorKey: "danger" }));
+    }
+    const { button, row } = this.metrics;
+    const declineWidth = Math.round((width - row.gap) * (1 - sizes.acceptShare));
+    panel.add(new Button({ id: "online.answer.decline", x: inset, y: buttonY, width: declineWidth, height: button, text: "Decline", variant: "secondary", keepPlate: true, onActivate: () => void lobby.decline(challenge.id) }));
+    /** @type {MainAction} */
     const accept = {
-      id: "challenge.accept",
+      id: "online.answer.accept",
       text: "Accept",
       variant: "primary",
-      enabled: deck !== null && this.free() && payable,
+      enabled: deck !== null && terms.enabled,
       onActivate: () => {
-        this.#dialog = null;
         this.online().dismissGame();
         void lobby.accept(challenge.id, /** @type {{ id: string }} */ (deck).id);
-        this.rebuild();
       },
     };
-    /** @type {DialogButton} */
-    const getEntries = { id: "challenge.getEntries", text: "Buy tickets", variant: "primary", enabled: true, onActivate: () => this.getEntries() };
-    return this.dialogFrame({
-      account: challenge.from,
-      title: `@${challenge.from} challenges you`,
-      message,
-      buttons: [
-        { id: "challenge.close", text: "Not now", variant: "secondary", enabled: true, onActivate: () => this.closeDialog() },
-        {
-          id: "challenge.decline",
-          text: "Decline",
-          variant: "danger",
-          enabled: true,
-          onActivate: () => {
-            this.#dialog = null;
-            void lobby.decline(challenge.id);
-          },
-        },
-        payable ? accept : getEntries,
-      ],
-    });
+    // A ranked challenge the player cannot pay for: getting tickets first, where Accept would be.
+    const action = !terms.enabled && terms.extra !== undefined ? { ...terms.extra, variant: /** @type {const} */ ("primary") } : accept;
+    return panel.add(new Button({ keepPlate: true, ...action, x: inset + declineWidth + row.gap, y: buttonY, width: width - declineWidth - row.gap, height: button }));
+  }
+
+  /** A click on a player challenging this one: their challenge's answer, in the panel. */
+  #focusAnswer() {
+    const accept = this.findNode("online.answer.accept") ?? this.findNode("online.answer.decline");
+    if (accept !== null) {
+      this.focus(accept);
+    }
   }
 
   #rememberScroll() {
@@ -798,4 +846,12 @@ export class LobbyScene extends SectionScene {
  */
 export function deckKey(deck) {
   return deck.localId ?? deck.id;
+}
+
+/**
+ * "1 more challenge", "2 more challenges".
+ * @param {number} count
+ */
+function moreChallenges(count) {
+  return `${count} more challenge${count === 1 ? "" : "s"}`;
 }

@@ -7,7 +7,8 @@
  *               payment instructions (to the seller's own account)
  *   signing     the wallet asks the player to approve exactly that transfer
  *   confirming  the server watches the seller's history; we poll the
- *               purchase until it completes (about a minute: irreversibility)
+ *               purchase until it completes (about a minute: irreversibility);
+ *               `paidAt` is when the wallet sent the payment, for how long it waits
  *   done        the card is in the collection, which reloads
  *   failed      something refused; an unpaid purchase can be paid again or
  *               released (never automatically: a wallet that timed out may
@@ -19,6 +20,7 @@
 import { moneyText } from "../money/moneyText.js";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { SalePurchaseStatus } from "../ports/SalesApi.contract.js";
+import { TrackStage } from "../payments/purchaseProgress.js";
 
 export const BuyStage = Object.freeze({ NONE: "none", RESERVING: "reserving", SIGNING: "signing", CONFIRMING: "confirming", DONE: "done", FAILED: "failed" });
 /** @type {readonly string[]} */
@@ -32,7 +34,8 @@ const TERMINAL = Object.freeze([SalePurchaseStatus.EXPIRED, SalePurchaseStatus.C
  * @typedef {import("../ports/SalesApi.contract.js").Listing} Listing
  * @typedef {import("../ports/SalesApi.contract.js").Purchase} Purchase
  * @typedef {Readonly<{ code: string, message: string }>} SalesFailure
- * @typedef {Readonly<{ stage: string, purchase: Purchase | null, error: SalesFailure | null }>} Buying
+ * @typedef {Readonly<{ stage: string, purchase: Purchase | null, paidAt: number | null, error: SalesFailure | null }>} Buying `paidAt`: when the
+ *   wallet sent the payment (ms), once it has
  * @typedef {Readonly<{ cards: readonly string[] | null, sort: "newest" | "cheapest", offset: number }>} BoardFilter
  *   `cards`: the cards a filter by faction, rarity or type lets through (null: every card)
  * @typedef {Readonly<{
@@ -42,7 +45,7 @@ const TERMINAL = Object.freeze([SalePurchaseStatus.EXPIRED, SalePurchaseStatus.C
  * }>} SalesState
  */
 
-const NO_BUYING = Object.freeze({ stage: BuyStage.NONE, purchase: null, error: null });
+const NO_BUYING = Object.freeze({ stage: BuyStage.NONE, purchase: null, paidAt: null, error: null });
 const INITIAL = Object.freeze({
   loading: false,
   listings: Object.freeze([]),
@@ -65,6 +68,32 @@ export const PROBLEM_TEXT = Object.freeze({
   LATE: "a transfer with this purchase's reference arrived after the reservation ended",
 });
 
+/**
+ * Where the purchase stands, for the tracker that follows it (payments/purchaseProgress.js); null for none, or one
+ * that failed. The seller's history shows the payment (DETECTED) until it is final: then the card is delivered at once.
+ * @param {Buying} buying
+ * @returns {import("../payments/purchaseProgress.js").PurchaseTrack | null}
+ */
+export function buyingTrack(buying) {
+  const stage = {
+    [BuyStage.RESERVING]: TrackStage.ORDER,
+    [BuyStage.SIGNING]: TrackStage.PAYMENT,
+    [BuyStage.CONFIRMING]: TrackStage.CHAIN,
+    [BuyStage.DONE]: TrackStage.DONE,
+  }[buying.stage];
+  if (stage === undefined) {
+    return null;
+  }
+  const payment = buying.purchase?.payment ?? null;
+  return Object.freeze({
+    stage,
+    seen: buying.purchase?.status === SalePurchaseStatus.DETECTED,
+    final: false,
+    paidAt: buying.paidAt,
+    payment: payment === null ? null : Object.freeze({ amount: payment.amount, asset: payment.asset, to: payment.to }),
+  });
+}
+
 /** A burst of board changes is read once, this long after the first. */
 const BOARD_RELOAD_DELAY_MS = 300;
 
@@ -78,6 +107,7 @@ export class SalesService {
   #onCollectionChanged;
   #pollIntervalMs;
   #maxPolls;
+  #now;
   /** @type {SalesState} */
   #state = INITIAL;
   /** @type {Set<(state: SalesState) => void>} */
@@ -106,9 +136,10 @@ export class SalesService {
    *   connection?: Pick<import("../ports/Realtime.contract.js").RealtimeConnection, "subscribe" | "onStatus">,
    *   pollIntervalMs?: number,
    *   maxPolls?: number,
-   * }} deps `asset`: what prices are asked in; `connection`: the server's announcements that the board changed
+   *   now: () => number,
+   * }} deps `now`: the clock the payment is timed by; `asset`: what prices are asked in; `connection`: the server's announcements that the board changed
    */
-  constructor({ api, wallet, account, scheduler, newKey, asset = "STEEM", onCollectionChanged = () => undefined, connection, pollIntervalMs = 3000, maxPolls = 120 }) {
+  constructor({ api, wallet, account, scheduler, newKey, asset = "STEEM", onCollectionChanged = () => undefined, connection, pollIntervalMs = 3000, maxPolls = 120, now }) {
     this.#api = api;
     this.#wallet = wallet;
     this.#account = account;
@@ -118,6 +149,7 @@ export class SalesService {
     this.#onCollectionChanged = onCollectionChanged;
     this.#pollIntervalMs = pollIntervalMs;
     this.#maxPolls = maxPolls;
+    this.#now = now;
     connection?.subscribe(({ t }) => {
       if (t === "sales.board" || t === "sale.updated") {
         this.#reloadSoon(t === "sale.updated");
@@ -313,7 +345,7 @@ export class SalesService {
       this.#setBuying({ ...this.#state.buying, stage: BuyStage.FAILED, error: paid.error });
       return paid;
     }
-    this.#setBuying({ ...this.#state.buying, stage: BuyStage.CONFIRMING });
+    this.#setBuying({ ...this.#state.buying, stage: BuyStage.CONFIRMING, paidAt: this.#now() });
     const hinted = await this.#api.paymentHint(purchase.id, paid.value);
     if (hinted.ok) {
       this.#setBuying({ ...this.#state.buying, purchase: hinted.value });

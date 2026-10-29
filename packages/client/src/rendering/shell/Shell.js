@@ -7,13 +7,17 @@
  * reason) are the scene's overlay, above whatever the scene shows.
  *
  * It follows what the bar shows — the player signing in or out, their
- * account loading, unread notifications, their wallet and entries — and
+ * account loading, unread notifications (and challenges open), their wallet and entries, a purchase paid and on its
+ * way (ArrivalChip: from any screen, back to the one that follows it) — and
  * lays itself out again on each change, and when the screen changes shape.
  * The wallet and the entries are read once when nothing is known of them.
  * A screen may put buttons of its own in the bar (`setActions`), left of
  * the player's things: Play's live games and the player's own games.
  */
 import { roundMoneyText } from "../../application/money/moneyText.js";
+import { isArriving } from "../../application/payments/purchaseProgress.js";
+import { buyingTrack } from "../../application/sales/SalesService.js";
+import { shopTrack } from "../../application/shop/ShopService.js";
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus } from "../../application/identity/IdentityService.js";
 import { SceneId } from "../scenes/sceneIds.js";
@@ -27,6 +31,7 @@ import { PANEL_INSET } from "../ui/Panel.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { UiNode } from "../ui/UiNode.js";
 import { buildAccountDialog } from "./AccountDialog.js";
+import { ArrivalChip } from "./ArrivalChip.js";
 import { Chip } from "./Chip.js";
 import { ProfileButton } from "./ProfileButton.js";
 import { sectionById, sectionTabs } from "./sections.js";
@@ -36,11 +41,11 @@ import { TopBar } from "./TopBar.js";
 
 /** The bar's controls' widths, wide and compact (a phone, where the wallet shows its figure alone and the profile its picture). */
 const WIDTHS = Object.freeze({
-  wide: Object.freeze({ wallet: 250, entries: 210, profile: 240, signIn: 150 }),
-  compact: Object.freeze({ wallet: 140, entries: 112, profile: 0, signIn: 110 }),
+  wide: Object.freeze({ wallet: 250, entries: 210, profile: 240, signIn: 150, arrival: 190 }),
+  compact: Object.freeze({ wallet: 140, entries: 112, profile: 0, signIn: 110, arrival: 96 }),
 });
-/** What gives way first when the bar is short of room: the entries, then the wallet. */
-const DROP = Object.freeze({ entries: 1, wallet: 2, action: 3 });
+/** What gives way first when the bar is short of room: the entries, then the wallet, the screen's own buttons, a purchase on its way. */
+const DROP = Object.freeze({ entries: 1, wallet: 2, action: 3, arrival: 4 });
 /** A screen's own button in the bar: its width with its caption (a phone shows the icon alone, square). */
 const ACTION_WIDTH = 190;
 /** A bar button's room besides its caption (the icon, the gap, the plate's ornate ends), and a caption's width per character. */
@@ -69,6 +74,8 @@ const NOTICE = Object.freeze({ width: 520, height: 230, button: 48 });
 
 /**
  * @typedef {Readonly<{ id: string, icon: string, caption: string, enabled?: boolean, onActivate: () => void }>} BarAction a screen's own button in the bar
+ * @typedef {Readonly<{ scene: string, track: () => import("../../application/payments/purchaseProgress.js").PurchaseTrack | null }>} Arrival
+ *   a purchase on its way: the screen that follows it, and where it stands
  */
 
 export class Shell {
@@ -96,13 +103,18 @@ export class Shell {
   #read = false;
   /** Stops the open settings following the sound (muted from anywhere), or null while they are closed. @type {(() => void) | null} */
   #unfollowSound = null;
+  #now;
+  /** The purchase on its way, as last built into the bar. @type {ArrivalChip | null} */
+  #arrivalChip = null;
 
   /**
-   * @param {{ host: ShellHost, app: import("../../application/AppContext.js").AppContext, scene: string, section: string | null, heading: import("./TopBar.js").Heading }} options
-   *   `scene`: the screen's SceneId; `section`: the one it belongs to (SectionId), whose tabs the bar shows; null for none
+   * @param {{ host: ShellHost, app: import("../../application/AppContext.js").AppContext, scene: string, section: string | null, heading: import("./TopBar.js").Heading, now?: () => number }} options
+   *   `scene`: the screen's SceneId; `section`: the one it belongs to (SectionId), whose tabs the bar shows; null for none;
+   *   `now`: the clock a purchase's wait is timed by
    */
-  constructor({ host, app, scene, section, heading }) {
+  constructor({ host, app, scene, section, heading, now = () => Date.now() }) {
     this.#host = host;
+    this.#now = now;
     this.#app = app;
     this.#scene = scene;
     this.#section = section;
@@ -115,6 +127,32 @@ export class Shell {
         this.#unsubscribes.push(service.subscribe(rebuild));
       }
     }
+    // The challenges open count with the unread notifications: the bar changes only when their number does.
+    if (typeof app.lobby?.subscribe === "function") {
+      let open = app.lobby.state.incoming.length;
+      this.#unsubscribes.push(
+        app.lobby.subscribe((state) => {
+          if (state.incoming.length !== open) {
+            open = state.incoming.length;
+            rebuild();
+          }
+        }),
+      );
+    }
+    // A purchase comes on its way or arrives: the bar changes only then, not at each step of it.
+    let arriving = this.#arrivalKey();
+    for (const service of [app.shop, app.sales]) {
+      if (typeof service?.subscribe === "function") {
+        this.#unsubscribes.push(
+          service.subscribe(() => {
+            if (this.#arrivalKey() !== arriving) {
+              arriving = this.#arrivalKey();
+              rebuild();
+            }
+          }),
+        );
+      }
+    }
     this.#rebuild();
   }
 
@@ -125,7 +163,8 @@ export class Shell {
    * @returns {boolean} whether the bar needs drawing again
    */
   update(dtMs) {
-    return this.#logoLight.update(dtMs);
+    const ticked = this.#arrivalChip?.tick(dtMs) ?? false;
+    return this.#logoLight.update(dtMs) || ticked;
   }
 
   detach() {
@@ -198,6 +237,8 @@ export class Shell {
     // The logo leads Home, from every screen but Home itself.
     const onHome = this.#scene !== SceneId.HOME && this.#host.services.hasScene(SceneId.HOME) ? () => this.#host.services.navigate(SceneId.HOME) : null;
     this.#bar = this.node.add(new TopBar({ layout, origin, screen, heading: this.#heading, controls: this.#controls(layout.compact), tabs: this.#tabs(context), onHome, light: this.#logoLight }));
+    const arrival = this.node.findById("shell.arrival");
+    this.#arrivalChip = arrival instanceof ArrivalChip ? arrival : null;
     if (focusedId.length > 0) {
       this.#host.focus(this.node.findById(focusedId));
     }
@@ -264,6 +305,15 @@ export class Shell {
   }
 
   /**
+   * What the bell counts: the notifications unread, and the challenges waiting for an answer (they lead the feed while
+   * they are open).
+   * @param {NonNullable<import("../../application/AppContext.js").AppContext["notifications"]>} notifications
+   */
+  #unread(notifications) {
+    return notifications.state.unread + (this.#app.lobby?.state.incoming.length ?? 0);
+  }
+
+  /**
    * A screen the bar opens (the notifications, Info), its Back leading back here; nothing when it is the one on show.
    * @param {string} sceneId
    */
@@ -284,6 +334,42 @@ export class Shell {
     if (sceneId !== this.#scene) {
       this.#host.services.navigate(sceneId, this.#host.backHere());
     }
+  }
+
+  /**
+   * The purchase paid and on its way, from the shop or the player market; null for none.
+   * @returns {Arrival | null}
+   */
+  #arrival() {
+    const { shop, sales } = this.#app;
+    // Screens built over stand-ins may have a shop or a market with nothing bought.
+    if (shop?.state?.purchase !== undefined && isArriving(shopTrack(shop.state.purchase))) {
+      return { scene: SceneId.SHOP, track: () => shopTrack(shop.state.purchase) };
+    }
+    if (sales?.state?.buying !== undefined && isArriving(buyingTrack(sales.state.buying))) {
+      return { scene: SceneId.MARKET, track: () => buyingTrack(sales.state.buying) };
+    }
+    return null;
+  }
+
+  /**
+   * A signed-in player's purchase on its way, but not on the screen that follows it already, step by step.
+   * @param {number} width
+   * @param {boolean} compact
+   * @returns {import("./TopBar.js").BarControl[]}
+   */
+  #arrivalControls(width, compact) {
+    const arrival = this.#signedIn() ? this.#arrival() : null;
+    if (arrival === null || arrival.scene === this.#scene) {
+      return [];
+    }
+    const opens = this.#host.services.hasScene(arrival.scene) ? () => this.#openFromBar(arrival.scene) : null;
+    return [{ id: "shell.arrival", width, drop: DROP.arrival, make: (box) => new ArrivalChip({ id: "shell.arrival", ...box, compact, track: arrival.track, now: this.#now, onActivate: opens }) }];
+  }
+
+  /** What the bar shows of a purchase on its way: where it is followed, or nothing. */
+  #arrivalKey() {
+    return this.#arrival()?.scene ?? "";
   }
 
   /** Whether the player is signed in and their account is loaded. */
@@ -308,6 +394,7 @@ export class Shell {
     }));
     const signedIn = this.#signedIn();
     const { balance, entries, notifications } = this.#app;
+    controls.push(...this.#arrivalControls(widths.arrival, compact));
     if (signedIn && balance?.state !== undefined) {
       controls.push({ id: "shell.wallet", width: widths.wallet, drop: DROP.wallet, make: (box) => new Chip({ id: "shell.wallet", ...box, label: compact ? "" : "Wallet", value: walletText(balance), valueKey: "accentLight", glyph: Glyph.STEEM }) });
     }
@@ -316,7 +403,7 @@ export class Shell {
       controls.push({ id: "shell.entries", width: widths.entries, drop: DROP.entries, make: (box) => new Chip({ id: "shell.entries", ...box, label: compact ? "" : "Ranked tickets", value: String(ranked.balance), glyph: Glyph.TICKET, onActivate: this.#host.services.hasScene(SceneId.RANKED) ? () => this.#buyTickets() : null }) });
     }
     if (signedIn && notifications?.state !== undefined) {
-      const badge = unreadBadge(notifications.state.unread);
+      const badge = unreadBadge(this.#unread(notifications));
       controls.push({ id: "notifications", width: square, drop: Infinity, make: (box) => new IconButton({ id: "notifications", ...box, icon: Icon.BELL, badge, enabled: this.#host.services.hasScene(SceneId.NOTIFICATIONS), onActivate: () => this.#openFromBar(SceneId.NOTIFICATIONS) }) });
     }
     controls.push({ id: "settings", width: square, drop: Infinity, make: (box) => new IconButton({ id: "settings", ...box, icon: Icon.SETTINGS, onActivate: () => this.#showSettings() }) });

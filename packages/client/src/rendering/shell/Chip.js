@@ -1,7 +1,8 @@
 /**
  * A pill in the top bar that keeps a figure in sight: a quiet label, then
  * the value in bold ("Wallet 12 STEEM", "Ranked tickets 3"), led by a mark
- * when it has one (STEEM's, a ticket: glyphs.js). Read-only, unless it is
+ * when it has one (STEEM's, a ticket: glyphs.js; a subclass may draw a mark
+ * of its own instead: `leadWidth`, `paintLead`). Read-only, unless it is
  * given something to do (`onActivate`): then it is a button, lit under the
  * pointer and when focused.
  */
@@ -59,7 +60,8 @@ export class Chip extends UiNode {
     const { colors } = theme;
     this.#paintFace(context, theme);
     const glyphHeight = area.height * (GLYPH_SHARE[/** @type {keyof typeof GLYPH_SHARE} */ (this.glyph ?? "steem")] ?? 0.5);
-    const glyph = this.glyph === null ? 0 : glyphWidth(this.glyph, glyphHeight) + GAP;
+    const mark = this.#markWidth(glyphHeight);
+    const glyph = mark === 0 ? 0 : mark + GAP;
     const value = fitText(context, { text: this.value, font: scalableFont(theme, "small", "bold"), size: theme.fonts.sizes.small, width: area.width - 2 * PADDING - glyph, minScale: 0.75 });
     context.font = value.font;
     const valueWidth = context.measureText(value.text).width;
@@ -69,14 +71,53 @@ export class Chip extends UiNode {
     const words = labelWidth + (label === null ? 0 : GAP) + valueWidth;
     const total = glyph + words;
     const glyphX = area.x + (area.width - total) / 2;
-    if (this.glyph !== null) {
-      drawGlyph(context, theme, this.glyph, { x: glyphX, y: area.y + area.height / 2, height: glyphHeight });
+    if (mark > 0) {
+      this.#paintMark(context, theme, { x: glyphX, y: area.y + area.height / 2, height: glyphHeight });
     }
     const startX = glyphX + glyph;
     if (label !== null) {
       drawTextInRect(context, label.text, { x: startX, y: area.y, width: labelWidth + 1, height: area.height }, { font: label.font, color: colors.textMuted, align: "left" });
     }
     drawTextInRect(context, value.text, { x: startX + words - valueWidth, y: area.y, width: valueWidth + 1, height: area.height }, { font: value.font, color: colors[this.valueKey] ?? colors.text, align: "left" });
+  }
+
+  /**
+   * How wide the mark before the words is: its glyph, or its own (none: 0).
+   * @param {number} height
+   */
+  #markWidth(height) {
+    return this.glyph === null ? this.leadWidth(height) : glyphWidth(this.glyph, height);
+  }
+
+  /**
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   * @param {{ x: number, y: number, height: number }} at
+   */
+  #paintMark(context, theme, at) {
+    if (this.glyph === null) {
+      this.paintLead(context, theme, at);
+    } else {
+      drawGlyph(context, theme, this.glyph, at);
+    }
+  }
+
+  /**
+   * How wide a mark of the chip's own is before its words (none: 0), for a mark this tall.
+   * @param {number} _height
+   */
+  leadWidth(_height) {
+    return 0;
+  }
+
+  /**
+   * Draws the chip's own mark, its left edge at `x`, centred on `y`.
+   * @param {CanvasRenderingContext2D} _context
+   * @param {import("../theme/Theme.js").Theme} _theme
+   * @param {{ x: number, y: number, height: number }} _at
+   */
+  paintLead(_context, _theme, _at) {
+    // A chip draws a glyph, or nothing.
   }
 
   /**

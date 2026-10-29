@@ -32,14 +32,15 @@ export class SectionScene extends Scene {
   /**
    * @param {import("./Scene.js").SceneServices} services the whole screen's
    * @param {import("../../application/AppContext.js").AppContext} app
-   * @param {{ scene: string, title: string }} heading `scene`: the screen's SceneId
+   * @param {{ scene: string, title: string, now?: () => number }} heading `scene`: the screen's SceneId; `now`: the clock of the bar (a
+   *   purchase on its way)
    */
-  constructor(services, app, { scene, title }) {
+  constructor(services, app, { scene, title, now }) {
     const screen = /** @type {import("../canvas/Viewport.js").Viewport} the whole screen's, as the scene manager hands it */ (services.viewport);
     super(Object.freeze({ ...services, viewport: new ContentViewport(screen) }));
     this.sceneId = scene;
     this.#app = app;
-    this.#shell = new Shell({ host: this, app, scene, section: sectionOf(scene)?.id ?? null, heading: Object.freeze({ title, back: null }) });
+    this.#shell = new Shell({ host: this, app, scene, section: sectionOf(scene)?.id ?? null, heading: Object.freeze({ title, back: null }), ...(now === undefined ? {} : { now }) });
     this.chrome = this.#shell.node;
   }
 

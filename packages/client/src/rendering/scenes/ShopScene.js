@@ -11,7 +11,9 @@
  * On the right,
  * the selected item: a pack's odds, a deck's card-by-card price, a card at
  * full size with the price list by rarity; then the
- * quantity, Buy and Add to cart. The cart (toolbar) lists what was added from
+ * quantity, Buy and Add to cart — or, while a purchase is under way, its
+ * steps in their place (PurchaseTracker: the blockchain's wait as a bar,
+ * with the time left). The cart (toolbar) lists what was added from
  * any shelf, lets the player change or remove it, and pays for all of it
  * with one transfer. Paying goes through the wallet (Keychain shows the
  * exact transfer); when the order is fulfilled the cards received are
@@ -28,7 +30,7 @@
 import { moneyText } from "../../application/money/moneyText.js";
 import { SoundCue } from "../../application/audio/SoundCue.js";
 import { ANY, NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
-import { BUSY_STAGES, OrdersStatus, PurchaseStage, ShopStatus } from "../../application/shop/ShopService.js";
+import { BUSY_STAGES, OrdersStatus, PurchaseStage, ShopStatus, shopTrack } from "../../application/shop/ShopService.js";
 import { deckMix } from "../../application/decks/deckMix.js";
 import { ShopCategory, cartSummary, deckBreakdown, multiplyAmount, priceOf, shelvesOf } from "../../application/shop/shopCatalog.js";
 import { RANKED_ENTRY } from "../../application/ports/EntriesApi.contract.js";
@@ -54,6 +56,7 @@ import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
+import { PurchaseTracker } from "./purchase/PurchaseTracker.js";
 import { EntryTickets } from "./entries/EntryTickets.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
@@ -137,9 +140,6 @@ const EMPTY_SHELVES = shelvesOf({ products: [], dropTables: [], rarities: [], pr
 
 /** What the player sees at each step of a purchase. */
 const STAGE_TEXT = Object.freeze({
-  [PurchaseStage.ORDERING]: () => "Creating your order…",
-  [PurchaseStage.SIGNING]: (purchase, app) => `${approveTransferText(app)}: ${moneyText(purchase.order.payment.amount, purchase.order.payment.asset)} to @${purchase.order.payment.to}.`,
-  [PurchaseStage.CONFIRMING]: () => "Payment sent. The STEEM blockchain makes it final in about a minute: keep playing, you will be notified when your cards arrive.",
   [PurchaseStage.DONE]: (purchase) => doneText(purchase.order?.fulfilment ?? null),
 });
 
@@ -193,7 +193,8 @@ export class ShopScene extends SectionScene {
     const { columns, inset } = this.#screen;
     const { line, buy, quantity, rowGap, compactPurchase } = this.#m;
     if (compactPurchase) {
-      const status = this.#compactStatus === null ? 0 : 2 * line + rowGap;
+      // A purchase under way has the status line's room too: its tracker takes the whole block.
+      const status = this.#compactStatus === null && !this.#purchaseUnderWay() ? 0 : 2 * line + rowGap;
       return columns.height - inset - buy.height - rowGap - quantity.height - status;
     }
     return columns.height - inset - 2 * line - 8 - buy.height - inset - quantity.height;
@@ -235,6 +236,8 @@ export class ShopScene extends SectionScene {
   #notice = null;
   /** A phone's status line over the purchase of the product shown (null: none, its room left to the product). @type {{ text: string, colorKey: string } | null} */
   #compactStatus = null;
+  /** The purchase under way, step by step in place of the purchase controls, as last built. @type {PurchaseTracker | null} */
+  #tracker = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -280,6 +283,7 @@ export class ShopScene extends SectionScene {
   exit() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#tracker = null;
     this.#activeKey?.stop();
     this.#activeKey = null;
     super.exit();
@@ -297,6 +301,15 @@ export class ShopScene extends SectionScene {
     this.#activeKey?.relayout();
   }
 
+  /**
+   * The purchase's steps move on, and the blockchain's wait with them.
+   * @param {number} dtMs
+   */
+  update(dtMs) {
+    const tracked = this.#tracker?.tick(dtMs) ?? false;
+    return super.update(dtMs) || tracked;
+  }
+
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
     const scrollY = this.#takeScroll();
@@ -304,6 +317,7 @@ export class ShopScene extends SectionScene {
     const ordersScrollY = this.#dialogScroll(ORDERS_LIST_ID);
     this.closeModal();
     this.root.clear();
+    this.#tracker = null;
     const shelves = this.#shelves();
     const cart = this.#buildToolbar();
     const listPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.left.x, y: this.#screen.columns.top, width: this.#screen.columns.left.width, height: this.#screen.columns.height }));
@@ -701,7 +715,7 @@ export class ShopScene extends SectionScene {
    * and the price list by rarity.
    * @param {Panel} panel
    * @param {SingleOffer} offer
-   * @returns {Button} the Buy button
+   * @returns {Button | null} the Buy button (none while a purchase is under way)
    */
   #buildSingleDetail(panel, offer) {
     this.#compactStatus = this.#compactStatusOf(offer.product);
@@ -790,14 +804,21 @@ export class ShopScene extends SectionScene {
   }
 
   /**
-   * Quantity, Buy and the purchase's progress, at the bottom of the detail panel.
+   * Quantity, Buy and the purchase's progress, at the bottom of the detail panel; a purchase under way, step by step
+   * in their place.
    * @param {Panel} panel
    * @param {Product} product
-   * @returns {Button} the Buy button
+   * @returns {Button | null} the Buy button (none while a purchase is under way)
    */
   #buildPurchase(panel, product) {
     const shop = this.#shop();
     const { purchase } = shop.state;
+    if (this.#purchaseUnderWay()) {
+      const { inset, columns, compact } = this.#screen;
+      const top = this.#purchaseTop;
+      this.#tracker = panel.add(new PurchaseTracker({ id: "shop.tracker", x: inset, y: top, width: this.#detailWidth, height: columns.height - inset - top, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, approve: approveTransferText(this.#app), done: "" }));
+      return null;
+    }
     if (this.#m.compactPurchase) {
       return this.#buildCompactPurchase(panel, product);
     }
@@ -886,6 +907,11 @@ export class ShopScene extends SectionScene {
     return buy;
   }
 
+  /** Whether a purchase is under way: ordered, being paid, or waiting for the blockchain (one that failed is not). */
+  #purchaseUnderWay() {
+    return BUSY_STAGES.includes(this.#shop().state.purchase.stage);
+  }
+
   #canBuy() {
     const shop = this.#shop();
     const busy = BUSY_STAGES.includes(shop.state.purchase.stage);
@@ -950,7 +976,7 @@ export class ShopScene extends SectionScene {
     }
     const text = STAGE_TEXT[/** @type {keyof typeof STAGE_TEXT} */ (purchase.stage)];
     if (text !== undefined) {
-      return { text: text(purchase, this.#app), colorKey: purchase.stage === PurchaseStage.DONE ? "success" : "accent" };
+      return { text: text(purchase), colorKey: "success" };
     }
     if (this.#notice !== null) {
       return this.#notice;

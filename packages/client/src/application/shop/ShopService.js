@@ -12,7 +12,8 @@
  *   ordering    the server prices the order and issues payment instructions
  *   signing     the wallet asks the player to approve exactly that transfer
  *   confirming  the server watches the chain; we poll the order until it is
- *               fulfilled (about a minute: STEEM irreversibility)
+ *               fulfilled (about a minute: STEEM irreversibility); `paidAt`
+ *               is when the wallet sent the payment, for how long it waits
  *   done        the cards arrived; the account (collection, decks) reloads
  *   failed      something refused; an order that can still be paid can be
  *               paid again or cancelled
@@ -28,6 +29,7 @@
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { OrderStatus } from "../ports/MarketApi.contract.js";
+import { TrackStage } from "../payments/purchaseProgress.js";
 
 export const ShopStatus = Object.freeze({ IDLE: "idle", LOADING: "loading", READY: "ready", FAILED: "failed" });
 export const PurchaseStage = Object.freeze({ NONE: "none", ORDERING: "ordering", SIGNING: "signing", CONFIRMING: "confirming", DONE: "done", FAILED: "failed" });
@@ -48,16 +50,47 @@ const UNPAID = Object.freeze([OrderStatus.CREATED, OrderStatus.PAYMENT_PENDING])
 
 /**
  * @typedef {Readonly<{ productId: string, quantity: number }>} CartLine
- * @typedef {Readonly<{ stage: string, order: import("../ports/MarketApi.contract.js").Order | null, txId: string | null, error: Readonly<{ code: string, message: string }> | null, cart: readonly CartLine[] | null }>} Purchase `cart`: the lines, when the purchase is the cart's
+ * @typedef {Readonly<{ stage: string, order: import("../ports/MarketApi.contract.js").Order | null, txId: string | null, paidAt: number | null, error: Readonly<{ code: string, message: string }> | null, cart: readonly CartLine[] | null }>} Purchase `cart`: the lines, when the purchase is the cart's;
+ *   `paidAt`: when the wallet sent its payment (ms), once it has
  * @typedef {Readonly<{ status: string, open: readonly import("../ports/MarketApi.contract.js").Order[], error: Readonly<{ code: string, message: string }> | null }>} UnpaidOrders `open`: newest first
  * @typedef {Readonly<{ status: string, listing: import("../ports/MarketApi.contract.js").Listing | null, error: Readonly<{ code: string, message: string }> | null, purchase: Purchase, cart: readonly CartLine[], orders: UnpaidOrders }>} ShopState
  */
 
-const NO_PURCHASE = Object.freeze({ stage: PurchaseStage.NONE, order: null, txId: null, error: null, cart: null });
+const NO_PURCHASE = Object.freeze({ stage: PurchaseStage.NONE, order: null, txId: null, paidAt: null, error: null, cart: null });
 /** @type {readonly CartLine[]} */
 const EMPTY_CART = Object.freeze([]);
 /** @type {UnpaidOrders} */
 const NO_ORDERS = Object.freeze({ status: OrdersStatus.IDLE, open: Object.freeze([]), error: null });
+
+/** The order's statuses once the server has seen its payment on the chain, and once that payment is final. @type {readonly string[]} */
+const SEEN = Object.freeze([OrderStatus.PAYMENT_DETECTED, OrderStatus.PAYMENT_VERIFIED]);
+
+/**
+ * Where a purchase stands, for the tracker that follows it (payments/purchaseProgress.js); null for none, or one that
+ * failed.
+ * @param {Purchase} purchase
+ * @returns {import("../payments/purchaseProgress.js").PurchaseTrack | null}
+ */
+export function shopTrack(purchase) {
+  const stage = {
+    [PurchaseStage.ORDERING]: TrackStage.ORDER,
+    [PurchaseStage.SIGNING]: TrackStage.PAYMENT,
+    [PurchaseStage.CONFIRMING]: TrackStage.CHAIN,
+    [PurchaseStage.DONE]: TrackStage.DONE,
+  }[purchase.stage];
+  if (stage === undefined) {
+    return null;
+  }
+  const status = purchase.order?.status ?? "";
+  const payment = purchase.order?.payment ?? null;
+  return Object.freeze({
+    stage,
+    seen: SEEN.includes(status),
+    final: status === OrderStatus.PAYMENT_VERIFIED,
+    paidAt: purchase.paidAt,
+    payment: payment === null ? null : Object.freeze({ amount: payment.amount, asset: payment.asset, to: payment.to }),
+  });
+}
 
 export class ShopService {
   #api;
@@ -67,6 +100,7 @@ export class ShopService {
   #newKey;
   #pollIntervalMs;
   #maxPolls;
+  #now;
   /** @type {ShopState} */
   #state = Object.freeze({ status: ShopStatus.IDLE, listing: null, error: null, purchase: NO_PURCHASE, cart: EMPTY_CART, orders: NO_ORDERS });
   /** @type {Set<(state: ShopState) => void>} */
@@ -89,9 +123,10 @@ export class ShopService {
    *   newKey: () => string,
    *   pollIntervalMs?: number,
    *   maxPolls?: number,
-   * }} deps `newKey` gives a fresh Idempotency-Key per purchase
+   *   now: () => number,
+   * }} deps `newKey` gives a fresh Idempotency-Key per purchase; `now`: the clock the payment is timed by
    */
-  constructor({ api, wallet, account, scheduler, newKey, pollIntervalMs = 3000, maxPolls = 120 }) {
+  constructor({ api, wallet, account, scheduler, newKey, pollIntervalMs = 3000, maxPolls = 120, now }) {
     this.#api = api;
     this.#wallet = wallet;
     this.#account = account;
@@ -99,6 +134,7 @@ export class ShopService {
     this.#newKey = newKey;
     this.#pollIntervalMs = pollIntervalMs;
     this.#maxPolls = maxPolls;
+    this.#now = now;
     let owner = account.state.account;
     account.subscribe?.((state) => {
       if (owner !== null && state.account !== owner) {
@@ -313,7 +349,7 @@ export class ShopService {
       return paid;
     }
     this.#sent.add(order.id);
-    this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.CONFIRMING, txId: paid.value });
+    this.#setPurchase({ ...this.#state.purchase, stage: PurchaseStage.CONFIRMING, txId: paid.value, paidAt: this.#now() });
     this.#takeFromCart(this.#state.purchase.cart ?? []);
     const hinted = await this.#api.paymentHint(order.id, paid.value);
     if (hinted.ok) {

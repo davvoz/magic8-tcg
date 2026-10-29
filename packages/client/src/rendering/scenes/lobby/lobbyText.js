@@ -32,6 +32,17 @@ export function modeName(mode) {
 }
 
 /**
+ * "Casual game · 0:42 to answer" ("Casual · 0:42 left" in short): a challenge received, with the time left to answer it.
+ * @param {string} mode one of ChallengeMode
+ * @param {number} seconds
+ * @param {{ short?: boolean }} [options]
+ */
+export function answerTimeText(mode, seconds, { short = false } = {}) {
+  const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  return short ? `${modeName(mode)} · ${clock} left` : `${modeName(mode)} game · ${clock} to answer`;
+}
+
+/**
  * The lobby a game or a challenge of this mode belongs to: Ranked for ranked ones, the challenges' screen for theirs,
  * Casual for any other (and when the mode is not known).
  * @param {string | null | undefined} mode "casual", "ranked", "daily"

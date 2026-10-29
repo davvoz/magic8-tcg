@@ -4,22 +4,27 @@
  * are for, how many to buy (− and +, up to the shop's limit per order),
  * what the wallet holds, then Buy, which pays with the wallet the player
  * signed in with (Keychain, or their active key) as the shop does. The
- * dialog follows the purchase until the entries are there; it may be closed
- * meanwhile (the entries arrive all the same, with a notification).
+ * dialog follows the purchase until the entries are there, step by step in
+ * place of the quantity (PurchaseTracker: the blockchain's wait as a bar,
+ * with the time left); it may be closed meanwhile (the entries arrive all
+ * the same, with a notification).
  *
  * The scene keeps one for as long as it shows, builds its modal again with
- * itself (`build`) and says when it opens (`prepare`). A purchase the shop
- * screen started is not this dialog's: while it runs, Buy waits.
+ * itself (`build`), says when it opens (`prepare`) and has time pass for
+ * its tracker (`tick`). A purchase the shop screen started is not this
+ * dialog's: while it runs, Buy waits.
  */
 import { entriesText, rankedEntriesText } from "../../../application/entries/EntryService.js";
 import { moneyText } from "../../../application/money/moneyText.js";
-import { BUSY_STAGES, PurchaseStage, ShopStatus } from "../../../application/shop/ShopService.js";
+import { BUSY_STAGES, PurchaseStage, ShopStatus, shopTrack } from "../../../application/shop/ShopService.js";
+import { purchaseProgress } from "../../../application/payments/purchaseProgress.js";
 import { multiplyAmount, priceOf, rankedEntryProduct } from "../../../application/shop/shopCatalog.js";
 import { Button } from "../../ui/Button.js";
 import { Glyph } from "../../ui/glyphs.js";
 import { Label } from "../../ui/Label.js";
 import { Modal } from "../../ui/Modal.js";
 import { TextBlock } from "../../ui/TextBlock.js";
+import { PurchaseTracker } from "../purchase/PurchaseTracker.js";
 import { approveTransferText, transferPreviewText } from "../walletText.js";
 import { EntryTickets } from "./EntryTickets.js";
 
@@ -50,16 +55,21 @@ export class EntryPurchaseDialog {
   #onClose;
   #onPlay;
   #refresh;
+  #now;
   #quantity = DEFAULT_QUANTITY;
+  /** The tracker of the purchase under way, as last built (null: none on show). @type {PurchaseTracker | null} */
+  #tracker = null;
   /** Whether the purchase on show is the one this dialog started. */
   #started = false;
 
   /**
    * @param {import("../../../application/AppContext.js").AppContext} app
-   * @param {{ onClose: () => void, onPlay?: () => void, refresh: () => void }} host `onClose`: the player closed it;
-   *   `onPlay`: the player, the tickets there, goes on to play (closing it too, by default); `refresh`: build it again
+   * @param {{ onClose: () => void, onPlay?: () => void, refresh: () => void, now?: () => number }} host `onClose`: the player closed it;
+   *   `onPlay`: the player, the tickets there, goes on to play (closing it too, by default); `refresh`: build it again;
+   *   `now`: the clock the purchase's wait is timed by
    */
-  constructor(app, { onClose, onPlay = onClose, refresh }) {
+  constructor(app, { onClose, onPlay = onClose, refresh, now = () => Date.now() }) {
+    this.#now = now;
     this.#app = app;
     this.#onClose = onClose;
     this.#onPlay = onPlay;
@@ -109,16 +119,49 @@ export class EntryPurchaseDialog {
     panel.add(new Label({ id: "tickets.added", x: inset, y: top + m.tickets + 4, width: ticketsWidth, height: m.line, text: `+${entriesText(this.#quantity)}`, size: "body", weight: "bold", colorKey: "success", fit: true }));
     const x = inset + ticketsWidth + 2 * m.gap;
     const right = inset + inner - x;
-    panel.add(new TextBlock({ id: "tickets.about", x, y: top, width: right, height: m.about * m.line, text: compact ? ABOUT.short : ABOUT.full, size: "small", colorKey: "textMuted" }));
     const rowY = top + m.about * m.line + m.gap;
     const lineY = rowY + m.row + m.gap;
     const buttonY = height - inset - m.row;
-    const line = this.#line(product);
-    panel.add(new TextBlock({ id: "tickets.status", x, y: lineY, width: right, height: Math.max(0, buttonY - m.gap - lineY), text: line.text, size: "small", colorKey: line.colorKey }));
     // The buttons before the quantity, so the focus starts on Buy.
     this.#buildButtons(panel, { x: inset, y: buttonY, width: inner, height: m.row, gap: m.gap, product });
-    this.#buildQuantity(panel, { x, y: rowY, width: right, m, product });
+    // The purchase under way, step by step, beside the tickets: in place of what tickets are, the quantity and the line.
+    this.#tracker = this.#followed() === null ? null : panel.add(this.#trackerAt({ x, y: top, width: right, height: buttonY - m.gap - top, compact }));
+    if (this.#tracker === null) {
+      panel.add(new TextBlock({ id: "tickets.about", x, y: top, width: right, height: m.about * m.line, text: compact ? ABOUT.short : ABOUT.full, size: "small", colorKey: "textMuted" }));
+      const line = this.#line(product);
+      panel.add(new TextBlock({ id: "tickets.status", x, y: lineY, width: right, height: Math.max(0, buttonY - m.gap - lineY), text: line.text, size: "small", colorKey: line.colorKey }));
+      this.#buildQuantity(panel, { x, y: rowY, width: right, m, product });
+    }
     return modal;
+  }
+
+  /**
+   * Time passes for the purchase's tracker: the host calls it while the dialog is on show.
+   * @param {number} dtMs
+   * @returns {boolean} whether the dialog needs drawing again
+   */
+  tick(dtMs) {
+    return this.#tracker?.tick(dtMs) ?? false;
+  }
+
+  /**
+   * The purchase this dialog follows step by step: its own, under way or delivered; null for none, or one that failed
+   * (its line says why).
+   */
+  #followed() {
+    const purchase = this.#mine();
+    if (purchase === null || purchaseProgress(shopTrack(purchase), this.#now()) === null) {
+      return null;
+    }
+    return purchase.error === null || purchase.stage === PurchaseStage.CONFIRMING ? purchase : null;
+  }
+
+  /**
+   * @param {{ x: number, y: number, width: number, height: number, compact: boolean }} area
+   */
+  #trackerAt({ x, y, width, height, compact }) {
+    const shop = /** @type {import("../../../application/shop/ShopService.js").ShopService} */ (this.#app.shop);
+    return new PurchaseTracker({ id: "tickets.tracker", x, y, width, height, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, approve: approveTransferText(this.#app), done: `${rankedEntriesText(this.#quantity)} added. Good luck in the season!` });
   }
 
   /**
@@ -150,7 +193,7 @@ export class EntryPurchaseDialog {
     const unpaid = purchase !== null && purchase.stage === PurchaseStage.FAILED && purchase.order !== null && purchase.order.payment !== null;
     const closing = unpaid
       ? { id: "tickets.cancelOrder", text: "Cancel order", onActivate: () => void shop?.cancel() }
-      : { id: "tickets.close", text: purchase?.stage === PurchaseStage.DONE ? "Close" : "Not now", onActivate: () => this.#onClose() };
+      : { id: "tickets.close", text: purchase === null ? "Not now" : "Close", onActivate: () => this.#onClose() };
     panel.add(new Button({ keepPlate: true, ...this.#mainButton(product, unpaid), x: x + close + gap, y, width: main, height, variant: "primary", textSize: "small" }));
     panel.add(new Button({ ...closing, x, y, width: close, height, textSize: "small" }));
   }
@@ -165,6 +208,10 @@ export class EntryPurchaseDialog {
     const purchase = this.#mine();
     if (purchase?.stage === PurchaseStage.DONE) {
       return { id: "tickets.play", text: "Play ranked", enabled: true, onActivate: () => this.#onPlay() };
+    }
+    if (purchase !== null && BUSY_STAGES.includes(purchase.stage)) {
+      // Its own purchase under way: the tracker beside it says how far it has come.
+      return { id: "tickets.buy", text: "Buying…", enabled: false, onActivate: () => undefined };
     }
     if (unpaid) {
       return { id: "tickets.payAgain", text: "Pay again", enabled: true, onActivate: () => void shop?.payAgain() };
@@ -188,7 +235,8 @@ export class EntryPurchaseDialog {
   }
 
   /**
-   * What the dialog says under the quantity: where the purchase stands, else what is missing, else the wallet.
+   * What the dialog says under the quantity (its purchase under way has the tracker instead): why its purchase
+   * failed, else what is missing, else the wallet.
    * @param {import("../../../application/ports/MarketApi.contract.js").Product | null} product
    * @returns {Line}
    */
@@ -196,7 +244,7 @@ export class EntryPurchaseDialog {
     const shop = this.#app.shop;
     const purchase = this.#mine();
     if (purchase !== null) {
-      return purchaseLine(purchase, this.#app, this.#quantity);
+      return { text: `The purchase did not go through: ${purchase.error?.message ?? "it was not paid"}.`, colorKey: "danger" };
     }
     if (shop !== undefined && BUSY_STAGES.includes(shop.state.purchase.stage)) {
       return { text: "Another purchase is under way: wait for it to finish.", colorKey: "accent" };
@@ -250,31 +298,5 @@ export class EntryPurchaseDialog {
   #change(step, limit) {
     this.#quantity = Math.max(1, Math.min(limit, this.#quantity + step));
     this.#refresh();
-  }
-}
-
-/**
- * Where the dialog's purchase stands.
- * @param {import("../../../application/shop/ShopService.js").Purchase} purchase
- * @param {import("../../../application/AppContext.js").AppContext} app
- * @param {number} quantity
- * @returns {Line}
- */
-function purchaseLine(purchase, app, quantity) {
-  if (purchase.error !== null) {
-    return { text: `The purchase did not go through: ${purchase.error.message}.`, colorKey: purchase.stage === PurchaseStage.FAILED ? "danger" : "accent" };
-  }
-  const payment = purchase.order?.payment ?? null;
-  switch (purchase.stage) {
-    case PurchaseStage.ORDERING:
-      return { text: "Creating your order…", colorKey: "accent" };
-    case PurchaseStage.SIGNING:
-      return { text: payment === null ? `${approveTransferText(app)}.` : `${approveTransferText(app)}: ${moneyText(payment.amount, payment.asset)} to @${payment.to}.`, colorKey: "accent" };
-    case PurchaseStage.CONFIRMING:
-      return { text: "Payment sent. Your tickets arrive in about a minute, once the chain confirms it: you can close this, a notification will tell you.", colorKey: "accent" };
-    case PurchaseStage.DONE:
-      return { text: `Done: ${rankedEntriesText(quantity)} added. Good luck in the season!`, colorKey: "success" };
-    default:
-      return { text: "", colorKey: "textMuted" };
   }
 }

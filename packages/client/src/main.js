@@ -465,7 +465,7 @@ async function boot() {
   const deckBuilding = new DeckBuildingService({ content: content.value, repository, ownership: () => collection.ownedCounts() });
   const account = new AccountService({ identity, collection, decks: accountDecks, deckBuilding, logger });
   account.start();
-  const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID() });
+  const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, now: () => Date.now(), newKey: () => crypto.randomUUID() });
   const timers = { setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: (handle) => globalThis.clearTimeout(handle) };
   // One realtime connection per signed-in player, shared by online play and notifications.
   const realtime = new WebSocketConnection({ url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`, createSocket: (url) => new WebSocket(url), timers, logger });
@@ -518,7 +518,7 @@ async function boot() {
   // Trades move copies between collections: the account reloads after each one.
   const trading = new TradingService({ api: new HttpTradingApi({ fetch: httpFetch }), newKey: () => crypto.randomUUID(), scheduler: browserScheduler, onCollectionChanged: () => account.refresh() });
   // The player market: payments go from the buyer's wallet straight to the seller; the collection reloads when a card moves.
-  const sales = new SalesService({ api: new HttpSalesApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, newKey: () => crypto.randomUUID(), onCollectionChanged: () => account.refresh(), connection: realtime });
+  const sales = new SalesService({ api: new HttpSalesApi({ fetch: httpFetch }), wallet, account, scheduler: browserScheduler, now: () => Date.now(), newKey: () => crypto.randomUUID(), onCollectionChanged: () => account.refresh(), connection: realtime });
   // The player's budget where they buy: read from their wallet on the chain, again once a payment is sent.
   const balance = new BalanceService({ api: new HttpBalanceApi({ fetch: httpFetch }) });
   refreshWhenPaid(shop, (state) => state.purchase.stage === PurchaseStage.CONFIRMING, balance);
