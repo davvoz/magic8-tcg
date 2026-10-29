@@ -133,7 +133,7 @@ export async function onlineWorld({ content, clientTimeScale = 1 } = {}) {
     const keychain = new ManualKeychain(keys.privateKey, (transfer) => setup.ledger.transfer({ from: transfer.from, to: transfer.to, amount: `${transfer.amount} ${transfer.asset}`, memo: transfer.memo, time: setup.clock.now() }).txId);
     /** The page's HTTP calls, signed in as the player. @type {typeof fetch} */
     const httpFetch = (url, init = {}) => fetch(`${server.base}${url}`, { ...init, headers: { ...init.headers, Cookie: /** @type {string} */ (api.cookie), Origin: ORIGIN } });
-    const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet: keychain, account: { state: { account }, refresh: async () => undefined }, scheduler: { delay: runJobs }, newKey: () => globalThis.crypto.randomUUID() });
+    const shop = new ShopService({ api: new HttpMarketApi({ fetch: httpFetch }), wallet: keychain, account: { state: { account }, refresh: async () => undefined }, scheduler: { delay: runJobs }, now: () => Date.now(), newKey: () => globalThis.crypto.randomUUID() });
     const entries = new EntryService({ api: new HttpEntriesApi({ fetch: httpFetch }) });
     const logger = new MemoryLogger();
     /** @type {string[]} */
