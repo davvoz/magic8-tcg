@@ -263,6 +263,35 @@ describe("ShopScene", () => {
     assert.ok(rendered(scene).includes("Blockchain"), "the steps named");
   });
 
+  it("on a phone, keeps a purchase's steps in one place on every shelf: under a single's card, to the panel's foot", async () => {
+    const world = await harness({ listing: LISTING_WITH_ENTRIES, size: { cssWidth: 667, cssHeight: 375 } });
+    world.app.shop = new ShopService({
+      api: world.market.api,
+      wallet: { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => ok(""), requestTransfer: () => new Promise(() => undefined) },
+      account: world.account,
+      scheduler: { delay: () => new Promise(() => undefined) },
+      newKey: () => "key-000000000000004",
+      now: () => 0,
+    });
+    const scene = new ShopScene(world.services, world.app, () => 0);
+    scene.enter({});
+    await settle();
+    click(byId(scene, "shop.buy"));
+    await settle();
+    const places = ["packs", "decks", "singles", "ranked", "offers"].map((shelf) => {
+      click(byId(scene, `shop.tab.${shelf}`));
+      const { x, y, width, height } = byId(scene, "shop.tracker").bounds;
+      return [shelf, { x, y, width, height }];
+    });
+    const [, singles] = places[2];
+    for (const [shelf, place] of places) {
+      assert.deepEqual(place, singles, `${shelf}: where it is on the singles`);
+    }
+    click(byId(scene, "shop.tab.singles"));
+    const card = byId(scene, "shop.cardDetail").bounds;
+    assert.ok(card.y + card.height <= singles.y, "under the card");
+  });
+
   it("sells ranked tickets on their own shelf, Tickets, many with one transfer, and says they go into the jackpot", async () => {
     const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 2, perGame: 1, season: "season-1" }]) } });
     await entries.refresh();

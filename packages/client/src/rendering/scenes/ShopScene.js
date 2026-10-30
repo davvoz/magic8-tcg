@@ -189,13 +189,16 @@ export class ShopScene extends SectionScene {
     return screen.columns.right.width - 2 * screen.inset;
   }
 
-  /** Where the purchase controls start in the detail panel; everything else fits above. */
+  /** Where the purchase controls (or a purchase under way's steps) start in the detail panel; everything else fits above. */
   get #purchaseTop() {
     const { columns, inset } = this.#screen;
-    const { line, buy, quantity, rowGap, compactPurchase } = this.#m;
+    const { line, buy, quantity, rowGap, compactPurchase, top, single } = this.#m;
     if (compactPurchase) {
-      // A purchase under way has the status line's room too: its tracker takes the whole block.
-      const status = this.#compactStatus === null && !this.#purchaseUnderWay() ? 0 : 2 * line + rowGap;
+      if (this.#purchaseUnderWay()) {
+        // The steps keep to one place on every shelf: under a single's card (which reaches below the controls' room), to the foot.
+        return Math.max(columns.height - inset - buy.height - rowGap - quantity.height - 2 * line - rowGap, top.title + single.card.height + rowGap);
+      }
+      const status = this.#compactStatus === null ? 0 : 2 * line + rowGap;
       return columns.height - inset - buy.height - rowGap - quantity.height - status;
     }
     return columns.height - inset - 2 * line - 8 - buy.height - inset - quantity.height;
@@ -769,12 +772,6 @@ export class ShopScene extends SectionScene {
     } else if (card !== undefined) {
       panel.add(new Label({ x, y: rarityY + 2 * LINE + 4, width, height: LINE, text: "Tap the card to read it", size: "small", align: "left", colorKey: "accent", fit: true }));
     }
-    if (compact && this.#purchaseUnderWay()) {
-      // A phone's card reaches down into the purchase's room: the steps go under it, the panel's whole width, to the foot.
-      const { inset, columns } = this.#screen;
-      const trackerY = Math.max(this.#purchaseTop, top + SINGLE.card.height + this.#m.rowGap);
-      return this.#buildPurchase(panel, offer.product, { x: inset, y: trackerY, width: this.#detailWidth, height: columns.height - inset - trackerY });
-    }
     return this.#buildPurchase(panel, offer.product);
   }
 
@@ -842,18 +839,15 @@ export class ShopScene extends SectionScene {
    * in their place.
    * @param {Panel} panel
    * @param {Product} product
-   * @param {{ x: number, y: number, width: number, height: number } | null} [trackerArea] where the steps go (by default the
-   *   purchase's room, the panel's whole width)
    * @returns {Button | null} the Buy button (none while a purchase is under way)
    */
-  #buildPurchase(panel, product, trackerArea = null) {
+  #buildPurchase(panel, product) {
     const shop = this.#shop();
     const { purchase } = shop.state;
     if (this.#purchaseUnderWay()) {
       const { inset, columns, compact } = this.#screen;
       const top = this.#purchaseTop;
-      const area = trackerArea ?? { x: inset, y: top, width: this.#detailWidth, height: columns.height - inset - top };
-      this.#tracker = panel.add(new PurchaseTracker({ id: "shop.tracker", ...area, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, approve: approveTransferText(this.#app), done: "" }));
+      this.#tracker = panel.add(new PurchaseTracker({ id: "shop.tracker", x: inset, y: top, width: this.#detailWidth, height: columns.height - inset - top, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, approve: approveTransferText(this.#app), done: "" }));
       return null;
     }
     if (this.#m.compactPurchase) {
