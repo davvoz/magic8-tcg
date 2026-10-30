@@ -14,6 +14,7 @@ import { HttpTradingApi } from "../../src/infrastructure/api/HttpTradingApi.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { immediateScheduler } from "../../src/infrastructure/time/ImmediateScheduler.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
+import { NOTICE_LIFETIME_MS } from "../../src/rendering/scenes/FadingNotices.js";
 import { TradesScene, tradeSubtitle } from "../../src/rendering/scenes/TradesScene.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
 import { loadBundledContent } from "./fixtures.js";
@@ -117,6 +118,9 @@ describe("TradesScene", () => {
     assert.equal(reloads(), 1, "the collection reloads after copies moved");
     assert.equal(byId(scene, "trades.accept"), null, "an accepted trade has no more actions");
     assert.ok(rendered(scene).some((text) => text.includes("Trade done")));
+    scene.update(0);
+    scene.update(NOTICE_LIFETIME_MS);
+    assert.doesNotMatch(byId(scene, "trades.status").text, /Trade done/, "said for a while, then the header's own words");
   });
 
   it("composes an offer from tradeable copies only, and asks for cards by tapping", async () => {

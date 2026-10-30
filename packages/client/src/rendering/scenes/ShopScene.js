@@ -58,6 +58,7 @@ import { screenLayout } from "./deckBuilder/layout.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
 import { PurchaseTracker } from "./purchase/PurchaseTracker.js";
 import { EntryTickets } from "./entries/EntryTickets.js";
+import { FadingNotices } from "./FadingNotices.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 import { approveTransferText, transferPreviewText } from "./walletText.js";
@@ -210,6 +211,8 @@ export class ShopScene extends SectionScene {
   }
 
   #app;
+  /** @type {FadingNotices} */
+  #notices;
   #now;
   /** The active key a payment with the player's own keys needs, asked for over the shop. @type {ActiveKeyDialog | null} */
   #activeKey = null;
@@ -248,6 +251,17 @@ export class ShopScene extends SectionScene {
     super(services, app, { scene: SceneId.SHOP, title: "Shop" });
     this.#app = app;
     this.#now = now;
+    // The status line's word on what was just done (delivered, added to the cart, or why not) gives way after a while.
+    this.#notices = new FadingNotices([
+      { read: () => this.#finishedPurchase(), forget: () => this.#shop().dismiss() },
+      {
+        read: () => this.#notice,
+        forget: () => {
+          this.#notice = null;
+          this.#rebuild();
+        },
+      },
+    ]);
   }
 
   /**
@@ -281,6 +295,7 @@ export class ShopScene extends SectionScene {
   }
 
   exit() {
+    this.#notices.forgetShown();
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     this.#tracker = null;
@@ -307,7 +322,20 @@ export class ShopScene extends SectionScene {
    */
   update(dtMs) {
     const tracked = this.#tracker?.tick(dtMs) ?? false;
-    return super.update(dtMs) || tracked;
+    const faded = this.#notices.tick(dtMs);
+    return super.update(dtMs) || tracked || faded;
+  }
+
+  /**
+   * The purchase done with, whose word the status line still says: delivered (its cards no longer on show), or failed
+   * before anything was to pay. One that failed with its order still to pay waits for Pay again or Cancel.
+   * @returns {import("../../application/shop/ShopService.js").Purchase | null}
+   */
+  #finishedPurchase() {
+    const { purchase } = this.#shop().state;
+    const delivered = purchase.stage === PurchaseStage.DONE && this.modal === null;
+    const failed = purchase.stage === PurchaseStage.FAILED && !purchase.order?.payment;
+    return delivered || failed ? purchase : null;
   }
 
   #rebuild() {
@@ -741,6 +769,12 @@ export class ShopScene extends SectionScene {
     } else if (card !== undefined) {
       panel.add(new Label({ x, y: rarityY + 2 * LINE + 4, width, height: LINE, text: "Tap the card to read it", size: "small", align: "left", colorKey: "accent", fit: true }));
     }
+    if (compact && this.#purchaseUnderWay()) {
+      // A phone's card reaches down into the purchase's room: the steps go under it, the panel's whole width, to the foot.
+      const { inset, columns } = this.#screen;
+      const trackerY = Math.max(this.#purchaseTop, top + SINGLE.card.height + this.#m.rowGap);
+      return this.#buildPurchase(panel, offer.product, { x: inset, y: trackerY, width: this.#detailWidth, height: columns.height - inset - trackerY });
+    }
     return this.#buildPurchase(panel, offer.product);
   }
 
@@ -808,15 +842,18 @@ export class ShopScene extends SectionScene {
    * in their place.
    * @param {Panel} panel
    * @param {Product} product
+   * @param {{ x: number, y: number, width: number, height: number } | null} [trackerArea] where the steps go (by default the
+   *   purchase's room, the panel's whole width)
    * @returns {Button | null} the Buy button (none while a purchase is under way)
    */
-  #buildPurchase(panel, product) {
+  #buildPurchase(panel, product, trackerArea = null) {
     const shop = this.#shop();
     const { purchase } = shop.state;
     if (this.#purchaseUnderWay()) {
       const { inset, columns, compact } = this.#screen;
       const top = this.#purchaseTop;
-      this.#tracker = panel.add(new PurchaseTracker({ id: "shop.tracker", x: inset, y: top, width: this.#detailWidth, height: columns.height - inset - top, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, approve: approveTransferText(this.#app), done: "" }));
+      const area = trackerArea ?? { x: inset, y: top, width: this.#detailWidth, height: columns.height - inset - top };
+      this.#tracker = panel.add(new PurchaseTracker({ id: "shop.tracker", ...area, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, approve: approveTransferText(this.#app), done: "" }));
       return null;
     }
     if (this.#m.compactPurchase) {

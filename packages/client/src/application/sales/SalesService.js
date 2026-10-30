@@ -323,6 +323,13 @@ export class SalesService {
     return released;
   }
 
+  /** Forgets the last word on what was done (its notice, or why it failed). */
+  clearNotice() {
+    if (this.#state.error !== null || this.#state.notice !== null) {
+      this.#set({ error: null, notice: null });
+    }
+  }
+
   /** Forgets the finished (or abandoned) purchase and stops polling it. */
   dismiss() {
     this.#generation += 1;

@@ -108,6 +108,13 @@ export class TradingService {
     return this.#run(() => this.#api.cancel(tradeId), ACTION_NOTICES.cancel);
   }
 
+  /** Forgets the last word on what was done (its notice, or why it failed). */
+  clearNotice() {
+    if (this.#state.error !== null || this.#state.notice !== null) {
+      this.#set({ error: null, notice: null });
+    }
+  }
+
   /** Forgets everything (sign-out, account change). */
   reset() {
     this.#generation += 1;

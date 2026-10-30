@@ -42,6 +42,7 @@ import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
+import { FadingNotices } from "./FadingNotices.js";
 import { PurchaseTracker } from "./purchase/PurchaseTracker.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
@@ -180,6 +181,8 @@ export class MarketScene extends SectionScene {
   }
 
   #app;
+  /** @type {FadingNotices} */
+  #notices;
   /** The active key a payment with the player's own keys needs, asked for over the market. @type {ActiveKeyDialog | null} */
   #activeKey = null;
   #now;
@@ -209,6 +212,8 @@ export class MarketScene extends SectionScene {
     super(services, app, { scene: SceneId.MARKET, title: "Market" });
     this.#app = app;
     this.#now = now;
+    // The header's word on what was just done (listed, withdrawn, or why not) gives way to its intro after a while.
+    this.#notices = new FadingNotices([{ read: () => this.#sales().state.error ?? this.#sales().state.notice, forget: () => this.#sales().clearNotice() }]);
   }
 
   /** @param {{ back?: string }} [params] `back`: the screen that opened it (a notification), which Back returns to; none of its own */
@@ -235,6 +240,7 @@ export class MarketScene extends SectionScene {
   }
 
   exit() {
+    this.#notices.forgetShown();
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     this.#tracker = null;
@@ -254,7 +260,8 @@ export class MarketScene extends SectionScene {
    */
   update(dtMs) {
     const tracked = this.#tracker?.tick(dtMs) ?? false;
-    return super.update(dtMs) || tracked;
+    const faded = this.#notices.tick(dtMs);
+    return super.update(dtMs) || tracked || faded;
   }
 
   onCancel() {

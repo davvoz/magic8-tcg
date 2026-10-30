@@ -14,6 +14,7 @@ import { HttpSalesApi } from "../../src/infrastructure/api/HttpSalesApi.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { immediateScheduler } from "../../src/infrastructure/time/ImmediateScheduler.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
+import { NOTICE_LIFETIME_MS } from "../../src/rendering/scenes/FadingNotices.js";
 import { MarketScene, listingSubtitle, purchaseActivity, saleActivity } from "../../src/rendering/scenes/MarketScene.js";
 import { BalanceService } from "../../src/application/wallet/BalanceService.js";
 import { FakeContext2D, loadTheme } from "../rendering/fakes.js";
@@ -263,6 +264,10 @@ describe("MarketScene", () => {
     await flush();
     assert.deepEqual(api.calls.find((call) => call[0] === "list")[1].price, "2.5");
     assert.equal(byId(scene, "market.list"), null, "back to the player's sales");
+    assert.match(byId(scene, "market.status").text, /On the board/);
+    scene.update(0);
+    scene.update(NOTICE_LIFETIME_MS);
+    assert.doesNotMatch(byId(scene, "market.status").text, /On the board/, "said for a while, then the header's own words");
   });
 
   it("filters the board by faction, rarity and type through the server, and the copies to sell on the spot", async () => {

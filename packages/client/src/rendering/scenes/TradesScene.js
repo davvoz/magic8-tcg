@@ -21,6 +21,7 @@ import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { screenLayout } from "./deckBuilder/layout.js";
+import { FadingNotices } from "./FadingNotices.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 
@@ -74,6 +75,8 @@ export class TradesScene extends SectionScene {
   }
 
   #app;
+  /** @type {FadingNotices} */
+  #notices;
   #now;
   /** @type {(() => void) | null} */
   #unsubscribe = null;
@@ -97,6 +100,8 @@ export class TradesScene extends SectionScene {
     super(services, app, { scene: SceneId.TRADES, title: "Trades" });
     this.#app = app;
     this.#now = now;
+    // The header's word on what was just done (offered, accepted, or why not) gives way to its intro after a while.
+    this.#notices = new FadingNotices([{ read: () => this.#trading().state.error ?? this.#trading().state.notice, forget: () => this.#trading().clearNotice() }]);
   }
 
   /** @param {Readonly<Record<string, unknown>>} [params] `{ back?: string }`: opened from a screen that said so (a notification), Back leads there */
@@ -109,10 +114,20 @@ export class TradesScene extends SectionScene {
   }
 
   exit() {
+    this.#notices.forgetShown();
     this.#unsubscribe?.();
     this.#unsubscribe = null;
     this.#trading().lookUpAskable(null);
     super.exit();
+  }
+
+  /**
+   * The header's word on what was just done goes after a while.
+   * @param {number} dtMs
+   */
+  update(dtMs) {
+    const faded = this.#notices.tick(dtMs);
+    return super.update(dtMs) || faded;
   }
 
   onCancel() {

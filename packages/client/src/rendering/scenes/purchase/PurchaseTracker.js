@@ -184,7 +184,8 @@ export class PurchaseTracker extends UiNode {
       context.fillStyle = { done: colors.text, now: colors.accentLight, next: colors.textMuted }[state];
       context.textAlign = "center";
       context.textBaseline = "middle";
-      context.fillText(name, centre.x, centreY + m.dot + 4 + m.name / 2);
+      // A narrow tracker (beside a phone's card) squeezes a long name into its own slot rather than into its neighbours'.
+      context.fillText(name, centre.x, centreY + m.dot + 4 + m.name / 2, slot - 4);
     });
   }
 
@@ -286,7 +287,8 @@ function chainText(chain, compact) {
     case ChainPhase.FINAL:
       return { title: "Payment final: delivering…", colorKey: "accent", aside: compact ? "soon" : "almost there", note: KEEP_PLAYING };
     case ChainPhase.LATE:
-      return { title: "Taking longer than usual", colorKey: "accent", aside: "", note: "Nothing is lost: it arrives as soon as the blockchain confirms your payment, and a notification tells you." };
+      // A phone's tracker has a line for its note (under a single's card): the short of it.
+      return { title: "Taking longer than usual", colorKey: "accent", aside: "", note: compact ? "Nothing is lost: a notification tells you when it arrives." : "Nothing is lost: it arrives as soon as the blockchain confirms your payment, and a notification tells you." };
     case ChainPhase.SEEN:
       return { title: "The blockchain has your payment: making it final", colorKey: "accent", aside: left, note: KEEP_PLAYING };
     default:

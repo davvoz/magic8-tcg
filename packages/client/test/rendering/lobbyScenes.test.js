@@ -15,10 +15,11 @@ import { LobbyService } from "../../src/application/lobby/LobbyService.js";
 import { RankingService } from "../../src/application/ranking/RankingService.js";
 import { PurchaseStage, ShopService } from "../../src/application/shop/ShopService.js";
 import { LISTING_WITH_ENTRIES, fakeMarketApi } from "../application/fakeMarketApi.js";
-import { OnlineService } from "../../src/application/online/OnlineService.js";
+import { OnlineService, OnlineStatus } from "../../src/application/online/OnlineService.js";
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { CasualScene } from "../../src/rendering/scenes/CasualScene.js";
+import { NOTICE_LIFETIME_MS } from "../../src/rendering/scenes/FadingNotices.js";
 import { matchedText } from "../../src/rendering/scenes/lobby/lobbyText.js";
 import { rankedSteps } from "../../src/rendering/scenes/online/rankedGuideFor.js";
 import { StepState } from "../../src/rendering/scenes/online/StepList.js";
@@ -213,6 +214,22 @@ describe("RankedScene", () => {
     assert.deepEqual(requests.find((request) => request.t === "queue.join").d, { mode: "ranked", deckId: DECK });
   });
 
+  it("shows how ranked works again once a refused challenge's word has been up a while, or the player has left", async () => {
+    const refused = { "challenge.send": () => ({ t: "error", d: { code: "RATE_LIMITED", message: "@bob just declined: wait a moment before asking again" } }) };
+    const { scene, lobby } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true, lobbyReplies: refused });
+    await lobby.challenge("bob", "ranked", DECK);
+    assert.match(byId(scene, "online.error").text, /just declined/);
+    assert.equal(byId(scene, "online.guide"), null, "the word in its place");
+    scene.update(0);
+    scene.update(NOTICE_LIFETIME_MS);
+    assert.equal(byId(scene, "online.error"), null);
+    assert.ok(byId(scene, "online.guide"), "how ranked works, back");
+    await lobby.challenge("bob", "ranked", DECK);
+    scene.update(16);
+    scene.exit();
+    assert.equal(lobby.state.error, null, "left: done with");
+  });
+
   it("shows how ranked works in the panel while nothing is going on, and the status once something is", async () => {
     const { scene } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true });
     assert.ok(byId(scene, "online.guide"), "how ranked works, on the screen itself");
@@ -372,6 +389,23 @@ describe("A lobby before a v2 game starts", () => {
     assert.match(said(scene), /You did not sign the game with Keychain in time/);
     assert.equal(byId(scene, "online.find").enabled, true);
     assert.ok(navigated.every((entry) => entry.id !== SceneId.MATCH), "never went to the board");
+    scene.update(0);
+    scene.update(NOTICE_LIFETIME_MS / 2);
+    assert.match(said(scene), /did not sign/, "still up a while");
+    assert.equal(scene.update(NOTICE_LIFETIME_MS / 2), true);
+    assert.doesNotMatch(said(scene), /cancelled|did not sign/, "then the lobby is as before the game");
+  });
+
+  it("is ready for the next game when the player comes back from one that ended", async () => {
+    const { scene, online, push } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true });
+    push("game.state", WAITING({ s0: true, s1: true }));
+    scene.exit();
+    push("game.over", { gameId: GAME, winner: "s1", reason: "CONCEDE" });
+    assert.equal(online.state.status, OnlineStatus.OVER);
+    scene.enter({});
+    await flush();
+    assert.equal(online.state.status, OnlineStatus.IDLE);
+    assert.ok(byId(scene, "online.guide"), "how ranked works, not \"The game is over.\"");
   });
 });
 

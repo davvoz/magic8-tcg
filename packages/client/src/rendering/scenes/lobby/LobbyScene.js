@@ -36,6 +36,7 @@ import { Panel } from "../../ui/Panel.js";
 import { ScrollList } from "../../ui/ScrollList.js";
 import { TextBlock } from "../../ui/TextBlock.js";
 import { screenLayout } from "../deckBuilder/layout.js";
+import { FadingNotices } from "../FadingNotices.js";
 import { SceneId } from "../sceneIds.js";
 import { SectionScene } from "../SectionScene.js";
 import { ACTIVITY_TEXT, STATUS_TEXT, answerTimeText, lobbyOf, modeName } from "./lobbyText.js";
@@ -93,6 +94,8 @@ export class LobbyScene extends SectionScene {
   #scroll = {};
   /** The online status last seen: a game created or called off changes the player's entries. @type {string | null} */
   #lastStatus = null;
+  /** What the lobby was told last (a request turned down, a game called off), gone after a while. @type {FadingNotices | null} */
+  #notices = null;
 
   /**
    * @param {import("../Scene.js").SceneServices} services
@@ -420,6 +423,10 @@ export class LobbyScene extends SectionScene {
   enter(params = {}) {
     this.routeBack(params);
     const online = this.online();
+    // Back from a finished game: the lobby is ready for the next one.
+    if (online.state.status === OnlineStatus.OVER) {
+      online.dismissGame();
+    }
     this.watch(online.subscribe((state) => this.#onChange(state)));
     online.start();
     if (this.#app.ranking !== undefined) {
@@ -439,10 +446,13 @@ export class LobbyScene extends SectionScene {
       this.watch(lobby.watch());
     }
     this.watchServices();
+    this.#notices = new FadingNotices(this.noticeSources());
     this.rebuild();
   }
 
   exit() {
+    this.#notices?.forgetShown();
+    this.#notices = null;
     this.#unsubscribes.forEach((unsubscribe) => unsubscribe());
     this.#unsubscribes = [];
     this.#dialog = null;
@@ -460,11 +470,12 @@ export class LobbyScene extends SectionScene {
   }
 
   /**
-   * Moves the time left to answer a challenge on.
+   * Moves the time left to answer a challenge on; what just happened goes after a while.
    * @param {number} dtMs
    */
   update(dtMs) {
-    const base = super.update(dtMs);
+    const faded = this.#notices?.tick(dtMs) ?? false;
+    const base = super.update(dtMs) || faded;
     const label = this.root.findById(ANSWER_TIME_ID);
     const challenge = this.incomingChallenge();
     if (!(label instanceof Label) || challenge === null || this.#app.lobby === undefined) {
@@ -476,6 +487,21 @@ export class LobbyScene extends SectionScene {
     }
     label.text = text;
     return true;
+  }
+
+  /**
+   * What the lobby shows of what just happened, each gone after a while: the game's word (a request turned down, a
+   * game called off before it started) and the lobby's (a challenge refused). A lobby adds its own.
+   * @returns {import("../FadingNotices.js").NoticeSource[]}
+   */
+  noticeSources() {
+    const online = this.online();
+    const lobby = this.#app.lobby;
+    const quiet = () => online.state.status === OnlineStatus.IDLE || online.state.status === OnlineStatus.CANCELLED;
+    return [
+      { read: () => (quiet() ? online.state.error : null), forget: () => online.clearNotice() },
+      ...(lobby === undefined ? [] : [{ read: () => lobby.state.error, forget: () => lobby.clearError() }]),
+    ];
   }
 
   /** Back: out of the queue first, when the player is in it. */

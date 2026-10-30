@@ -307,6 +307,7 @@ const SCREENS = Object.freeze([
   { name: "shop singles", make: (s, app) => new ShopScene(s, app), after: (scene) => scene.root.findById("shop.tab.singles")?.activate() },
   { name: "shop decks", make: (s, app) => new ShopScene(s, app), after: (scene) => scene.root.findById("shop.tab.decks")?.activate() },
   { name: "shop, a purchase under way", make: (s, app) => new ShopScene(s, app, () => 20_000), before: withPendingPurchase, after: (scene) => scene.root.findById("shop.buy")?.activate(), shows: "shop.tracker" },
+  { name: "shop singles, a purchase under way", make: (s, app) => new ShopScene(s, app, () => 20_000), before: (app) => (withPendingPurchase(app), void app.shop.load().then(() => app.shop.buy({ productId: "core_booster", quantity: 1, asset: "STEEM" }))), after: (scene) => scene.root.findById("shop.tab.singles")?.activate(), shows: "shop.tracker", apart: ["shop.tracker", "shop.cardDetail"] },
   { name: "shop with unpaid orders", make: (s, app) => new ShopScene(s, app, BEFORE_DUE), before: withUnpaidOrders, after: (scene) => assert.ok(scene.root.findById("shop.orders")) },
   { name: "shop's unpaid orders", make: (s, app) => new ShopScene(s, app, BEFORE_DUE), before: withUnpaidOrders, after: (scene) => scene.root.findById("shop.orders")?.activate() },
   { name: "starter", make: (s, app) => new StarterScene(s, app), starter: false },
@@ -395,6 +396,20 @@ function wordsOf(label) {
   return { x: box.x + offset, y: box.y, width, height: box.height };
 }
 
+/**
+ * Two nodes a screen keeps from overlapping (`apart`), when it names them.
+ * @param {any} scene
+ * @param {readonly [string, string] | undefined} apart
+ * @param {string} label
+ */
+function assertApart(scene, apart, label) {
+  if (apart === undefined) {
+    return;
+  }
+  const [first, second] = apart.map((id) => scene.findNode(id));
+  assert.ok(first && second && !overlap(first.bounds, second.bounds), `${label}: ${apart.join(" clear of ")}`);
+}
+
 /** Screens checked for words on the painted corners: the phones, and a desktop's window. */
 const SCREENS_FOR_CORNERS = Object.freeze([...PHONES, Object.freeze({ name: "desktop", cssWidth: 1600, cssHeight: 900 })]);
 
@@ -414,6 +429,7 @@ for (const size of SCREENS_FOR_CORNERS) {
         const zones = cornerZones(layer);
         const crossing = wordsAndButtons(layer).flatMap(({ node, area }) => zones.filter((zone) => zone.panel !== node && isAncestor(zone.panel, node) && overlap(area, zone)).map(() => node.id || `${node.constructor.name} "${node.text ?? ""}"`));
         assert.deepEqual([...new Set(crossing)], [], `${size.name} ${screen.name}: on a painted corner`);
+        assertApart(scene, screen.apart, `${size.name} ${screen.name}`);
       });
     }
   });
@@ -438,6 +454,7 @@ for (const phone of PHONES) {
         if (screen.shows !== undefined) {
           assert.ok(scene.findNode(screen.shows) ?? scene.modal?.findById(screen.shows), `${screen.name}: ${screen.shows} on show`);
         }
+        assertApart(scene, screen.apart, `${phone.name} ${screen.name}`);
         assertFitsPhone(scene, viewport, `${phone.name} ${screen.name}`);
       });
     }

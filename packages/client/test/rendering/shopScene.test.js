@@ -14,6 +14,7 @@ import { EntryService } from "../../src/application/entries/EntryService.js";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { ShopScene } from "../../src/rendering/scenes/ShopScene.js";
+import { NOTICE_LIFETIME_MS } from "../../src/rendering/scenes/FadingNotices.js";
 import { EntryTickets } from "../../src/rendering/scenes/entries/EntryTickets.js";
 import { SceneId } from "../../src/rendering/scenes/sceneIds.js";
 import { ALICE, accountWorld, settle } from "../application/accountWorld.js";
@@ -287,6 +288,10 @@ describe("ShopScene", () => {
     assert.equal(shop.state.purchase.stage, PurchaseStage.DONE);
     assert.equal(scene.modal, null, "no cards to reveal");
     assert.equal(byId(scene, "shop.status").text, "Done: 5 ranked tickets are yours, and in the season's jackpot.");
+    scene.update(0);
+    scene.update(NOTICE_LIFETIME_MS);
+    assert.equal(shop.state.purchase.stage, PurchaseStage.NONE, "said for a while, then the shelf as before");
+    assert.match(byId(scene, "shop.status").text, /before anything is paid/);
     click(byId(scene, "shell.back"));
     assert.equal(navigated.at(-1).id, SceneId.RANKED, "back to the lobby that sent the player here");
   });

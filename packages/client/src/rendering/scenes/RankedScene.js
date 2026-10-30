@@ -191,6 +191,12 @@ export class RankedScene extends LobbyScene {
     }
   }
 
+  /** The auto list's word too (a ticket it could not take). */
+  noticeSources() {
+    const autoList = this.app.autoList;
+    return [...super.noticeSources(), ...(autoList === undefined ? [] : [{ read: () => autoList.state.error, forget: () => autoList.clearError() }])];
+  }
+
   /** @returns {"ranked"} */
   get queueMode() {
     return "ranked";

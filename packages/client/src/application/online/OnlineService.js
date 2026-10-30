@@ -246,6 +246,19 @@ export class OnlineService {
     }
   }
 
+  /**
+   * Forgets what the lobby was told last (a request turned down, a game called off before it started): back to idle.
+   * A search or a game under way is left as it is.
+   */
+  clearNotice() {
+    const { status } = this.#state;
+    if (status === OnlineStatus.CANCELLED) {
+      this.#set({ status: OnlineStatus.IDLE, error: null, opponent: null, acceptance: null, mode: null });
+    } else if (status === OnlineStatus.IDLE && this.#state.error !== null) {
+      this.#set({ error: null });
+    }
+  }
+
   /** Back to the lobby once a finished game has been looked at. */
   dismissGame() {
     const session = this.#state.session;
