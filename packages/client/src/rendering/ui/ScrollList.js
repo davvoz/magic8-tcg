@@ -14,6 +14,8 @@ import { withAlpha } from "../theme/color.js";
 const SCROLLBAR_WIDTH = 6;
 const SCROLLBAR_INSET = 4;
 const MIN_THUMB_HEIGHT = 24;
+/** Rows grow with the player's data (a big collection lists every copy, with an Info button each), so the list takes far more than a plain node. */
+const MAX_ROW_NODES = 65536;
 /** Horizontal room rows should leave free so the scrollbar never covers their right edge. */
 export const SCROLL_GUTTER = SCROLLBAR_WIDTH + 2 * SCROLLBAR_INSET + 2;
 
@@ -29,7 +31,7 @@ export class ScrollList extends UiNode {
   constructor(options = {}) {
     super(options);
     this.style = { fillKey: options.fillKey ?? null, strokeKey: options.strokeKey ?? null };
-    this.content = super.add(new UiNode({ id: `${this.id}.content`, width: this.width }));
+    this.content = super.add(new UiNode({ id: `${this.id}.content`, width: this.width, maxChildren: MAX_ROW_NODES }));
   }
 
   /** Total height of the rows, set by whoever fills `content`; rows below it are not hit-testable. */
@@ -118,9 +120,27 @@ export class ScrollList extends UiNode {
     context.save();
     roundedRectPath(context, area, theme.spacing.radius);
     context.clip();
-    this.content.draw(context, theme);
+    this.#drawVisibleRows(context, theme);
     context.restore();
     this.#drawScrollbar(context, theme);
+  }
+
+  /**
+   * Draws only the rows inside the viewport, so a list of thousands costs no more per frame than a screenful.
+   * @param {CanvasRenderingContext2D} context
+   * @param {import("../theme/Theme.js").Theme} theme
+   */
+  #drawVisibleRows(context, theme) {
+    if (!this.content.visible) {
+      return;
+    }
+    const top = this.scrollY;
+    const bottom = top + this.height;
+    for (const row of this.content.children) {
+      if (row.y + row.height >= top && row.y <= bottom) {
+        row.draw(context, theme);
+      }
+    }
   }
 
   /**

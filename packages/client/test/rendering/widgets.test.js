@@ -111,6 +111,23 @@ describe("ScrollList", () => {
     scene.render(long);
     assert.equal(long.calls.filter((call) => call.method === "fill").length, fillsBefore + 2, "scrollbar track and thumb");
   });
+
+  it("holds more rows than a plain node may (a big collection) and draws only the ones in view", () => {
+    const scene = new Scene(services());
+    const { list, rows } = listWithRows(scene, 1500);
+    assert.equal(list.content.children.length, 1500);
+    const drawn = [];
+    for (const row of rows) {
+      const draw = row.draw.bind(row);
+      row.draw = (context, drawTheme) => {
+        drawn.push(row.id);
+        draw(context, drawTheme);
+      };
+    }
+    list.scrollTo(400);
+    scene.render(new FakeContext2D());
+    assert.deepEqual(drawn, ["row10", "row11", "row12", "row13", "row14", "row15"], "rows touching 400..600 only");
+  });
 });
 
 describe("Scene secondary actions", () => {

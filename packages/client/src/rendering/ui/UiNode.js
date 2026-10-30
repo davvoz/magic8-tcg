@@ -6,7 +6,7 @@
  */
 import { containsPoint, rect } from "@magic8/engine/shared/geometry.js";
 
-/** Structural guard against runaway trees. */
+/** Structural guard against runaway trees; containers whose children are data rows raise it. */
 const MAX_CHILDREN = 512;
 
 export class UiNode {
@@ -37,11 +37,13 @@ export class UiNode {
   parent = null;
   /** @type {UiNode[]} */
   #children = [];
+  #maxChildren;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, visible?: boolean }} [options]
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, enabled?: boolean, visible?: boolean, maxChildren?: number }} [options]
    */
   constructor(options = {}) {
+    this.#maxChildren = options.maxChildren ?? MAX_CHILDREN;
     this.id = options.id ?? "";
     this.x = options.x ?? 0;
     this.y = options.y ?? 0;
@@ -62,7 +64,7 @@ export class UiNode {
    * @returns {T}
    */
   add(child) {
-    if (this.#children.length >= MAX_CHILDREN) {
+    if (this.#children.length >= this.#maxChildren) {
       throw new RangeError("UiNode: too many children");
     }
     child.parent = this;
