@@ -83,6 +83,14 @@ export function cardIdsMatching(filter, app) {
 }
 
 /**
+ * The filter as one string, the same for the same choice: what a list keyed by it shows.
+ * @param {CardFilter} filter
+ */
+export function cardFilterKey(filter) {
+  return CARD_FILTER_FIELDS.map((field) => filter[field]).join("|");
+}
+
+/**
  * The filter in words, for "No … cards" messages: "rare ember creature"
  * ("" when nothing is filtered).
  * @param {CardFilter} filter

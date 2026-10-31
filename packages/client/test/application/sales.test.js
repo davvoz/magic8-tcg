@@ -116,15 +116,18 @@ function fakeConnection() {
   };
 }
 
-function market({ account = "bob", wallet = fakeWallet(), budget } = {}) {
+/** A phone in landscape: the compact layouts. */
+const PHONE = Object.freeze({ cssWidth: 844, cssHeight: 390 });
+
+function market({ account = "bob", wallet = fakeWallet(), budget, size = { cssWidth: 1600, cssHeight: 900 }, more = 0 } = {}) {
   const api = fakeApi();
   const connection = fakeConnection();
   let reloads = 0;
   const copy = (id, serial, tradeable, status = "active") => ({ id: uuid(id), edition: "core-1", serial, status, tradeable });
-  const accountService = { state: { account }, collection: { state: { cards: [{ definitionId: "iron_watcher", copies: [copy(31, 1, true), copy(32, 2, false), copy(33, 3, true, "locked")] }] } } };
+  const accountService = { state: { account }, collection: { state: { cards: [{ definitionId: "iron_watcher", copies: [copy(31, 1, true), copy(32, 2, false), copy(33, 3, true, "locked"), ...Array.from({ length: more }, (_, index) => copy(100 + index, 10 + index, true))] }] } } };
   const sales = new SalesService({ api, wallet, account: accountService, scheduler: immediateScheduler, now: () => NOW, newKey: () => "list-key-000000000001", onCollectionChanged: () => (reloads += 1), connection });
   const viewport = new Viewport(theme.layout);
-  viewport.resize({ cssWidth: 1600, cssHeight: 900 });
+  viewport.resize(size);
   const navigated = [];
   const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, params) => navigated.push([id, params]), hasScene: () => true };
   const balance = budget === undefined ? undefined : new BalanceService({ api: { balances: async () => ok([{ asset: "STEEM", amount: budget }]) } });
@@ -268,6 +271,31 @@ describe("MarketScene", () => {
     scene.update(0);
     scene.update(NOTICE_LIFETIME_MS);
     assert.doesNotMatch(byId(scene, "market.status").text, /On the board/, "said for a while, then the header's own words");
+  });
+
+  it("keeps the copies where they were scrolled when one is picked, until the filter shows others", async () => {
+    const { scene } = market({ more: 30 });
+    scene.enter({});
+    await flush();
+    byId(scene, "market.sell").activate();
+    byId(scene, "market.copies").scrollTo(300);
+    byId(scene, `market.copy.${uuid(108)}`).activate();
+    assert.equal(byId(scene, `market.copy.${uuid(108)}`).selected, true);
+    assert.equal(byId(scene, "market.copies").scrollY, 300, "the list stays where the player was");
+    byId(scene, "market.sellFilter.faction.iron").activate();
+    assert.equal(byId(scene, "market.copies").scrollY, 0, "another filter: from the top");
+  });
+
+  it("on a phone, gives the copies the room: the filter beside the title, the price beside Sell", async () => {
+    const { scene } = market({ size: PHONE, more: 30 });
+    scene.enter({});
+    await flush();
+    byId(scene, "market.sell").activate();
+    const [copies, price, sell, filter] = ["market.copies", "market.price", "market.list", "market.sellFilter.open"].map((id) => byId(scene, id));
+    assert.equal(price.y, sell.y, "one row");
+    assert.ok(price.x + price.width < sell.x, "side by side");
+    assert.ok(copies.y + copies.height <= price.y && price.y - (copies.y + copies.height) <= 8, "the list reaches down to them");
+    assert.ok(filter.y + filter.height <= copies.y && filter.y <= 8, "the filter on the first row");
   });
 
   it("filters the board by faction, rarity and type through the server, and the copies to sell on the spot", async () => {

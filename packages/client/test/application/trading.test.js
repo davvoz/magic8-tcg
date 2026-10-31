@@ -79,14 +79,17 @@ function fakeApi() {
   };
 }
 
-function screen() {
+/** A phone in landscape: the compact layouts. */
+const PHONE = Object.freeze({ cssWidth: 844, cssHeight: 390 });
+
+function screen({ size = { cssWidth: 1600, cssHeight: 900 }, more = 0 } = {}) {
   const api = fakeApi();
   let reloads = 0;
   const trading = new TradingService({ api, newKey: () => "offer-key-000000000001", onCollectionChanged: () => (reloads += 1), scheduler: immediateScheduler });
   const copy = (id, serial, tradeable) => ({ id: uuid(id), edition: "core-1", serial, status: "active", tradeable });
-  const account = { collection: { state: { cards: [{ definitionId: "ember_imp", copies: [copy(31, 1, true), copy(32, 2, false)] }] } } };
+  const account = { collection: { state: { cards: [{ definitionId: "ember_imp", copies: [copy(31, 1, true), copy(32, 2, false), ...Array.from({ length: more }, (_, index) => copy(100 + index, 10 + index, true))] }] } } };
   const viewport = new Viewport(theme.layout);
-  viewport.resize({ cssWidth: 1600, cssHeight: 900 });
+  viewport.resize(size);
   const navigated = [];
   const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id) => navigated.push(id), hasScene: () => true };
   const scene = new TradesScene(services, { content, account, trading }, () => NOW);
@@ -174,6 +177,25 @@ describe("TradesScene", () => {
     await flush();
     assert.equal(byId(scene, "trades.send"), null, "back to the list");
     assert.equal(byId(scene, `trades.row.${uuid(2)}`).text, "to @carol");
+  });
+
+  it("on a phone, a new offer takes the whole width with Send on its first row, and picking a card keeps the list where it was", async () => {
+    const { scene } = screen({ size: PHONE, more: 30 });
+    scene.enter({});
+    await flush();
+    assert.ok(byId(scene, "trades.list"), "the trades, until a new offer");
+    byId(scene, "trades.new").activate();
+    assert.equal(byId(scene, "trades.list"), null, "the offer takes their room");
+    const [to, send, give, ask] = ["trades.to", "trades.send", "trades.give", "trades.ask"].map((id) => byId(scene, id));
+    assert.equal(send.y, to.y, "Send beside the recipient");
+    assert.ok(give.width > scene.services.viewport.logicalWidth / 3, "each list about half the screen");
+    assert.ok(ask.x + ask.width <= scene.services.viewport.logicalWidth);
+    give.scrollTo(250);
+    byId(scene, `trades.give.${uuid(108)}`).activate();
+    assert.equal(byId(scene, `trades.give.${uuid(108)}`).selected, true);
+    assert.equal(byId(scene, "trades.give").scrollY, 250, "the list stays where the player was");
+    byId(scene, "trades.new").activate();
+    assert.ok(byId(scene, "trades.list"), "the trades come back with the offer closed");
   });
 
   it("describes closed trades; a tab of the Market, it goes back where it was opened from, else Home", () => {

@@ -5,7 +5,7 @@
  * of that player's asked in return (only what they have), both lists
  * filtered by faction, rarity and type. The server holds the offered copies in escrow.
  */
-import { NO_CARD_FILTER, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
+import { NO_CARD_FILTER, cardFilterKey, cardFilterOptions, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardOption } from "../cards/CardOption.js";
 import { CardThumb } from "../cards/CardThumb.js";
@@ -18,6 +18,7 @@ import { Label } from "../ui/Label.js";
 import { OptionRow } from "../ui/OptionRow.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
+import { ScrollMemory } from "../ui/ScrollMemory.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { screenLayout } from "./deckBuilder/layout.js";
@@ -28,15 +29,20 @@ import { SectionScene } from "./SectionScene.js";
 const MAX_CARDS = 10;
 const MAX_ASK = 3;
 /**
- * Sizes, wide and compact (a phone in landscape: the recipient and the filter share a row, thumbnails are smaller).
+ * Sizes, wide and compact (a phone in landscape: the composer takes the whole width and its first row holds the recipient,
+ * the filter and Send; thumbnails are smaller).
  * @typedef {Readonly<{ thumb: { width: number, gap: number }, field: { y: number, height: number }, filterButton: boolean, button: number }>} TradesMetrics
+ *   `filterButton`: the compact composer, its filter one button
  */
 /** @type {TradesMetrics} */
 const WIDE = Object.freeze({ thumb: Object.freeze({ width: 92, gap: 10 }), field: Object.freeze({ y: 16, height: 52 }), filterButton: false, button: 52 });
 /** @type {TradesMetrics} */
-const COMPACT = Object.freeze({ thumb: Object.freeze({ width: 64, gap: 8 }), field: Object.freeze({ y: 8, height: CARD_FILTER_BUTTON_HEIGHT }), filterButton: true, button: 46 });
-/** On a compact screen: how much of the composer's first row the recipient takes (the filter has the rest), and where its lists start. */
-const COMPACT_COMPOSER = Object.freeze({ field: 0.58, titlesTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 6, listsTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 32 });
+const COMPACT = Object.freeze({ thumb: Object.freeze({ width: 64, gap: 8 }), field: Object.freeze({ y: 8, height: CARD_FILTER_BUTTON_HEIGHT }), filterButton: true, button: CARD_FILTER_BUTTON_HEIGHT });
+/**
+ * On a compact screen: the shares of the composer's first row the recipient and the filter take (Send has the rest), and
+ * where its lists start, below it.
+ */
+const COMPACT_COMPOSER = Object.freeze({ field: 0.38, filter: 0.32, gap: 8, titlesTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 6, listsTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 32 });
 const DAY = 24 * 60 * 60 * 1000;
 const ACCOUNT_PATTERN = /^[a-z][a-z0-9.-]{2,15}$/;
 /** The composer, top to bottom: recipient, card filter, list titles, the two lists. */
@@ -90,6 +96,8 @@ export class TradesScene extends SectionScene {
   #ask = new Map();
   /** Cards shown in both lists of the composer. @type {import("../../application/content/CardFilter.js").CardFilter} */
   #filter = NO_CARD_FILTER;
+  /** Where the lists were scrolled: picking a card redraws the screen without sending its list back to the top. */
+  #scroll = new ScrollMemory();
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -147,14 +155,19 @@ export class TradesScene extends SectionScene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
+    this.#scroll.capture(this.root);
     this.root.clear();
     this.#buildToolbar();
-    this.#buildList();
+    // On a phone a new offer takes the whole width: its lists of cards need the room more than the list of trades.
+    if (!(this.#composing && this.#m.filterButton)) {
+      this.#buildList();
+    }
     if (this.#composing) {
       this.#buildComposer();
     } else {
       this.#buildDetail();
     }
+    this.#scroll.restore(this.root);
     this.focus(this.findNode(focusedId) ?? this.backButton);
     this.services.requestRender();
   }
@@ -203,7 +216,7 @@ export class TradesScene extends SectionScene {
       return;
     }
     const listHeight = trade.status === "OPEN" ? this.#screen.columns.height - 2 * this.#screen.inset - this.#m.button - 16 : this.#screen.columns.height - 2 * this.#screen.inset;
-    const list = panel.add(new ScrollList({ id: "trades.detail", x: this.#screen.inset, y: this.#screen.inset, width, height: listHeight }));
+    const list = panel.add(new ScrollList({ id: "trades.detail", x: this.#screen.inset, y: this.#screen.inset, width, height: listHeight, scrollKey: trade.id }));
     const copyThumbs = (copies) => copies.map((copy) => ({ definitionId: copy.definitionId, caption: `#${copy.serial}`, lines: [`Copy #${copy.serial}`] }));
     const sections = [
       { title: `@${trade.proposer} offers`, avatar: trade.proposer, thumbs: copyThumbs(trade.give), empty: "nothing" },
@@ -302,30 +315,37 @@ export class TradesScene extends SectionScene {
   }
 
   #buildComposer() {
-    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
-    const width = this.#screen.columns.right.width - 2 * this.#screen.inset;
+    const { columns } = this.#screen;
     const { field, filterButton, button } = this.#m;
+    // On a phone, both columns.
+    const frame = filterButton ? { x: columns.left.x, width: columns.right.x + columns.right.width - columns.left.x } : columns.right;
+    const panel = this.root.add(new Panel({ ...this.#screen.panel, x: frame.x, y: columns.top, width: frame.width, height: columns.height }));
+    const width = frame.width - 2 * this.#screen.inset;
     const layout = filterButton ? COMPACT_COMPOSER : COMPOSER;
-    // The recipient's row: their field and portrait (and, on a phone, the card filter after them).
+    // The recipient's row: their field and portrait (and, on a phone, the card filter and Send after them).
     const recipientWidth = filterButton ? Math.round(width * COMPACT_COMPOSER.field) : width;
     const fieldWidth = recipientWidth - field.height - RECIPIENT.gap;
     panel.add(new TextField({ id: "trades.to", x: this.#screen.inset, y: field.y, width: fieldWidth, height: field.height, value: this.#to, placeholder: "Player account", maxLength: 16, keyboard: "account", onChange: (value) => this.#changeRecipient(value) }));
     panel.add(new AvatarNode({ id: "trades.to.avatar", x: this.#screen.inset + fieldWidth + RECIPIENT.gap, y: field.y, size: field.height, account: this.#to, visible: ACCOUNT_PATTERN.test(this.#to) }));
     const filter = { id: "trades.filter", filter: this.#filter, options: cardFilterOptions(this.#app), onChange: (/** @type {import("../../application/content/CardFilter.js").CardFilter} */ chosen) => this.#changeFilter(chosen) };
     if (filterButton) {
-      const x = this.#screen.inset + recipientWidth + 8;
-      buildCardFilterButton(panel, { ...filter, x, y: field.y, width: this.#screen.inset + width - x, dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() } });
+      const x = this.#screen.inset + recipientWidth + COMPACT_COMPOSER.gap;
+      buildCardFilterButton(panel, { ...filter, x, y: field.y, width: Math.round(width * COMPACT_COMPOSER.filter), dialog: { viewport: this.services.viewport, open: (modal) => this.openModal(modal), close: () => this.closeModal() } });
     } else {
       buildCardFilterBar(panel, { ...filter, x: this.#screen.inset, y: COMPOSER.filterTop, width });
     }
     const half = (width - 16) / 2;
     panel.add(new Label({ x: this.#screen.inset, y: layout.titlesTop, width: half, height: 28, text: `You give (${this.#give.size}/${MAX_CARDS})`, size: "small", weight: "bold", colorKey: "accent", align: "left" }));
     panel.add(new Label({ x: this.#screen.inset + half + 16, y: layout.titlesTop, width: half, height: 28, text: filterButton ? "You ask for (tap)" : "You ask for (tap to add)", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
-    const listHeight = this.#screen.columns.height - layout.listsTop - button - 2 * this.#screen.inset;
-    this.#buildGiveList(panel.add(new ScrollList({ id: "trades.give", x: this.#screen.inset, y: layout.listsTop, width: half, height: listHeight })));
-    this.#buildAskList(panel.add(new ScrollList({ id: "trades.ask", x: this.#screen.inset + half + 16, y: layout.listsTop, width: half, height: listHeight })));
+    // Send closes the first row on a phone, and sits under the lists otherwise.
+    const listHeight = columns.height - layout.listsTop - this.#screen.inset - (filterButton ? 0 : button + this.#screen.inset);
+    const filterKey = cardFilterKey(this.#filter);
+    this.#buildGiveList(panel.add(new ScrollList({ id: "trades.give", x: this.#screen.inset, y: layout.listsTop, width: half, height: listHeight, scrollKey: filterKey })));
+    this.#buildAskList(panel.add(new ScrollList({ id: "trades.ask", x: this.#screen.inset + half + 16, y: layout.listsTop, width: half, height: listHeight, scrollKey: `${this.#to}|${filterKey}` })));
     const ready = ACCOUNT_PATTERN.test(this.#to) && this.#give.size > 0 && !this.#trading().state.busy;
-    panel.add(new Button({ id: "trades.send", x: this.#screen.inset, y: this.#screen.columns.height - this.#screen.inset - button, width, height: button, text: "Send offer", variant: "primary", enabled: ready, onActivate: () => this.#send() }));
+    const sendX = filterButton ? this.#screen.inset + recipientWidth + Math.round(width * COMPACT_COMPOSER.filter) + 2 * COMPACT_COMPOSER.gap : this.#screen.inset;
+    const sendY = filterButton ? field.y : columns.height - this.#screen.inset - button;
+    panel.add(new Button({ id: "trades.send", x: sendX, y: sendY, width: this.#screen.inset + width - sendX, height: button, text: "Send offer", variant: "primary", enabled: ready, onActivate: () => this.#send() }));
   }
 
   /** @param {ScrollList} list */

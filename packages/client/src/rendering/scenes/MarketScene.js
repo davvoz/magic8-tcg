@@ -21,7 +21,7 @@
  * sells it), and the card beside a listing is small: a tap shows it whole.
  */
 import { moneyText } from "../../application/money/moneyText.js";
-import { NO_CARD_FILTER, cardFilterOptions, cardIdsMatching, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
+import { NO_CARD_FILTER, cardFilterKey, cardFilterOptions, cardIdsMatching, describeCardFilter, isFiltering, matchesCardFilter } from "../../application/content/CardFilter.js";
 import { BUSY_BUY_STAGES, BuyStage, PROBLEM_TEXT, buyingTrack } from "../../application/sales/SalesService.js";
 import { CARD_FILTER_BAR_HEIGHT, CARD_FILTER_BUTTON_HEIGHT, buildCardFilterBar, buildCardFilterButton } from "../cards/cardFilterBar.js";
 import { CardDetail } from "../cards/CardDetail.js";
@@ -38,6 +38,7 @@ import { Label } from "../ui/Label.js";
 import { capitalize } from "../text/textUtils.js";
 import { Panel } from "../ui/Panel.js";
 import { ScrollList } from "../ui/ScrollList.js";
+import { ScrollMemory } from "../ui/ScrollMemory.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { screenLayout } from "./deckBuilder/layout.js";
@@ -56,9 +57,11 @@ const MINUTE = 60 * 1000;
  *   line: number, tabs: { top: number, height: number, gap: number }, sorts: { top: number, height: number, gap: number, width: number },
  *   filterTop: number, filterButton: boolean, listTop: number, copiesTop: number, composerFilterTop: number, pager: number,
  *   priceWidth: number, metaWidth: number, sellerAvatar: number, card: { width: number, height: number }, button: number, priceField: number,
- * }>} MarketMetrics `filterButton`: the card filter as one button (on the sorts' row, and under the composer's title);
+ *   priceBesideSell: number,
+ * }>} MarketMetrics `filterButton`: the card filter as one button (on the sorts' row, and beside the composer's title);
  *   `copiesTop`: the composer's list of copies, below its title and filter; `metaWidth`: the seller column of the board (0: none),
- *   `sellerAvatar`: the seller's portrait at its start
+ *   `sellerAvatar`: the seller's portrait at its start; `priceBesideSell`: the price field's share of the composer's last row,
+ *   Sell having the rest (0: the field above Sell, both full width)
  */
 /** @type {MarketMetrics} */
 const WIDE = Object.freeze({
@@ -77,6 +80,7 @@ const WIDE = Object.freeze({
   card: Object.freeze({ width: 300, height: 442 }),
   button: 56,
   priceField: 52,
+  priceBesideSell: 0,
 });
 /** @type {MarketMetrics} */
 const COMPACT = Object.freeze({
@@ -86,8 +90,8 @@ const COMPACT = Object.freeze({
   filterTop: 66,
   filterButton: true,
   listTop: 66 + CARD_FILTER_BUTTON_HEIGHT + 10,
-  copiesTop: 38 + CARD_FILTER_BUTTON_HEIGHT + 8,
-  composerFilterTop: 38,
+  copiesTop: 8 + CARD_FILTER_BUTTON_HEIGHT + 8,
+  composerFilterTop: 8,
   pager: 44,
   priceWidth: 112,
   metaWidth: 0,
@@ -95,6 +99,7 @@ const COMPACT = Object.freeze({
   card: Object.freeze({ width: 140, height: 196 }),
   button: 46,
   priceField: 46,
+  priceBesideSell: 0.45,
 });
 const PRICE_PATTERN = /^\d{1,6}(\.\d{1,3})?$/;
 const Tab = Object.freeze({ BOARD: "board", MINE: "mine" });
@@ -202,6 +207,8 @@ export class MarketScene extends SectionScene {
   #boardFilter = NO_CARD_FILTER;
   /** Copies offered for sale. @type {import("../../application/content/CardFilter.js").CardFilter} */
   #sellFilter = NO_CARD_FILTER;
+  /** Where the lists were scrolled: picking a row redraws the screen without sending its list back to the top. */
+  #scroll = new ScrollMemory();
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -285,6 +292,7 @@ export class MarketScene extends SectionScene {
 
   #rebuild() {
     const focusedId = this.focusedNode?.id ?? "";
+    this.#scroll.capture(this.root);
     this.root.clear();
     this.#tracker = null;
     const sell = this.#buildToolbar();
@@ -297,6 +305,7 @@ export class MarketScene extends SectionScene {
     }
     const detailPanel = this.root.add(new Panel({ ...this.#screen.panel, x: this.#screen.columns.right.x, y: this.#screen.columns.top, width: this.#screen.columns.right.width, height: this.#screen.columns.height }));
     this.#buildDetail(detailPanel);
+    this.#scroll.restore(this.root);
     this.focus(this.findNode(focusedId) ?? firstTab ?? sell ?? this.backButton);
     this.services.requestRender();
   }
@@ -363,7 +372,9 @@ export class MarketScene extends SectionScene {
       buildCardFilterBar(panel, { ...cardFilter, x: this.#screen.inset, y: this.#m.filterTop, width });
     }
     const pages = total > pageSize;
-    const list = panel.add(new ScrollList({ id: "market.board", x: this.#screen.inset, y: this.#m.listTop, width, height: this.#screen.columns.height - this.#m.listTop - this.#screen.inset - (pages ? this.#m.pager + 8 : 0) }));
+    // Another sort, page or filter shows other listings: the list starts from its top again.
+    const scrollKey = `${filter.sort}|${filter.offset}|${filter.cards?.join(",") ?? "*"}`;
+    const list = panel.add(new ScrollList({ id: "market.board", x: this.#screen.inset, y: this.#m.listTop, width, height: this.#screen.columns.height - this.#m.listTop - this.#screen.inset - (pages ? this.#m.pager + 8 : 0), scrollKey }));
     if (listings.length === 0) {
       list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 2 * this.#screen.row.height, text: loading ? "Loading…" : this.#emptyBoardText(), size: "small", colorKey: "textMuted" }));
       list.contentHeight = 2 * this.#screen.row.height;
@@ -738,18 +749,58 @@ export class MarketScene extends SectionScene {
 
   /** @param {Panel} panel */
   #buildComposer(panel) {
-    const sales = this.#sales();
     const width = this.#screen.columns.right.width - 2 * this.#screen.inset;
-    const gap = this.#screen.compact ? 6 : 12;
-    panel.add(new Label({ x: this.#screen.inset, y: this.#screen.compact ? 8 : 14, width, height: 28, text: "Pick the copy to sell", size: "small", weight: "bold", colorKey: "accent", align: "left" }));
-    const bottom = this.#screen.columns.height - this.#screen.inset - this.#m.button - gap - this.#m.priceField - gap;
-    const filter = { id: "market.sellFilter", x: this.#screen.inset, y: this.#m.composerFilterTop, width, filter: this.#sellFilter, options: cardFilterOptions(this.#app), onChange: (/** @type {import("../../application/content/CardFilter.js").CardFilter} */ next) => this.#changeSellFilter(next) };
-    if (this.#m.filterButton) {
-      buildCardFilterButton(panel, { ...filter, dialog: this.#dialog() });
+    this.#buildComposerHead(panel, width);
+    const sale = this.#saleRow(width);
+    const list = panel.add(new ScrollList({ id: "market.copies", x: this.#screen.inset, y: this.#m.copiesTop, width, height: sale.listBottom - this.#m.copiesTop, scrollKey: cardFilterKey(this.#sellFilter) }));
+    this.#buildCopies(list);
+    const asset = this.#sales().asset;
+    panel.add(new TextField({ id: "market.price", x: this.#screen.inset, y: sale.price.y, width: sale.price.width, height: this.#m.priceField, value: this.#price, placeholder: sale.price.short ? `Price in ${asset}` : `Price in ${asset}, e.g. 1.5`, maxLength: 10, keyboard: "decimal", onChange: (value) => this.#changePrice(value) }));
+    panel.add(new Button({ id: "market.list", x: sale.sell.x, y: sale.sell.y, width: sale.sell.width, height: this.#m.button, text: this.#listText(), variant: "primary", enabled: this.#canList(), onActivate: () => this.#list() }));
+  }
+
+  /**
+   * The composer's title and its card filter: one button beside the title on a phone, the bar under it otherwise.
+   * @param {Panel} panel
+   * @param {number} width
+   */
+  #buildComposerHead(panel, width) {
+    const { filterButton, composerFilterTop } = this.#m;
+    const titleWidth = filterButton ? Math.round(width * 0.45) : width;
+    const titleY = filterButton ? composerFilterTop + (CARD_FILTER_BUTTON_HEIGHT - 28) / 2 : 14;
+    panel.add(new Label({ x: this.#screen.inset, y: titleY, width: titleWidth, height: 28, text: "Pick the copy to sell", size: "small", weight: "bold", colorKey: "accent", align: "left", fit: true }));
+    const filter = { id: "market.sellFilter", x: this.#screen.inset, y: composerFilterTop, width, filter: this.#sellFilter, options: cardFilterOptions(this.#app), onChange: (/** @type {import("../../application/content/CardFilter.js").CardFilter} */ next) => this.#changeSellFilter(next) };
+    if (filterButton) {
+      const x = this.#screen.inset + titleWidth + 8;
+      buildCardFilterButton(panel, { ...filter, x, width: this.#screen.inset + width - x, dialog: this.#dialog() });
     } else {
       buildCardFilterBar(panel, filter);
     }
-    const list = panel.add(new ScrollList({ id: "market.copies", x: this.#screen.inset, y: this.#m.copiesTop, width, height: bottom - this.#m.copiesTop }));
+  }
+
+  /**
+   * Where the price and Sell go at the composer's foot: side by side on a phone, so the copies get the room, else the
+   * price above Sell; and where the list of copies ends, above them.
+   * @param {number} width
+   */
+  #saleRow(width) {
+    const gap = this.#screen.compact ? 6 : 12;
+    const { priceBesideSell, button, priceField } = this.#m;
+    const sellY = this.#screen.columns.height - this.#screen.inset - button;
+    if (priceBesideSell === 0) {
+      const priceY = sellY - gap - priceField;
+      return { listBottom: priceY - gap, price: { y: priceY, width, short: false }, sell: { x: this.#screen.inset, y: sellY, width } };
+    }
+    const priceWidth = Math.round(width * priceBesideSell);
+    const sellX = this.#screen.inset + priceWidth + gap;
+    return { listBottom: sellY - gap, price: { y: sellY, width: priceWidth, short: true }, sell: { x: sellX, y: sellY, width: this.#screen.inset + width - sellX } };
+  }
+
+  /**
+   * The player's copies to sell, the filter's, each with its Info.
+   * @param {ScrollList} list
+   */
+  #buildCopies(list) {
     const copies = this.#sellableCopies().filter((copy) => matchesCardFilter(this.#sellFilter, this.#app.content.catalog.get(copy.definitionId), rarityOf(this.#app, copy.definitionId)));
     if (!copies.some((copy) => copy.id === this.#copy)) {
       this.#copy = null;
@@ -758,17 +809,15 @@ export class MarketScene extends SectionScene {
       const text = isFiltering(this.#sellFilter) ? `No ${describeCardFilter(this.#sellFilter)} cards to sell.` : "No card to sell: cards already on the board or in a trade cannot be listed again.";
       list.add(new TextBlock({ x: 0, y: 0, width: list.rowWidth, height: 3 * this.#screen.row.height, text, size: "small", colorKey: "textMuted" }));
       list.contentHeight = 3 * this.#screen.row.height;
-    } else {
-      const rowWidth = list.rowWidth - this.#screen.action.width - this.#screen.action.gap;
-      copies.forEach((copy, index) => {
-        const card = this.#app.content.catalog.get(copy.definitionId);
-        list.add(new CardOption({ id: `market.copy.${copy.id}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, card: card ?? unknownCard(copy.definitionId), broken: card === undefined, rarity: rarityOf(this.#app, copy.definitionId), badge: `#${copy.serial}`, selected: copy.id === this.#copy, onActivate: () => this.#pickCopy(copy.id) }));
-        list.add(new Button({ id: `market.copy.info.${copy.id}`, x: rowWidth + this.#screen.action.gap, y: this.#screen.rowY(index), width: this.#screen.action.width, height: this.#screen.row.height, text: "Info", textSize: "small", enabled: this.#app.content.catalog.has(copy.definitionId), onActivate: () => this.#showCardInfo(copy.definitionId, [`Copy #${copy.serial}`]) }));
-      });
-      list.contentHeight = this.#screen.rowsHeight(copies.length);
+      return;
     }
-    panel.add(new TextField({ id: "market.price", x: this.#screen.inset, y: bottom + gap, width, height: this.#m.priceField, value: this.#price, placeholder: `Price in ${sales.asset}, e.g. 1.5`, maxLength: 10, keyboard: "decimal", onChange: (value) => this.#changePrice(value) }));
-    panel.add(new Button({ id: "market.list", x: this.#screen.inset, y: this.#screen.columns.height - this.#screen.inset - this.#m.button, width, height: this.#m.button, text: this.#listText(), variant: "primary", enabled: this.#canList(), onActivate: () => this.#list() }));
+    const rowWidth = list.rowWidth - this.#screen.action.width - this.#screen.action.gap;
+    copies.forEach((copy, index) => {
+      const card = this.#app.content.catalog.get(copy.definitionId);
+      list.add(new CardOption({ id: `market.copy.${copy.id}`, x: 0, y: this.#screen.rowY(index), width: rowWidth, height: this.#screen.row.height, card: card ?? unknownCard(copy.definitionId), broken: card === undefined, rarity: rarityOf(this.#app, copy.definitionId), badge: `#${copy.serial}`, selected: copy.id === this.#copy, onActivate: () => this.#pickCopy(copy.id) }));
+      list.add(new Button({ id: `market.copy.info.${copy.id}`, x: rowWidth + this.#screen.action.gap, y: this.#screen.rowY(index), width: this.#screen.action.width, height: this.#screen.row.height, text: "Info", textSize: "small", enabled: this.#app.content.catalog.has(copy.definitionId), onActivate: () => this.#showCardInfo(copy.definitionId, [`Copy #${copy.serial}`]) }));
+    });
+    list.contentHeight = this.#screen.rowsHeight(copies.length);
   }
 
   #listText() {

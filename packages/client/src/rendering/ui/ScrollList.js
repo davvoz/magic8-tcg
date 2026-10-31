@@ -24,13 +24,16 @@ export class ScrollList extends UiNode {
   content;
   /** @type {{ fillKey: string | null, strokeKey: string | null }} */
   style;
+  /** What the rows show (a filter, a page): a rebuild keeps the offset only while it is the same (ScrollMemory). */
+  scrollKey;
 
   /**
-   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, fillKey?: string | null, strokeKey?: string | null }} [options]
+   * @param {{ id?: string, x?: number, y?: number, width?: number, height?: number, fillKey?: string | null, strokeKey?: string | null, scrollKey?: string }} [options]
    */
   constructor(options = {}) {
     super(options);
     this.style = { fillKey: options.fillKey ?? null, strokeKey: options.strokeKey ?? null };
+    this.scrollKey = options.scrollKey ?? "";
     this.content = super.add(new UiNode({ id: `${this.id}.content`, width: this.width, maxChildren: MAX_ROW_NODES }));
   }
 
