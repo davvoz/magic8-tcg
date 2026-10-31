@@ -37,3 +37,20 @@ describe("data key rotation", () => {
     assert.ok(gameId);
   });
 });
+
+describe("data key rotation: kept accounts", () => {
+  it("re-seals the keys of the accounts the server keeps, and they still open", async () => {
+    const setup = await buildTestApp({ env: { M8_DATA_KEY: OLD, M8_DATA_KEY_ID: "1" } });
+    const user = await setup.users.findOrCreate({ network: "steem", account: "kept" }, setup.clock.now(), uuidV4(deterministicRandom("kept")));
+    const wif = "5JUjFuqC7ATzSHv9VznChoTBeHcjc9XNyr46i7EmpHi4zx7Dq2e";
+    await setup.app.custody.keep({ userId: user.id, network: "steem", account: "kept", keys: { masterPassword: "P5kept", owner: wif, active: wif, posting: wif, memo: wif } });
+
+    const both = new SecretBox({ keys: new Map([[1, hexToBytes(OLD)], [2, hexToBytes(NEW)]]), currentKeyId: 2, random: deterministicRandom("rotation") });
+    assert.deepEqual(await rotateDataKey({ database: setup.database, secrets: both }), { resealed: 1, current: 0 }, "no epoch yet: the kept keys alone");
+    const row = await setup.database.maybeOne("SELECT keys_encrypted FROM custody_keys WHERE user_id = $1", [user.id]);
+    const sealed = new Uint8Array(row.keys_encrypted);
+    assert.equal(SecretBox.keyIdOf(sealed), 2);
+    const newOnly = new SecretBox({ keys: new Map([[2, hexToBytes(NEW)]]), currentKeyId: 2, random: deterministicRandom("after") });
+    assert.equal(JSON.parse(Buffer.from(newOnly.open(sealed, `custody_keys:${user.id}`)).toString("utf8")).masterPassword, "P5kept");
+  });
+});

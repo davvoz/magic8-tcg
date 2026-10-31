@@ -54,7 +54,41 @@ export function loadConfig(env) {
     // Game protocol v2 (signed moves, docs/tcg/12) unless explicitly turned off.
     gameProtocol: gameProtocolOf(env.M8_SIGNED_MOVES),
     firstEpochId: parseFirstEpochId(env.M8_FIRST_EPOCH_ID),
+    // Signing in with Google, the wallet kept by the server (docs/tcg/29-google.md); null: not offered.
+    googleSignIn: parseGoogleSignIn(env),
   });
+}
+
+const GOOGLE_SIGN_IN_VARIABLES = Object.freeze(["M8_GOOGLE_CLIENT_ID", "M8_GOOGLE_CLIENT_SECRET", "M8_JOIN_URL", "M8_JOIN_PARTNER_KEY"]);
+
+/**
+ * Signing in with Google (docs/tcg/29-google.md): the OAuth client of the
+ * game, and join.cur8's partner API that creates the accounts. All four
+ * variables, or none (not offered); some but not all stops the start.
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @returns {Readonly<{ clientId: string, clientSecret: string, joinUrl: string, joinPartnerKey: string }> | null}
+ */
+function parseGoogleSignIn(env) {
+  const missing = GOOGLE_SIGN_IN_VARIABLES.filter((name) => (env[name] ?? "") === "");
+  if (missing.length === GOOGLE_SIGN_IN_VARIABLES.length) {
+    return null;
+  }
+  if (missing.length > 0) {
+    throw new ConfigError(`${missing.join(", ")}: signing in with Google needs all of ${GOOGLE_SIGN_IN_VARIABLES.join(", ")} (or none of them)`);
+  }
+  const clientId = /** @type {string} */ (env.M8_GOOGLE_CLIENT_ID);
+  if (!/^[0-9A-Za-z-]{1,100}\.apps\.googleusercontent\.com$/.test(clientId)) {
+    throw new ConfigError("M8_GOOGLE_CLIENT_ID: expected a Google OAuth client id (….apps.googleusercontent.com)");
+  }
+  const clientSecret = /** @type {string} */ (env.M8_GOOGLE_CLIENT_SECRET);
+  if (!/^[!-~]{10,200}$/.test(clientSecret)) {
+    throw new ConfigError("M8_GOOGLE_CLIENT_SECRET: expected the client secret Google gave with the client id");
+  }
+  const joinPartnerKey = /** @type {string} */ (env.M8_JOIN_PARTNER_KEY);
+  if (!/^[!-~]{32,200}$/.test(joinPartnerKey)) {
+    throw new ConfigError("M8_JOIN_PARTNER_KEY: at least 32 characters, no spaces (e.g. openssl rand -hex 32)");
+  }
+  return Object.freeze({ clientId, clientSecret, joinUrl: parseOrigin(/** @type {string} */ (env.M8_JOIN_URL), "M8_JOIN_URL"), joinPartnerKey });
 }
 
 /**

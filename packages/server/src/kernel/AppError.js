@@ -14,6 +14,8 @@ export const ErrorStatus = Object.freeze({
   UNAUTHENTICATED: 401,
   LOGIN_FAILED: 401,
   CHALLENGE_INVALID: 401,
+  /** A Google sign-up (choosing the new account's name) unknown or expired: sign in with Google again. */
+  SIGNUP_EXPIRED: 401,
   /** A paid game mode, and the player has no entries left for it. */
   ENTRY_REQUIRED: 402,
   FORBIDDEN: 403,
@@ -21,6 +23,7 @@ export const ErrorStatus = Object.freeze({
   NOT_FOUND: 404,
   METHOD_NOT_ALLOWED: 405,
   CONFLICT: 409,
+  NAME_TAKEN: 409,
   LIMIT_REACHED: 409,
   STARTER_ALREADY_CLAIMED: 409,
   UNKNOWN_STARTER: 400,
@@ -32,6 +35,8 @@ export const ErrorStatus = Object.freeze({
   RATE_LIMITED: 429,
   CHAIN_UNAVAILABLE: 503,
   MAINTENANCE: 503,
+  /** New accounts cannot be created right now (the service that creates them is down or has no tickets left). */
+  ACCOUNTS_UNAVAILABLE: 503,
   INTERNAL: 500,
 });
 

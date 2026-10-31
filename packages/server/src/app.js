@@ -43,7 +43,8 @@ import { WebSocketGateway } from "./platform/realtime/WebSocketGateway.js";
 import { presenceHandler, registerSessionMessages } from "./realtimeSession.js";
 import { ConnectionHub } from "./platform/realtime/ConnectionHub.js";
 import { assertImplements } from "./kernel/contracts.js";
-import { AuthService, PgChallengeRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, registerIdentityRoutes } from "./modules/identity/index.js";
+import { AuthService, GoogleSignIn, PgChallengeRepository, PgGoogleIdentityRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, registerGoogleRoutes, registerIdentityRoutes } from "./modules/identity/index.js";
+import { KeyCustody, PgCustodyRepository } from "./modules/custody/index.js";
 import { StarterService, registerStarterRoutes, validateStarterOffer } from "./modules/onboarding/index.js";
 
 /**
@@ -72,13 +73,16 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   pingWall?: import("./modules/pings/application/PingService.js").PingWallReader | null,
  *   pingImages?: import("./modules/pings/application/PingService.js").ImageHost | null,
  *   pingAvatars?: import("./modules/pings/application/AvatarProxy.js").AvatarSource | null,
+ *   keyrings?: ReadonlyMap<string, import("./modules/custody/application/ports.js").Keyring>,
+ *   googleSignIn?: { oauth: import("./modules/identity/application/ports.js").GoogleOAuth, accounts: import("./modules/identity/application/ports.js").AccountFactory, clientId: string } | null,
  * }} deps `verifyMoveSignature` (P-256) is needed for games in protocol v2; `version`: the product's (root package.json);
  *   `pingWall`: cur8.fun's Pings walls, for sharing games there (none: not offered); `pingImages`: where the pictures of shared games go (none: pings without one);
- *   `pingAvatars`: players' profile pictures, for those pictures (none: initials)
+ *   `pingAvatars`: players' profile pictures, for those pictures (none: initials); `keyrings`: what each chain's keys look like, for the
+ *   accounts the server keeps; `googleSignIn`: Google's OAuth and join.cur8's account creation (none: signing in with Google is not offered)
  */
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
-  const { staticFiles, publishing, ackSigner, verifyMoveSignature, version, pingWall, pingImages, pingAvatars } = optionalAdapters(deps);
+  const { staticFiles, publishing, ackSigner, verifyMoveSignature, version, pingWall, pingImages, pingAvatars, keyrings, googleSignIn } = optionalAdapters(deps);
   const { identityPolicyOverrides, marketplacePolicy, salesPolicy, timePolicy, chainPolicies, alarmPolicy, lobbyPolicy } = policiesOf(deps);
   const unitOfWork = unitOfWorkOf(database);
   const audit = new AuditTrail({ store: new PgAuditStore(database), clock });
@@ -112,6 +116,9 @@ export async function createServerApp(deps) {
   }
   const economy = new EconomyService({ assets: assets.value });
   const secrets = new SecretBox({ keys: new Map([...config.dataKeys].map(([id, hex]) => [id, hexToBytes(hex)])), currentKeyId: config.dataKeyId, random });
+  // The accounts the server keeps for players who sign in with Google (docs/tcg/29-google.md).
+  const custody = new KeyCustody({ repository: new PgCustodyRepository(database), keyrings, secrets, clock });
+  const google = buildGoogleSignIn({ adapters: googleSignIn, database, users, custody, auth, wallet: wallets.get(defaultNetwork), secrets, clock, random, audit, unitOfWork, logger, publicOrigin: config.publicOrigin });
   const marketRepository = new PgMarketplaceRepository(database);
   const hub = new ConnectionHub({ logger });
   const publish = (channel, payload) => database.query("SELECT pg_notify($1, $2)", [channel, payload]);
@@ -203,6 +210,7 @@ export async function createServerApp(deps) {
 
   const router = new Router();
   registerIdentityRoutes({ router, auth, cookie: { name: config.sessionCookieName, secure: config.secure }, clock });
+  registerGoogleRoutes({ router, google, cookie: { name: config.sessionCookieName, secure: config.secure }, clock, logger });
   registerCatalogRoutes({ router, catalog });
   registerCollectionRoutes({ router, inventory });
   registerTradeRoutes({ router, trading });
@@ -271,7 +279,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, practice, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, daily, realtime });
+  return Object.freeze({ http, auth, google, custody, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, practice, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, daily, realtime });
 }
 
 /**
@@ -425,8 +433,8 @@ function moveSignatures(wallet, verifyMoveSignature) {
  * The optional adapters of createServerApp, with their defaults.
  * @param {Parameters<typeof createServerApp>[0]} deps
  */
-function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = null, verifyMoveSignature = undefined, version = null, pingWall = null, pingImages = null, pingAvatars = null }) {
-  return { staticFiles, publishing, ackSigner, verifyMoveSignature, version, pingWall, pingImages, pingAvatars };
+function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = null, verifyMoveSignature = undefined, version = null, pingWall = null, pingImages = null, pingAvatars = null, keyrings = new Map(), googleSignIn = null }) {
+  return { staticFiles, publishing, ackSigner, verifyMoveSignature, version, pingWall, pingImages, pingAvatars, keyrings, googleSignIn };
 }
 
 /**
@@ -438,6 +446,17 @@ function registerPings({ router, wall, images, avatars, wallets, audit, clock })
     const proxy = avatars === null ? null : new AvatarProxy({ source: avatars, clock });
     registerPingRoutes({ router, pings: new PingService({ wall, images, wallets, audit, clock }), avatars: proxy });
   }
+}
+
+/**
+ * Signing in with Google, when Google's OAuth and join.cur8's account creation are given (docs/tcg/29-google.md).
+ * @param {{ adapters: { oauth: any, accounts: any, clientId: string } | null, database: import("./platform/db/Database.js").Database, users: PgUserRepository, custody: KeyCustody, auth: AuthService, wallet: any, secrets: SecretBox, clock: any, random: any, audit: AuditTrail, unitOfWork: any, logger: any, publicOrigin: string }} deps
+ */
+function buildGoogleSignIn({ adapters, database, publicOrigin, ...shared }) {
+  if (adapters === null) {
+    return null;
+  }
+  return new GoogleSignIn({ ...adapters, ...shared, identities: new PgGoogleIdentityRepository(database), redirectUri: `${publicOrigin}/api/auth/google/callback` });
 }
 
 /**

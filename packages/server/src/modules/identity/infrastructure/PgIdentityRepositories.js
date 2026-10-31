@@ -153,6 +153,7 @@ function toSession(row) {
     userId: row.user_id,
     tokenHash: row.token_hash,
     loginPublicKey: row.login_public_key,
+    method: row.method,
     createdAt: fromTimestamp(row.created_at),
     lastSeenAt: fromTimestamp(row.last_seen_at),
     expiresAt: fromTimestamp(row.expires_at),
@@ -174,13 +175,14 @@ export class PgSessionRepository {
 
   async save(session) {
     await this.#db.query(
-      `INSERT INTO sessions (id, user_id, token_hash, login_public_key, created_at, last_seen_at, expires_at, revoked_at, revoke_reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO sessions (id, user_id, token_hash, login_public_key, method, created_at, last_seen_at, expires_at, revoked_at, revoke_reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         session.id,
         session.userId,
         session.tokenHash,
         session.loginPublicKey,
+        session.method,
         toTimestamp(session.createdAt),
         toTimestamp(session.lastSeenAt),
         toTimestamp(session.expiresAt),
@@ -227,5 +229,35 @@ export class PgSessionRepository {
       [toTimestamp(now), limit, after?.userId ?? null, after?.loginPublicKey ?? null],
     );
     return Object.freeze(rows.map((row) => Object.freeze({ userId: row.user_id, loginPublicKey: row.login_public_key })));
+  }
+}
+
+/** @typedef {import("../application/ports.js").GoogleIdentityRepository} GoogleIdentityRepository */
+
+/** @implements {GoogleIdentityRepository} */
+export class PgGoogleIdentityRepository {
+  #db;
+
+  /** @param {import("../../../platform/db/Database.js").Database} db */
+  constructor(db) {
+    this.#db = db;
+  }
+
+  async findBySub(sub) {
+    const row = await this.#db.maybeOne("SELECT sub, user_id, email FROM google_identities WHERE sub = $1", [sub]);
+    return row === null ? null : Object.freeze({ sub: row.sub, userId: row.user_id, email: row.email });
+  }
+
+  async link({ sub, userId, email }, now) {
+    const result = await this.#db.query(
+      `INSERT INTO google_identities (sub, user_id, email, created_at, last_login_at) VALUES ($1, $2, $3, $4, $4)
+       ON CONFLICT DO NOTHING`,
+      [sub, userId, email, toTimestamp(now)],
+    );
+    return result.rowCount > 0;
+  }
+
+  async recordLogin(sub, now) {
+    await this.#db.query("UPDATE google_identities SET last_login_at = $2 WHERE sub = $1", [sub, toTimestamp(now)]);
   }
 }

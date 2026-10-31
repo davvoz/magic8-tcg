@@ -9,6 +9,7 @@ export { verifySessionSignature } from "./crypto/sessionKeys.js";
 export { RpcError, RpcErrorCode, SteemRpcClient } from "./rpc/SteemRpcClient.js";
 export { ChainDataError, STEEM_NETWORK, SteemBlockchainProvider } from "./providers/SteemBlockchainProvider.js";
 export { KEY_ROLES, LOGIN_KEY_ROLE, SteemWalletProvider, WalletError } from "./providers/SteemWalletProvider.js";
+export { SteemKeyring } from "./providers/SteemKeyring.js";
 export { Confirmation, SteemTransferPaymentProvider } from "./providers/SteemTransferPaymentProvider.js";
 export { MAX_EXPIRATION_SECONDS, STEEM_CHAIN_ID, blockReference, fromBroadcastJson, isCanonicalSignature, recoverSignerKeys, serializeTransaction, signDigest, toBroadcastJson, transactionDigest, transactionId } from "./transactions/transaction.js";
 export { SignerError, SteemTransactionProvider } from "./providers/SteemTransactionProvider.js";

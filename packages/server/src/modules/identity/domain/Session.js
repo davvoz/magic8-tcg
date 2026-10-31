@@ -6,13 +6,26 @@
  *   userId: string,
  *   tokenHash: string,
  *   loginPublicKey: string,
+ *   method: SessionMethodName,
  *   createdAt: number,
  *   lastSeenAt: number,
  *   expiresAt: number,
  *   revokedAt: number | null,
  *   revokeReason: string | null,
  * }>} Session
+ * @typedef {"signature" | "google"} SessionMethodName
  */
+
+/**
+ * How a session was opened. SIGNATURE: the account's posting key signed a
+ * login challenge. GOOGLE: a Google sign-in of an account whose keys the
+ * server keeps (docs/tcg/29-google.md); `loginPublicKey` is then that kept
+ * posting key, so the key audit (T18) closes these sessions too.
+ */
+export const SessionMethod = Object.freeze({
+  SIGNATURE: /** @type {const} */ ("signature"),
+  GOOGLE: /** @type {const} */ ("google"),
+});
 
 export const RevokeReason = Object.freeze({
   LOGOUT: "logout",

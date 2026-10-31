@@ -253,6 +253,23 @@ export class SteemWalletProvider {
   }
 
   /**
+   * Whether an account of this name exists on the chain (a name being chosen
+   * for a new account must not).
+   * @param {string} account
+   * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<boolean> | import("@magic8/engine/shared/Result.js").Fail>}
+   */
+  async accountExists(account) {
+    if (!isValidAccountName(account)) {
+      return fail(WalletError.INVALID_ACCOUNT, "invalid account name");
+    }
+    try {
+      return ok((await this.#chain.getAccount(account)) !== null);
+    } catch {
+      return fail(WalletError.CHAIN_UNAVAILABLE, "the chain could not be read");
+    }
+  }
+
+  /**
    * What the account can spend right now (liquid balances), formatted as the
    * chain writes amounts: [{ asset: "STEEM", amount: "12.500" }, …].
    * @param {string} account

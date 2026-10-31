@@ -28,6 +28,7 @@ Avvio: `npm ci && npm start` (lo schema del database si migra da solo all'avvio)
 | `M8_ACK_KEY` | sì (https) | chiave WIF dedicata che firma gli ack ai giocatori (11); mai la chiave di un account o di un broadcaster |
 | `M8_ADMIN_ACCOUNTS` | default = shop | account che vedono `/admin.html` |
 | `M8_METRICS_TOKEN` | per il monitoraggio | 32–128 caratteri: `Authorization: Bearer …` su `/api/metrics` |
+| `M8_GOOGLE_CLIENT_ID`, `M8_GOOGLE_CLIENT_SECRET`, `M8_JOIN_URL`, `M8_JOIN_PARTNER_KEY` | per entrare con Google | tutte e quattro o nessuna (29): il client OAuth di Google (indirizzo di ritorno `<M8_PUBLIC_ORIGIN>/api/auth/google/callback`), l'origine di join.cur8 e la sua chiave partner (almeno 32 caratteri, la stessa di `PARTNER_KEYS` su join). Nessuna = bottone Google assente; solo alcune = il server non parte |
 | `M8_STEEM_NODES` | default nell'ordine di 06 | nodi RPC, separati da virgola |
 | `M8_HOST`, `M8_PORT`, `M8_LOG_LEVEL`, `M8_SERVE_CLIENT`, `M8_APP_NAME` | no | |
 | `M8_BUILD` | no | La build servita (lettere, cifre, `.`, `_`, `-`; al massimo 64). In Docker è il commit del deploy (`APP_TAG`), passato come build arg e scritto **nell'immagine** (anche nel client, `packages/client/src/release.js`): un rollback a un'immagine precedente riporta la sua. `GET /api/maintenance` la espone con `version` (dal `package.json` radice); una scheda che esegue un'altra build propone di aggiornare. Senza (sviluppo), nessun avviso. |
@@ -64,7 +65,8 @@ Il server rifiuta di partire con:
 - **PostgreSQL:** backup giornaliero più log delle transazioni (point-in-time recovery, di solito incluso nei servizi gestiti). Provare un ripristino almeno una volta prima del lancio.
 - **Chiave dei dati (`M8_DATA_KEY` e le vecchie):** vanno salvate **separatamente** dal database, per esempio in un gestore di segreti. Senza la chiave:
   - i segreti delle epoche non rivelate sono persi, e quei pacchetti non si potranno più dimostrare;
-  - i segreti delle partite in corso sono persi, e quelle partite non si possono riprendere.
+  - i segreti delle partite in corso sono persi, e quelle partite non si possono riprendere;
+  - **le chiavi degli account entrati con Google (29) sono perse**: quei giocatori perdono il loro wallet, se non l'hanno esportato.
   Un backup del database insieme alla sua chiave equivale a un furto dei segreti.
 - **Cosa si ricostruisce dalla catena:** le ricevute, gli scambi, le vendite e i risultati delle partite (chi ha giocato, chi ha vinto, l'hash finale). **Non** si ricostruisce la storia delle partite (resta solo nel DB dal 2026-09-27), gli inventari, gli ordini non evasi e le sessioni: per quelli serve il backup.
 - **Dopo un ripristino a un punto passato**, il tracker vedrà sulla catena operazioni che il database non conosce più: allarmi `UNKNOWN_ON_CHAIN` attesi. Si risolvono dal pannello annotando "ripristino del …".

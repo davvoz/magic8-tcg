@@ -299,6 +299,22 @@ describe("clientAddress", () => {
   });
 });
 
+describe("config: signing in with Google", () => {
+  const GOOGLE = Object.freeze({ M8_GOOGLE_CLIENT_ID: "123-abc.apps.googleusercontent.com", M8_GOOGLE_CLIENT_SECRET: "GOCSPX-secret-value", M8_JOIN_URL: "https://join.cur8.fun", M8_JOIN_PARTNER_KEY: "k".repeat(64) });
+
+  it("is off without its variables, on with all four", () => {
+    assert.equal(loadConfig({}).googleSignIn, null);
+    assert.deepEqual(loadConfig(GOOGLE).googleSignIn, { clientId: GOOGLE.M8_GOOGLE_CLIENT_ID, clientSecret: GOOGLE.M8_GOOGLE_CLIENT_SECRET, joinUrl: "https://join.cur8.fun", joinPartnerKey: GOOGLE.M8_JOIN_PARTNER_KEY });
+  });
+
+  it("stops the start when only some are set, or one is malformed", () => {
+    assert.throws(() => loadConfig({ ...GOOGLE, M8_JOIN_PARTNER_KEY: "" }), /M8_JOIN_PARTNER_KEY: signing in with Google needs all of/);
+    assert.throws(() => loadConfig({ ...GOOGLE, M8_GOOGLE_CLIENT_ID: "not-a-client" }), /M8_GOOGLE_CLIENT_ID/);
+    assert.throws(() => loadConfig({ ...GOOGLE, M8_JOIN_PARTNER_KEY: "short" }), /M8_JOIN_PARTNER_KEY/);
+    assert.throws(() => loadConfig({ ...GOOGLE, M8_JOIN_URL: "http://join.cur8.fun" }), /M8_JOIN_URL/);
+  });
+});
+
 describe("config: operations", () => {
   it("reads the operator accounts and the metrics token", () => {
     const local = loadConfig({});

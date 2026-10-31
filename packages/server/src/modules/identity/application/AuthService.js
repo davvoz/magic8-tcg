@@ -15,7 +15,7 @@ import { sha256Hex, utf8 } from "@magic8/protocol";
 import { AppError } from "../../../kernel/AppError.js";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { base64Url, uuidV4 } from "../../../kernel/random.js";
-import { RevokeReason, sessionState } from "../domain/Session.js";
+import { RevokeReason, SessionMethod, sessionState } from "../domain/Session.js";
 import { CHALLENGE_REPOSITORY_METHODS, SESSION_REPOSITORY_METHODS, USER_REPOSITORY_METHODS, WALLET_PROVIDER_METHODS } from "./ports.js";
 
 const TOKEN_BYTES = 32;
@@ -118,14 +118,31 @@ export class AuthService {
       throw new AppError("LOGIN_FAILED", "the signature does not prove control of this account");
     }
     // The chain was asked outside the transaction: no connection is held across a network call.
-    return this.#unitOfWork(() => this.#openSession({ challenge, publicKey: verified.value.publicKey, now, ip }));
+    return this.#unitOfWork(() => this.#openSession({ network: challenge.network, account: challenge.account, publicKey: verified.value.publicKey, method: SessionMethod.SIGNATURE, now, ip }));
   }
 
   /**
-   * @param {{ challenge: import("../domain/LoginChallenge.js").LoginChallenge, publicKey: string, now: number, ip: string }} input
+   * Opens a session for an account another proof vouched for: a Google
+   * sign-in of an account whose keys the server keeps (docs/tcg/29-google.md).
+   * The caller has done the proving; `publicKey` is the kept posting key, so
+   * the key audit (T18) treats the session like any other. Runs in the
+   * caller's unit of work when there is one.
+   * @param {{ network: string, account: string, publicKey: string, method: import("../domain/Session.js").SessionMethodName, ip: string }} input
+   * @returns {Promise<Readonly<{ user: import("./ports.js").User, token: string, expiresAt: number }>>}
    */
-  async #openSession({ challenge, publicKey, now, ip }) {
-    const user = await this.#users.findOrCreate({ network: challenge.network, account: challenge.account }, now, uuidV4(this.#random));
+  async openVouchedSession({ network, account, publicKey, method, ip }) {
+    if (method === SessionMethod.SIGNATURE) {
+      throw new TypeError("openVouchedSession: a signature session is opened by login");
+    }
+    this.#walletFor(network);
+    return this.#unitOfWork(() => this.#openSession({ network, account, publicKey, method, now: this.#clock.now(), ip }));
+  }
+
+  /**
+   * @param {{ network: string, account: string, publicKey: string, method: import("../domain/Session.js").SessionMethodName, now: number, ip: string }} input
+   */
+  async #openSession({ network, account, publicKey, method, now, ip }) {
+    const user = await this.#users.findOrCreate({ network, account }, now, uuidV4(this.#random));
     if (user.status !== "active") {
       throw new AppError("FORBIDDEN", "this account is suspended");
     }
@@ -136,6 +153,7 @@ export class AuthService {
       userId: user.id,
       tokenHash: hashToken(token),
       loginPublicKey: publicKey,
+      method,
       createdAt: now,
       lastSeenAt: now,
       expiresAt,
@@ -144,7 +162,7 @@ export class AuthService {
     });
     await this.#sessions.save(session);
     await this.#users.recordLogin(user.id, now);
-    await this.#audit.record({ actorKind: "user", actorUserId: user.id, action: "auth.login", targetKind: "session", targetId: session.id, ip, details: { publicKey } });
+    await this.#audit.record({ actorKind: "user", actorUserId: user.id, action: "auth.login", targetKind: "session", targetId: session.id, ip, details: { publicKey, method } });
     return Object.freeze({ user, token, expiresAt });
   }
 

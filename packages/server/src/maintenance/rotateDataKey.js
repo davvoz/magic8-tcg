@@ -20,11 +20,13 @@ import { SecretBox } from "../kernel/crypto/SecretBox.js";
 import { createJsonLogger } from "../kernel/logger.js";
 import { nodeSecureRandom } from "../kernel/random.js";
 import { openDatabase } from "../platform/db/openDatabase.js";
+import { custodyContext } from "../modules/custody/index.js";
 
 /** Where secrets live, and the context each one is sealed with (must match the owning module). */
 export const SEALED_COLUMNS = Object.freeze([
   Object.freeze({ table: "games", column: "secret_encrypted", key: "id", context: (/** @type {unknown} */ id) => `game:${id}` }),
   Object.freeze({ table: "rng_epochs", column: "secret_encrypted", key: "id", context: (/** @type {unknown} */ id) => `rng_epoch:${id}` }),
+  Object.freeze({ table: "custody_keys", column: "keys_encrypted", key: "user_id", context: (/** @type {unknown} */ id) => custodyContext(String(id)) }),
 ]);
 
 /**

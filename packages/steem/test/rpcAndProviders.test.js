@@ -207,6 +207,14 @@ describe("SteemWalletProvider", () => {
     assert.equal((await unreachable.balancesOf("alice")).error.code, WalletError.CHAIN_UNAVAILABLE);
   });
 
+  it("tells whether an account name is taken", async () => {
+    assert.deepEqual(await wallet([rawAccount("alice", [KEY_ONE])]).accountExists("alice"), { ok: true, value: true });
+    assert.deepEqual(await wallet([]).accountExists("alice"), { ok: true, value: false });
+    assert.equal((await wallet([]).accountExists("A")).error.code, WalletError.INVALID_ACCOUNT);
+    const unreachable = new SteemWalletProvider({ chain: new SteemBlockchainProvider({ rpc: new SteemRpcClient({ nodes: [A], fetch: fakeFetch({}).fetch }) }), appName: "magic8-tcg" });
+    assert.equal((await unreachable.accountExists("alice")).error.code, WalletError.CHAIN_UNAVAILABLE);
+  });
+
   it("validates its app name", () => {
     assert.throws(() => new SteemWalletProvider({ chain: providerWith(() => []), appName: "evil\nnonce: x" }), TypeError);
   });

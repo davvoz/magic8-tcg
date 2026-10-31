@@ -7,9 +7,10 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
-import { SignerError, SteemBlockchainProvider, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemPingWall, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, signMessage } from "@magic8/steem";
+import { SignerError, SteemBlockchainProvider, SteemKeyring, SteemPublicationReader, SteemRpcClient, SteemTransactionProvider, SteemTransferPaymentProvider, SteemPingWall, SteemWalletProvider, STEEM_NETWORK, decodeWif, publicKeyOf, signMessage } from "@magic8/steem";
 import { createServerApp } from "./app.js";
 import { ImriddImageHost, SteemitAvatars } from "./modules/pings/index.js";
+import { GoogleOAuthClient, JoinAccountFactory } from "./modules/identity/index.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { readServerContent } from "./contentFiles.js";
 import { verifySessionSignature } from "./kernel/crypto/sessionSignatures.js";
@@ -51,6 +52,8 @@ const AUTO_PAIRING_INTERVAL_MS = 30_000;
 const AUTO_SEASON_CLOSE_INTERVAL_MS = 60_000;
 const AUTO_PREPARED_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../..");
+/** What the accounts of Google sign-ins say created them, in their metadata. */
+const NEW_ACCOUNT_APP = "kijam";
 
 async function main() {
   let config;
@@ -115,6 +118,8 @@ async function main() {
     pingWall: config.pingsWallAccount === null ? null : new SteemPingWall({ rpc, account: config.pingsWallAccount }),
     pingImages: config.pingImageHost === null ? null : new ImriddImageHost({ url: config.pingImageHost, fetch: globalThis.fetch }),
     pingAvatars: new SteemitAvatars({ fetch: globalThis.fetch }),
+    keyrings: new Map([[STEEM_NETWORK, new SteemKeyring()]]),
+    googleSignIn: googleSignInFrom(config),
   });
 
   const restored = await app.games.restoreAll();
@@ -193,6 +198,22 @@ async function main() {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+}
+
+/**
+ * Google's OAuth client and join.cur8's partner API, when configured (docs/tcg/29-google.md).
+ * @param {ReturnType<typeof loadConfig>} config
+ */
+function googleSignInFrom(config) {
+  const settings = config.googleSignIn;
+  if (settings === null) {
+    return null;
+  }
+  return {
+    oauth: new GoogleOAuthClient({ clientId: settings.clientId, clientSecret: settings.clientSecret, fetch: globalThis.fetch }),
+    accounts: new JoinAccountFactory({ baseUrl: settings.joinUrl, partnerKey: settings.joinPartnerKey, fetch: globalThis.fetch, app: NEW_ACCOUNT_APP }),
+    clientId: settings.clientId,
+  };
 }
 
 /** @returns {Promise<string>} the product version (the root package.json's), told to the browser tabs with the build */

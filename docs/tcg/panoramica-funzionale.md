@@ -334,6 +334,7 @@ Anche se il server venisse compromesso, un attaccante non potrebbe spostare fond
 | Ingressi ranked | [22 — Ingressi ranked](22-ingressi-ranked.md) |
 | Spettatori | [10 — Spettatori](10-spettatori.md) |
 | Chat al tavolo | [28 — Chat](28-chat.md) |
+| Entrare con Google (wallet custodito) | [29 — Google](29-google.md) |
 | Mosse firmate | [12 — Mosse firmate](12-mosse-firmate.md) |
 | Scambi | [13 — Scambi](13-scambi.md) |
 | Vendite | [14 — Vendite](14-vendite.md) |

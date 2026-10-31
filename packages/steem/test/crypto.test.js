@@ -10,6 +10,7 @@ import { base58Decode, base58Encode } from "../src/crypto/base58.js";
 import { decodePublicKey, decodeWif, encodePublicKey, publicKeyOf, recoverSigner, signMessage } from "../src/crypto/keys.js";
 import { isValidAccountName } from "../src/accountName.js";
 import { verifySessionSignature } from "../src/crypto/sessionKeys.js";
+import { SteemKeyring } from "../src/providers/SteemKeyring.js";
 
 const KEYS = Object.freeze([
   {
@@ -162,5 +163,18 @@ describe("session keys (P-256, WebCrypto)", () => {
     for (const [badMessage, badSignature, badKey] of [[message, "zz", key], [message, signature, "04"], [null, signature, key], [message, "00".repeat(64), key], [message, signature, `04${"00".repeat(64)}`]]) {
       assert.equal(verifySessionSignature(badMessage, badSignature, badKey), false);
     }
+  });
+});
+
+describe("SteemKeyring", () => {
+  it("tells the public key of a kept private key, and refuses what is not one", () => {
+    const keyring = new SteemKeyring();
+    assert.equal(keyring.network, "steem");
+    for (const vector of KEYS) {
+      assert.equal(keyring.publicKeyOf(vector.wif), vector.publicKey);
+    }
+    assert.equal(keyring.publicKeyOf("5JUjFuqC7ATzSHv9VznChoTBeHcjc9XNyr46i7EmpHi4zx7Dq2f"), null, "a bad checksum");
+    assert.equal(keyring.publicKeyOf("P5abc"), null);
+    assert.equal(keyring.publicKeyOf(/** @type {any} */ (42)), null);
   });
 });
