@@ -77,7 +77,7 @@ Il giocatore di turno può chiudere una fase o l'intero turno quando vuole.
 
 ### 2.8 Abilità ed effetti
 
-Le abilità scattano in quattro momenti: quando la creatura **entra in campo**, quando **muore**, quando si **lancia** una magia, **a inizio turno**.
+Le abilità scattano in quattro momenti: quando la creatura **entra in campo**, quando **muore**, quando si **lancia** una magia, **a inizio turno**. Un'abilità **statica** invece non scatta: vale finché la creatura è in campo (Wildheart Druid: le tue creature Verdant, lei compresa, hanno +1/+1; così Foundry Overseer per Iron e Pyre Chanter per Ember) e sparisce appena la creatura lascia il campo; una creatura che restava in vita solo grazie a quella salute in più muore.
 
 | Effetto | Significato |
 |---|---|
@@ -91,6 +91,9 @@ Le abilità scattano in quattro momenti: quando la creatura **entra in campo**, 
 | Modifica | Aumenta o riduce attacco e salute (anche solo per il turno) |
 | Rimanda in mano | Riporta una creatura in mano al suo proprietario |
 | Sacrifica | Manda nel cimitero una propria creatura, come se morisse (le sue abilità "alla morte" scattano) |
+| Danno a fazione | Infligge danni a ogni creatura di una fazione, da entrambe le parti (i quattro Bane Rite di Shadow; la ruota dei counter: Ember → Verdant → Iron → Arcane → Shadow → Ember) |
+| Rianima | Riporta in campo le ultime creature finite nel proprio cimitero, saltando le magie; entrano come appena giocate ma senza le abilità "all'entrata" (Wake the Dead) |
+| Aura di fazione | Abilità statica: le proprie creature di una fazione hanno attacco e salute in più |
 
 Le parole chiave sono tre: **Rapidità** (*Haste*), **Sfondare** (*Trample*) e **Vigilanza** (*Vigilance*). Hanno Sfondare Charging Ram, Thunderhoof Mammoth (Verdant), Molten Rhino (Ember), Siege Ram (Iron) e Rampaging Ogre (neutrale). Hanno Vigilanza Village Militia (neutrale), Rampart Automaton (Iron), Rune Warden (Arcane), Tomb Knight (Shadow) e Oakheart Warden (Verdant).
 

@@ -224,6 +224,31 @@ describe("validateCardDefinition — rejected input", () => {
     assert.ok(problemsOf(onDeath).some((p) => p.includes("only a play ability whose target the player chooses")));
   });
 
+  it("checks a faction parameter against the content's factions", () => {
+    const sweep = spell();
+    sweep.abilities = [{ trigger: "on_cast", effect: "damage_faction", params: { amount: 2, faction: "iron" } }];
+    assert.equal(validateCardDefinition(sweep, context).ok, true);
+    sweep.abilities[0].params.faction = "verdant";
+    assert.ok(problemsOf(sweep).some((p) => p.startsWith("card.abilities[0].params.faction:")), "verdant is not a faction of this context");
+    delete sweep.abilities[0].params.faction;
+    assert.ok(problemsOf(sweep).some((p) => p.startsWith("card.abilities[0].params.faction:")), "a faction has no default");
+  });
+
+  it("pairs the static trigger with continuous effects only, on creatures", () => {
+    const lord = creature();
+    lord.abilities = [{ trigger: "static", effect: "faction_aura", params: { faction: "iron", attack: 1, health: 1 } }];
+    assert.equal(validateCardDefinition(lord, context).ok, true);
+
+    lord.abilities = [{ trigger: "static", effect: "draw_card", params: { amount: 1 } }];
+    assert.ok(problemsOf(lord).some((p) => p.includes("a static ability needs a continuous effect")));
+    lord.abilities = [{ trigger: "on_play", effect: "faction_aura", params: { faction: "iron", attack: 1 } }];
+    assert.ok(problemsOf(lord).some((p) => p.includes('it needs the "static" trigger')));
+
+    const onSpell = spell();
+    onSpell.abilities = [{ trigger: "static", effect: "faction_aura", params: { faction: "iron", attack: 1 } }];
+    assert.ok(problemsOf(onSpell).some((p) => p.includes('"static" is not valid on spell cards')));
+  });
+
   it("caps abilities and keywords and rejects duplicate keywords", () => {
     const many = creature();
     many.abilities = Array.from({ length: 5 }, () => ({ trigger: "on_play", effect: "draw_card", params: { amount: 1 } }));
@@ -277,7 +302,29 @@ describe("EffectRegistry", () => {
     assert.throws(() => registry.register({ type: "x", targeting: Targeting.NONE, params: {}, resolve }), /already registered/);
   });
 
-  it("exposes the ten core effects", () => {
-    assert.deepEqual([...createCoreEffectRegistry().types()].sort(), ["deal_damage", "destroy", "discard", "drain", "draw_card", "heal", "mill", "modify_stats", "return_to_hand", "sacrifice"]);
+  it("exposes the thirteen core effects", () => {
+    assert.deepEqual([...createCoreEffectRegistry().types()].sort(), [
+      "damage_faction",
+      "deal_damage",
+      "destroy",
+      "discard",
+      "drain",
+      "draw_card",
+      "faction_aura",
+      "heal",
+      "mill",
+      "modify_stats",
+      "reanimate",
+      "return_to_hand",
+      "sacrifice",
+    ]);
+  });
+
+  it("requires bonus() rather than resolve() of a continuous effect, and no target", () => {
+    const registry = new EffectRegistry();
+    const bonus = () => null;
+    assert.throws(() => registry.register({ type: "x", targeting: Targeting.NONE, continuous: true, params: {}, resolve: () => undefined }), /bonus/);
+    assert.throws(() => registry.register({ type: "x", targeting: Targeting.REQUIRED, continuous: true, params: {}, bonus }), /cannot take a target/);
+    registry.register({ type: "x", targeting: Targeting.NONE, continuous: true, params: {}, bonus });
   });
 });

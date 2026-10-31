@@ -14,8 +14,13 @@ import { returnToGame } from "../../../client/src/rendering/scenes/returnToGame.
 import { SceneId } from "../../../client/src/rendering/scenes/sceneIds.js";
 import { onlineWorld, until } from "./onlineHarness.js";
 
-/** The clients' timers run this much faster: a 15 s heartbeat takes 150 ms. */
-const SCALE = 100;
+/**
+ * The clients' timers run this much faster: a 15 s heartbeat takes 1.5 s.
+ * Every timer is scaled, the 10 s request timeout too, so not more: at 100
+ * a request answered late by a busy machine (the whole suite running) timed
+ * out before the game had started.
+ */
+const SCALE = 10;
 
 describe("a dead connection mid-game (two real clients, real server)", () => {
   /** @type {Awaited<ReturnType<typeof onlineWorld>>[]} */

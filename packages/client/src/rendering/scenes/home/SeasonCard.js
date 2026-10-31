@@ -28,10 +28,10 @@ export class SeasonCard extends HomeCard {
   #countdown = null;
 
   /**
-   * @param {{ id: string, x: number, y: number, width: number, height: number, compact: boolean, view: SeasonView, canOpen: boolean, onOpen: () => void }} options
-   *   `canOpen`: whether there is a leaderboard to open
+   * @param {{ id: string, x: number, y: number, width: number, height: number, compact: boolean, view: SeasonView, canOpen: boolean, onOpen: () => void, onNews?: (() => void) | null }} options
+   *   `canOpen`: whether there is a leaderboard to open; `onNews`: shows the season's news again (null: none to tell)
    */
-  constructor({ view, canOpen, onOpen, ...frame }) {
+  constructor({ view, canOpen, onOpen, onNews = null, ...frame }) {
     super({ ...frame, glowKey: view.kind === "open" && view.jackpot !== null ? "accent" : null });
     const open = { id: "home.season.open", text: this.compact ? "Leaderboard" : "Open the leaderboard", onActivate: onOpen };
     if (view.kind === "locked") {
@@ -48,7 +48,8 @@ export class SeasonCard extends HomeCard {
       const { inset, line, sizes } = this.metrics;
       this.add(new Label({ id: "home.season.standing", x: inset, y: Math.min(this.cursor, this.footTop - line), width: this.inner, height: line, text: view.standing, size: sizes.text, weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     }
-    this.addActions([{ ...open, enabled: canOpen }]);
+    const news = onNews === null ? [] : [{ id: "home.season.news", text: "What's new", onActivate: onNews }];
+    this.addActions([...news, { ...open, enabled: canOpen }]);
   }
 
   /**

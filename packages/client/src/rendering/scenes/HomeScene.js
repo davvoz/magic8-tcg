@@ -8,6 +8,11 @@
  * Market and Season, each with its picture and a line on what is there; a
  * locked one says why.
  *
+ * Once the player's account is ready, the season's news (SeasonNewsService)
+ * opens over it, once per season for each account; route parameters
+ * `{ news: { page?, settled? } }` open it whether seen or not, at a page
+ * (`settled`: every page at its end, silent, for previews).
+ *
  * On a wide screen three columns: Play across the first two (its picture
  * beside its words), Decks and Market under it, and Season keeping
  * the whole height on the right as the ranked season's card (SeasonCard:
@@ -26,6 +31,7 @@ import { UiPiece } from "../images/UiArt.js";
 import { SECTIONS, SectionId } from "../shell/sections.js";
 import { hasGameInProgress, resumeGame } from "./returnToGame.js";
 import { Icon } from "../ui/icons.js";
+import { SeasonNewsPresenter } from "./season/SeasonNewsPresenter.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
 import { startTutorial } from "./startTutorial.js";
@@ -50,6 +56,19 @@ const SECTION_PICTURES = Object.freeze({
  * @typedef {import("@magic8/engine/shared/geometry.js").Rect} Rect
  */
 
+/**
+ * The season's news the route asks for, if it does.
+ * @param {Readonly<Record<string, unknown>>} params
+ * @returns {{ page: number, settled: boolean } | null}
+ */
+function newsAskedIn(params) {
+  const asked = /** @type {{ page?: unknown, settled?: unknown } | undefined} */ (params.news);
+  if (asked === undefined || asked === null || typeof asked !== "object") {
+    return null;
+  }
+  return { page: Number.isInteger(asked.page) ? /** @type {number} */ (asked.page) : 0, settled: asked.settled === true };
+}
+
 export class HomeScene extends SectionScene {
   #app;
   /** @type {Array<() => void>} */
@@ -60,6 +79,10 @@ export class HomeScene extends SectionScene {
   #ready = false;
   /** What each way to play shows. */
   #views;
+  /** The season's news, opened over Home when due. */
+  #news;
+  /** The news asked for by the route, to open whether seen or not. @type {{ page: number, settled: boolean } | null} */
+  #newsAsked = null;
 
   /**
    * @param {import("./Scene.js").SceneServices} services
@@ -70,11 +93,13 @@ export class HomeScene extends SectionScene {
     super(services, app, { scene: SceneId.HOME, title: "Home" });
     this.#app = app;
     this.#views = new PlayViews({ app, hasScene: services.hasScene, now });
+    this.#news = new SeasonNewsPresenter(this, app);
   }
 
   /** @param {Readonly<Record<string, unknown>>} [params] */
   enter(params = {}) {
     this.routeBack(params);
+    this.#newsAsked = newsAskedIn(params);
     const app = this.#app;
     const rebuild = () => this.#rebuild();
     const follow = (/** @type {{ subscribe?: (listener: () => void) => () => void } | undefined} */ service) => {
@@ -98,6 +123,7 @@ export class HomeScene extends SectionScene {
     this.#unsubscribes.forEach((unsubscribe) => unsubscribe());
     this.#unsubscribes = [];
     this.#season = null;
+    this.#news.drop();
     super.exit();
   }
 
@@ -109,7 +135,8 @@ export class HomeScene extends SectionScene {
   update(dtMs) {
     const base = super.update(dtMs);
     const ticked = this.#season?.tick() ?? false;
-    return ticked || base;
+    const shown = this.#news.tick(dtMs);
+    return ticked || shown || base;
   }
 
   /** @param {CanvasRenderingContext2D} context */
@@ -147,7 +174,31 @@ export class HomeScene extends SectionScene {
     }
     this.#buildSections(layout.sections, compact);
     this.focus(this.findNode(focusedId) ?? first ?? this.root.focusableNodes()[0] ?? null);
+    this.#showNews();
     this.services.requestRender();
+  }
+
+  /**
+   * Opens the season's news when it is due (or asked for), and opens it again after a rebuild cleared the screen.
+   */
+  #showNews() {
+    if (this.#news.news === null || !this.#signedIn()) {
+      return;
+    }
+    if (this.#news.isOpen) {
+      this.#news.restore();
+      return;
+    }
+    const asked = this.#newsAsked;
+    if (asked !== null || this.#news.isDue) {
+      this.#newsAsked = null;
+      this.#news.open(asked ?? {});
+    }
+  }
+
+  /** The season card's way to see the news again: null when there is none, or nobody signed in to have seen it. */
+  #newsAgain() {
+    return this.#news.news === null || !this.#signedIn() ? null : () => this.#news.open();
   }
 
   /**
@@ -160,7 +211,7 @@ export class HomeScene extends SectionScene {
     SECTIONS.filter((section) => section.id !== SectionId.HOME).forEach((section) => {
       const frame = frames[section.id];
       if (section.id === SectionId.SEASON && !compact) {
-        this.#season = this.root.add(new SeasonCard({ id: "home.season", ...frame, compact, view: this.#views.season(), canOpen: this.services.hasScene(SceneId.SEASON), onOpen: () => this.services.navigate(SceneId.SEASON) }));
+        this.#season = this.root.add(new SeasonCard({ id: "home.season", ...frame, compact, view: this.#views.season(), canOpen: this.services.hasScene(SceneId.SEASON), onOpen: () => this.services.navigate(SceneId.SEASON), onNews: this.#newsAgain() }));
         return;
       }
       const destination = section.destination(context);

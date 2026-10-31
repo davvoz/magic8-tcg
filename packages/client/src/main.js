@@ -16,7 +16,9 @@ import { MusicTrack, SoundCue } from "./application/audio/SoundCue.js";
 import { AccountService, AccountStatus } from "./application/account/AccountService.js";
 import { CollectionService } from "./application/collection/CollectionService.js";
 import { loadContent } from "./application/content/ContentService.js";
-import { buildCardRarities } from "./application/content/CardRarities.js";
+import { NO_RARITIES, buildCardRarities } from "./application/content/CardRarities.js";
+import { buildSeasonNews as buildSeasonNewsFile } from "./application/season/SeasonNews.js";
+import { SeasonNewsService } from "./application/season/SeasonNewsService.js";
 import { ANY_ID, NO_ILLUSTRATIONS, buildIllustrationManifest } from "./application/content/IllustrationManifest.js";
 import { COLLECTION_CHANGING_KINDS, describeNotification } from "./application/notifications/describeNotification.js";
 import { NotificationService } from "./application/notifications/NotificationService.js";
@@ -61,6 +63,7 @@ import { createCoreSoundBank } from "./infrastructure/audio/registerCorePatches.
 import { StoredAudioPreferences } from "./infrastructure/persistence/StoredAudioPreferences.js";
 import { StoredHelpPreferences } from "./infrastructure/persistence/StoredHelpPreferences.js";
 import { StoredOnboarding } from "./infrastructure/persistence/StoredOnboarding.js";
+import { StoredSeasonNews } from "./infrastructure/persistence/StoredSeasonNews.js";
 import { StoredSelectedDeck } from "./infrastructure/persistence/StoredSelectedDeck.js";
 import { SelectedDeck } from "./application/decks/SelectedDeck.js";
 import { HttpAuthApi } from "./infrastructure/api/HttpAuthApi.js";
@@ -156,6 +159,7 @@ const CONTENT_MANIFEST = Object.freeze({
   rarities: "data/economy/rarities.json",
   illustrations: "data/art/illustrations.json",
   characterArt: "data/art/characters.json",
+  seasonNews: "data/ui/season-news.json",
 });
 /** Where the illustration files named in data/art/illustrations.json (and the portraits in characters.json) live. */
 const ART_DIRECTORY = "data/art/";
@@ -439,7 +443,7 @@ async function boot() {
   const firstScreenArt = Promise.all([loading.track(uiArt.preload()), loading.track(tableArt.preload())]);
   loading.say("Shuffling the decks…");
   const track = loading.track.bind(loading);
-  const [rawTheme, content, rawRarities, rawIllustrations, rawCharacterArt] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(source.load("characterArt")), track(identity.restore()), track(google.refresh())]);
+  const [rawTheme, content, rawRarities, rawIllustrations, rawCharacterArt, rawSeasonNews] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(source.load("characterArt")), track(source.load("seasonNews")), track(identity.restore()), track(google.refresh())]);
   loading.say("Gilding the table…");
   if (!content.ok) {
     showFatal("Content failed to load", content.error.message);
@@ -469,6 +473,7 @@ async function boot() {
   const audio = buildAudio(localStore, storageAvailable);
   const help = buildHelp(localStore, storageAvailable);
   const onboarding = buildOnboarding(localStore, storageAvailable);
+  const seasonNews = buildSeasonNews(rawSeasonNews, content.value, rarities, { localStore, storageAvailable });
   const selectedDeck = buildSelectedDeck(localStore, storageAvailable);
   const browserDecks = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
   // Signed in, decks live in the account (only owned cards); otherwise in this browser.
@@ -625,6 +630,7 @@ async function boot() {
     audio,
     help,
     onboarding,
+    seasonNews,
     ...rarities,
   });
 
@@ -814,6 +820,23 @@ function buildLocalKeys(localStore, storageAvailable, httpFetch) {
 function buildOnboarding(localStore, storageAvailable) {
   const store = storageAvailable ? localStore : new InMemoryStore();
   return new OnboardingProgress({ preferences: new StoredOnboarding({ store, logger }) });
+}
+
+/**
+ * The season's news shown once after signing in (data/ui/season-news.json), and which accounts here have seen it,
+ * remembered in `store`. A missing or malformed file leaves the season unannounced.
+ * @param {{ ok: true, value: unknown } | { ok: false, error: { message: string } }} raw the file as loaded
+ * @param {import("./application/AppContext.js").AppContext["content"]} content
+ * @param {{ rarities?: import("./application/content/CardRarities.js").CardRarities }} known the cards' rarities, when they could be read
+ * @param {{ localStore: LocalStorageStore, storageAvailable: boolean }} storage without it, what was seen lasts only as long as the page
+ */
+function buildSeasonNews(raw, content, { rarities = NO_RARITIES }, { localStore, storageAvailable }) {
+  const store = storageAvailable ? localStore : new InMemoryStore();
+  const built = raw.ok ? buildSeasonNewsFile(raw.value, { catalog: content.catalog, factions: content.deckRules.factions, rarities: rarities.order }) : { ok: /** @type {const} */ (false), message: raw.error.message };
+  if (!built.ok) {
+    logger.warn("season news unavailable", built.message);
+  }
+  return new SeasonNewsService({ news: built.ok ? built.value : null, preferences: new StoredSeasonNews({ store, logger }) });
 }
 
 /**

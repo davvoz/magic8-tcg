@@ -156,6 +156,7 @@ export class MatchSoundscape {
       this.#play(SoundCue.CREATURE_DEATH, { delayMs: beat.presenter.landsAfter(String(event.instanceId)) + this.#animation.shortMs, pan: beat.pan(event.instanceId) });
     },
     [GameEventType.CARD_RETURNED]: (event, beat) => this.#play(SoundCue.CARD_RETURN, { pan: beat.pan(event.targetId) }),
+    [GameEventType.CREATURE_REANIMATED]: (event, beat) => this.#play(SoundCue.CARD_PLACE, { delayMs: this.#animation.mediumMs * LANDING, pan: beat.pan(event.instanceId) }),
     [GameEventType.CARD_DISCARDED]: (event, beat) => this.#hearPileLeave(event, beat),
     [GameEventType.CARD_MILLED]: (event, beat) => this.#hearPileLeave(event, beat),
   });

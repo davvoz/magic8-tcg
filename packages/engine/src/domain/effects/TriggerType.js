@@ -8,6 +8,8 @@ export const TriggerType = Object.freeze({
   ON_DEATH: "on_death",
   /** The controller's turn began while the creature was on the battlefield. Targets must be automatic. */
   ON_TURN_START: "on_turn_start",
+  /** Holds while the creature is on the battlefield: a continuous effect, never queued (StaticAbilities). */
+  STATIC: "static",
 });
 
 export const TRIGGER_TYPES = Object.freeze(Object.values(TriggerType));

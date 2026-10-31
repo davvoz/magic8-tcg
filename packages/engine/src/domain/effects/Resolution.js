@@ -35,7 +35,7 @@ export function resolvePending(state, context) {
  */
 function resolveOne(pending, state, context) {
   const descriptor = context.effects.get(pending.effect);
-  if (descriptor === undefined) {
+  if (descriptor?.resolve === undefined) {
     throw new Error(`Resolution: no handler for effect "${pending.effect}"`);
   }
   descriptor.resolve(new EffectContext(pending, state, context));

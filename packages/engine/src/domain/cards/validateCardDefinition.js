@@ -42,6 +42,7 @@ const TRIGGER_CARD_TYPE = Object.freeze({
   [TriggerType.ON_CAST]: CardType.SPELL,
   [TriggerType.ON_DEATH]: CardType.CREATURE,
   [TriggerType.ON_TURN_START]: CardType.CREATURE,
+  [TriggerType.STATIC]: CardType.CREATURE,
 });
 
 /**
@@ -200,13 +201,37 @@ function checkAbility(issues, raw, path, scope) {
   if (trigger === undefined || effect === undefined || descriptor === undefined) {
     return undefined;
   }
-  const params = scope.context.effects.validateParams(issues, effect, object.params, `${path}.params`);
+  if (!checkTiming(issues, `${path}.effect`, { trigger, descriptor })) {
+    return undefined;
+  }
+  const params = scope.context.effects.validateParams(issues, effect, object.params, { path: `${path}.params`, factions: scope.context.factions });
   const target = checkAbilityTarget(issues, object.target, `${path}.target`, { trigger, descriptor });
   const mandatory = checkMandatory(issues, object.mandatory, `${path}.mandatory`, { trigger, target });
   if (params === undefined || target === undefined || mandatory === undefined) {
     return undefined;
   }
   return new Ability({ trigger, effect, params, target, mandatory });
+}
+
+/**
+ * A static ability holds a continuous effect, and a continuous effect is
+ * only ever held by a static ability: the other triggers resolve once.
+ * @param {Issues} issues
+ * @param {string} path
+ * @param {{ trigger: string, descriptor: import("../effects/EffectRegistry.js").EffectDescriptor }} ability
+ * @returns {boolean}
+ */
+function checkTiming(issues, path, { trigger, descriptor }) {
+  if ((trigger === TriggerType.STATIC) === (descriptor.continuous === true)) {
+    return true;
+  }
+  issues.add(
+    path,
+    trigger === TriggerType.STATIC
+      ? `effect "${descriptor.type}" is one-shot; a static ability needs a continuous effect`
+      : `effect "${descriptor.type}" is continuous; it needs the "${TriggerType.STATIC}" trigger`,
+  );
+  return false;
 }
 
 /**

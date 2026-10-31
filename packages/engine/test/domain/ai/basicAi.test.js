@@ -97,6 +97,27 @@ describe("BasicAi — main phase", () => {
     assert.deepEqual(ai.decide(bargain.engine.getSnapshot(P1)).targets, [bargain.id(P1, BF, 1)]);
   });
 
+  it("casts a faction sweep when it takes more from the enemy than it costs, and pays with the cheapest creature", () => {
+    const sweep = createScenario({
+      p1: { hand: ["rustbane_rite"], battlefield: ["thornback_bear", "grave_rat"], resources: 2 },
+      p2: { battlefield: ["scrap_golem", "rivet_hound", "steel_sentinel"] },
+    });
+    const decision = ai.decide(sweep.engine.getSnapshot(P1));
+    assert.equal(decision.cardId, sweep.id(P1, HAND));
+    assert.deepEqual(decision.targets, [sweep.id(P1, BF, 1)], "the 1/1 rat pays for a dead golem and two wounded Iron creatures");
+
+    const ownSide = createScenario({ p1: { hand: ["rustbane_rite"], battlefield: ["grave_rat", "scrap_golem"], resources: 2 }, p2: { battlefield: ["thornback_bear"] } });
+    assert.deepEqual(ai.decide(ownSide.engine.getSnapshot(P1)), endPhase(P1), "no enemy Iron creature: it would only hit its own golem");
+  });
+
+  it("holds a reanimation spell until its graveyard has a creature", () => {
+    const empty = createScenario({ p1: { hand: ["wake_the_dead"], graveyard: ["ember_bolt"], resources: 3 } });
+    assert.deepEqual(ai.decide(empty.engine.getSnapshot(P1)), endPhase(P1));
+
+    const dead = createScenario({ p1: { hand: ["wake_the_dead"], graveyard: ["bone_colossus"], resources: 3 } });
+    assert.equal(ai.decide(dead.engine.getSnapshot(P1)).cardId, dead.id(P1, HAND));
+  });
+
   it("plays a haste creature first when its attack makes the unblocked damage lethal", () => {
     const { engine, id } = createScenario({ p1: { hand: ["lava_brute", "flame_scout"], battlefield: ["ember_imp"], resources: 6 }, p2: { life: 4 } });
     assert.equal(ai.decide(engine.getSnapshot(P1)).cardId, id(P1, HAND, 1), "the 2/2 haste scout and the imp hit for 4 this turn");

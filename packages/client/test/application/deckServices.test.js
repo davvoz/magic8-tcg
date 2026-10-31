@@ -56,7 +56,7 @@ describe("ContentService", () => {
   it("produces a frozen bundle with catalog, rules and precon decks", () => {
     assert.ok(Object.isFrozen(content));
     assert.equal(content.preconDecks.length, 10);
-    assert.equal(content.catalog.size, 93);
+    assert.equal(content.catalog.size, 106);
     assert.equal(content.gameRules.startingLife, 20);
   });
 });

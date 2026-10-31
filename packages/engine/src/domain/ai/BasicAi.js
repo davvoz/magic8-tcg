@@ -15,7 +15,10 @@
  *   strongest enemy creature, buffs on the strongest ally. Healing spells
  *   stay in hand while nothing of its own is hurt, harmful spells while
  *   they could only hit its own side, sacrifice cards while the cheapest
- *   victim is worth more than half of what the card brings.
+ *   victim is worth more than half of what the card brings. A faction sweep
+ *   (damage_faction) brings what it kills on the enemy side less what it
+ *   kills on its own, and stays in hand while that is nothing; a
+ *   reanimation spell stays in hand while its graveyard holds no creature.
  * - Attack with creatures that cannot be blocked and killed for free; attack
  *   with everything when unblocked damage would be lethal. Attackers without
  *   vigilance cannot block the enemy's next attack, so they stay home while
@@ -76,6 +79,8 @@ const HEAL = "heal";
 const SACRIFICE = "sacrifice";
 const MODIFY_STATS = "modify_stats";
 const DRAW_CARD = "draw_card";
+const DAMAGE_FACTION = "damage_faction";
+const REANIMATE = "reanimate";
 /** What a drawn card is worth, in the attack + health currency of `value`. */
 const DRAWN_CARD_VALUE = 4;
 /** Removal aimed at enemy creatures regardless of their health. */
@@ -199,7 +204,54 @@ function hasKeyword(card, keyword) {
  * @param {Board} board
  */
 function isWasted(card, targetOptions, board) {
-  return isWastedHeal(card, targetOptions, board) || isSelfHarm(card, targetOptions, board) || isBadSacrifice(card, targetOptions, board);
+  return (
+    isWastedHeal(card, targetOptions, board) ||
+    isSelfHarm(card, targetOptions, board) ||
+    isBadSacrifice(card, targetOptions, board) ||
+    isPointlessSweep(card, board) ||
+    isEmptyReanimation(card, board)
+  );
+}
+
+/**
+ * A spell whose faction sweep would take nothing from the enemy that it
+ * does not take as much of from the AI's own side.
+ * @param {CardView} card
+ * @param {Board} board
+ */
+function isPointlessSweep(card, board) {
+  return card.type === CardType.SPELL && playAbilities(card).some((ability) => ability.effect === DAMAGE_FACTION) && sweepGain(card, board, null) <= 0;
+}
+
+/**
+ * A reanimation spell with no creature in the graveyard to bring back.
+ * @param {CardView} card
+ * @param {Board} board
+ */
+function isEmptyReanimation(card, board) {
+  return card.type === CardType.SPELL && playAbilities(card).some((ability) => ability.effect === REANIMATE) && !board.me.graveyard.some((dead) => dead.type === CardType.CREATURE);
+}
+
+/**
+ * What the card's faction sweeps are worth: every creature they kill is worth
+ * its value, a creature they only wound a point per damage, positive on the
+ * enemy side and negative on its own (`spared`, the creature sacrificed to
+ * pay for it, is gone by then).
+ * @param {CardView} card
+ * @param {Board} board
+ * @param {string | null} spared
+ * @returns {number}
+ */
+function sweepGain(card, board, spared) {
+  let gain = 0;
+  for (const ability of playAbilities(card).filter((candidate) => candidate.effect === DAMAGE_FACTION)) {
+    const amount = Number(ability.params?.amount ?? 0);
+    const loss = (creature) => (creature.health <= amount ? value(creature) : amount);
+    const hit = (creature) => creature.faction === ability.params?.faction && creature.instanceId !== spared;
+    gain += board.enemy.battlefield.filter(hit).reduce((sum, creature) => sum + loss(creature), 0);
+    gain -= board.me.battlefield.filter(hit).reduce((sum, creature) => sum + loss(creature), 0);
+  }
+  return gain;
 }
 
 /**
@@ -257,19 +309,21 @@ function isBadSacrifice(card, targetOptions, board) {
     return false;
   }
   const victim = weakest(board.me.battlefield.filter((creature) => (targetOptions[index] ?? []).includes(creature.instanceId)));
-  return victim !== undefined && 2 * value(victim) > sacrificeGain(card);
+  return victim !== undefined && 2 * value(victim) > sacrificeGain(card, board, victim.instanceId);
 }
 
 /**
  * @param {CardView} card
+ * @param {Board} board
+ * @param {string} victimId the creature it would sacrifice
  * @returns {number}
  */
-function sacrificeGain(card) {
+function sacrificeGain(card, board, victimId) {
   const body = card.type === CardType.CREATURE ? value(card) : 0;
   const draws = playAbilities(card)
     .filter((ability) => ability.effect === DRAW_CARD)
     .reduce((sum, ability) => sum + Number(ability.params?.amount ?? 0), 0);
-  return body + draws * DRAWN_CARD_VALUE;
+  return body + draws * DRAWN_CARD_VALUE + sweepGain(card, board, victimId);
 }
 
 /**

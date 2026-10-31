@@ -24,6 +24,7 @@ import { P1, P2, catalog, effects, rulesWith } from "./fixtures.js";
  * @property {readonly string[]} [hand] definition ids
  * @property {readonly string[]} [battlefield] definition ids
  * @property {readonly string[]} [library] definition ids (top first)
+ * @property {readonly string[]} [graveyard] definition ids (bottom first: the last one is the top)
  * @property {number} [life]
  * @property {number} [resources] resources available once the engine has started
  */
@@ -58,6 +59,7 @@ export function createScenario(spec = {}) {
     place(ZoneType.HAND, playerSpec.hand ?? []);
     place(ZoneType.BATTLEFIELD, playerSpec.battlefield ?? []);
     place(ZoneType.LIBRARY, playerSpec.library ?? Array(10).fill("ember_imp"));
+    place(ZoneType.GRAVEYARD, playerSpec.graveyard ?? []);
     return player;
   };
 

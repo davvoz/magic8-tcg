@@ -93,6 +93,19 @@
     "rampart_automaton": { "file": "rampart_automaton.jpg", "focus": [0.5, 0.3] },
     "rune_warden": { "file": "rune_warden.jpg", "focus": [0.5, 0.3] },
     "tomb_knight": { "file": "tomb_knight.jpg", "focus": [0.5, 0.3] },
-    "oakheart_warden": { "file": "oakheart_warden.jpg", "focus": [0.5, 0.3] }
+    "oakheart_warden": { "file": "oakheart_warden.jpg", "focus": [0.5, 0.3] },
+    "rustbane_rite": { "file": "rustbane_rite.jpg", "focus": [0.5, 0.3] },
+    "rootbane_rite": { "file": "rootbane_rite.jpg", "focus": [0.5, 0.3] },
+    "cinderbane_rite": { "file": "cinderbane_rite.jpg", "focus": [0.5, 0.3] },
+    "runebane_rite": { "file": "runebane_rite.jpg", "focus": [0.5, 0.3] },
+    "wake_the_dead": { "file": "wake_the_dead.jpg", "focus": [0.5, 0.3] },
+    "wildheart_druid": { "file": "wildheart_druid.jpg", "focus": [0.5, 0.3] },
+    "forest_blaze": { "file": "forest_blaze.jpg", "focus": [0.5, 0.3] },
+    "pyre_chanter": { "file": "pyre_chanter.jpg", "focus": [0.5, 0.3] },
+    "cold_iron": { "file": "cold_iron.jpg", "focus": [0.5, 0.3] },
+    "foundry_overseer": { "file": "foundry_overseer.jpg", "focus": [0.5, 0.3] },
+    "dawnlight": { "file": "dawnlight.jpg", "focus": [0.5, 0.3] },
+    "smother": { "file": "smother.jpg", "focus": [0.5, 0.3] },
+    "rootbreak": { "file": "rootbreak.jpg", "focus": [0.5, 0.3] }
   }
 }

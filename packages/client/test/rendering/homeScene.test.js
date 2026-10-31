@@ -16,6 +16,11 @@ import { IdentityStatus } from "../../src/application/identity/IdentityService.j
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStore.js";
 import { StoredOnboarding } from "../../src/infrastructure/persistence/StoredOnboarding.js";
+import { StoredSeasonNews } from "../../src/infrastructure/persistence/StoredSeasonNews.js";
+import { buildSeasonNews } from "../../src/application/season/SeasonNews.js";
+import { SeasonNewsService } from "../../src/application/season/SeasonNewsService.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Viewport } from "../../src/rendering/canvas/Viewport.js";
 import { UiPiece } from "../../src/rendering/images/UiArt.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
@@ -42,9 +47,9 @@ const JACKPOT = Object.freeze({
 });
 
 /**
- * @param {{ day?: object, standing?: object, milestones?: string[], online?: object, offline?: boolean, size?: { cssWidth: number, cssHeight: number } }} [options]
+ * @param {{ day?: object, standing?: object, milestones?: string[], online?: object, offline?: boolean, size?: { cssWidth: number, cssHeight: number }, seasonNews?: SeasonNewsService }} [options]
  */
-function world({ day = DAY, standing = STANDING, milestones = [], online = { status: OnlineStatus.IDLE, session: null, opponent: null, mode: null }, offline = false, size = { cssWidth: 1600, cssHeight: 900 } } = {}) {
+function world({ day = DAY, standing = STANDING, milestones = [], online = { status: OnlineStatus.IDLE, session: null, opponent: null, mode: null }, offline = false, size = { cssWidth: 1600, cssHeight: 900 }, seasonNews = undefined } = {}) {
   const account = accountWorld(content);
   const onboarding = new OnboardingProgress({ preferences: new StoredOnboarding({ store: new InMemoryStore(), logger: new MemoryLogger() }) });
   milestones.forEach((milestone) => onboarding.reach(milestone, "alice"));
@@ -62,6 +67,7 @@ function world({ day = DAY, standing = STANDING, milestones = [], online = { sta
     jackpot: { state: { loading: false, loaded: true, jackpot: JACKPOT, error: null }, subscribe: () => () => undefined, watch: () => () => undefined, now: () => NOW },
     online: onlineService,
     onboarding,
+    seasonNews,
     tutorial: { start: () => ({ ok: false, error: { message: "not in tests" } }) },
   };
   const viewport = new Viewport(theme.layout);
@@ -69,7 +75,7 @@ function world({ day = DAY, standing = STANDING, milestones = [], online = { sta
   const navigated = [];
   const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, params) => navigated.push({ id, params }), hasScene: () => true };
   const scene = new HomeScene(services, /** @type {any} */ (app), { now: () => NOW });
-  return { ...account, app, scene, navigated, onboarding };
+  return { ...account, app, scene, navigated, onboarding, viewport };
 }
 
 async function signIn(home) {
@@ -223,5 +229,76 @@ describe("HomeScene on a phone", () => {
     const home = world({ size: PHONE, offline: true });
     home.scene.enter({});
     assert.equal(byId(home.scene, "home.section.play").locked, false, "practice plays offline");
+  });
+});
+
+describe("HomeScene, the season's news", () => {
+  const raw = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../../../data/ui/season-news.json"), "utf8"));
+  const news = /** @type {any} */ (buildSeasonNews(raw, { catalog: content.catalog, factions: content.deckRules.factions, rarities: ["common", "uncommon", "rare", "epic", "legendary"] })).value;
+  const service = (store = new InMemoryStore()) => new SeasonNewsService({ news, preferences: new StoredSeasonNews({ store, logger: new MemoryLogger() }) });
+
+  it("opens once the account is ready, stays open through the screen rebuilding, and is not shown again once closed", async () => {
+    const seasonNews = service();
+    const home = world({ seasonNews });
+    home.scene.enter({});
+    assert.equal(home.scene.modal, null, "nobody signed in: nothing to tell");
+    await signIn(home);
+    assert.equal(home.scene.modal?.id, "news");
+    byId(home.scene, "news.next").activate();
+    home.scene.relayout();
+    assert.equal(home.scene.modal?.id, "news", "rebuilt, the news is still open");
+    assert.equal(byId(home.scene, "news.show").page, 1, "at the page it was at");
+    assert.equal(home.scene.update(16), true, "the show lives");
+    byId(home.scene, "news.skip").activate();
+    assert.equal(home.scene.modal, null);
+    assert.equal(seasonNews.isDue("alice"), false);
+    home.scene.relayout();
+    assert.equal(home.scene.modal, null, "seen: not again");
+  });
+
+  it("is not shown to an account that has seen it, unless the route asks for it, then at the page asked", async () => {
+    const seasonNews = service();
+    seasonNews.markSeen("alice");
+    const seen = world({ seasonNews });
+    seen.scene.enter({});
+    await signIn(seen);
+    assert.equal(seen.scene.modal, null);
+    const asked = world({ seasonNews });
+    asked.scene.enter({ news: { page: 3, settled: true } });
+    await signIn(asked);
+    assert.equal(asked.scene.modal?.id, "news");
+    assert.equal(byId(asked.scene, "news.show").page, 3);
+  });
+
+  it("opens again from the season card's What's new, from the start, once seen", async () => {
+    const seasonNews = service();
+    seasonNews.markSeen("alice");
+    const home = world({ seasonNews });
+    home.scene.enter({});
+    await signIn(home);
+    assert.equal(home.scene.modal, null);
+    byId(home.scene, "home.season.news").activate();
+    assert.equal(home.scene.modal?.id, "news");
+    assert.equal(byId(home.scene, "news.show").page, 0);
+    byId(home.scene, "news.skip").activate();
+    assert.equal(home.scene.modal, null);
+    const none = world();
+    none.scene.enter({});
+    await signIn(none);
+    assert.ok(byId(none.scene, "home.season.open"));
+    assert.equal(byId(none.scene, "home.season.news"), null, "no news, no button");
+  });
+
+  it("is rebuilt for a phone at the page it was at", async () => {
+    const home = world({ seasonNews: service() });
+    home.scene.enter({});
+    await signIn(home);
+    byId(home.scene, "news.next").activate();
+    byId(home.scene, "news.next").activate();
+    home.viewport.resize({ cssWidth: 844, cssHeight: 390 });
+    home.scene.onResize();
+    assert.equal(home.scene.modal?.id, "news");
+    assert.equal(byId(home.scene, "news.show").page, 2);
+    assert.ok(home.scene.modal.panel.height < 400, "laid out for the phone");
   });
 });

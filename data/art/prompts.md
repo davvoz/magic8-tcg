@@ -162,6 +162,24 @@ style : anime ritual
 no text
 ```
 
+### Forest Blaze (`forest_blaze`) — magia
+```
+background color: red-black-orange
+a wall of fire racing through an ancient forest, trees and treefolk silhouettes burning, embers swirling in the wind, with red-black-orange flames
+
+style : anime ritual
+no text
+```
+
+### Pyre Chanter (`pyre_chanter`)
+```
+background color: red-black-orange
+fire priestess singing with arms raised before a great pyre, the flames of the warriors around her leaning toward her voice, with red-black-orange robes
+gender: female
+style : anime ritual
+no text
+```
+
 ## Iron
 
 ### Scrap Golem (`scrap_golem`)
@@ -315,6 +333,24 @@ style : anime ritual
 no text
 ```
 
+### Cold Iron (`cold_iron`) — magia
+```
+background color: steel blue-navy-silver
+a heavy cold iron chain wrapping around floating arcane runes and shattering them into shards of light, frost on the links, with steel blue-navy-silver metal
+
+style : anime ritual
+no text
+```
+
+### Foundry Overseer (`foundry_overseer`)
+```
+background color: steel blue-navy-silver
+stern foundry forewoman in plated armour holding a glowing rod, automatons and golems standing straighter as their armour plates thicken, sparks in the air, with steel blue-navy-silver armour
+gender: female
+style : anime ritual
+no text
+```
+
 ## Shadow
 
 ### Restless Ghoul (`restless_ghoul`)
@@ -456,6 +492,60 @@ no text
 ```
 background color: purple-black-lilac
 a glowing curse sigil hovering over a wilting flower, petals crumbling into dust and drifting away, with purple-black-lilac energy
+
+style : anime ritual
+no text
+```
+
+### Rustbane Rite (`rustbane_rite`) — magia
+```
+background color: purple-black-lilac
+a hooded figure's blood dripping onto a ritual circle, red rust spreading from it across shattered gears and a crumbling iron golem, with purple-black-lilac energy
+
+style : anime ritual
+no text
+```
+
+### Rootbane Rite (`rootbane_rite`) — magia
+```
+background color: purple-black-lilac
+a ritual dagger planted in black soil, rot spreading outward through the roots, a withered sapling and blackened vines curling away from it, with purple-black-lilac energy
+
+style : anime ritual
+no text
+```
+
+### Cinderbane Rite (`cinderbane_rite`) — magia
+```
+background color: purple-black-lilac
+a ritual bowl of dark water poured over a fire elemental, flames choking into grey ash and smoke, a sacrificial sigil glowing beneath, with purple-black-lilac energy
+
+style : anime ritual
+no text
+```
+
+### Runebane Rite (`runebane_rite`) — magia
+```
+background color: purple-black-lilac
+floating arcane runes cracking and bleeding shadow, torn spell scrolls burning without fire above a sacrificial altar, with purple-black-lilac energy
+
+style : anime ritual
+no text
+```
+
+### Wake the Dead (`wake_the_dead`) — magia
+```
+background color: purple-black-lilac
+skeletal hands bursting from two open graves under a dark moon, a necromantic sigil pulsing above them, mist rolling across a cemetery, with purple-black-lilac light
+
+style : anime ritual
+no text
+```
+
+### Smother (`smother`) — magia
+```
+background color: purple-black-lilac
+a cloak of living darkness falling over a fire elemental and smothering its flames into thin smoke, with purple-black-lilac shadows
 
 style : anime ritual
 no text
@@ -630,6 +720,24 @@ style : anime ritual
 no text
 ```
 
+### Wildheart Druid (`wildheart_druid`)
+```
+background color: green-dark green-lime
+druid with antlers of living wood and a cloak of leaves, staff raised, a wave of green light lifting the beasts and treefolk around her, with green-dark green-lime robes
+gender: female
+style : anime ritual
+no text
+```
+
+### Rootbreak (`rootbreak`) — magia
+```
+background color: green-dark green-lime
+giant roots bursting from the ground and crushing iron golems and gears, rust and moss creeping over the broken metal, with green-dark green-lime roots
+
+style : anime ritual
+no text
+```
+
 ## Arcane
 
 ### Arcane Apprentice (`arcane_apprentice`)
@@ -777,6 +885,15 @@ no text
 magic ritual
 background color: blue-indigo-cyan
 beam of arcane energy dissolving a silhouette into drifting particles, with blue-indigo-cyan energy
+
+style : anime ritual
+no text
+```
+
+### Dawnlight (`dawnlight`) — magia
+```
+background color: blue-indigo-cyan
+a blinding sunrise of arcane light breaking over a graveyard, ghouls and wraiths dissolving into ash in its rays, with blue-indigo-cyan light
 
 style : anime ritual
 no text

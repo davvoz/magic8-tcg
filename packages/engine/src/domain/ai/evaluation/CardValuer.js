@@ -46,6 +46,8 @@ const EFFECT_VALUE = Object.freeze({
   destroy: () => 4,
   return_to_hand: () => 2.5,
   sacrifice: () => -1,
+  damage_faction: (params) => amount(params),
+  reanimate: (params) => 3 * amount(params),
 });
 
 /** @param {Readonly<Record<string, number | string>>} params */
@@ -91,6 +93,7 @@ export class CardValuer {
 
   /**
    * Abilities still to fire while the creature is in play: on death once, at turn start every turn.
+   * A static ability adds nothing here: what it gives already shows in the stats of the creatures it lifts.
    * @param {CardView} card
    */
   #lingeringAbilities(card) {

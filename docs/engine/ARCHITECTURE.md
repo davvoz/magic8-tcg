@@ -1215,3 +1215,66 @@ Cards (5, none in a precon deck yet): Village Militia (neutral, 2, 2/2, common),
 **Balance**, 22,500 games: aggressive 47.9%, balanced 51.4%, defensive 50.7% against the other styles; the widest style matchup is balanced over aggressive at 53.3%. Full tables in docs/tcg/23.
 
 **Tests:** `test/domain/ai/basicAi.test.js` (moved from the client) gained the styles: aggressive burns the face at 8 life, goes all in at 5 and never trade-blocks; defensive attacks only with creatures no blocker can kill and chumps at half life; an unknown style is refused.
+
+### Season 2 — faction sweeps, reanimation, static abilities (2026-10-31)
+
+**Request:** the first cards of the new season. Thunderhoof Mammoth is nerfed; Shadow gets a cycle of sweepers aimed at one faction each and a reanimation spell; Verdant gets a lord. Then a counter wheel (each faction one sweeper against its natural enemy: Ember → Verdant → Iron → Arcane → Shadow → Ember) and two more lords.
+
+**Engine — three primitives:**
+
+- `damage_faction` (`amount`, `faction`): no target; damages every creature of that faction on the battlefield, both sides, the caster's own included.
+- `reanimate` (`amount`): no target; `EffectContext.reanimateCreatures` takes the top `amount` creatures of the controller's graveyard (the last to arrive first, spells skipped) back to the battlefield. They enter as a played creature does (match conditions, summoning sickness, haste) but fire no `on_play` ability, since they were not played; a full battlefield stops it. New event `CREATURE_REANIMATED { playerId, instanceId, definitionId }`.
+- Static abilities: trigger `static` (creatures only) holds a **continuous** effect, a descriptor with `continuous: true` and `bonus(params, source, creature)` in place of `resolve`. Validation pairs them both ways (a static ability needs a continuous effect, a continuous effect needs `static`), and a continuous effect takes no target. The first one is `faction_aura` (`faction`, `attack`, `health`): the controller's creatures of that faction, the source included. `StaticAbilities.refreshStaticBonuses` recomputes every creature's bonus from the board as the first step of each state-based-action pass, so the bonus is there the moment its source enters and gone the moment it leaves, and a creature that lived only on the bonus health dies in the same pass. Changes are announced as `STATS_MODIFIED` with `duration: "static"`. `CardInstance` holds the bonus apart from its modifiers (the stat getters add it), clears it when the card leaves the battlefield, and copies it on clone. It is derived state, so the **state digest is unchanged**, and checkpoints of games already played still verify. `GameEngine.resume` refreshes it for the search AI's rebuilt worlds.
+- Effect params gain the kind `faction`, checked against the content's factions (deck rules); it has no default. `EffectRegistry.validateParams` takes `{ path, factions }` as its last argument.
+
+**Cards** (106 in all; none in a precon deck):
+
+| Card | Faction | Cost | Rarity | Text |
+|---|---|---|---|---|
+| Thunderhoof Mammoth | verdant | 6 → **8** | rare → **legendary** | 6/6 trample, unchanged |
+| Rustbane / Rootbane / Cinderbane / Runebane Rite | shadow | 2 | uncommon | Sacrifice a friendly creature. Deal 2 damage to every Iron / Verdant / Ember / Arcane creature. |
+| Wake the Dead | shadow | 3 | epic | Return the top two creatures of your graveyard to the battlefield. |
+| Wildheart Druid | verdant | 4 | rare | 2/2. Your Verdant creatures, this one included, get +1/+1. |
+| Forest Blaze / Rootbreak / Cold Iron / Dawnlight / Smother | ember / verdant / iron / arcane / shadow | 4 | uncommon | Deal 4 / 4 / 3 / 2 / 2 damage to every Verdant / Iron / Arcane / Shadow / Ember creature. |
+| Foundry Overseer | iron | 5 | rare | 3/4. Your Iron creatures, this one included, get +0/+2. |
+| Pyre Chanter | ember | 3 | rare | 2/2. Your Ember creatures, this one included, get +1/+0. |
+
+Illustration prompts in `data/art/prompts.md`, art in `illustrations.json` (1344 × 768 JPG like the rest; Wildheart Druid's 1152 × 896 original was cropped to a 1.75:1 band from the top of her head and scaled up).
+
+**AI:** `BasicAi` values a faction sweep as what it kills on the enemy side (the creature's value) or wounds (a point per damage), less the same on its own side minus the creature sacrificed to pay for it. That value counts in the sacrifice check, and a sweep worth nothing stays in hand. A reanimation spell stays in hand while its graveyard holds no creature. `CardValuer` prices the two new one-shot effects; a static ability adds nothing to its creature's value, because the bonus already shows in the stats of the creatures it lifts. `AI_VERSION` and `ENGINE_VERSION` are unchanged, since no decision or outcome changes for the cards that existed before.
+
+**Client:** `StepBeats` moves a reanimated creature to the battlefield, the log reads "X rose from P's graveyard", it lands with the card-place sound, and `MatchPresenter` brings it in from the seat's HUD (where the graveyard is) rather than from the opponent's hand.
+
+**Balance** (40 games a pairing, 7 decks: the five starters plus two test decks swapping in the new cards): a Shadow Pact with 2 Wake the Dead, 2 Rootbane and 1 Rustbane Rite won 58.5% against Shadow Pact's 52.5%; a Verdant Grove with 3 Wildheart Druid and a Mammoth won 50.8% against Verdant Grove's 39.6%.
+
+The counter wheel first dealt 3 damage everywhere. That wiped the fragile factions (Ember, Shadow) and only dented the tough ones (Iron, Verdant): Shadow with 2 Smother beat Ember Vanguard 83.8%. So the damage now follows the victim's toughness: 2 against Ember and Shadow, 3 against Arcane, 4 against Iron and Verdant. Re-measured (40 games a pairing, the five starters plus each starter with its new cards swapped in, 3600 games, no diagnostics): Shadow with Smother beats Ember 60.0% (Shadow Pact: 67.5%), and Verdant with 2 Rootbreak beats Iron Legion 50.0% (Verdant Grove: 32.5%). Each modified starter stays within about 4 points of its original overall.
+
+**Tests:** `seasonTwoEffects.test.js` covers Rustbane Rite (the price, both sides hit, other factions spared, uncastable without a friendly creature); Wake the Dead (top two creatures with spells skipped, haste respected, no entry ability, a full battlefield, an empty graveyard, sacrifice-then-reanimate); Dawnlight (no price, the caster's own faction spared); Foundry Overseer and Pyre Chanter (one-stat auras, each on its own faction only); and Wildheart Druid (itself and allies lifted, enemies not; two copies stacking; a creature entering later; the bonus ending with its source; a creature dying when it ends; the digest without it). `cards.test.js` covers faction params and the static/continuous pairing, `basicAi.test.js` the sweep and reanimation decisions. `scenario.js` takes a `graveyard` (bottom first).
+
+### The season's news after signing in (2026-10-31)
+
+**Request:** a modal shown at the start, after signing in, that future seasons reuse, showing what the season brings in a way that feels like a game.
+
+**Data:** `data/ui/season-news.json` (loaded by the client as `seasonNews`). It has an `id`, an `eyebrow` ("Season 2"), a `name`, an `accent` faction that colours the show, and up to 8 `pages`, each of one `kind`:
+
+| kind | what it holds | how it is shown |
+|---|---|---|
+| `intro` | `text`, up to 3 `cardIds` | the name in gold landing over a spaced eyebrow and a rule, a shine crossing it every few seconds; the cards flying into a fan that breathes |
+| `features` | `title`, 1–3 `items` (`name`, `text`, `cardId`) | a column each, its card rising over its faction's glow |
+| `cards` | `title`, optional `text`, 1–16 `cardIds` | the cards face down, turned over one by one; an epic or legendary one bursts in its rarity's colour |
+| `cycle` | `title`, `text`, 3–6 `steps` (`faction`, `cardId`), each beating the next | the cards on a wheel over their factions' halos, arrows drawn from each to the next and then flowing, the faction struck named by each arrow |
+| `changes` | `title`, 1–3 `items` (`cardId`, `tag` nerf/buff/change, `text`, `before`/`after` with `cost` and/or `rarity`) | the card, the old values struck through and the new ones lit, a stamp slammed onto the card with a jolt |
+
+**Announcing a season** is a new file with a new `id`: every account sees it once more. Nothing else changes.
+
+**Client:**
+
+- `application/season/SeasonNews.js` validates the file (it is fetched, so untrusted). An unknown card, faction, rarity or page kind, a missing field or a list out of bounds refuses the whole file. The season then goes unannounced, with a warning in the log.
+- `SeasonNewsService` says whether an account is due to see the news (`isDue`) and records that it has (`markSeen`). It keeps the season each of the latest 8 accounts signed in here saw, through the new `SeasonNewsPreferences` port, implemented by `StoredSeasonNews` (`magic8.seasonNews` in local storage).
+- `rendering/scenes/season/SeasonNewsShow.js` is the show: one `UiNode` painting a living backdrop (the accent's dark sky, rays turning from above, seeded motes, a vignette), the page, and the page dots. A page change slides the old page out and the new one in. Each page's entrance runs on its own clock, with sounds as things land (card place, pick, flip, rare reveal, target seek, a hit for the stamp). `settled` starts every page at its end, silent.
+- `SeasonNewsDialog.js` wraps it in a `Modal` (1400 × 820 on a wide screen, the whole screen less 8 on a phone): Skip and Back on the left, Next on the right, which becomes Let's play on the last page. Every way of closing it (the buttons, Escape, a click outside) marks the news seen.
+- `HomeScene` opens it once the signed-in account is ready, if due. It re-opens the same show after each rebuild (Home clears its tree whenever a service updates), and builds it again on the same page when the design area changes. Route parameters `{ news: { page, settled } }` open it whether seen or not. That keeping is `SeasonNewsPresenter`: it opens, restores, ticks and drops the dialog, and marks the news seen however it closes.
+- Seeing it again: on a wide screen, Home's season card has **What's new** to the left of Open the leaderboard. It opens the news from the first page, whether seen or not. The button shows only for a signed-in player and only when there is news, and the two buttons share the row. Phones have no season card, so there is no button there. A What's new beside Play ranked on the Season screen was tried and dropped: the user wanted it on Home only.
+- Preview: `?scene=home&news=N` opens page N, settled; `&live=1` plays it.
+
+**Tests:** `application/seasonNews.test.js` covers the bundled file, nine ways to break it, and due/seen per account across visits, seasons and the 8-account cap. `rendering/seasonNews.test.js` covers every page drawing wide and compact at three points of its entrance, the season and change values drawn, sounds (13 flips, one rare reveal for the one epic card, each once), settled silence, and the buttons and their places. `homeScene.test.js` covers the news opening when the account is ready and surviving a rebuild, not coming back once closed, the route opening it at a page, and a rebuild for a phone keeping the page. Reviewed with headless Chrome screenshots of every page, wide and on a phone, and mid-reveal.
