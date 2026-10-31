@@ -20,6 +20,7 @@ import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
+import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
@@ -191,7 +192,7 @@ export class LoginScene extends Scene {
       const width = Math.min(modes.width, (inner - (tabs.length - 1) * modes.gap) / tabs.length);
       const left = (size.width - tabs.length * width - (tabs.length - 1) * modes.gap) / 2;
       tabs.forEach(({ mode, text }, index) => {
-        panel.add(new Button({ id: `login.mode.${mode}`, x: left + index * (width + modes.gap), y: modes.y, width, height: modes.height, text, variant: mode === this.#mode ? "primary" : "secondary", onActivate: () => this.#switchMode(mode) }));
+        panel.add(new Button({ id: `login.mode.${mode}`, x: left + index * (width + modes.gap), y: modes.y, width, height: modes.height, text, variant: mode === this.#mode ? "primary" : "secondary", keepPlate: true, onActivate: () => this.#switchMode(mode) }));
       });
     } else {
       panel.add(new Label({ x: inset, y: modes.y, width: inner, height: modes.height, text: `with ${identity.walletName}: your keys never leave the extension`, size: "small", colorKey: "textMuted", fit: true }));
@@ -199,7 +200,7 @@ export class LoginScene extends Scene {
     if (google) {
       // No field: the intro fills the rows of both.
       this.#field = null;
-      panel.add(new Label({ x: inset, y: layout.field.y, width: inner, height: layout.key + layout.field.height - layout.field.y, text: GOOGLE_INTRO, colorKey: "text", fit: true }));
+      panel.add(new TextBlock({ x: inset, y: layout.field.y, width: inner, height: layout.key + layout.field.height - layout.field.y, text: GOOGLE_INTRO, size: viewport.compact ? "small" : "body", colorKey: "text", valign: "middle" }));
     } else {
       this.#field = panel.add(
         new TextField({ id: "login.account", x: inset, y: layout.field.y, width: inner, height: layout.field.height, value: typed.account, placeholder: "Steem account name", maxLength: ACCOUNT_MAX_LENGTH, keyboard: "account", onSubmit: () => this.#accountEntered() }),

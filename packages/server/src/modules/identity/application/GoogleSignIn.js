@@ -197,8 +197,10 @@ export class GoogleSignIn {
   }
 
   /**
-   * The player signed in at Google again, to export their wallet: only an identity linked here, whose password was
-   * just typed.
+   * The player signed in at Google again, to export their wallet: only an identity linked here. Google was asked for
+   * the password (prompt=login), but its ID tokens do not always say when it was typed (`auth_time`): when they do,
+   * it must be recent; when they do not, the fresh token of this very identity is the proof, as strong as the
+   * Google session it comes from.
    * @param {import("../domain/googleIdentity.js").GoogleIdentity} identity
    * @param {string} ip
    * @returns {Promise<GoogleResult>}
@@ -206,10 +208,10 @@ export class GoogleSignIn {
   async #reauthenticated({ sub, authTime }, ip) {
     const link = await this.#identities.findBySub(sub);
     const now = this.#clock.now();
-    if (link === null || authTime === null || authTime < now - REAUTH_TTL_MS) {
+    if (link === null || (authTime !== null && authTime < now - REAUTH_TTL_MS)) {
       return failed(GoogleFailure.FAILED);
     }
-    await this.#audit.record({ actorKind: "user", actorUserId: link.userId, action: "auth.google_reauthenticated", targetKind: "user", targetId: link.userId, ip });
+    await this.#audit.record({ actorKind: "user", actorUserId: link.userId, action: "auth.google_reauthenticated", targetKind: "user", targetId: link.userId, ip, details: { authTime: authTime !== null } });
     return Object.freeze({ kind: GoogleOutcome.REAUTHENTICATED, reauth: this.#seal({ userId: link.userId, expiresAt: now + REAUTH_TTL_MS }, REAUTH_CONTEXT) });
   }
 

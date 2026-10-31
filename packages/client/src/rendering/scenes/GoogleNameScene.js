@@ -9,6 +9,7 @@ import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
 import { Label } from "../ui/Label.js";
 import { Panel } from "../ui/Panel.js";
+import { TextBlock } from "../ui/TextBlock.js";
 import { TextField } from "../ui/TextField.js";
 import { Scene } from "./Scene.js";
 import { SceneId } from "./sceneIds.js";
@@ -102,7 +103,7 @@ export class GoogleNameScene extends Scene {
     this.root.clear();
     const panel = this.root.add(new Panel({ x: (viewport.logicalWidth - size.width) / 2, y: (viewport.logicalHeight - size.height) / 2, width: size.width, height: size.height }));
     panel.add(new Label({ x: 0, y: layout.title, width: size.width, height: 56, text: "Choose your name", size: "heading", weight: "bold", colorKey: "accentLight" }));
-    panel.add(new Label({ x: inset, y: layout.intro.y, width: inner, height: layout.intro.height, text: "It is the name of your Steem account, and how other players see you. KIJAM creates the account and keeps its wallet for you.", colorKey: "text", fit: true }));
+    panel.add(new TextBlock({ x: inset, y: layout.intro.y, width: inner, height: layout.intro.height, text: "It is the name of your Steem account, and how other players see you. KIJAM creates the account and keeps its wallet for you.", size: viewport.compact ? "small" : "body", colorKey: "text", valign: "middle" }));
     this.#field = panel.add(
       new TextField({ id: "googleName.name", x: inset, y: layout.field.y, width: inner, height: layout.field.height, value: typed, placeholder: "Your name", maxLength: NAME_MAX_LENGTH, keyboard: "account", onChange: (value) => this.#typed(value), onSubmit: () => this.#createAccount() }),
     );

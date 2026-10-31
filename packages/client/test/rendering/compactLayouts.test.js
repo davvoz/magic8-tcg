@@ -26,6 +26,8 @@ import { DeckSelectionScene } from "../../src/rendering/scenes/DeckSelectionScen
 import { ErrorScene } from "../../src/rendering/scenes/ErrorScene.js";
 import { ActiveKeyPrompt } from "../../src/application/wallet/ActiveKeyPrompt.js";
 import { LoginScene } from "../../src/rendering/scenes/LoginScene.js";
+import { GoogleNameScene } from "../../src/rendering/scenes/GoogleNameScene.js";
+import { WalletExport } from "../../src/application/wallet/WalletExport.js";
 import { InfoScene } from "../../src/rendering/scenes/InfoScene.js";
 import { HomeScene } from "../../src/rendering/scenes/HomeScene.js";
 import { PlayScene } from "../../src/rendering/scenes/PlayScene.js";
@@ -266,6 +268,17 @@ const withChallenge = (mode) => (/** @type {any} */ app) => {
 };
 
 /** The first-time guide, nothing done in this browser. @param {any} app */
+/** A Google player whose exported wallet is on its way to the screen. */
+function withExportedWallet(app) {
+  const wallet = { account: "alice", masterPassword: `P5${"K".repeat(50)}`, owner: `5${"J".repeat(50)}`, active: `5${"H".repeat(50)}`, posting: `5${"G".repeat(50)}`, memo: `5${"F".repeat(50)}` };
+  const walletExport = new WalletExport({ api: { exportWallet: async () => ok(wallet) }, reauthenticate: () => undefined, clipboard: { write: async () => ok(undefined) }, files: { save: () => ok(undefined) } });
+  Object.assign(app, { walletExport });
+  void walletExport.open();
+}
+
+/** The sign-in screen where the server offers Google, on a phone without Keychain. */
+const GOOGLE_SIGN_IN = Object.freeze({ offered: true, take: () => null, start: () => undefined });
+
 function withGuide(app) {
   const onboarding = new OnboardingProgress({ preferences: new StoredOnboarding({ store: new InMemoryStore(), logger: new MemoryLogger() }) });
   Object.assign(app, { onboarding });
@@ -329,6 +342,10 @@ const SCREENS = Object.freeze([
   { name: "ranked lobby, tickets on their way", make: (s, app) => new RankedScene(s, app, () => 20_000), before: (app) => (withRankedPlay(app), withPendingPurchase(app)), params: { buy: true }, after: (scene) => scene.modal?.findById("tickets.buy")?.activate(), shows: "tickets.tracker" },
   { name: "ranked lobby, getting entries", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app), params: { buy: true }, after: (scene) => assert.ok(scene.modal?.findById("tickets.buy")) },
   { name: "sign in", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: true, signIn: async () => ok(null) } }) },
+  { name: "sign in with Google", make: (s, app) => new LoginScene(s, { ...app, google: GOOGLE_SIGN_IN, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }), after: (scene) => assert.ok(scene.root.findById("login.mode.google")) },
+  { name: "sign in, back from Google with an account", make: (s, app) => new LoginScene(s, { ...app, google: { ...GOOGLE_SIGN_IN, take: () => ({ kind: "existing", account: "bobby", ownKeys: false }) }, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }) },
+  { name: "choose your name", make: (s, app) => new GoogleNameScene(s, { ...app, google: { take: () => null, nameStatus: async () => ok({ name: "x", available: true, reason: null }), createAccount: async () => ok(null) } }), before: (app) => Object.assign(app, { identity: { ...app.identity, state: { ...app.identity.state, status: "signed-out" } } }), after: (scene) => assert.ok(scene.root.findById("googleName.create")) },
+  { name: "home, wallet exported", make: (s, app) => new HomeScene(s, app), before: withExportedWallet, after: (scene) => assert.ok(scene.overlay?.findById("exportWallet.download")) },
   { name: "sign in with a posting key", make: (s, app) => new LoginScene(s, { ...app, identity: { ...app.identity, walletName: "Steem Keychain", walletAvailable: false, keysAvailable: true, signIn: async () => ok(null), signInWithKey: async () => ok(null) } }) },
   { name: "shop asking for the active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, false), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.key")) },
   { name: "shop unlocking the saved active key", make: (s, app) => new ShopScene(s, app), before: (app) => askForActiveKey(app, true), after: (scene) => assert.ok(scene.overlay?.findById("activeKey.forget")) },

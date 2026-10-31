@@ -260,8 +260,8 @@ describe("signing in with Google", () => {
       google.claims = { sub: "sub-new", ...(secondsAgo === null ? {} : { auth_time: Math.floor(setup.clock.now() / 1000) - secondsAgo }) };
       return call(server.base, `/api/auth/google/callback?code=c&state=${state}`, { cookies: [cookie(start.setCookies, "m8_google_flow")] });
     };
-    assert.equal((await reauthenticate(null)).location, "/?google=error&reason=failed", "Google must say the password was just typed");
-    assert.equal((await reauthenticate(11 * 60)).location, "/?google=error&reason=failed", "too long ago");
+    assert.equal((await reauthenticate(11 * 60)).location, "/?google=error&reason=failed", "a password Google says was typed too long ago");
+    assert.equal((await reauthenticate(null)).location, "/?google=export", "Google does not always say when: the fresh token is the proof");
     const back = await reauthenticate(5);
     assert.equal(back.location, "/?google=export");
     assert.equal(back.setCookies.has("m8_session"), false, "no new session: only the proof");

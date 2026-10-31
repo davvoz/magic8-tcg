@@ -208,6 +208,15 @@ describe("WalletExport", () => {
     assert.equal(walletExport.state.error?.code, "REAUTH_REQUIRED");
   });
 
+  it("says so when signing in at Google again did not complete", () => {
+    const { walletExport, trips } = exporter([]);
+    walletExport.reauthenticationFailed("cancelled");
+    assert.equal(walletExport.state.error?.code, "REAUTH_CANCELLED");
+    walletExport.reauthenticationFailed("failed");
+    assert.equal(walletExport.state.error?.code, "REAUTH_REQUIRED");
+    assert.deepEqual(trips, [], "and does not send the player back to Google by itself");
+  });
+
   it("copies a key and saves the whole wallet as a file", async () => {
     const { walletExport, copied, saved } = exporter([ok(WALLET)]);
     assert.equal(walletExport.download().ok, false, "nothing to save before it is shown");

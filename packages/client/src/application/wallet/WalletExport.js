@@ -76,6 +76,15 @@ export class WalletExport {
   }
 
   /**
+   * Signing in at Google again did not complete (cancelled, refused): the keys stay hidden, and the player is told.
+   * @param {string} reason why, as the address said it ("cancelled", "failed", …)
+   */
+  reauthenticationFailed(reason) {
+    const code = reason === "cancelled" ? "REAUTH_CANCELLED" : REAUTH_REQUIRED;
+    this.#set({ status: WalletExportStatus.FAILED, wallet: null, error: { code, message: "signing in with Google again did not complete" } });
+  }
+
+  /**
    * @param {string} text one of the shown wallet's keys, or its password
    */
   copy(text) {

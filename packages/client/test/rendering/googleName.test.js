@@ -78,6 +78,15 @@ describe("GoogleNameScene", () => {
     assert.ok(texts(scene).some((text) => text.includes("New accounts cannot be created right now")));
   });
 
+  it("says all of its intro on the smallest phone", () => {
+    const viewport = new Viewport(theme.layout);
+    viewport.resize({ cssWidth: 667, cssHeight: 375 });
+    const scene = new GoogleNameScene(services({ viewport }), appWith().app);
+    scene.enter({});
+    const shown = texts(scene).join(" ");
+    assert.ok(shown.includes("It is the name of your Steem account") && shown.includes("keeps its wallet for you."));
+  });
+
   it("goes home at once when the player is signed in already", () => {
     const navigated = [];
     const { app } = appWith();

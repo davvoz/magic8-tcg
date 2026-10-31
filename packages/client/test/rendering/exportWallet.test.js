@@ -57,12 +57,14 @@ describe("Export wallet", () => {
       const modal = buildExportWalletDialog({ viewport, state: { status: WalletExportStatus.SHOWN, wallet: WALLET, error: null }, notice: "", onCopy: (label, text) => copied.push([label, text]), onDownload: () => undefined, onClose: () => undefined });
       const shown = texts(modal);
       assert.ok(shown.some((text) => text.includes("Anyone with these keys controls your account")));
-      for (const secret of ["P5master", "5owner", "5active", "5posting", "5memo"]) {
-        assert.ok(shown.includes(secret), secret);
-      }
+      assert.ok(shown.some((text) => text.includes("@newbie")));
       nodes(modal).find((node) => node.id === "exportWallet.copy.active")?.activate();
       assert.deepEqual(copied, [["Active key", "5active"]]);
       assert.ok(nodes(modal).some((node) => node.id === "exportWallet.download"), "Download file");
+    }
+    const wide = texts(buildExportWalletDialog({ viewport: VIEWPORT, state: { status: WalletExportStatus.SHOWN, wallet: WALLET, error: null }, notice: "", onCopy: () => undefined, onDownload: () => undefined, onClose: () => undefined }));
+    for (const secret of ["P5master", "5owner", "5active", "5posting", "5memo"]) {
+      assert.ok(wide.includes(secret), `written out on a wide screen: ${secret}`);
     }
   });
 

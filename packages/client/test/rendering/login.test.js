@@ -255,6 +255,21 @@ describe("LoginScene with Google", () => {
     scene.exit();
   });
 
+  it("says all of its intro, on a desktop and on the smallest phone, and keeps the tabs' painted plates", () => {
+    for (const size of [{ cssWidth: 1600, cssHeight: 900 }, { cssWidth: 667, cssHeight: 375 }]) {
+      const viewport = new Viewport(theme.layout);
+      viewport.resize(size);
+      const scene = new LoginScene(services({ viewport }), { ...appWith(identity({ walletAvailable: false }).service), google: google().google });
+      scene.enter({});
+      const shown = texts(scene).join(" ");
+      assert.ok(shown.includes("Sign in with your Google account.") && shown.includes("keeps its wallet for you."), `the whole intro at ${size.cssWidth}px`);
+      for (const id of ["login.mode.google", "login.mode.keychain"]) {
+        assert.equal(/** @type {any} */ (scene.root.findById(id))?.keepPlate, true, id);
+      }
+      scene.exit();
+    }
+  });
+
   it("keeps Keychain first where it is installed, and shows no Google where the server does not offer it", () => {
     const keychain = new LoginScene(services(), { ...appWith(identity().service), google: google().google });
     keychain.enter({});

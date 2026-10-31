@@ -702,7 +702,7 @@ async function boot() {
   // The character of a daily challenge speaks as the game starts, when it is nearly beaten, and when it ends: a bubble by its seat.
   new DailyCompanion({ online, daily, say: (speech) => voice.say(speech) }).start();
   sceneManager.navigate(firstScene(google, identity));
-  resumeExport(google, walletExport);
+  resumeExport(google, identity, walletExport);
   preloadArt({ illustrations, coinArt });
   // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.
   await Promise.race([firstScreenArt, new Promise((resolve) => window.setTimeout(resolve, FIRST_SCREEN_ART_WAIT_MS))]);
@@ -733,14 +733,20 @@ function takeGoogleReturn() {
 const GOOGLE_RETURN_PARAMS = Object.freeze(["google", "account", "keys", "reason"]);
 
 /**
- * Back from signing in at Google again: the wallet the player asked to export, shown over the first screen.
+ * Back from signing in at Google again: the wallet the player asked to export, shown over the first screen; or,
+ * when that sign-in did not complete for a player already signed in, why the keys stay hidden.
  * @param {GoogleSignInService} google
+ * @param {IdentityService} identity
  * @param {WalletExport} walletExport
  */
-function resumeExport(google, walletExport) {
-  if (google.pending?.kind === GoogleReturnKind.EXPORT) {
+function resumeExport(google, identity, walletExport) {
+  const back = google.pending;
+  if (back?.kind === GoogleReturnKind.EXPORT) {
     google.take();
     void walletExport.resume();
+  } else if (back?.kind === GoogleReturnKind.ERROR && identity.state.status === IdentityStatus.SIGNED_IN) {
+    google.take();
+    walletExport.reauthenticationFailed(back.reason);
   }
 }
 
