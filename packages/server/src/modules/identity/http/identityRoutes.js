@@ -76,7 +76,8 @@ export function registerIdentityRoutes({ router, auth, cookie, clock }) {
     method: "GET",
     path: "/api/me",
     auth: Auth.REQUIRED,
-    handler: async (context) => ({ status: 200, body: { user: publicUser(context.principal.user) } }),
+    // `method`: how the session was opened ("signature", or "google": the wallet the server keeps signs for it).
+    handler: async (context) => ({ status: 200, body: { user: publicUser(context.principal.user), method: context.principal.session.method } }),
   });
 
   router.add({

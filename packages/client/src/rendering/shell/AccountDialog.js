@@ -46,6 +46,12 @@ export function buildAccountDialog({ viewport, user, method, onSignOut, onClose 
  * @param {string} network
  */
 function signedInWith(method, network) {
-  const how = method === SignInMethod.KEYS ? "with your posting key" : "with Steem Keychain";
-  return `Signed in on ${network} ${how}`;
+  return `Signed in on ${network} ${SIGNED_IN_WITH[/** @type {keyof typeof SIGNED_IN_WITH} */ (method)] ?? SIGNED_IN_WITH[SignInMethod.KEYCHAIN]}`;
 }
+
+/** How each way of signing in reads in the account dialog. */
+const SIGNED_IN_WITH = Object.freeze({
+  [SignInMethod.KEYCHAIN]: "with Steem Keychain",
+  [SignInMethod.KEYS]: "with your posting key",
+  [SignInMethod.GOOGLE]: "with Google",
+});

@@ -154,7 +154,7 @@ describe("identity over HTTP", () => {
     }
     const cookie = sessionCookieFrom(session.headers);
     const me = await call(server.base, "/api/me", { headers: { Cookie: cookie } });
-    assert.deepEqual(me.json, { user: session.json.user });
+    assert.deepEqual(me.json, { user: session.json.user, method: "signature" });
 
     const logout = await call(server.base, "/api/auth/sessions/current", { method: "DELETE", headers: { ...CLIENT_HEADERS, Cookie: cookie } });
     assert.equal(logout.status, 204);

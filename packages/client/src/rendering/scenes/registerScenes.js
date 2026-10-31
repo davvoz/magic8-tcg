@@ -18,6 +18,7 @@ import { PlayScene } from "./PlayScene.js";
 import { RankedScene } from "./RankedScene.js";
 import { InfoScene } from "./InfoScene.js";
 import { LiveGamesScene } from "./LiveGamesScene.js";
+import { GoogleNameScene } from "./GoogleNameScene.js";
 import { LoginScene } from "./LoginScene.js";
 import { MarketScene } from "./MarketScene.js";
 import { MatchScene } from "./MatchScene.js";
@@ -44,6 +45,9 @@ export function registerScenes(sceneManager, app) {
     .register(SceneId.LOGIN, (services) => new LoginScene(services, app))
     .register(SceneId.INFO, (services) => new InfoScene(services, app))
     .register(SceneId.ERROR, (services) => new ErrorScene(services));
+  if (app.google !== undefined) {
+    sceneManager.register(SceneId.GOOGLE_NAME, (services) => new GoogleNameScene(services, app));
+  }
   if (app.account !== undefined) {
     sceneManager
       .register(SceneId.STARTER, (services) => new StarterScene(services, app))

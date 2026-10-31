@@ -1,12 +1,15 @@
 /**
  * The wallet everything else signs with — online games, the shop, the
- * player market: Steem Keychain or the player's own keys, whichever they
- * signed in with (IdentityState.method). A WalletConnector itself, so the
- * services that sign never know which one answers.
+ * player market: Steem Keychain, the player's own keys, or the wallet KIJAM
+ * keeps (a Google sign-in), whichever they signed in with
+ * (IdentityState.method). A WalletConnector itself, so the services that
+ * sign never know which one answers.
  *
- * Strictly the one they signed in with, never the other as a fallback: a
+ * Strictly the one they signed in with, never another as a fallback: a
  * Keychain player pays in Keychain; a posting-key player pays with their
- * active key, asked for the first time a payment needs it.
+ * active key, asked for the first time a payment needs it; a Google player
+ * pays from the wallet KIJAM keeps, even if the account is one whose keys
+ * this browser also holds.
  */
 import { SignInMethod } from "../identity/IdentityService.js";
 
@@ -17,14 +20,16 @@ export class WalletSwitch {
   #identity;
   #keychain;
   #keys;
+  #custodial;
 
   /**
-   * @param {{ identity: Pick<import("../identity/IdentityService.js").IdentityService, "state">, keychain: WalletConnector, keys: WalletConnector }} deps
+   * @param {{ identity: Pick<import("../identity/IdentityService.js").IdentityService, "state">, keychain: WalletConnector, keys: WalletConnector, custodial: WalletConnector }} deps
    */
-  constructor({ identity, keychain, keys }) {
+  constructor({ identity, keychain, keys, custodial }) {
     this.#identity = identity;
     this.#keychain = keychain;
     this.#keys = keys;
+    this.#custodial = custodial;
   }
 
   /** Whether the player signs with their own keys (rather than Keychain). */
@@ -56,6 +61,13 @@ export class WalletSwitch {
   }
 
   #current() {
-    return this.usesKeys ? this.#keys : this.#keychain;
+    switch (this.#identity.state.method) {
+      case SignInMethod.KEYS:
+        return this.#keys;
+      case SignInMethod.GOOGLE:
+        return this.#custodial;
+      default:
+        return this.#keychain;
+    }
   }
 }

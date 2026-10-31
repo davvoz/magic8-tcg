@@ -40,7 +40,8 @@ import { WalletSwitch } from "./application/wallet/WalletSwitch.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { deckMix } from "./application/decks/deckMix.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
-import { IdentityService } from "./application/identity/IdentityService.js";
+import { GoogleReturnKind, GoogleSignInService, readGoogleReturn } from "./application/identity/GoogleSignInService.js";
+import { IdentityService, IdentityStatus } from "./application/identity/IdentityService.js";
 import { CoinFace } from "./application/match/CoinToss.js";
 import { AiOpponentFactory } from "./application/match/AiOpponents.js";
 import { CharacterVoice } from "./application/daily/CharacterVoice.js";
@@ -79,6 +80,8 @@ import { HttpSalesApi } from "./infrastructure/api/HttpSalesApi.js";
 import { HttpBalanceApi } from "./infrastructure/api/HttpBalanceApi.js";
 import { HttpNotificationsApi } from "./infrastructure/api/HttpNotificationsApi.js";
 import { HttpWalletApi } from "./infrastructure/api/HttpWalletApi.js";
+import { HttpCustodyApi } from "./infrastructure/api/HttpCustodyApi.js";
+import { HttpGoogleApi } from "./infrastructure/api/HttpGoogleApi.js";
 import { fetchServerStatus } from "./infrastructure/api/fetchServerStatus.js";
 import { WebSocketConnection } from "./infrastructure/realtime/WebSocketConnection.js";
 import { RemoteDeckRepository } from "./infrastructure/api/RemoteDeckRepository.js";
@@ -94,6 +97,7 @@ import { browserScheduler } from "./infrastructure/time/BrowserScheduler.js";
 import { KeychainWalletConnector } from "./infrastructure/wallet/KeychainWalletConnector.js";
 import { KeyVault } from "./infrastructure/wallet/KeyVault.js";
 import { LocalKeyWallet } from "./infrastructure/wallet/LocalKeyWallet.js";
+import { CustodialWallet } from "./infrastructure/wallet/CustodialWallet.js";
 import { InputManager } from "./input/InputManager.js";
 import { CanvasHost } from "./rendering/canvas/CanvasHost.js";
 import { GameLoop } from "./rendering/canvas/GameLoop.js";
@@ -420,14 +424,16 @@ async function boot() {
   });
   const { activeKeys, keys, signIns } = buildLocalKeys(localStore, storageAvailable, httpFetch);
   const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet: keychain, keys, record: signIns });
+  // Back from Google (docs/tcg/29-google.md): what the address says is read once, then taken out of it.
+  const google = new GoogleSignInService({ api: new HttpGoogleApi({ fetch: httpFetch }), identity, navigate: (path) => window.location.assign(path), pending: takeGoogleReturn() });
   // Games, the shop and the market sign with whichever the player signed in with.
-  const wallet = new WalletSwitch({ identity, keychain, keys });
+  const wallet = new WalletSwitch({ identity, keychain, keys, custodial: new CustodialWallet({ api: new HttpCustodyApi({ fetch: httpFetch }) }) });
   // The painted table and menus are downloaded alongside the content: the first screen waits for them.
   const { coinArt, tableArt, uiArt } = buildPaintedArt();
   const firstScreenArt = Promise.all([loading.track(uiArt.preload()), loading.track(tableArt.preload())]);
   loading.say("Shuffling the decks…");
   const track = loading.track.bind(loading);
-  const [rawTheme, content, rawRarities, rawIllustrations, rawCharacterArt] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(source.load("characterArt")), track(identity.restore())]);
+  const [rawTheme, content, rawRarities, rawIllustrations, rawCharacterArt] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(source.load("characterArt")), track(identity.restore()), track(google.refresh())]);
   loading.say("Gilding the table…");
   if (!content.ok) {
     showFatal("Content failed to load", content.error.message);
@@ -589,6 +595,7 @@ async function boot() {
     logger,
     environment: Object.freeze({ version: ENGINE_VERSION, release: describeRelease(RELEASE), storage: storageAvailable ? "local" : "memory" }),
     identity,
+    google,
     account,
     shop,
     balance,
@@ -687,11 +694,48 @@ async function boot() {
   });
   // The character of a daily challenge speaks as the game starts, when it is nearly beaten, and when it ends: a bubble by its seat.
   new DailyCompanion({ online, daily, say: (speech) => voice.say(speech) }).start();
-  sceneManager.navigate(SceneId.HOME);
+  sceneManager.navigate(firstScene(google, identity));
   preloadArt({ illustrations, coinArt });
   // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.
   await Promise.race([firstScreenArt, new Promise((resolve) => window.setTimeout(resolve, FIRST_SCREEN_ART_WAIT_MS))]);
   loading.finish();
+}
+
+/**
+ * What the address says of a Google sign-in the server just sent the browser
+ * back from (docs/tcg/29-google.md), taken out of the address so that a
+ * reload or a bookmark does not say it again.
+ * @returns {import("./application/identity/GoogleSignInService.js").GoogleReturn | null}
+ */
+function takeGoogleReturn() {
+  const back = readGoogleReturn(window.location.search);
+  const query = new globalThis.URLSearchParams(window.location.search);
+  if (query.has("google")) {
+    for (const name of GOOGLE_RETURN_PARAMS) {
+      query.delete(name);
+    }
+    const rest = query.toString();
+    const search = rest === "" ? "" : "?" + rest;
+    window.history.replaceState(window.history.state, "", window.location.pathname + search + window.location.hash);
+  }
+  return back;
+}
+
+/** The parts of the address a Google sign-in comes back with. */
+const GOOGLE_RETURN_PARAMS = Object.freeze(["google", "account", "keys", "reason"]);
+
+/**
+ * Where the game opens: Home, unless a Google sign-in just came back with something to do, a name to choose
+ * (a new player) or something to say on the sign-in screen.
+ * @param {GoogleSignInService} google
+ * @param {IdentityService} identity
+ */
+function firstScene(google, identity) {
+  const back = google.pending;
+  if (back === null || identity.state.status === IdentityStatus.SIGNED_IN) {
+    return SceneId.HOME;
+  }
+  return back.kind === GoogleReturnKind.NEW ? SceneId.GOOGLE_NAME : SceneId.LOGIN;
 }
 
 /**

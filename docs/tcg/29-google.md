@@ -1,6 +1,6 @@
 # 29 — Entrare con Google (wallet custodito)
 
-**Stato:** 2026-10-31. Fase 1 (API partner di join.cur8) pubblicata. Fase 2 (server: login Google, creazione dell'account, chiavi custodite) nel repository. Fase 3 (le firme del server) scritta e provata, non ancora pubblicata. Fasi 4–5 da fare.
+**Stato:** 2026-10-31. Fase 1 (API partner di join.cur8) pubblicata. Fase 2 (server: login Google, creazione dell'account, chiavi custodite) nel repository. Fase 3 (le firme del server) nel repository. Fase 4 (client) scritta e provata, non ancora pubblicata. Fase 5 da fare.
 
 Chi non conosce le crypto entra con **Continue with Google**, sceglie un nome e gioca: niente chiavi, niente PIN, niente estensioni. Le chiavi del suo account STEEM le crea e le custodisce il server di gioco, che firma al suo posto. Quando vuole, il giocatore le **esporta** dal Profilo e da lì può usarle dove vuole.
 
@@ -63,7 +63,14 @@ Modulo nuovo `custody`. Le rotte richiedono una sessione `"google"` di un utente
 
 Le firme valgono solo per una sessione `"google"`: chi è entrato con le sue chiavi riceve `FORBIDDEN` anche se il server custodisce quell'account (si paga con il metodo del login). Le chiavi si aprono per la sola firma; l'audit registra `custody.transfer_signed` (txId, destinatario, importo, memo), `custody.session_authorized` (partita), `custody.ping_signed`.
 
-**Nel client** un nuovo `CustodialWallet` (`infrastructure/wallet`, sopra un `HttpCustodyApi`) implementa `WalletConnector`: `requestTransfer`, `signMessage` e `postComment` chiamano le rotte qui sopra. `WalletSwitch` lo usa quando il metodo del login è `"google"`. `IdentityService` impara il terzo metodo: all'avvio una sessione Google viva resta di Google; scaduta, si mostra il login.
+## Il client
+
+- **Quale sessione è di Google** lo dice il server: `GET /api/me` risponde anche `method` (`"signature"` o `"google"`). `IdentityService` ha il terzo metodo `SignInMethod.GOOGLE`: una sessione Google ripresa dopo un ricaricamento resta di Google qualunque chiave tenga il browser (le chiavi di un giocatore precedente si dimenticano), e `adoptGoogleSession` adotta quella aperta dal server alla creazione dell'account. `magic8.signin` ricorda `"google"`.
+- **`GoogleSignInService`** (application): chiede a `/api/auth/options` se offrire Google, `start()` fa la visita a pagina intera a `/api/auth/google/start`, `nameStatus` e `createAccount` per la scelta del nome. `readGoogleReturn` legge `?google=…` all'avvio; `main.js` lo toglie subito dall'indirizzo (`history.replaceState`), così un ricaricamento non lo ripete. Il ritorno si consegna una volta sola (`take`) alla schermata che lo mostra.
+- **Dove si apre il gioco**: `?google=new` → `GoogleNameScene` (*Choose your name*: controllo del nome quando il giocatore smette di scrivere, *Create account*, poi Home); `existing` ed `error` → il login, con il messaggio e il nome già scritto; altrimenti Home.
+- **Il login** ha la scheda *Google* accanto a *Posting key* e *Keychain*, solo se il server la offre. Si apre su Keychain se l'estensione c'è, altrimenti su Google, altrimenti sulla posting key.
+- **`CustodialWallet`** (`infrastructure/wallet`, sopra `HttpCustodyApi`) implementa `WalletConnector` con le rotte qui sopra; `WalletSwitch` lo usa per il metodo `"google"`. `ALREADY_PAID` con un `txId` vale come pagato (un secondo tocco, un ricaricamento); un esito incerto è `WALLET_TIMEOUT`, mai un secondo invio. Nel tracker dell'acquisto il passo del pagamento dice *Paying from your KIJAM wallet…*; il dialogo dell'account *Signed in … with Google*.
+- Test: `test/application/googleSignIn.test.js`, `test/rendering/googleName.test.js`, i casi Google in `test/rendering/login.test.js`.
 
 ## join.cur8: l'API partner
 
@@ -114,6 +121,6 @@ Finora il server non teneva **mai** chiavi capaci di spostare fondi (05 T23, pan
 
 1. **join.cur8** (pubblicata): API partner (lookup per `sub`, creazione con chiave partner).
 2. **Server** (nel repository): OAuth Google, `google_identities`, creazione dell'account tramite join, `custody_keys` in SecretBox, `sessions.method`.
-3. **Firme** (scritta): modulo `custody` (trasferimenti dei pagamenti aperti, autorizzazioni di partita, ping), audit; controllo della chiave custodita al login.
-4. **Client**: bottone e scelta del nome, `CustodialWallet`, metodo `"google"` in `IdentityService` e `WalletSwitch`.
+3. **Firme** (nel repository): modulo `custody` (trasferimenti dei pagamenti aperti, autorizzazioni di partita, ping), audit; controllo della chiave custodita al login.
+4. **Client** (scritta): scheda Google nel login e scelta del nome, `CustodialWallet`, metodo `"google"` in `IdentityService` e `WalletSwitch`, `method` in `/api/me`.
 5. **Export wallet** nel Profilo, aggiornamento di 05, 20 e della panoramica.

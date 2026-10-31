@@ -168,6 +168,7 @@ describe("signing in with Google", () => {
     assert.equal(created.setCookies.get("m8_google_signup"), "", "the sign-up cookie is spent");
     const me = await call(server.base, "/api/me", { cookies: [cookie(created.setCookies, "m8_session")] });
     assert.equal(me.json.user.account, "newbie");
+    assert.equal(me.json.method, "google", "the client learns its wallet is the one KIJAM keeps");
 
     const kept = await setup.database.maybeOne("SELECT * FROM custody_keys WHERE account = 'newbie'");
     const postingPublic = setup.chain.accounts.get("newbie").posting.keys[0].key;

@@ -3,10 +3,11 @@
  * resolves to a Result; transport failures are failures, never exceptions.
  *
  * @typedef {Readonly<{ id: string, network: string, account: string }>} SessionUser
+ * @typedef {Readonly<{ user: SessionUser, viaGoogle: boolean }>} CurrentSession `viaGoogle`: opened with Google, so the wallet KIJAM keeps signs for it (docs/tcg/29-google.md)
  * @typedef {Readonly<{ challengeId: string, message: string, keyRole: string, expiresAt: number }>} LoginChallenge
  *
  * @typedef {object} AuthApi
- * @property {() => Promise<import("@magic8/engine/shared/Result.js").Ok<SessionUser | null> | import("@magic8/engine/shared/Result.js").Fail>} currentUser null when signed out
+ * @property {() => Promise<import("@magic8/engine/shared/Result.js").Ok<CurrentSession | null> | import("@magic8/engine/shared/Result.js").Fail>} currentSession null when signed out
  * @property {(account: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<LoginChallenge> | import("@magic8/engine/shared/Result.js").Fail>} createChallenge
  * @property {(proof: { challengeId: string, signature: string }) => Promise<import("@magic8/engine/shared/Result.js").Ok<SessionUser> | import("@magic8/engine/shared/Result.js").Fail>} createSession
  * @property {() => Promise<import("@magic8/engine/shared/Result.js").Ok<null> | import("@magic8/engine/shared/Result.js").Fail>} deleteSession
@@ -19,4 +20,4 @@ export const ApiFailure = Object.freeze({
   BAD_RESPONSE: "BAD_RESPONSE",
 });
 
-export const AUTH_API_METHODS = Object.freeze(["currentUser", "createChallenge", "createSession", "deleteSession"]);
+export const AUTH_API_METHODS = Object.freeze(["currentSession", "createChallenge", "createSession", "deleteSession"]);

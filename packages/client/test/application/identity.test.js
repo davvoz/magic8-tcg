@@ -13,7 +13,7 @@ const SIGNATURE = "20" + "ab".repeat(64);
 function fakeApi(overrides = {}) {
   const calls = [];
   const api = {
-    currentUser: async () => ok(null),
+    currentSession: async () => ok(null),
     createChallenge: async (account) => ok({ challengeId: "c1", message: `login ${account}`, keyRole: "Posting", expiresAt: 1 }),
     createSession: async () => ok(USER),
     deleteSession: async () => ok(null),
@@ -34,14 +34,14 @@ function fakeWallet({ available = true, sign = async () => ok(SIGNATURE) } = {})
 
 describe("IdentityService", () => {
   it("restores the signed-in user from the server", async () => {
-    const service = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet().wallet });
+    const service = new IdentityService({ api: fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) }).api, wallet: fakeWallet().wallet });
     assert.equal(service.state.status, IdentityStatus.UNKNOWN);
     await service.restore();
     assert.deepEqual(service.state, { status: IdentityStatus.SIGNED_IN, user: USER, method: SignInMethod.KEYCHAIN, error: null });
   });
 
   it("is offline when no game server answers, signed out otherwise", async () => {
-    const offline = new IdentityService({ api: fakeApi({ currentUser: async () => fail("NETWORK", "down") }).api, wallet: fakeWallet().wallet });
+    const offline = new IdentityService({ api: fakeApi({ currentSession: async () => fail("NETWORK", "down") }).api, wallet: fakeWallet().wallet });
     assert.equal((await offline.restore()).status, IdentityStatus.OFFLINE);
     const signedOut = new IdentityService({ api: fakeApi().api, wallet: fakeWallet().wallet });
     assert.equal((await signedOut.restore()).status, IdentityStatus.SIGNED_OUT);
@@ -93,7 +93,7 @@ describe("IdentityService", () => {
   });
 
   it("signs out", async () => {
-    const { api, calls } = fakeApi({ currentUser: async () => ok(USER) });
+    const { api, calls } = fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) });
     const service = new IdentityService({ api, wallet: fakeWallet().wallet });
     await service.restore();
     await service.signOut();
@@ -153,7 +153,7 @@ describe("IdentityService: signing as the session was opened", () => {
   });
 
   it("closes a posting-key session whose key this browser no longer holds, and never takes it for a Keychain one", async () => {
-    const { api, calls } = fakeApi({ currentUser: async () => ok(USER) });
+    const { api, calls } = fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) });
     const keychain = fakeWallet({ available: true });
     const record = fakeRecord({ account: "alice", method: SignInMethod.KEYS });
     const service = new IdentityService({ api, wallet: keychain.wallet, keys: fakeKeys({ saved: null }).keys, record: record.record });
@@ -169,20 +169,20 @@ describe("IdentityService: signing as the session was opened", () => {
 
   it("keeps a Keychain session Keychain's, even before the extension shows up", async () => {
     const record = fakeRecord({ account: "alice", method: SignInMethod.KEYCHAIN });
-    const service = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet({ available: false }).wallet, keys: fakeKeys().keys, record: record.record });
+    const service = new IdentityService({ api: fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) }).api, wallet: fakeWallet({ available: false }).wallet, keys: fakeKeys().keys, record: record.record });
     assert.deepEqual(await service.restore(), { status: IdentityStatus.SIGNED_IN, user: USER, method: SignInMethod.KEYCHAIN, error: null });
   });
 
   it("with nothing remembered, takes a keyless session for Keychain's only where Keychain is", async () => {
-    const withKeychain = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet({ available: true }).wallet, keys: fakeKeys().keys, record: fakeRecord().record });
+    const withKeychain = new IdentityService({ api: fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) }).api, wallet: fakeWallet({ available: true }).wallet, keys: fakeKeys().keys, record: fakeRecord().record });
     assert.equal((await withKeychain.restore()).method, SignInMethod.KEYCHAIN);
-    const without = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet({ available: false }).wallet, keys: fakeKeys().keys, record: fakeRecord().record });
+    const without = new IdentityService({ api: fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) }).api, wallet: fakeWallet({ available: false }).wallet, keys: fakeKeys().keys, record: fakeRecord().record });
     const state = await without.restore();
     assert.deepEqual([state.status, state.error.code], [IdentityStatus.SIGNED_OUT, "KEY_MISSING"], "a phone without Keychain: sign in again, never a Keychain that is not there");
   });
 
   it("signs with the key it holds, whatever was remembered", async () => {
-    const service = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet().wallet, keys: fakeKeys({ saved: "alice" }).keys, record: fakeRecord({ account: "alice", method: SignInMethod.KEYCHAIN }).record });
+    const service = new IdentityService({ api: fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) }).api, wallet: fakeWallet().wallet, keys: fakeKeys({ saved: "alice" }).keys, record: fakeRecord({ account: "alice", method: SignInMethod.KEYCHAIN }).record });
     assert.equal((await service.restore()).method, SignInMethod.KEYS);
   });
 });
@@ -229,7 +229,7 @@ describe("IdentityService with the player's own keys", () => {
   });
 
   it("restores a session signed with the saved key, and signs in again with it once the session has expired", async () => {
-    const restored = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet().wallet, keys: fakeKeys({ saved: "alice" }).keys });
+    const restored = new IdentityService({ api: fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) }).api, wallet: fakeWallet().wallet, keys: fakeKeys({ saved: "alice" }).keys });
     assert.equal((await restored.restore()).method, SignInMethod.KEYS);
 
     const { api, calls } = fakeApi();
@@ -237,7 +237,7 @@ describe("IdentityService with the player's own keys", () => {
     const expired = new IdentityService({ api, wallet: fakeWallet().wallet, keys });
     const state = await expired.restore();
     assert.deepEqual(state, { status: IdentityStatus.SIGNED_IN, user: USER, method: SignInMethod.KEYS, error: null });
-    assert.deepEqual(calls.map((call) => call.name), ["currentUser", "createChallenge", "createSession"]);
+    assert.deepEqual(calls.map((call) => call.name), ["currentSession", "createChallenge", "createSession"]);
     assert.deepEqual(log, ["restore", "sign alice Posting"]);
   });
 
@@ -255,7 +255,7 @@ describe("IdentityService with the player's own keys", () => {
 
   it("drops a saved key of another account than the session's, and any key on a Keychain sign-in or a sign-out", async () => {
     const other = fakeKeys({ saved: "bob" });
-    const restored = new IdentityService({ api: fakeApi({ currentUser: async () => ok(USER) }).api, wallet: fakeWallet().wallet, keys: other.keys });
+    const restored = new IdentityService({ api: fakeApi({ currentSession: async () => ok({ user: USER, viaGoogle: false }) }).api, wallet: fakeWallet().wallet, keys: other.keys });
     assert.equal((await restored.restore()).method, SignInMethod.KEYCHAIN);
     assert.deepEqual(other.log, ["restore", "forget"]);
 
@@ -373,11 +373,11 @@ describe("HttpAuthApi", () => {
   });
 
   it("treats 401 on /api/me as signed out and maps transport failures", async () => {
-    assert.deepEqual(await apiWith(() => json(401, { error: { code: "UNAUTHENTICATED", message: "x" } })).api.currentUser(), { ok: true, value: null });
-    assert.equal((await apiWith(() => json(200, { user: USER })).api.currentUser()).value.account, "alice");
-    assert.equal((await apiWith(() => json(200, { user: { id: 1 } })).api.currentUser()).error.code, "BAD_RESPONSE");
-    assert.equal((await apiWith(() => new Response("not found", { status: 404 })).api.currentUser()).error.code, "UNAVAILABLE");
-    assert.equal((await apiWith(() => Promise.reject(new TypeError("offline"))).api.currentUser()).error.code, "NETWORK");
+    assert.deepEqual(await apiWith(() => json(401, { error: { code: "UNAUTHENTICATED", message: "x" } })).api.currentSession(), { ok: true, value: null });
+    assert.equal((await apiWith(() => json(200, { user: USER })).api.currentSession()).value.user.account, "alice");
+    assert.equal((await apiWith(() => json(200, { user: { id: 1 } })).api.currentSession()).error.code, "BAD_RESPONSE");
+    assert.equal((await apiWith(() => new Response("not found", { status: 404 })).api.currentSession()).error.code, "UNAVAILABLE");
+    assert.equal((await apiWith(() => Promise.reject(new TypeError("offline"))).api.currentSession()).error.code, "NETWORK");
   });
 
   it("passes the server's error codes through", async () => {

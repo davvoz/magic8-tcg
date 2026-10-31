@@ -22,13 +22,13 @@ function services(overrides = {}) {
 }
 
 /**
- * @param {{ currentUser?: () => Promise<any>, createSession?: () => Promise<any>, walletAvailable?: boolean, sign?: () => Promise<any> }} [options]
+ * @param {{ currentSession?: () => Promise<any>, createSession?: () => Promise<any>, walletAvailable?: boolean, sign?: () => Promise<any> }} [options]
  */
-function identity({ currentUser = async () => ok(null), createSession = async () => ok(USER), walletAvailable = true, sign = async () => ok(`20${"ab".repeat(64)}`) } = {}) {
+function identity({ currentSession = async () => ok(null), createSession = async () => ok(USER), walletAvailable = true, sign = async () => ok(`20${"ab".repeat(64)}`) } = {}) {
   const deleted = [];
   const service = new IdentityService({
     api: {
-      currentUser,
+      currentSession,
       createChallenge: async () => ok({ challengeId: "c1", message: "m", keyRole: "Posting", expiresAt: 1 }),
       createSession,
       deleteSession: async () => (deleted.push(true), ok(null)),
@@ -116,7 +116,7 @@ describe("LoginScene with a posting key", () => {
       signMessage: async () => ok(`20${"ab".repeat(64)}`),
     };
     const service = new IdentityService({
-      api: { currentUser: async () => ok(null), createChallenge: async () => ok({ challengeId: "c1", message: "m", keyRole: "Posting", expiresAt: 1 }), createSession: async () => ok(USER), deleteSession: async () => ok(null) },
+      api: { currentSession: async () => ok(null), createChallenge: async () => ok({ challengeId: "c1", message: "m", keyRole: "Posting", expiresAt: 1 }), createSession: async () => ok(USER), deleteSession: async () => ok(null) },
       wallet: { name: "Steem Keychain", isAvailable: () => walletAvailable, signMessage: async () => fail("X", "x") },
       keys,
     });
@@ -158,7 +158,7 @@ describe("LoginScene with a posting key", () => {
   it("asks for the posting key again, not Keychain, when the session closed because the key was no longer saved here", async () => {
     let remembered = { account: "alice", method: "keys" };
     const service = new IdentityService({
-      api: { currentUser: async () => ok(USER), createChallenge: async () => ok({ challengeId: "c1", message: "m", keyRole: "Posting", expiresAt: 1 }), createSession: async () => ok(USER), deleteSession: async () => ok(null) },
+      api: { currentSession: async () => ok({ user: USER, viaGoogle: false }), createChallenge: async () => ok({ challengeId: "c1", message: "m", keyRole: "Posting", expiresAt: 1 }), createSession: async () => ok(USER), deleteSession: async () => ok(null) },
       wallet: { name: "Steem Keychain", isAvailable: () => true, signMessage: async () => fail("X", "x") },
       keys: { account: null, restore: async () => null, usePostingKey: async () => ok(undefined), save: async () => ok(undefined), forget: () => undefined, signMessage: async () => ok(`20${"ab".repeat(64)}`) },
       record: { read: () => remembered, write: (entry) => (remembered = entry), clear: () => (remembered = null) },
@@ -207,7 +207,7 @@ describe("The top bar's account", () => {
   });
 
   it("shows the signed-in account and signs out", async () => {
-    const { service, deleted } = identity({ currentUser: async () => ok(USER) });
+    const { service, deleted } = identity({ currentSession: async () => ok({ user: USER, viaGoogle: false }) });
     await service.restore();
     const scene = new HomeScene(services(), appWith(service));
     scene.enter({});
@@ -224,11 +224,57 @@ describe("The top bar's account", () => {
   });
 
   it("stays usable offline, without account entries", async () => {
-    const { service } = identity({ currentUser: async () => fail("NETWORK", "down") });
+    const { service } = identity({ currentSession: async () => fail("NETWORK", "down") });
     await service.restore();
     const scene = new HomeScene(services(), appWith(service));
     scene.enter({});
     assert.ok(connection(scene).startsWith("Offline"));
     assert.equal(scene.findNode("signIn") ?? scene.findNode("profile"), null);
+  });
+});
+
+describe("LoginScene with Google", () => {
+  /** @param {{ offered?: boolean, pending?: any }} [options] */
+  function google({ offered = true, pending = null } = {}) {
+    const visits = [];
+    let back = pending;
+    return { google: { offered, start: () => visits.push("google"), take: () => { const taken = back; back = null; return taken; } }, visits };
+  }
+
+  it("opens on Google without Keychain, and goes there from its button", () => {
+    const { google: service, visits } = google();
+    const scene = new LoginScene(services(), { ...appWith(identity({ walletAvailable: false }).service), google: service });
+    scene.enter({});
+    const shown = texts(scene);
+    assert.ok(shown.includes("Google"), "its tab");
+    assert.ok(shown.includes("Continue with Google"));
+    assert.equal(scene.focusedNode?.id, "login.submit");
+    scene.onKey({ type: "keydown", key: "Enter", repeat: false });
+    assert.deepEqual(visits, ["google"]);
+    assert.ok(texts(scene).some((text) => text.includes("Opening Google")));
+    scene.exit();
+  });
+
+  it("keeps Keychain first where it is installed, and shows no Google where the server does not offer it", () => {
+    const keychain = new LoginScene(services(), { ...appWith(identity().service), google: google().google });
+    keychain.enter({});
+    assert.equal(keychain.focusedNode?.id, "login.account");
+    keychain.exit();
+    const without = new LoginScene(services(), { ...appWith(identity({ walletAvailable: false }).service), google: google({ offered: false }).google });
+    without.enter({});
+    assert.ok(!texts(without).includes("Continue with Google"));
+    without.exit();
+  });
+
+  it("says what a Google sign-in came back with, the account already typed", () => {
+    const scene = new LoginScene(services(), { ...appWith(identity().service), google: google({ pending: { kind: "existing", account: "bobby", ownKeys: true } }).google });
+    scene.enter({});
+    assert.ok(texts(scene).some((text) => text.includes("@bobby now uses its own keys")));
+    assert.equal(/** @type {any} */ (scene.focusedNode)?.value, "bobby", "the account is typed");
+    scene.exit();
+    const failed = new LoginScene(services(), { ...appWith(identity().service), google: google({ pending: { kind: "error", reason: "cancelled" } }).google });
+    failed.enter({});
+    assert.ok(texts(failed).some((text) => text.includes("The Google sign-in was cancelled")));
+    failed.exit();
   });
 });

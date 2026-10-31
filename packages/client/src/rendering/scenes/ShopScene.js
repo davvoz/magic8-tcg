@@ -61,7 +61,7 @@ import { EntryTickets } from "./entries/EntryTickets.js";
 import { FadingNotices } from "./FadingNotices.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
-import { approveTransferText, transferPreviewText } from "./walletText.js";
+import { approvalWords, transferPreviewText } from "./walletText.js";
 
 const LIST_ID = "shop.list";
 /** A ranked product's tickets: how tall, wide and compact, the least worth drawing, and the gap around them. */
@@ -847,7 +847,7 @@ export class ShopScene extends SectionScene {
     if (this.#purchaseUnderWay()) {
       const { inset, columns, compact } = this.#screen;
       const top = this.#purchaseTop;
-      this.#tracker = panel.add(new PurchaseTracker({ id: "shop.tracker", x: inset, y: top, width: this.#detailWidth, height: columns.height - inset - top, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, approve: approveTransferText(this.#app), done: "" }));
+      this.#tracker = panel.add(new PurchaseTracker({ id: "shop.tracker", x: inset, y: top, width: this.#detailWidth, height: columns.height - inset - top, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, ...approvalWords(this.#app), done: "" }));
       return null;
     }
     if (this.#m.compactPurchase) {

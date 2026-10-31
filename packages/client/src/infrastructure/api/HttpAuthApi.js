@@ -30,13 +30,14 @@ export class HttpAuthApi {
     this.#transport = new HttpJsonTransport(deps);
   }
 
-  async currentUser() {
+  async currentSession() {
     const response = await this.#transport.request("GET", "/api/me");
     if (!response.ok) {
       return response.error.code === "UNAUTHENTICATED" ? ok(null) : response;
     }
-    const user = sessionUser(/** @type {any} */ (response.value)?.user);
-    return user === null ? fail(ApiFailure.BAD_RESPONSE, "unexpected response") : ok(user);
+    const body = /** @type {any} */ (response.value);
+    const user = sessionUser(body?.user);
+    return user === null ? fail(ApiFailure.BAD_RESPONSE, "unexpected response") : ok(Object.freeze({ user, viaGoogle: body.method === "google" }));
   }
 
   /** @param {string} account */

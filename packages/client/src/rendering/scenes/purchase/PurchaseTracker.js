@@ -23,6 +23,9 @@ import { drawCheckIcon } from "../../ui/shapes.js";
 import { withAlpha } from "../../theme/color.js";
 import { fontFor } from "../../theme/Theme.js";
 
+/** Under the payment step, while the player's wallet asks them to approve the transfer. */
+const DEFAULT_APPROVE_NOTE = "Nothing is paid until you approve it.";
+
 /** The steps after the first, whose name depends on what is bought (`first`: an order, a reservation). */
 const LATER_STEPS = Object.freeze(["Payment", "Blockchain", "Delivered"]);
 /**
@@ -52,6 +55,7 @@ export class PurchaseTracker extends UiNode {
   #sizes;
   #compact;
   #approve;
+  #approveNote;
   #done;
   #first;
   #ordering;
@@ -66,18 +70,19 @@ export class PurchaseTracker extends UiNode {
   #note;
 
   /**
-   * @param {{ id?: string, x: number, y: number, width: number, height: number, compact: boolean, track: () => import("../../../application/payments/purchaseProgress.js").PurchaseTrack | null, now: () => number, approve: string, done: string, first?: string, ordering?: string }} options
+   * @param {{ id?: string, x: number, y: number, width: number, height: number, compact: boolean, track: () => import("../../../application/payments/purchaseProgress.js").PurchaseTrack | null, now: () => number, approve: string, approveNote?: string, done: string, first?: string, ordering?: string }} options
    *   `track`: where the purchase stands now; `approve`: how the player approves the transfer ("Approve the transfer in
    *   Keychain"); `done`: what the player reads once it is delivered; `first`: the first step's name, and `ordering`:
    *   what the player reads during it (an order being created, by default)
    */
-  constructor({ id = "purchase.tracker", x, y, width, height, compact, track, now, approve, done, first = "Order", ordering = "Creating your order…" }) {
+  constructor({ id = "purchase.tracker", x, y, width, height, compact, track, now, approve, approveNote = DEFAULT_APPROVE_NOTE, done, first = "Order", ordering = "Creating your order…" }) {
     super({ id, x, y, width, height });
     this.#track = track;
     this.#now = now;
     this.#compact = compact;
     this.#sizes = compact ? SIZES.compact : SIZES.wide;
     this.#approve = approve;
+    this.#approveNote = approveNote;
     this.#done = done;
     this.#first = first;
     this.#ordering = ordering;
@@ -117,7 +122,7 @@ export class PurchaseTracker extends UiNode {
 
   /** The words, as the purchase stands now. */
   #write() {
-    const text = trackerText(this.#track(), this.#now(), { approve: this.#approve, done: this.#done, ordering: this.#ordering, compact: this.#compact });
+    const text = trackerText(this.#track(), this.#now(), { approve: this.#approve, approveNote: this.#approveNote, done: this.#done, ordering: this.#ordering, compact: this.#compact });
     this.#title.text = text.title;
     this.#title.colorKey = text.colorKey;
     this.#aside.text = text.aside;
@@ -252,10 +257,10 @@ function barShare(progress) {
  * What the tracker says: what is happening now, the time left beside the bar, and the note under it.
  * @param {import("../../../application/payments/purchaseProgress.js").PurchaseTrack | null} track
  * @param {number} nowMs
- * @param {{ approve: string, done: string, ordering: string, compact: boolean }} words
+ * @param {{ approve: string, approveNote?: string, done: string, ordering: string, compact: boolean }} words `approveNote`: under the payment step
  * @returns {TrackerText}
  */
-export function trackerText(track, nowMs, { approve, done, ordering, compact }) {
+export function trackerText(track, nowMs, { approve, approveNote = DEFAULT_APPROVE_NOTE, done, ordering, compact }) {
   const progress = purchaseProgress(track, nowMs);
   if (progress === null) {
     return { title: "", colorKey: "accent", aside: "", note: "" };
@@ -269,7 +274,7 @@ export function trackerText(track, nowMs, { approve, done, ordering, compact }) 
   if (progress.step === PurchaseStep.PAYMENT) {
     const payment = track?.payment ?? null;
     const what = payment === null ? "" : `${moneyText(payment.amount, payment.asset)} to @${payment.to}. `;
-    return { title: approve, colorKey: "accent", aside: "", note: `${what}Nothing is paid until you approve it.` };
+    return { title: approve, colorKey: "accent", aside: "", note: `${what}${approveNote}` };
   }
   return chainText(/** @type {import("../../../application/payments/purchaseProgress.js").ChainProgress} */ (progress.chain), compact);
 }

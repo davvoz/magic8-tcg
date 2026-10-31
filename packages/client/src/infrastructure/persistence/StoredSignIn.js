@@ -1,14 +1,14 @@
 /**
  * SignInRecord over a KeyValueStore: the account and how it signed in,
  * under one key, in a versioned envelope. Nothing secret: no key, only
- * "keychain" or "keys". Anything unreadable reads as nothing remembered.
+ * "keychain", "keys" or "google". Anything unreadable reads as nothing remembered.
  */
 import { openEnvelope, sealEnvelope } from "./StorageEnvelope.js";
 
 export const SIGN_IN_STORAGE_KEY = "magic8.signin";
 const SCHEMA_VERSION = 1;
 const MAX_STORED_BYTES = 256;
-const METHODS = Object.freeze(["keychain", "keys"]);
+const METHODS = Object.freeze(["keychain", "keys", "google"]);
 
 /** @typedef {import("../../application/ports/SignInRecord.contract.js").SignInRecord} SignInRecord */
 

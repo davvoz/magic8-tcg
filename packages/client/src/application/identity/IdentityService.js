@@ -2,8 +2,13 @@
  * Who is signed in, and the sign-in flow: ask the server for a challenge,
  * have the wallet sign it, hand the signature back. The session itself lives
  * in an HttpOnly cookie the client cannot read; this service only tracks the
- * resulting user, and how they signed in (`method`): with Steem Keychain, or
- * with their own posting key typed here (docs/tcg/20-chiavi.md).
+ * resulting user, and how they signed in (`method`): with Steem Keychain,
+ * with their own posting key typed here (docs/tcg/20-chiavi.md), or with
+ * Google, whose account's wallet KIJAM keeps (docs/tcg/29-google.md).
+ *
+ * The server says which sessions are Google's: those sign with the wallet
+ * KIJAM keeps, whatever this browser holds. A Google session is opened by
+ * the server (GoogleSignInService), and adopted here.
  *
  * A posting key is checked against the account on the chain before anything
  * is signed, and saved (encrypted) once the server accepted the sign-in. At
@@ -34,10 +39,11 @@ export const IdentityStatus = Object.freeze({
   SIGNED_IN: "signed-in",
 });
 
-/** How the signed-in player signs: with the extension, or with their own keys. */
+/** How the signed-in player signs: with the extension, with their own keys, or with the wallet KIJAM keeps (Google). */
 export const SignInMethod = Object.freeze({
   KEYCHAIN: "keychain",
   KEYS: "keys",
+  GOOGLE: "google",
 });
 
 export const IdentityError = Object.freeze({
@@ -118,20 +124,33 @@ export class IdentityService {
    */
   async restore() {
     const saved = this.#keys === null ? null : await this.#keys.restore();
-    const result = await this.#api.currentUser();
+    const result = await this.#api.currentSession();
     if (!result.ok) {
       const offline = result.error.code === ApiFailure.NETWORK || result.error.code === ApiFailure.UNAVAILABLE;
       this.#set({ status: offline ? IdentityStatus.OFFLINE : IdentityStatus.SIGNED_OUT, user: null, method: null, error: offline ? null : result.error });
       return this.#state;
     }
-    const user = result.value;
-    if (user === null) {
+    if (result.value === null) {
       if (saved !== null) {
         await this.#signInWithHeldKey(saved);
         return this.#state;
       }
       this.#set({ status: IdentityStatus.SIGNED_OUT, user: null, method: null, error: null });
       return this.#state;
+    }
+    await this.#resume(result.value, saved);
+    return this.#state;
+  }
+
+  /**
+   * A session kept across a reload: Google's signs with the wallet KIJAM keeps; any other as it was opened.
+   * @param {import("../ports/AuthApi.contract.js").CurrentSession} session
+   * @param {string | null} saved the account whose posting key this browser holds
+   */
+  async #resume({ user, viaGoogle }, saved) {
+    if (viaGoogle) {
+      this.adoptGoogleSession(user);
+      return;
     }
     if (saved !== null && saved !== user.account) {
       // A key of another account than the session's: it does not belong to whoever plays here now.
@@ -140,10 +159,9 @@ export class IdentityService {
     const method = this.#methodOf(user.account, saved === user.account);
     if (method === null) {
       await this.#closeKeylessSession();
-      return this.#state;
+      return;
     }
     this.#set({ status: IdentityStatus.SIGNED_IN, user, method, error: null });
-    return this.#state;
   }
 
   /** A session opened with a posting key this browser no longer holds: nothing here can sign for it, so it closes. */
@@ -228,6 +246,18 @@ export class IdentityService {
     // Not saved (storage full or blocked): the key still works until the page closes.
     this.#set({ status: IdentityStatus.SIGNED_IN, user: signedIn.value, method: SignInMethod.KEYS, error: saved.ok ? null : saved.error });
     return signedIn;
+  }
+
+  /**
+   * A Google session the server opened (signing in with Google, creating the
+   * account): the wallet KIJAM keeps signs for it, and no key of a previous
+   * player stays behind.
+   * @param {import("../ports/AuthApi.contract.js").SessionUser} user
+   */
+  adoptGoogleSession(user) {
+    this.#keys?.forget();
+    this.#record?.write({ account: user.account, method: SignInMethod.GOOGLE });
+    this.#set({ status: IdentityStatus.SIGNED_IN, user, method: SignInMethod.GOOGLE, error: null });
   }
 
   async signOut() {

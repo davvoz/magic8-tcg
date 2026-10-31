@@ -25,7 +25,7 @@ import { Label } from "../../ui/Label.js";
 import { Modal } from "../../ui/Modal.js";
 import { TextBlock } from "../../ui/TextBlock.js";
 import { PurchaseTracker } from "../purchase/PurchaseTracker.js";
-import { approveTransferText, transferPreviewText } from "../walletText.js";
+import { approvalWords, transferPreviewText } from "../walletText.js";
 import { EntryTickets } from "./EntryTickets.js";
 
 /**
@@ -161,7 +161,7 @@ export class EntryPurchaseDialog {
    */
   #trackerAt({ x, y, width, height, compact }) {
     const shop = /** @type {import("../../../application/shop/ShopService.js").ShopService} */ (this.#app.shop);
-    return new PurchaseTracker({ id: "tickets.tracker", x, y, width, height, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, approve: approveTransferText(this.#app), done: `${rankedEntriesText(this.#quantity)} added. Good luck in the season!` });
+    return new PurchaseTracker({ id: "tickets.tracker", x, y, width, height, compact, track: () => shopTrack(shop.state.purchase), now: this.#now, ...approvalWords(this.#app), done: `${rankedEntriesText(this.#quantity)} added. Good luck in the season!` });
   }
 
   /**

@@ -71,7 +71,7 @@ describe("registerScenes", () => {
   it("registers every scene, and Home and the sections' own screens reach them", () => {
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: new MemoryLogger(), requestRender: () => undefined });
     registerScenes(manager, appContext());
-    const accountScenes = [SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.CASUAL, SceneId.RANKED, SceneId.DAILY, SceneId.SEASON, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
+    const accountScenes = [SceneId.GOOGLE_NAME, SceneId.STARTER, SceneId.COLLECTION, SceneId.SHOP, SceneId.CASUAL, SceneId.RANKED, SceneId.DAILY, SceneId.SEASON, SceneId.GAME_HISTORY, SceneId.LIVE_GAMES, SceneId.REPLAY, SceneId.TRADES, SceneId.MARKET, SceneId.NOTIFICATIONS];
     assert.deepEqual(Object.values(SceneId).map((id) => manager.has(id)), Object.values(SceneId).map((id) => !accountScenes.includes(id)), "account scenes need a game server");
     assert.equal(manager.navigate(SceneId.HOME), true);
     manager.current.findNode("home.section.decks").activate();

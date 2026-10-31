@@ -1,12 +1,20 @@
 /**
- * Sign-in, two ways (docs/tcg/20-chiavi.md):
- * - with the account's posting key, typed (or pasted) here: checked on the
- *   chain, then kept encrypted in this browser for the next visits;
+ * Sign-in, up to three ways:
+ * - with Google (docs/tcg/29-google.md), when the server offers it: a new
+ *   player gets an account whose wallet KIJAM keeps, nothing to type here;
+ * - with the account's posting key (docs/tcg/20-chiavi.md), typed (or
+ *   pasted) here: checked on the chain, then kept encrypted in this browser
+ *   for the next visits;
  * - with a browser wallet (Steem Keychain): the wallet shows the exact
  *   message to sign and no key is typed here.
- * Either way the game server verifies the signature against the chain.
- * Without key sign-in (tools, previews) only the wallet is offered.
+ * With a key or Keychain the game server verifies the signature against the
+ * chain. Without key sign-in (tools, previews) only the wallet is offered.
+ *
+ * Coming back from Google with something to say (the account already has
+ * keys of its own, the sign-in did not complete), the screen says it, with
+ * the account's name already typed.
  */
+import { GoogleReturnKind } from "../../application/identity/GoogleSignInService.js";
 import { IdentityError, IdentityStatus } from "../../application/identity/IdentityService.js";
 import { drawSceneBackdrop } from "../ui/backdrop.js";
 import { Button } from "../ui/Button.js";
@@ -48,7 +56,22 @@ const ACCOUNT_MAX_LENGTH = 17;
 const KEY_MAX_LENGTH = 60;
 
 /** How the player signs in on this screen. */
-const Mode = Object.freeze({ KEYS: "keys", KEYCHAIN: "keychain" });
+const Mode = Object.freeze({ GOOGLE: "google", KEYS: "keys", KEYCHAIN: "keychain" });
+/** The tab of each way, in the order they are offered. */
+const MODE_TABS = Object.freeze([
+  Object.freeze({ mode: Mode.GOOGLE, text: "Google" }),
+  Object.freeze({ mode: Mode.KEYS, text: "Posting key" }),
+  Object.freeze({ mode: Mode.KEYCHAIN, text: "Keychain" }),
+]);
+const GOOGLE_INTRO = "Sign in with your Google account. New here? Choose a name, and KIJAM creates your Steem account and keeps its wallet for you.";
+
+/** What coming back from Google says, by why the sign-in did not complete. */
+const GOOGLE_FAILURE_TEXT = Object.freeze({
+  cancelled: "The Google sign-in was cancelled.",
+  expired: "The Google sign-in took too long. Try again.",
+  unavailable: "Signing in with Google is not available right now. Try again shortly.",
+  failed: "The Google sign-in did not work. Try again.",
+});
 
 /** User-facing text for failure codes; anything else shows the message that came with it. */
 const FAILURE_TEXT = Object.freeze({
@@ -91,12 +114,50 @@ export class LoginScene extends Scene {
 
   enter() {
     const identity = this.#requireIdentity();
-    // The extension when it is here (the keys never leave it), the posting key otherwise (a phone), or when the
-    // session closed because its posting key was no longer saved here.
-    const keyMissing = identity.state.error?.code === IdentityError.KEY_MISSING;
-    this.#mode = identity.keysAvailable && (!identity.walletAvailable || keyMissing) ? Mode.KEYS : Mode.KEYCHAIN;
-    this.#build(identity, { account: "", key: "" }, this.#initialStatus(identity));
+    const back = this.#takeGoogleReturn(identity);
+    this.#mode = back?.mode ?? this.#defaultMode(identity);
+    this.#build(identity, { account: back?.account ?? "", key: "" }, back?.status ?? this.#initialStatus(identity));
     this.#unsubscribe = identity.subscribe((state) => this.#show(state));
+  }
+
+  /**
+   * The extension when it is here (the keys never leave it); otherwise Google when the server offers it (a new
+   * player, a phone), else the posting key; the posting key when the session closed because its key was no longer
+   * saved here.
+   * @param {import("../../application/identity/IdentityService.js").IdentityService} identity
+   */
+  #defaultMode(identity) {
+    if (identity.keysAvailable && identity.state.error?.code === IdentityError.KEY_MISSING) {
+      return Mode.KEYS;
+    }
+    if (identity.walletAvailable) {
+      return Mode.KEYCHAIN;
+    }
+    if (this.#googleOffered()) {
+      return Mode.GOOGLE;
+    }
+    return identity.keysAvailable ? Mode.KEYS : Mode.KEYCHAIN;
+  }
+
+  /**
+   * What the last Google sign-in came back with: the way to sign in now, the account to type, what to say.
+   * @param {import("../../application/identity/IdentityService.js").IdentityService} identity
+   * @returns {{ mode: string, account: string, status: { text: string, colorKey: string } } | null}
+   */
+  #takeGoogleReturn(identity) {
+    const back = this.#app.google?.take() ?? null;
+    if (back === null || back.kind === GoogleReturnKind.NEW) {
+      return null;
+    }
+    if (back.kind === GoogleReturnKind.ERROR) {
+      return { mode: Mode.GOOGLE, account: "", status: { text: GOOGLE_FAILURE_TEXT[/** @type {keyof typeof GOOGLE_FAILURE_TEXT} */ (back.reason)] ?? GOOGLE_FAILURE_TEXT.failed, colorKey: "danger" } };
+    }
+    const text = back.ownKeys ? `@${back.account} now uses its own keys: sign in with them.` : `Your Google account already has @${back.account}: sign in with its posting key or Keychain.`;
+    return { mode: identity.walletAvailable || !identity.keysAvailable ? Mode.KEYCHAIN : Mode.KEYS, account: back.account, status: { text, colorKey: "accent" } };
+  }
+
+  #googleOffered() {
+    return this.#app.google?.offered === true;
   }
 
   /** The screen changed: the same form, laid out for it, keeping what was typed and the status. */
@@ -123,33 +184,66 @@ export class LoginScene extends Scene {
     const panel = this.root.add(new Panel({ x: (viewport.logicalWidth - size.width) / 2, y: (viewport.logicalHeight - size.height) / 2, width: size.width, height: size.height }));
     const inner = size.width - 2 * inset;
     const keys = this.#mode === Mode.KEYS;
+    const google = this.#mode === Mode.GOOGLE;
     panel.add(new Label({ x: 0, y: layout.title, width: size.width, height: 56, text: "Sign in", size: "heading", weight: "bold", colorKey: "accentLight" }));
-    if (identity.keysAvailable) {
-      const left = (size.width - 2 * modes.width - modes.gap) / 2;
-      panel.add(new Button({ id: "login.mode.keys", x: left, y: modes.y, width: modes.width, height: modes.height, text: "Posting key", variant: keys ? "primary" : "secondary", onActivate: () => this.#switchMode(Mode.KEYS) }));
-      panel.add(new Button({ id: "login.mode.keychain", x: left + modes.width + modes.gap, y: modes.y, width: modes.width, height: modes.height, text: "Keychain", variant: keys ? "secondary" : "primary", onActivate: () => this.#switchMode(Mode.KEYCHAIN) }));
+    const tabs = MODE_TABS.filter(({ mode }) => this.#offers(identity, mode));
+    if (tabs.length > 1) {
+      const width = Math.min(modes.width, (inner - (tabs.length - 1) * modes.gap) / tabs.length);
+      const left = (size.width - tabs.length * width - (tabs.length - 1) * modes.gap) / 2;
+      tabs.forEach(({ mode, text }, index) => {
+        panel.add(new Button({ id: `login.mode.${mode}`, x: left + index * (width + modes.gap), y: modes.y, width, height: modes.height, text, variant: mode === this.#mode ? "primary" : "secondary", onActivate: () => this.#switchMode(mode) }));
+      });
     } else {
       panel.add(new Label({ x: inset, y: modes.y, width: inner, height: modes.height, text: `with ${identity.walletName}: your keys never leave the extension`, size: "small", colorKey: "textMuted", fit: true }));
     }
-    this.#field = panel.add(
-      new TextField({ id: "login.account", x: inset, y: layout.field.y, width: inner, height: layout.field.height, value: typed.account, placeholder: "Steem account name", maxLength: ACCOUNT_MAX_LENGTH, keyboard: "account", onSubmit: () => this.#accountEntered() }),
-    );
+    if (google) {
+      // No field: the intro fills the rows of both.
+      this.#field = null;
+      panel.add(new Label({ x: inset, y: layout.field.y, width: inner, height: layout.key + layout.field.height - layout.field.y, text: GOOGLE_INTRO, colorKey: "text", fit: true }));
+    } else {
+      this.#field = panel.add(
+        new TextField({ id: "login.account", x: inset, y: layout.field.y, width: inner, height: layout.field.height, value: typed.account, placeholder: "Steem account name", maxLength: ACCOUNT_MAX_LENGTH, keyboard: "account", onSubmit: () => this.#accountEntered() }),
+      );
+    }
     if (keys) {
       this.#key = panel.add(
         new TextField({ id: "login.key", x: inset, y: layout.key, width: inner, height: layout.field.height, value: typed.key, placeholder: "Private posting key (starts with 5)", maxLength: KEY_MAX_LENGTH, keyboard: "secret", onSubmit: () => this.#signIn() }),
       );
     } else {
       this.#key = null;
-      if (identity.keysAvailable) {
+      if (identity.keysAvailable && !google) {
         panel.add(new Label({ x: inset, y: layout.key, width: inner, height: layout.field.height, text: `with ${identity.walletName}: your keys never leave the extension`, size: "small", colorKey: "textMuted", fit: true }));
       }
     }
     const left = (size.width - 2 * buttons.width - buttons.gap) / 2;
-    this.#submit = panel.add(new Button({ id: "login.submit", x: left, y: buttons.y, width: buttons.width, height: buttons.height, text: "Sign in", variant: "primary", onActivate: () => this.#signIn() }));
+    this.#submit = panel.add(new Button({ id: "login.submit", x: left, y: buttons.y, width: buttons.width, height: buttons.height, text: google ? "Continue with Google" : "Sign in", variant: "primary", onActivate: () => this.#signIn() }));
     panel.add(new Button({ id: "login.back", x: left + buttons.width + buttons.gap, y: buttons.y, width: buttons.width, height: buttons.height, text: "Back", onActivate: () => this.services.navigate(SceneId.HOME) }));
     this.#status = panel.add(new Label({ x: panel.titleInset, y: layout.status.y, width: size.width - 2 * panel.titleInset, height: layout.status.height, text: status.text, size: "small", colorKey: status.colorKey, fit: true }));
-    this.focus(this.#field.value.length > 0 && this.#key !== null ? this.#key : this.#field);
+    this.focus(this.#focusTarget());
     this.services.requestRender();
+  }
+
+  /** The account field, the key once the account is typed, or the button when there is nothing to type. */
+  #focusTarget() {
+    if (this.#field === null) {
+      return this.#submit;
+    }
+    return this.#field.value.length > 0 && this.#key !== null ? this.#key : this.#field;
+  }
+
+  /**
+   * @param {import("../../application/identity/IdentityService.js").IdentityService} identity
+   * @param {string} mode
+   */
+  #offers(identity, mode) {
+    switch (mode) {
+      case Mode.GOOGLE:
+        return this.#googleOffered();
+      case Mode.KEYS:
+        return identity.keysAvailable;
+      default:
+        return true;
+    }
   }
 
   exit() {
@@ -190,12 +284,26 @@ export class LoginScene extends Scene {
   }
 
   async #signIn() {
+    if (this.#mode === Mode.GOOGLE) {
+      this.#startGoogle();
+      return;
+    }
     const identity = this.#requireIdentity();
     const account = this.#field?.value ?? "";
     const result = this.#mode === Mode.KEYS ? await identity.signInWithKey(account, this.#key?.value ?? "") : await identity.signIn(account);
     if (result.ok) {
       this.services.navigate(SceneId.HOME);
     }
+  }
+
+  /** Off to Google: the page goes, and comes back signed in or with something to say. */
+  #startGoogle() {
+    this.#setStatus("Opening Google…", "accent");
+    if (this.#submit !== null) {
+      this.#submit.enabled = false;
+    }
+    this.services.requestRender();
+    this.#app.google?.start();
   }
 
   /** @param {import("../../application/identity/IdentityService.js").IdentityState} state */
@@ -233,6 +341,9 @@ export class LoginScene extends Scene {
    * @returns {{ text: string, colorKey: string }}
    */
   #initialStatus(identity) {
+    if (this.#mode === Mode.GOOGLE) {
+      return { text: "No keys to keep, nothing to install.", colorKey: "textMuted" };
+    }
     if (this.#mode === Mode.KEYS) {
       if (identity.state.error?.code === IdentityError.KEY_MISSING) {
         return { text: FAILURE_TEXT.KEY_MISSING, colorKey: "danger" };

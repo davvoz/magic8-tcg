@@ -5,6 +5,8 @@ export const SceneId = Object.freeze({
   /** The Play section: every way to play. */
   PLAY: "play",
   LOGIN: "login",
+  /** A new player back from Google chooses the name of their account. */
+  GOOGLE_NAME: "googleName",
   DECK_SELECTION: "deckSelection",
   /** The Decks section: the player's decks. */
   DECKS: "decks",

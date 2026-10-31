@@ -47,7 +47,7 @@ import { FadingNotices } from "./FadingNotices.js";
 import { PurchaseTracker } from "./purchase/PurchaseTracker.js";
 import { SceneId } from "./sceneIds.js";
 import { SectionScene } from "./SectionScene.js";
-import { approveTransferText } from "./walletText.js";
+import { approvalWords } from "./walletText.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
@@ -676,7 +676,7 @@ export class MarketScene extends SectionScene {
    */
   #trackerAt(area) {
     const sales = this.#sales();
-    return new PurchaseTracker({ id: "market.tracker", ...area, compact: this.#screen.compact, track: () => buyingTrack(sales.state.buying), now: this.#now, approve: approveTransferText(this.#app), ...TRACKER_WORDS });
+    return new PurchaseTracker({ id: "market.tracker", ...area, compact: this.#screen.compact, track: () => buyingTrack(sales.state.buying), now: this.#now, ...approvalWords(this.#app), ...TRACKER_WORDS });
   }
 
   /**

@@ -264,7 +264,7 @@ describe("registerScenes — with a game server", () => {
   it("registers the account scenes", () => {
     const world = harness();
     const manager = new SceneManager({ theme, viewport: new Viewport(theme.layout), logger: world.logger, requestRender: () => undefined });
-    registerScenes(manager, { ...world.app, shop: { subscribe: () => () => undefined }, online: { subscribe: () => () => undefined, canWatch: true }, ranking: { subscribe: () => () => undefined }, gameHistory: { played: async () => undefined }, autoReplays: { open: async () => undefined }, trading: { subscribe: () => () => undefined }, sales: { subscribe: () => () => undefined }, notifications: { subscribe: () => () => undefined }, daily: { subscribe: () => () => undefined } });
+    registerScenes(manager, { ...world.app, shop: { subscribe: () => () => undefined }, online: { subscribe: () => () => undefined, canWatch: true }, ranking: { subscribe: () => () => undefined }, gameHistory: { played: async () => undefined }, autoReplays: { open: async () => undefined }, trading: { subscribe: () => () => undefined }, sales: { subscribe: () => () => undefined }, notifications: { subscribe: () => () => undefined }, daily: { subscribe: () => () => undefined }, google: { take: () => null } });
     assert.ok(Object.values(SceneId).every((id) => manager.has(id)));
   });
 });
