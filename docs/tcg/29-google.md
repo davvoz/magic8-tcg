@@ -1,6 +1,6 @@
 # 29 — Entrare con Google (wallet custodito)
 
-**Stato:** 2026-10-31. Fase 1 (API partner di join.cur8) pubblicata. Fase 2 (server: login Google, creazione dell'account, chiavi custodite) scritta e provata con Google e join finti, non ancora pubblicata. Fasi 3–5 da fare.
+**Stato:** 2026-10-31. Fase 1 (API partner di join.cur8) pubblicata. Fase 2 (server: login Google, creazione dell'account, chiavi custodite) nel repository. Fase 3 (le firme del server) scritta e provata, non ancora pubblicata. Fasi 4–5 da fare.
 
 Chi non conosce le crypto entra con **Continue with Google**, sceglie un nome e gioca: niente chiavi, niente PIN, niente estensioni. Le chiavi del suo account STEEM le crea e le custodisce il server di gioco, che firma al suo posto. Quando vuole, il giocatore le **esporta** dal Profilo e da lì può usarle dove vuole.
 
@@ -38,7 +38,8 @@ Chi vuole tenere le chiavi per sé ha già tutto: un account creato su join.cur8
 0. `GET /api/auth/options` → `{ google: true | false }`: il client mostra il bottone solo se il server ha la configurazione.
 1. `GET /api/auth/google/start` → il cookie `m8_google_flow` (10 minuti, `SameSite=Lax`, perché uno `Strict` non tornerebbe col redirect di Google) con `state`, `nonce` e il verificatore PKCE **cifrati con SecretBox** (sul server non si salva niente), poi il redirect a Google (`openid email`, `prompt=select_account`). Per Export wallet (fase 5) servirà anche `prompt=login`.
 2. `GET /api/auth/google/callback?code&state`: `state` uguale al cookie; il codice si scambia con Google da server a server (segreto del client + verificatore). L'`id_token` arriva direttamente da Google su TLS: si controllano `iss`, `aud`, `exp`, `nonce` ed `email_verified`. Poi:
-   - identità Google già legata a un utente → sessione aperta, redirect a `/`;
+   - identità Google già legata a un utente → prima si controlla sulla catena che la posting key custodita sia ancora dell'account; se sì, sessione aperta e redirect a `/`;
+   - legata, ma il giocatore ha cambiato le chiavi dell'account (dopo averle esportate) → le chiavi custodite non servono più e si cancellano (audit `auth.google_keys_released`), redirect a `/?google=existing&account=<nome>&keys=own`: da qui in poi entra con le sue chiavi. Se la catena non risponde la sessione si apre lo stesso: il job di T18 la chiude dopo, se serve;
    - identità nuova, ma join ha già un account per questo `sub` → redirect a `/?google=existing&account=<nome>`; non si salva niente;
    - identità nuova → il cookie di registrazione `m8_google_signup` (30 minuti, cifrato: `sub` ed email, l'email solo se lunga al massimo 100 caratteri perché un cookie ne tiene 512), redirect a `/?google=new`;
    - qualsiasi altro esito → redirect a `/?google=error&reason=<motivo>`: `cancelled` (il giocatore ha annullato su Google), `expired` (cookie scaduto o `state` diverso), `unavailable` (Google o join non rispondono), `failed` (ID token sbagliato, account sospeso, errore imprevisto). Il callback non risponde mai JSON: il browser torna sempre nel gioco.
@@ -53,10 +54,14 @@ Modulo nuovo `custody`. Le rotte richiedono una sessione `"google"` di un utente
 
 | Rotta | Firma | Quando |
 |---|---|---|
-| `POST /api/custody/transfers { from, to, amount, asset, memo }` | active | solo se corrisponde esattamente a un pagamento aperto del giocatore: un ordine non pagato (`marketplace`) o una prenotazione attiva (`sales`). I due moduli rispondono a una porta comune (`OpenPayments`). Risponde l'id della transazione, come l'inoltro di oggi. |
-| `POST /api/custody/messages { message }` | posting | solo il testo d'autorizzazione di una chiave di partita (12) dell'account. Il login non serve: la sessione c'è già. |
-| `POST /api/custody/pings { … }` | posting | il commento si costruisce e si firma sul server, poi passa dagli stessi controlli dell'inoltro dei ping (26): muro, lunghezza, limiti. |
+| `POST /api/custody/transfers { from, to, amount, asset, memo }` | active | solo se corrisponde esattamente (rete, mittente, destinatario, importo, asset, memo) a un pagamento aperto **del giocatore** e non scaduto: un ordine dello shop ancora da pagare (`marketplace`) o una prenotazione del mercato (`sales`). Ognuno dei due moduli risponde `openPayment(userId, memo)`. Risponde `{ txId }`, come l'inoltro di oggi. Altrimenti `PAYMENT_NOT_OPEN` (409). |
+| `POST /api/custody/messages { message }` | posting | solo il testo d'autorizzazione di una chiave di partita (12), `m8tcg session <partita> <chiave>`; ogni altro testo è `FORBIDDEN`. Il login non serve: la sessione c'è già. Risponde `{ signature }`. |
+| `POST /api/custody/pings { parentAuthor, parentPermlink, permlink, title, body, jsonMetadata }` | posting | l'autore è l'account custodito; il commento si costruisce e si firma sul server, poi passa da `PingService.relay`, gli stessi controlli dei ping firmati nel browser (26): sotto il muro, lunghezza. Risponde `{ txId }`. |
 | `POST /api/custody/export` | — | sessione aperta da Google da al massimo 10 minuti, altrimenti `REAUTH_REQUIRED`. Risponde le chiavi con `Cache-Control: no-store`; segna `exported_at`. |
+
+**Un pagamento si firma una volta sola.** Prima della trasmissione il server scrive il memo in `custody_transfers` (chiave primaria): una seconda richiesta per lo stesso pagamento riceve `ALREADY_PAID` (409, `details.txId`). La riga si cancella solo se la catena ha rifiutato il trasferimento (`TRANSFER_REJECTED`) o se non si è trasmesso niente (catena irraggiungibile prima della firma): allora si può ripagare. Se invece la trasmissione fallisce senza sapere se il trasferimento è passato, la riga resta e la risposta è `CHAIN_UNAVAILABLE` con `details.txId`: niente doppio pagamento; se il trasferimento non arriva davvero, l'ordine scade e il giocatore ne fa un altro.
+
+Le firme valgono solo per una sessione `"google"`: chi è entrato con le sue chiavi riceve `FORBIDDEN` anche se il server custodisce quell'account (si paga con il metodo del login). Le chiavi si aprono per la sola firma; l'audit registra `custody.transfer_signed` (txId, destinatario, importo, memo), `custody.session_authorized` (partita), `custody.ping_signed`.
 
 **Nel client** un nuovo `CustodialWallet` (`infrastructure/wallet`, sopra un `HttpCustodyApi`) implementa `WalletConnector`: `requestTransfer`, `signMessage` e `postComment` chiamano le rotte qui sopra. `WalletSwitch` lo usa quando il metodo del login è `"google"`. `IdentityService` impara il terzo metodo: all'avvio una sessione Google viva resta di Google; scaduta, si mostra il login.
 
@@ -71,8 +76,6 @@ Join non conserva le chiavi, come oggi.
 
 ## Formato salvato
 
-| Tabella | Contenuto |
-|---|---|
 Migrazione `025_google_sign_in.sql`:
 
 | Tabella | Contenuto |
@@ -81,11 +84,15 @@ Migrazione `025_google_sign_in.sql`:
 | `custody_keys` | `user_id` (chiave), `network`, `account`, `posting_public`, `keys_encrypted` (SecretBox, contesto `custody_keys:<user_id>`: JSON con master password e chiavi private), `created_at`, `exported_at`. |
 | `sessions` | colonna nuova `method`, `'signature'` per tutte le sessioni di prima. |
 
+Migrazione `026_custody_transfers.sql`: `custody_transfers` (`memo` chiave, `user_id`, `tx_id`, `created_at`), un trasferimento firmato per riferimento di pagamento.
+
 La rotazione della chiave dei dati (`rotateDataKey.js`, runbook 07) cifra di nuovo anche `custody_keys`.
 
 Configurazione: `M8_GOOGLE_CLIENT_ID`, `M8_GOOGLE_CLIENT_SECRET`, `M8_JOIN_URL`, `M8_JOIN_PARTNER_KEY`. Nessuna delle quattro: la funzione è spenta e il bottone non c'è. Solo alcune: il server non parte e dice quali mancano. L'indirizzo di ritorno registrato su Google è `<M8_PUBLIC_ORIGIN>/api/auth/google/callback`.
 
 **Dove sta il codice (fase 2).** `@magic8/steem`: `SteemKeyring` (chiave pubblica di una WIF), `SteemWalletProvider.accountExists`. Server, modulo `identity`: `GoogleSignIn` (application), `verifiedGoogleIdentity` (domain), `GoogleOAuthClient` e `JoinAccountFactory` (infrastructure), `PgGoogleIdentityRepository`, `googleRoutes.js`, `AuthService.openVouchedSession`. Modulo nuovo `custody`: `KeyCustody` (conserva le chiavi e dice l'account custodito di un utente), `PgCustodyRepository`. Test: `test/identity/googleSignIn.test.js` (il flusso su HTTP vero), `googleAdapters.test.js`.
+
+**Dove sta il codice (fase 3).** `SteemKeyring` firma un messaggio, un trasferimento e un commento. Modulo `custody`: `CustodialSigner` (application), `signable.js` (domain: cosa si può firmare), `custodyRoutes.js`, `KeyCustody.keysOf` e `forget`. `MarketplaceService.openPayment`, `SalesService.openPayment`. `GoogleSignIn` controlla la chiave custodita a ogni accesso. Test: `test/custody/custodialSigner.test.js`.
 
 ## Cosa cambia nel modello di sicurezza
 
@@ -99,13 +106,14 @@ Finora il server non teneva **mai** chiavi capaci di spostare fondi (05 T23, pan
 ## Limiti da conoscere
 
 - Chi perde l'accesso al suo account Google perde il wallet custodito, a meno di averlo esportato. Il recupero passa da un intervento a mano (cur8 è il recovery account per la owner key).
-- Se il giocatore cambia le chiavi dopo averle esportate, quelle custodite non valgono più: il gioco lo rileva (T18) e gli dice di entrare con le chiavi nuove.
+- Se il giocatore cambia le chiavi dopo averle esportate, quelle custodite non valgono più: il job di T18 chiude le sessioni Google, il login con Google successivo cancella le chiavi custodite e gli dice di entrare con le sue. L'account resta lo stesso utente (mazzi, carte, classifica): un utente è il suo account STEEM, non il modo di entrare.
+- Un trasferimento finito nel dubbio (la catena non ha risposto alla trasmissione) blocca quel pagamento finché l'ordine scade.
 - Solo Google per ora; il login con email di join non è previsto qui.
 
 ## Fasi
 
 1. **join.cur8** (pubblicata): API partner (lookup per `sub`, creazione con chiave partner).
-2. **Server** (scritta): OAuth Google, `google_identities`, creazione dell'account tramite join, `custody_keys` in SecretBox, `sessions.method`.
-3. **Firme**: modulo `custody` (trasferimenti con `OpenPayments`, autorizzazioni di partita, ping), audit.
+2. **Server** (nel repository): OAuth Google, `google_identities`, creazione dell'account tramite join, `custody_keys` in SecretBox, `sessions.method`.
+3. **Firme** (scritta): modulo `custody` (trasferimenti dei pagamenti aperti, autorizzazioni di partita, ping), audit; controllo della chiave custodita al login.
 4. **Client**: bottone e scelta del nome, `CustodialWallet`, metodo `"google"` in `IdentityService` e `WalletSwitch`.
 5. **Export wallet** nel Profilo, aggiornamento di 05, 20 e della panoramica.

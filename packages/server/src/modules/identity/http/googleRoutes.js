@@ -81,7 +81,7 @@ export function registerGoogleRoutes({ router, google, cookie, clock, logger }) 
         case GoogleOutcome.SIGNED_IN:
           return redirect("/", [...cookies, sessionCookie(result.session)]);
         case GoogleOutcome.EXISTING:
-          return redirect(`/?google=existing&account=${encodeURIComponent(result.account)}`, cookies);
+          return redirect(`/?google=existing&account=${encodeURIComponent(result.account)}${result.ownKeys ? "&keys=own" : ""}`, cookies);
         case GoogleOutcome.NEW:
           return redirect("/?google=new", [...cookies, serializeCookie({ name: signupCookie, value: result.signup, maxAgeSeconds: SIGNUP_TTL_MS / 1000, secure: cookie.secure })]);
         default:

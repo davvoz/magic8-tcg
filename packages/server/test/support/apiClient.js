@@ -31,6 +31,14 @@ export class ApiClient {
     return session.json.user;
   }
 
+  /**
+   * Uses a session opened some other way (a Google sign-in).
+   * @param {string} token
+   */
+  useSession(token) {
+    this.#cookie = `m8_session=${token}`;
+  }
+
   /** The session cookie ("m8_session=…"), for opening a WebSocket as this user. */
   get cookie() {
     return this.#cookie;

@@ -11,6 +11,7 @@ import { decodePublicKey, decodeWif, encodePublicKey, publicKeyOf, recoverSigner
 import { isValidAccountName } from "../src/accountName.js";
 import { verifySessionSignature } from "../src/crypto/sessionKeys.js";
 import { SteemKeyring } from "../src/providers/SteemKeyring.js";
+import { fromBroadcastJson, recoverSignerKeys, serializeTransaction, transactionDigest, transactionId } from "../src/transactions/transaction.js";
 
 const KEYS = Object.freeze([
   {
@@ -176,5 +177,42 @@ describe("SteemKeyring", () => {
     assert.equal(keyring.publicKeyOf("5JUjFuqC7ATzSHv9VznChoTBeHcjc9XNyr46i7EmpHi4zx7Dq2f"), null, "a bad checksum");
     assert.equal(keyring.publicKeyOf("P5abc"), null);
     assert.equal(keyring.publicKeyOf(/** @type {any} */ (42)), null);
+  });
+
+  const reference = Object.freeze({ blockNum: 5_000_000, blockId: `004c4b40${"ab".repeat(16)}`, time: Date.UTC(2026, 9, 31, 12, 0, 0) });
+  /** @param {Readonly<Record<string, unknown>>} json */
+  const signerOf = (json) => {
+    const { transaction, signatures } = fromBroadcastJson(json);
+    const bytes = serializeTransaction(transaction);
+    return { transaction, signers: recoverSignerKeys(transactionDigest(bytes), signatures), txId: transactionId(bytes) };
+  };
+
+  it("signs a message, a transfer and a comment with a kept key", () => {
+    const keyring = new SteemKeyring();
+    const [key] = KEYS;
+    assert.equal(recoverSigner("m8tcg session x y", keyring.signMessage("m8tcg session x y", key.wif)), key.publicKey);
+
+    const transfer = { from: "alice", to: "magic8.shop", amount: "1.500", asset: "STEEM", memo: "m8tcg-abc" };
+    const paid = keyring.signTransfer({ reference, expirationSeconds: 60, transfer }, key.wif);
+    const read = signerOf(paid.transaction);
+    assert.deepEqual(read.signers, [key.publicKey]);
+    assert.equal(paid.txId, read.txId);
+    assert.equal(read.transaction.expiration, reference.time / 1000 + 60);
+    assert.deepEqual(read.transaction.operations, [{ type: "transfer", from: "alice", to: "magic8.shop", amount: 1500, asset: "STEEM", memo: "m8tcg-abc" }]);
+
+    const comment = { author: "alice", parentAuthor: "micro.cur8", parentPermlink: "wall", permlink: "ping-1", title: "", body: "gg", jsonMetadata: "{}" };
+    const posted = signerOf(keyring.signComment({ reference, expirationSeconds: 60, comment }, key.wif).transaction);
+    assert.deepEqual(posted.signers, [key.publicKey]);
+    assert.equal(posted.transaction.operations[0].type, "comment");
+  });
+
+  it("refuses to sign what is not a transfer, or with what is not a key", () => {
+    const keyring = new SteemKeyring();
+    const transfer = { from: "alice", to: "magic8.shop", amount: "1.500", asset: "STEEM", memo: "" };
+    for (const bad of [{ amount: "1.5" }, { asset: "BTC" }, { to: "No Such" }, { from: "" }]) {
+      assert.throws(() => keyring.signTransfer({ reference, expirationSeconds: 60, transfer: { ...transfer, ...bad } }, KEYS[0].wif), TypeError);
+    }
+    assert.throws(() => keyring.signTransfer({ reference, expirationSeconds: 60, transfer }, "P5notakey"), TypeError);
+    assert.throws(() => keyring.signMessage("x", KEYS[0].publicKey), TypeError);
   });
 });

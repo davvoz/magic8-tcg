@@ -44,7 +44,7 @@ import { presenceHandler, registerSessionMessages } from "./realtimeSession.js";
 import { ConnectionHub } from "./platform/realtime/ConnectionHub.js";
 import { assertImplements } from "./kernel/contracts.js";
 import { AuthService, GoogleSignIn, PgChallengeRepository, PgGoogleIdentityRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, registerGoogleRoutes, registerIdentityRoutes } from "./modules/identity/index.js";
-import { KeyCustody, PgCustodyRepository } from "./modules/custody/index.js";
+import { CustodialSigner, KeyCustody, PgCustodyRepository, registerCustodyRoutes } from "./modules/custody/index.js";
 import { StarterService, registerStarterRoutes, validateStarterOffer } from "./modules/onboarding/index.js";
 
 /**
@@ -73,12 +73,12 @@ import { StarterService, registerStarterRoutes, validateStarterOffer } from "./m
  *   pingWall?: import("./modules/pings/application/PingService.js").PingWallReader | null,
  *   pingImages?: import("./modules/pings/application/PingService.js").ImageHost | null,
  *   pingAvatars?: import("./modules/pings/application/AvatarProxy.js").AvatarSource | null,
- *   keyrings?: ReadonlyMap<string, import("./modules/custody/application/ports.js").Keyring>,
+ *   keyrings?: ReadonlyMap<string, import("./modules/custody/application/ports.js").SigningKeyring>,
  *   googleSignIn?: { oauth: import("./modules/identity/application/ports.js").GoogleOAuth, accounts: import("./modules/identity/application/ports.js").AccountFactory, clientId: string } | null,
  * }} deps `verifyMoveSignature` (P-256) is needed for games in protocol v2; `version`: the product's (root package.json);
  *   `pingWall`: cur8.fun's Pings walls, for sharing games there (none: not offered); `pingImages`: where the pictures of shared games go (none: pings without one);
  *   `pingAvatars`: players' profile pictures, for those pictures (none: initials); `keyrings`: what each chain's keys look like, for the
- *   accounts the server keeps; `googleSignIn`: Google's OAuth and join.cur8's account creation (none: signing in with Google is not offered)
+ *   accounts the server keeps, and what signs for them; `googleSignIn`: Google's OAuth and join.cur8's account creation (none: signing in with Google is not offered)
  */
 export async function createServerApp(deps) {
   const { config, clock, random, logger, wallets, paymentProviders, defaultNetwork, database, content } = deps;
@@ -117,7 +117,8 @@ export async function createServerApp(deps) {
   const economy = new EconomyService({ assets: assets.value });
   const secrets = new SecretBox({ keys: new Map([...config.dataKeys].map(([id, hex]) => [id, hexToBytes(hex)])), currentKeyId: config.dataKeyId, random });
   // The accounts the server keeps for players who sign in with Google (docs/tcg/29-google.md).
-  const custody = new KeyCustody({ repository: new PgCustodyRepository(database), keyrings, secrets, clock });
+  const custodyRepository = new PgCustodyRepository(database);
+  const custody = new KeyCustody({ repository: custodyRepository, keyrings, secrets, clock });
   const google = buildGoogleSignIn({ adapters: googleSignIn, database, users, custody, auth, wallet: wallets.get(defaultNetwork), secrets, clock, random, audit, unitOfWork, logger, publicOrigin: config.publicOrigin });
   const marketRepository = new PgMarketplaceRepository(database);
   const hub = new ConnectionHub({ logger });
@@ -225,7 +226,10 @@ export async function createServerApp(deps) {
   registerGameRoutes({ router, games });
   registerAutoRoutes({ router, auto });
   registerDailyRoutes({ router, daily });
-  registerPings({ router, wall: pingWall, images: pingImages, avatars: pingAvatars, wallets, audit, clock });
+  const pings = registerPings({ router, wall: pingWall, images: pingImages, avatars: pingAvatars, wallets, audit, clock });
+  // What the server signs for the accounts it keeps: open payments of the shop and the player market, session keys, pings.
+  const signer = new CustodialSigner({ custody, keyrings, payments: [marketplace, sales], chain: auth, pings, repository: custodyRepository, audit, clock });
+  registerCustodyRoutes({ router, signer });
   const readModel = new PgOperationsReadModel(database);
   const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
   const monitor = new Monitor({ readModel, runtime, clock, logger, policy: alarmPolicy });
@@ -279,7 +283,7 @@ export async function createServerApp(deps) {
   if (config.dataKeyIsDevelopment) {
     logger.warn("using the public development data key: set M8_DATA_KEY before selling anything");
   }
-  return Object.freeze({ http, auth, google, custody, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, practice, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, daily, realtime });
+  return Object.freeze({ http, auth, google, custody, signer, keyAuditor, audit, users, sessions, challenges, catalog, inventory, decks, starters, economy, marketplace, epochs, payments, settlement, fulfilment, outbox, chain, refunds, admin, monitor, ranking, practice, seasons, entries, jackpot, prizePayouts, trading, sales, saleSettlement, notifications, notificationRelay, boardRelay, maintenance, hub, games, gameRepository, secrets, matchmaking, lobby, auto, daily, realtime });
 }
 
 /**
@@ -442,10 +446,13 @@ function optionalAdapters({ staticFiles = null, publishing = null, ackSigner = n
  * @param {{ router: import("./platform/http/Router.js").Router, wall: import("./modules/pings/application/PingService.js").PingWallReader | null, images: import("./modules/pings/application/PingService.js").ImageHost | null, avatars: import("./modules/pings/application/AvatarProxy.js").AvatarSource | null, wallets: ReadonlyMap<string, object>, audit: AuditTrail, clock: import("./kernel/time.js").Clock }} deps
  */
 function registerPings({ router, wall, images, avatars, wallets, audit, clock }) {
-  if (wall !== null) {
-    const proxy = avatars === null ? null : new AvatarProxy({ source: avatars, clock });
-    registerPingRoutes({ router, pings: new PingService({ wall, images, wallets, audit, clock }), avatars: proxy });
+  if (wall === null) {
+    return null;
   }
+  const proxy = avatars === null ? null : new AvatarProxy({ source: avatars, clock });
+  const pings = new PingService({ wall, images, wallets, audit, clock });
+  registerPingRoutes({ router, pings, avatars: proxy });
+  return pings;
 }
 
 /**

@@ -251,6 +251,16 @@ describe("signing in with Google", () => {
     await setup.app.keyAuditor.run();
     assert.equal((await call(server.base, "/api/me", { cookies: session })).status, 401);
   });
+
+  it("hands the account over for good once its keys changed: the kept ones go, the player signs in with their own", async () => {
+    // The previous test moved newbie's posting key off the kept one.
+    const back = await signIn({ sub: "sub-new" });
+    assert.equal(back.location, "/?google=existing&account=newbie&keys=own");
+    assert.equal(back.setCookies.has("m8_session"), false);
+    assert.equal(await setup.database.maybeOne("SELECT 1 FROM custody_keys WHERE account = 'newbie'"), null, "the kept keys are dropped");
+    assert.equal((await setup.database.rows("SELECT 1 FROM audit_logs WHERE action = 'auth.google_keys_released'")).length, 1);
+    assert.equal((await signIn({ sub: "sub-new" })).location, "/?google=existing&account=newbie&keys=own", "and stays so");
+  });
 });
 
 describe("signing in with Google, not configured", () => {

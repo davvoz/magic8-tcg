@@ -26,6 +26,10 @@ export const ErrorStatus = Object.freeze({
   NAME_TAKEN: 409,
   LIMIT_REACHED: 409,
   STARTER_ALREADY_CLAIMED: 409,
+  /** The wallet kept by the server pays only a payment the game asked for, still open. */
+  PAYMENT_NOT_OPEN: 409,
+  /** The wallet kept by the server already sent this payment (`details.txId`). */
+  ALREADY_PAID: 409,
   UNKNOWN_STARTER: 400,
   PRECONDITION_FAILED: 412,
   CARDS_NOT_OWNED: 422,

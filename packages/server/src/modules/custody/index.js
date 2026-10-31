@@ -1,7 +1,9 @@
 /**
  * Custody module: the keys of the accounts the server keeps for players who
- * signed in with Google (docs/tcg/29-google.md). Other modules use only what
- * is exported here.
+ * signed in with Google, and what it signs with them (docs/tcg/29-google.md).
+ * Other modules use only what is exported here.
  */
+export { CustodialSigner } from "./application/CustodialSigner.js";
 export { KeyCustody, custodyContext } from "./application/KeyCustody.js";
 export { PgCustodyRepository } from "./infrastructure/PgCustodyRepository.js";
+export { registerCustodyRoutes } from "./http/custodyRoutes.js";

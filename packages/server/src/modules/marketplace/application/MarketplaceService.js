@@ -24,6 +24,7 @@ import { assertImplements } from "../../../kernel/contracts.js";
 import { isUuid, uuidV4 } from "../../../kernel/random.js";
 import { safeAdd } from "../../economy/index.js";
 import { AWAITING_PAYMENT, OrderStatus, memoFrom } from "../domain/Order.js";
+import { isOrderMemo } from "../domain/PaymentMatch.js";
 import { ContentType, MAX_CARDS_PER_ORDER, expandProduct } from "../domain/Product.js";
 import { MARKETPLACE_REPOSITORY_METHODS } from "./ports.js";
 
@@ -249,6 +250,17 @@ export class MarketplaceService {
       }
     }
     return expired;
+  }
+
+  /**
+   * The payment one of the user's orders still waits for, by its reference:
+   * what the wallet the server keeps may pay (docs/tcg/29-google.md).
+   * @param {string} userId
+   * @param {string} memo
+   */
+  async openPayment(userId, memo) {
+    const order = isOrderMemo(memo) ? await this.#repository.findByMemo(memo) : null;
+    return order === null || order.userId !== userId ? null : this.orderView(order).payment;
   }
 
   /**

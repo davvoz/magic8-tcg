@@ -4,9 +4,14 @@
  * - keep: checks every key is a private key of the chain, seals them all
  *   with the data key (SecretBox, bound to the user's row) and stores them
  *   with the posting public key in clear (sessions name it).
- * - Nothing here logs or returns a private key.
+ * - keysOf: opens them for one use (a signature, the export); the caller
+ *   holds them only for that.
+ * - forget: drops them, once they are no use (the player changed the
+ *   account's keys after exporting them).
+ * - Nothing here logs a private key.
  */
 import { utf8 } from "@magic8/protocol";
+import { parseJson } from "../../../kernel/json.js";
 import { AppError } from "../../../kernel/AppError.js";
 import { assertImplements } from "../../../kernel/contracts.js";
 import { CUSTODY_REPOSITORY_METHODS, KEYRING_METHODS } from "./ports.js";
@@ -72,5 +77,31 @@ export class KeyCustody {
    */
   async keptAccountOf(userId) {
     return this.#repository.find(userId);
+  }
+
+  /**
+   * The keys the server keeps for a user, opened.
+   * @param {string} userId
+   * @returns {Promise<Readonly<{ network: string, account: string, keys: import("./ports.js").AccountKeys }> | null>} null when it keeps none
+   */
+  async keysOf(userId) {
+    const row = await this.#repository.findSealed(userId);
+    if (row === null) {
+      return null;
+    }
+    const opened = /** @type {Record<string, unknown>} */ (parseJson(Buffer.from(this.#secrets.open(row.sealed, custodyContext(userId))).toString("utf8")));
+    if ([...KEY_NAMES, "masterPassword"].some((name) => typeof opened?.[name] !== "string")) {
+      throw new Error("KeyCustody: the kept keys are malformed");
+    }
+    return Object.freeze({ network: row.network, account: row.account, keys: /** @type {import("./ports.js").AccountKeys} */ (Object.freeze({ ...opened })) });
+  }
+
+  /**
+   * Drops the keys kept for a user.
+   * @param {string} userId
+   * @returns {Promise<boolean>} false when none were kept
+   */
+  async forget(userId) {
+    return this.#repository.remove(userId);
   }
 }

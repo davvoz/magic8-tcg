@@ -13,7 +13,10 @@
  *   the identity is linked and a session opens.
  *
  * Sessions opened here are of the GOOGLE method and name the kept posting
- * key, so the key audit (T18) closes them if the keys change on chain.
+ * key, so the key audit (T18) closes them if the keys change on chain. A
+ * sign-in checks that key first: once the player changed the account's keys
+ * (after exporting them), the account is theirs alone, the kept keys are
+ * dropped and the player is told to sign in with their own.
  */
 import { fail } from "@magic8/engine/shared/Result.js";
 import { hexToBytes, sha256Hex, utf8 } from "@magic8/protocol";
@@ -31,6 +34,8 @@ export const FLOW_TTL_MS = 10 * 60 * 1000;
 export const SIGNUP_TTL_MS = 30 * 60 * 1000;
 const FLOW_CONTEXT = "google_sign_in:flow";
 const SIGNUP_CONTEXT = "google_sign_in:signup";
+/** What the chain answers when the kept posting key is no longer the account's (the key audit's revoking answer). */
+const KEY_GONE = "KEY_NOT_AUTHORIZED";
 /** Cookies hold at most 512 characters: a longer address is not carried to join (it is optional there). */
 const MAX_CARRIED_EMAIL = 100;
 const MAX_SEALED_LENGTH = 512;
@@ -42,7 +47,7 @@ export const GoogleFailure = Object.freeze({ CANCELLED: "cancelled", EXPIRED: "e
 /**
  * @typedef {Readonly<{ user: import("./ports.js").User, token: string, expiresAt: number }>} OpenedSession
  * @typedef {Readonly<{ kind: "signed-in", session: OpenedSession }>
- *   | Readonly<{ kind: "existing", account: string }>
+ *   | Readonly<{ kind: "existing", account: string, ownKeys: boolean }>
  *   | Readonly<{ kind: "new", signup: string }>
  *   | Readonly<{ kind: "failed", reason: string }>} GoogleResult
  */
@@ -70,7 +75,11 @@ export class GoogleSignIn {
    *   accounts: import("./ports.js").AccountFactory,
    *   identities: import("./ports.js").GoogleIdentityRepository,
    *   users: import("./ports.js").UserRepository,
-   *   custody: { keep: (input: { userId: string, network: string, account: string, keys: import("./ports.js").NewAccountKeys }) => Promise<string>, keptAccountOf: (userId: string) => Promise<Readonly<{ network: string, account: string, postingPublic: string }> | null> },
+   *   custody: {
+   *     keep: (input: { userId: string, network: string, account: string, keys: import("./ports.js").NewAccountKeys }) => Promise<string>,
+   *     keptAccountOf: (userId: string) => Promise<Readonly<{ network: string, account: string, postingPublic: string }> | null>,
+   *     forget: (userId: string) => Promise<boolean>,
+   *   },
    *   auth: Pick<import("./AuthService.js").AuthService, "openVouchedSession">,
    *   wallet: import("./ports.js").WalletProvider & { accountExists: (account: string) => Promise<import("@magic8/engine/shared/Result.js").Ok<boolean> | import("@magic8/engine/shared/Result.js").Fail> },
    *   secrets: import("../../../kernel/crypto/SecretBox.js").SecretBox,
@@ -142,7 +151,7 @@ export class GoogleSignIn {
       return failed(GoogleFailure.UNAVAILABLE);
     }
     if (existing.value !== null) {
-      return Object.freeze({ kind: GoogleOutcome.EXISTING, account: existing.value });
+      return Object.freeze({ kind: GoogleOutcome.EXISTING, account: existing.value, ownKeys: false });
     }
     const signup = this.#seal({ sub, email: email !== null && email.length <= MAX_CARRIED_EMAIL ? email : null, expiresAt: this.#clock.now() + SIGNUP_TTL_MS }, SIGNUP_CONTEXT);
     return Object.freeze({ kind: GoogleOutcome.NEW, signup });
@@ -233,6 +242,10 @@ export class GoogleSignIn {
    * @returns {Promise<GoogleResult>}
    */
   async #signedIn(link, ip) {
+    const ownKeys = await this.#ownKeysAccount(link, ip);
+    if (ownKeys !== null) {
+      return Object.freeze({ kind: GoogleOutcome.EXISTING, account: ownKeys, ownKeys: true });
+    }
     try {
       return Object.freeze({ kind: GoogleOutcome.SIGNED_IN, session: await this.#openFor(link, ip) });
     } catch (error) {
@@ -241,6 +254,29 @@ export class GoogleSignIn {
       }
       throw error;
     }
+  }
+
+  /**
+   * The account of a linked identity, when it no longer uses the keys the
+   * server keeps (the player changed them): those are dropped. An unreadable
+   * chain does not stop the sign-in; the key audit catches up later.
+   * @param {import("./ports.js").GoogleIdentityLink} link
+   * @param {string} ip
+   * @returns {Promise<string | null>}
+   */
+  async #ownKeysAccount(link, ip) {
+    const kept = await this.#custody.keptAccountOf(link.userId);
+    if (kept === null) {
+      return (await this.#users.findById(link.userId))?.account ?? null;
+    }
+    const current = await this.#wallet.isPostingKey(kept.account, kept.postingPublic);
+    if (current.ok || current.error.code !== KEY_GONE) {
+      return null;
+    }
+    if (await this.#custody.forget(link.userId)) {
+      await this.#audit.record({ actorKind: "user", actorUserId: link.userId, action: "auth.google_keys_released", targetKind: "account", targetId: `${kept.network}:${kept.account}`, ip });
+    }
+    return kept.account;
   }
 
   /**

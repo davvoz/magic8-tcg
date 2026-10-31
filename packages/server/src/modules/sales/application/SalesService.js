@@ -21,7 +21,7 @@ import { AppError } from "../../../kernel/AppError.js";
 import { isUuid, uuidV4 } from "../../../kernel/random.js";
 import { formatAmount, parseAmount } from "../../economy/index.js";
 import { NotificationKind } from "../../notifications/index.js";
-import { BoardSort, ListingStatus, PurchaseStatus, saleMemoFrom } from "../domain/Listing.js";
+import { BoardSort, ListingStatus, PurchaseStatus, SALE_MEMO_PATTERN, saleMemoFrom } from "../domain/Listing.js";
 import { SALES_CHANNEL } from "./BoardRelay.js";
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
@@ -329,6 +329,21 @@ export class SalesService {
       throw new AppError("NOT_FOUND", "no such purchase");
     }
     return this.#purchaseViewOf(row);
+  }
+
+  /**
+   * The payment one of the buyer's reservations still waits for, by its
+   * reference: what the wallet the server keeps may pay (docs/tcg/29-google.md).
+   * @param {string} userId
+   * @param {string} memo
+   */
+  async openPayment(userId, memo) {
+    const purchase = SALE_MEMO_PATTERN.test(memo) ? await this.#repository.findPurchaseByMemo(memo) : null;
+    if (purchase === null || purchase.buyerId !== userId || purchase.status !== PurchaseStatus.PENDING) {
+      return null;
+    }
+    const { network, payer: from, receiver: to, asset, expiresAt } = purchase;
+    return Object.freeze({ network, from, to, asset, amount: this.formatPrice(purchase.amount, asset), memo, expiresAt });
   }
 
   /** @param {string} listingId */

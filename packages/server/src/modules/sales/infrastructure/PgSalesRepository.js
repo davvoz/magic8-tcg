@@ -206,6 +206,12 @@ export class PgSalesRepository {
     return row === null ? null : toPurchase(row);
   }
 
+  /** @param {string} memo */
+  async findPurchaseByMemo(memo) {
+    const row = await this.#db.maybeOne("SELECT * FROM listing_purchases WHERE memo = $1", [memo]);
+    return row === null ? null : toPurchase(row);
+  }
+
   /** @param {string} listingId the purchase holding the listing, if any */
   async livePurchaseOf(listingId) {
     const row = await this.#db.maybeOne("SELECT * FROM listing_purchases WHERE listing_id = $1 AND status IN ('PENDING', 'DETECTED')", [listingId]);
