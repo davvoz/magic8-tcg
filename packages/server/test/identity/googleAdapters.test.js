@@ -33,6 +33,9 @@ describe("GoogleOAuthClient", () => {
     const url = new URL(client.authorizationUrl({ state: "s", nonce: "n", codeChallenge: "c", redirectUri: "https://game.example/api/auth/google/callback" }));
     assert.equal(url.origin + url.pathname, "https://accounts.google.com/o/oauth2/v2/auth");
     assert.deepEqual(Object.fromEntries(url.searchParams), { client_id: "id.apps.googleusercontent.com", redirect_uri: "https://game.example/api/auth/google/callback", response_type: "code", scope: "openid email", state: "s", nonce: "n", code_challenge: "c", code_challenge_method: "S256", prompt: "select_account" });
+    const again = new URL(client.authorizationUrl({ state: "s", nonce: "n", codeChallenge: "c", redirectUri: "https://game.example/cb", reauthenticate: true }));
+    assert.equal(again.searchParams.get("prompt"), "login", "before an export, the password again");
+    assert.equal(again.searchParams.get("max_age"), "0", "and the time it was typed in the ID token");
   });
 
   it("exchanges the code for the ID token's claims, server to server", async () => {

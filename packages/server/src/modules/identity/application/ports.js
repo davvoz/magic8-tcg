@@ -63,8 +63,9 @@ export const WALLET_PROVIDER_METHODS = Object.freeze(["isValidAccountName", "bui
  * @property {(sub: string, now: number) => Promise<void>} recordLogin
  *
  * @typedef {object} GoogleOAuth Google's OAuth endpoints, for the game's client
- * @property {(request: { state: string, nonce: string, codeChallenge: string, redirectUri: string }) => string} authorizationUrl
- *   where the browser goes to sign in (PKCE with S256)
+ * @property {(request: { state: string, nonce: string, codeChallenge: string, redirectUri: string, reauthenticate?: boolean }) => string} authorizationUrl
+ *   where the browser goes to sign in (PKCE with S256); `reauthenticate`: Google asks the player to sign in again, whatever
+ *   session it has, and says when they did (`auth_time`)
  * @property {(request: { code: string, codeVerifier: string, redirectUri: string }) => Promise<import("@magic8/engine/shared/Result.js").Ok<unknown> | import("@magic8/engine/shared/Result.js").Fail>} exchangeCode
  *   the claims of the ID token Google returns for the code
  *

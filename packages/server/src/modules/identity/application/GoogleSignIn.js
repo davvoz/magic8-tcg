@@ -12,13 +12,18 @@
  *   in one unit of work the user is created, the keys are kept (custody),
  *   the identity is linked and a session opens.
  *
+ * - Before the wallet is exported, the player signs in at Google again
+ *   (purpose EXPORT: Google asks for the password, whatever session it has).
+ *   No session opens: a sealed cookie says, for ten minutes, that this user
+ *   just proved it is them (reauthenticatedUser).
+ *
  * Sessions opened here are of the GOOGLE method and name the kept posting
  * key, so the key audit (T18) closes them if the keys change on chain. A
  * sign-in checks that key first: once the player changed the account's keys
  * (after exporting them), the account is theirs alone, the kept keys are
  * dropped and the player is told to sign in with their own.
  */
-import { fail } from "@magic8/engine/shared/Result.js";
+import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { hexToBytes, sha256Hex, utf8 } from "@magic8/protocol";
 import { AppError } from "../../../kernel/AppError.js";
 import { assertImplements } from "../../../kernel/contracts.js";
@@ -32,7 +37,10 @@ import { ACCOUNT_FACTORY_METHODS, AccountFactoryFailure, GOOGLE_IDENTITY_REPOSIT
 export const FLOW_TTL_MS = 10 * 60 * 1000;
 /** Time to choose the new account's name. */
 export const SIGNUP_TTL_MS = 30 * 60 * 1000;
+/** How long signing in again at Google lets the player export their wallet, and how recent that sign-in must be. */
+export const REAUTH_TTL_MS = 10 * 60 * 1000;
 const FLOW_CONTEXT = "google_sign_in:flow";
+const REAUTH_CONTEXT = "google_sign_in:reauth";
 const SIGNUP_CONTEXT = "google_sign_in:signup";
 /** What the chain answers when the kept posting key is no longer the account's (the key audit's revoking answer). */
 const KEY_GONE = "KEY_NOT_AUTHORIZED";
@@ -40,7 +48,9 @@ const KEY_GONE = "KEY_NOT_AUTHORIZED";
 const MAX_CARRIED_EMAIL = 100;
 const MAX_SEALED_LENGTH = 512;
 
-export const GoogleOutcome = Object.freeze({ SIGNED_IN: "signed-in", EXISTING: "existing", NEW: "new", FAILED: "failed" });
+export const GoogleOutcome = Object.freeze({ SIGNED_IN: "signed-in", EXISTING: "existing", NEW: "new", REAUTHENTICATED: "reauthenticated", FAILED: "failed" });
+/** What a Google sign-in is for: signing in, or proving it is the player again before their wallet is exported. */
+export const GooglePurpose = Object.freeze({ SIGN_IN: "sign-in", EXPORT: "export" });
 /** Why a sign-in did not complete, in the words the client shows. */
 export const GoogleFailure = Object.freeze({ CANCELLED: "cancelled", EXPIRED: "expired", UNAVAILABLE: "unavailable", FAILED: "failed" });
 
@@ -49,6 +59,7 @@ export const GoogleFailure = Object.freeze({ CANCELLED: "cancelled", EXPIRED: "e
  * @typedef {Readonly<{ kind: "signed-in", session: OpenedSession }>
  *   | Readonly<{ kind: "existing", account: string, ownKeys: boolean }>
  *   | Readonly<{ kind: "new", signup: string }>
+ *   | Readonly<{ kind: "reauthenticated", reauth: string }>
  *   | Readonly<{ kind: "failed", reason: string }>} GoogleResult
  */
 
@@ -117,15 +128,17 @@ export class GoogleSignIn {
   }
 
   /**
+   * @param {{ purpose?: string }} [request] one of GooglePurpose; signing in by default
    * @returns {Readonly<{ location: string, flow: string }>} where to send the browser, and the cookie that remembers this sign-in
    */
-  start() {
+  start({ purpose = GooglePurpose.SIGN_IN } = {}) {
     const state = base64Url(this.#random.bytes(16));
     const nonce = base64Url(this.#random.bytes(16));
     const verifier = base64Url(this.#random.bytes(32));
     const codeChallenge = base64Url(hexToBytes(sha256Hex(utf8(verifier))));
-    const flow = this.#seal({ state, nonce, verifier, expiresAt: this.#clock.now() + FLOW_TTL_MS }, FLOW_CONTEXT);
-    return Object.freeze({ location: this.#oauth.authorizationUrl({ state, nonce, codeChallenge, redirectUri: this.#redirectUri }), flow });
+    const exporting = purpose === GooglePurpose.EXPORT;
+    const flow = this.#seal({ state, nonce, verifier, purpose: exporting ? GooglePurpose.EXPORT : GooglePurpose.SIGN_IN, expiresAt: this.#clock.now() + FLOW_TTL_MS }, FLOW_CONTEXT);
+    return Object.freeze({ location: this.#oauth.authorizationUrl({ state, nonce, codeChallenge, redirectUri: this.#redirectUri, reauthenticate: exporting }), flow });
   }
 
   /**
@@ -140,6 +153,9 @@ export class GoogleSignIn {
     const identity = await this.#identityOf({ code, state, flow, ip });
     if (!identity.ok) {
       return failed(identity.error.code);
+    }
+    if (identity.value.purpose === GooglePurpose.EXPORT) {
+      return this.#reauthenticated(identity.value, ip);
     }
     const { sub, email } = identity.value;
     const link = await this.#identities.findBySub(sub);
@@ -160,8 +176,8 @@ export class GoogleSignIn {
   /**
    * Who Google says signed in, if the answer belongs to the sign-in of this browser's cookie.
    * @param {{ code: string | null, state: string | null, flow: string | null, ip: string }} input
-   * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<import("../domain/googleIdentity.js").GoogleIdentity> | import("@magic8/engine/shared/Result.js").Fail>}
-   *   failure codes are GoogleFailure reasons
+   * @returns {Promise<import("@magic8/engine/shared/Result.js").Ok<import("../domain/googleIdentity.js").GoogleIdentity & { purpose: string }> | import("@magic8/engine/shared/Result.js").Fail>}
+   *   failure codes are GoogleFailure reasons; `purpose`: what the sign-in was started for
    */
   async #identityOf({ code, state, flow, ip }) {
     const pending = this.#open(flow, FLOW_CONTEXT);
@@ -177,7 +193,34 @@ export class GoogleSignIn {
       await this.#audit.record({ actorKind: "system", action: "auth.google_refused", targetKind: "google", targetId: "unknown", ip, details: { reason: identity.error.message } });
       return fail(GoogleFailure.FAILED, identity.error.message);
     }
-    return identity;
+    return ok(Object.freeze({ ...identity.value, purpose: pending.purpose === GooglePurpose.EXPORT ? GooglePurpose.EXPORT : GooglePurpose.SIGN_IN }));
+  }
+
+  /**
+   * The player signed in at Google again, to export their wallet: only an identity linked here, whose password was
+   * just typed.
+   * @param {import("../domain/googleIdentity.js").GoogleIdentity} identity
+   * @param {string} ip
+   * @returns {Promise<GoogleResult>}
+   */
+  async #reauthenticated({ sub, authTime }, ip) {
+    const link = await this.#identities.findBySub(sub);
+    const now = this.#clock.now();
+    if (link === null || authTime === null || authTime < now - REAUTH_TTL_MS) {
+      return failed(GoogleFailure.FAILED);
+    }
+    await this.#audit.record({ actorKind: "user", actorUserId: link.userId, action: "auth.google_reauthenticated", targetKind: "user", targetId: link.userId, ip });
+    return Object.freeze({ kind: GoogleOutcome.REAUTHENTICATED, reauth: this.#seal({ userId: link.userId, expiresAt: now + REAUTH_TTL_MS }, REAUTH_CONTEXT) });
+  }
+
+  /**
+   * Who signed in at Google again in the last ten minutes, by the cookie that says it.
+   * @param {string | null} reauth the cookie
+   * @returns {string | null} their user id
+   */
+  reauthenticatedUser(reauth) {
+    const payload = this.#open(reauth, REAUTH_CONTEXT);
+    return typeof payload?.userId === "string" ? payload.userId : null;
   }
 
   /**

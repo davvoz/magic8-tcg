@@ -42,6 +42,10 @@ export class PgCustodyRepository {
     return result.rowCount > 0;
   }
 
+  async markExported(userId, at) {
+    await this.#db.query("UPDATE custody_keys SET exported_at = $2 WHERE user_id = $1", [userId, toTimestamp(at)]);
+  }
+
   async claimTransfer(memo, userId, at) {
     const result = await this.#db.query("INSERT INTO custody_transfers (memo, user_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [memo, userId, toTimestamp(at)]);
     return result.rowCount > 0;

@@ -15,6 +15,7 @@
  * @property {Readonly<{ version: string, release?: string, storage: "local" | "memory" }>} environment `version` the engine's; `release` the game's ("v0.2.0 (0253e2b)"), absent in tools and previews
  * @property {import("./identity/IdentityService.js").IdentityService} [identity] absent when the client runs without a game server (tools, previews)
  * @property {import("./identity/GoogleSignInService.js").GoogleSignInService} [google] signing in with Google, the wallet KIJAM keeps; absent with `identity`
+ * @property {import("./wallet/WalletExport.js").WalletExport} [walletExport] the export of the wallet KIJAM keeps for a Google player; absent with `identity`
  * @property {import("./account/AccountService.js").AccountService} [account] the signed-in player's collection and decks; absent with `identity`
  * @property {import("./shop/ShopService.js").ShopService} [shop] the marketplace; absent with `identity`
  * @property {import("./wallet/BalanceService.js").BalanceService} [balance] what the player's wallet holds, their budget where they buy; absent with `identity`

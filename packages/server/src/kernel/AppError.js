@@ -19,6 +19,8 @@ export const ErrorStatus = Object.freeze({
   /** A paid game mode, and the player has no entries left for it. */
   ENTRY_REQUIRED: 402,
   FORBIDDEN: 403,
+  /** Exporting the wallet KIJAM keeps needs a Google sign-in of the last ten minutes. */
+  REAUTH_REQUIRED: 403,
   CSRF_REJECTED: 403,
   NOT_FOUND: 404,
   METHOD_NOT_ALLOWED: 405,

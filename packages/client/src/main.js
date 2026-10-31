@@ -37,6 +37,7 @@ import { PurchaseStage, ShopService } from "./application/shop/ShopService.js";
 import { ActiveKeyPrompt } from "./application/wallet/ActiveKeyPrompt.js";
 import { BalanceService } from "./application/wallet/BalanceService.js";
 import { WalletSwitch } from "./application/wallet/WalletSwitch.js";
+import { WalletExport } from "./application/wallet/WalletExport.js";
 import { DeckBuildingService } from "./application/decks/DeckBuildingService.js";
 import { deckMix } from "./application/decks/deckMix.js";
 import { DeckSelectionService } from "./application/decks/DeckSelectionService.js";
@@ -98,6 +99,8 @@ import { KeychainWalletConnector } from "./infrastructure/wallet/KeychainWalletC
 import { KeyVault } from "./infrastructure/wallet/KeyVault.js";
 import { LocalKeyWallet } from "./infrastructure/wallet/LocalKeyWallet.js";
 import { CustodialWallet } from "./infrastructure/wallet/CustodialWallet.js";
+import { BrowserClipboard } from "./infrastructure/browser/BrowserClipboard.js";
+import { BrowserFileSaver } from "./infrastructure/browser/BrowserFileSaver.js";
 import { InputManager } from "./input/InputManager.js";
 import { CanvasHost } from "./rendering/canvas/CanvasHost.js";
 import { GameLoop } from "./rendering/canvas/GameLoop.js";
@@ -426,8 +429,11 @@ async function boot() {
   const identity = new IdentityService({ api: new HttpAuthApi({ fetch: httpFetch }), wallet: keychain, keys, record: signIns });
   // Back from Google (docs/tcg/29-google.md): what the address says is read once, then taken out of it.
   const google = new GoogleSignInService({ api: new HttpGoogleApi({ fetch: httpFetch }), identity, navigate: (path) => window.location.assign(path), pending: takeGoogleReturn() });
+  const custodyApi = new HttpCustodyApi({ fetch: httpFetch });
   // Games, the shop and the market sign with whichever the player signed in with.
-  const wallet = new WalletSwitch({ identity, keychain, keys, custodial: new CustodialWallet({ api: new HttpCustodyApi({ fetch: httpFetch }) }) });
+  const wallet = new WalletSwitch({ identity, keychain, keys, custodial: new CustodialWallet({ api: custodyApi }) });
+  // A Google player takes their wallet with them, after signing in at Google again.
+  const walletExport = new WalletExport({ api: custodyApi, reauthenticate: () => google.reauthenticate(), clipboard: new BrowserClipboard({ clipboard: navigator.clipboard }), files: new BrowserFileSaver({ document, urls: URL }) });
   // The painted table and menus are downloaded alongside the content: the first screen waits for them.
   const { coinArt, tableArt, uiArt } = buildPaintedArt();
   const firstScreenArt = Promise.all([loading.track(uiArt.preload()), loading.track(tableArt.preload())]);
@@ -596,6 +602,7 @@ async function boot() {
     environment: Object.freeze({ version: ENGINE_VERSION, release: describeRelease(RELEASE), storage: storageAvailable ? "local" : "memory" }),
     identity,
     google,
+    walletExport,
     account,
     shop,
     balance,
@@ -695,6 +702,7 @@ async function boot() {
   // The character of a daily challenge speaks as the game starts, when it is nearly beaten, and when it ends: a bubble by its seat.
   new DailyCompanion({ online, daily, say: (speech) => voice.say(speech) }).start();
   sceneManager.navigate(firstScene(google, identity));
+  resumeExport(google, walletExport);
   preloadArt({ illustrations, coinArt });
   // The menu is lifted into view painted, unless its art is slow to come: then it shows procedurally rather than keep the player waiting.
   await Promise.race([firstScreenArt, new Promise((resolve) => window.setTimeout(resolve, FIRST_SCREEN_ART_WAIT_MS))]);
@@ -725,6 +733,18 @@ function takeGoogleReturn() {
 const GOOGLE_RETURN_PARAMS = Object.freeze(["google", "account", "keys", "reason"]);
 
 /**
+ * Back from signing in at Google again: the wallet the player asked to export, shown over the first screen.
+ * @param {GoogleSignInService} google
+ * @param {WalletExport} walletExport
+ */
+function resumeExport(google, walletExport) {
+  if (google.pending?.kind === GoogleReturnKind.EXPORT) {
+    google.take();
+    void walletExport.resume();
+  }
+}
+
+/**
  * Where the game opens: Home, unless a Google sign-in just came back with something to do, a name to choose
  * (a new player) or something to say on the sign-in screen.
  * @param {GoogleSignInService} google
@@ -733,6 +753,9 @@ const GOOGLE_RETURN_PARAMS = Object.freeze(["google", "account", "keys", "reason
 function firstScene(google, identity) {
   const back = google.pending;
   if (back === null || identity.state.status === IdentityStatus.SIGNED_IN) {
+    return SceneId.HOME;
+  }
+  if (back.kind === GoogleReturnKind.EXPORT) {
     return SceneId.HOME;
   }
   return back.kind === GoogleReturnKind.NEW ? SceneId.GOOGLE_NAME : SceneId.LOGIN;

@@ -9,11 +9,13 @@
  *   a name (nameStatus, createAccount), and the session opens;
  * - "existing": it already has one whose keys the player holds (made on
  *   join.cur8, or taken over after exporting the wallet): sign in with them;
+ * - "export": the player signed in at Google again, to export their wallet
+ *   (WalletExport takes it from there);
  * - "error": why the sign-in did not complete.
  */
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 
-export const GoogleReturnKind = Object.freeze({ NEW: "new", EXISTING: "existing", ERROR: "error" });
+export const GoogleReturnKind = Object.freeze({ NEW: "new", EXISTING: "existing", EXPORT: "export", ERROR: "error" });
 /** Why a sign-in did not complete, as the server says it. */
 export const GoogleReturnReason = Object.freeze({ CANCELLED: "cancelled", EXPIRED: "expired", UNAVAILABLE: "unavailable", FAILED: "failed" });
 
@@ -26,6 +28,7 @@ const REASONS = Object.freeze(Object.values(GoogleReturnReason));
 /**
  * @typedef {Readonly<{ kind: "new" }>
  *   | Readonly<{ kind: "existing", account: string, ownKeys: boolean }>
+ *   | Readonly<{ kind: "export" }>
  *   | Readonly<{ kind: "error", reason: string }>} GoogleReturn
  *   `ownKeys`: the account was KIJAM's to keep, and the player took it over with its keys
  */
@@ -40,6 +43,8 @@ export function readGoogleReturn(search) {
   switch (query.get("google")) {
     case GoogleReturnKind.NEW:
       return Object.freeze({ kind: GoogleReturnKind.NEW });
+    case GoogleReturnKind.EXPORT:
+      return Object.freeze({ kind: GoogleReturnKind.EXPORT });
     case GoogleReturnKind.EXISTING: {
       const account = query.get("account") ?? "";
       return ACCOUNT_IN_ADDRESS.test(account) ? Object.freeze({ kind: GoogleReturnKind.EXISTING, account, ownKeys: query.get("keys") === "own" }) : null;
@@ -109,6 +114,11 @@ export class GoogleSignInService {
   /** Off to Google, through the game server. */
   start() {
     this.#navigate(this.#api.startPath);
+  }
+
+  /** Off to Google to sign in again, before the wallet is exported: Google asks for the password. */
+  reauthenticate() {
+    this.#navigate(`${this.#api.startPath}?purpose=export`);
   }
 
   /**

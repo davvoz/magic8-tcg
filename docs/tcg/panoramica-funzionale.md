@@ -11,7 +11,7 @@ KIJAM è un gioco di carte collezionabili **uno contro uno**, giocato nel browse
 - Si gioca con **mazzi di 30–40 carte**, creature e magie di cinque fazioni più le neutrali. Vince chi porta a zero la vita dell'avversario.
 - Le carte sono **copie possedute**: ognuna ha un proprietario, un numero di serie e una storia.
 - Le carte si ottengono con uno **starter gratuito**, nel **negozio** (pagando in STEEM), con gli **scambi** e comprandole da altri giocatori sulla **bacheca**.
-- L'identità è un **account STEEM**: si entra firmando con l'estensione **Steem Keychain**, senza password e senza che la chiave privata lasci il browser.
+- L'identità è un **account STEEM**: si entra firmando con l'estensione **Steem Keychain** o con la propria posting key, senza che la chiave privata lasci il browser; oppure con **Google**, e allora l'account lo crea cur8 e il suo wallet lo tiene KIJAM, esportabile quando si vuole (29).
 - La **blockchain STEEM** fa da notaio pubblico: registra acquisti, apertura dei pacchetti, scambi, vendite e risultati delle partite. Le partite si giocano sul server del gioco, che è l'unico arbitro delle regole.
 
 ---
@@ -144,7 +144,7 @@ flowchart LR
   H --> C
 ```
 
-1. **Accesso.** Il giocatore scrive il nome del suo account STEEM e firma con Keychain un messaggio del server. Nessuna password, nessuna chiave privata al server. La sessione dura fino a 7 giorni (24 ore di inattività).
+1. **Accesso.** Il giocatore scrive il nome del suo account STEEM e firma con Keychain (o con la sua posting key) un messaggio del server: nessuna chiave privata al server. Chi non ha un account entra con **Google**, sceglie un nome e gioca: l'account lo crea cur8, le chiavi le tiene KIJAM e il giocatore le esporta dal riquadro dell'account (*Export wallet*, dopo essere rientrato con Google). La sessione dura fino a 7 giorni (24 ore di inattività).
 2. **Starter gratuito.** Al primo accesso sceglie **uno fra cinque mazzi, uno per fazione**: Ember Vanguard, Iron Foundry, Shadow Pact, Verdant Grove, Spire Bastion (arcane con un po' di iron). Non c'è uno starter neutrale: le carte neutrali sono troppo poche. Il mazzo diventa suo (carte coniate a suo nome) ed è già pronto per giocare. Si riceve una sola volta per account. I cinque sono stati scelti perché, nelle simulazioni, sono i più equilibrati fra loro: ognuno vince fra il 48% e il 51% contro gli altri quattro.
 3. **Collezione.** Mostra tutte le copie possedute, con numero di serie, edizione e stato.
 4. **Deck builder.** Si costruiscono mazzi con le carte possedute; un mazzo che non rispetta le regole o usa carte non più disponibili non si può portare in partita.
@@ -306,7 +306,7 @@ flowchart TB
 | **Operatore** | Usa il pannello admin: rimborsi (firmati a mano con Keychain), allarmi, registro di audit, segnalazioni di fair play |
 | **Chiunque** | Può leggere la blockchain e verificare pacchetti, ricevute, scambi, vendite e risultati |
 
-Anche se il server venisse compromesso, un attaccante non potrebbe spostare fondi: il server non possiede chiavi che lo permettano.
+Anche se il server venisse compromesso, un attaccante non potrebbe spostare i fondi del negozio né dei giocatori che usano le proprie chiavi: il server non possiede chiavi che lo permettano. Fanno eccezione, per scelta, gli account entrati con Google: le loro chiavi sono sul server, cifrate con una chiave che sta fuori dal database (29, 05 T23/T36).
 
 ---
 

@@ -19,7 +19,8 @@ import { isArriving } from "../../application/payments/purchaseProgress.js";
 import { buyingTrack } from "../../application/sales/SalesService.js";
 import { shopTrack } from "../../application/shop/ShopService.js";
 import { AccountStatus } from "../../application/account/AccountService.js";
-import { IdentityStatus } from "../../application/identity/IdentityService.js";
+import { IdentityStatus, SignInMethod } from "../../application/identity/IdentityService.js";
+import { WalletExportStatus } from "../../application/wallet/WalletExport.js";
 import { SceneId } from "../scenes/sceneIds.js";
 import { Button } from "../ui/Button.js";
 import { Icon } from "../ui/icons.js";
@@ -31,6 +32,7 @@ import { PANEL_INSET } from "../ui/Panel.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { UiNode } from "../ui/UiNode.js";
 import { buildAccountDialog } from "./AccountDialog.js";
+import { buildExportWalletDialog } from "./ExportWalletDialog.js";
 import { ArrivalChip } from "./ArrivalChip.js";
 import { Chip } from "./Chip.js";
 import { ProfileButton } from "./ProfileButton.js";
@@ -106,6 +108,10 @@ export class Shell {
   #now;
   /** The purchase on its way, as last built into the bar. @type {ArrivalChip | null} */
   #arrivalChip = null;
+  /** Whether the exported wallet is shown over the screen. */
+  #exportShown = false;
+  /** What the last Copy or Download of the exported wallet did. */
+  #exportNotice = "";
 
   /**
    * @param {{ host: ShellHost, app: import("../../application/AppContext.js").AppContext, scene: string, section: string | null, heading: import("./TopBar.js").Heading, now?: () => number }} options
@@ -153,6 +159,10 @@ export class Shell {
         );
       }
     }
+    // The exported wallet shows over whatever screen the player is on (back from signing in at Google again: Home).
+    if (typeof app.walletExport?.subscribe === "function") {
+      this.#unsubscribes.push(app.walletExport.subscribe((state) => this.#showExport(state)));
+    }
     this.#rebuild();
   }
 
@@ -171,6 +181,11 @@ export class Shell {
     this.#unsubscribes.forEach((unsubscribe) => unsubscribe());
     this.#unsubscribes = [];
     this.#stopFollowingSound();
+    // The keys go with the screen they were shown on.
+    if (this.#exportShown) {
+      this.#exportShown = false;
+      this.#app.walletExport?.close();
+    }
   }
 
   /** The screen changed shape: lay out again if the shell's place on it did. */
@@ -467,7 +482,45 @@ export class Shell {
       close();
       void identity.signOut().then(() => services.navigate(SceneId.HOME));
     };
-    this.#host.showOverlay(buildAccountDialog({ viewport: services.viewport, user, method: identity.state.method, onSignOut, onClose: close }));
+    const walletExport = this.#app.walletExport;
+    const onExport =
+      walletExport !== undefined && identity.state.method === SignInMethod.GOOGLE
+        ? () => {
+            close();
+            void walletExport.open();
+          }
+        : null;
+    this.#host.showOverlay(buildAccountDialog({ viewport: services.viewport, user, method: identity.state.method, onSignOut, onClose: close, onExport }));
+  }
+
+  /**
+   * The exported wallet, or why it could not be shown, over the screen while WalletExport says so.
+   * @param {import("../../application/wallet/WalletExport.js").WalletExportState} state
+   */
+  #showExport(state) {
+    const walletExport = this.#app.walletExport;
+    const shows = state.status === WalletExportStatus.SHOWN || state.status === WalletExportStatus.FAILED;
+    if (walletExport === undefined || !shows) {
+      if (this.#exportShown) {
+        this.#exportShown = false;
+        this.#exportNotice = "";
+        this.#host.hideOverlay();
+      }
+      return;
+    }
+    const redraw = () => this.#showExport(walletExport.state);
+    const onCopy = (/** @type {string} */ label, /** @type {string} */ text) => {
+      void walletExport.copy(text).then((copied) => {
+        this.#exportNotice = copied.ok ? `${label} copied.` : "This browser does not let the game copy: use Download file.";
+        redraw();
+      });
+    };
+    const onDownload = () => {
+      this.#exportNotice = walletExport.download().ok ? "The file is in your downloads. Keep it somewhere safe." : "The file could not be saved.";
+      redraw();
+    };
+    this.#exportShown = true;
+    this.#host.showOverlay(buildExportWalletDialog({ viewport: this.#host.services.viewport, state, notice: this.#exportNotice, onCopy, onDownload, onClose: () => walletExport.close() }));
   }
 
   /**

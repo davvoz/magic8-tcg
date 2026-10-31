@@ -8,11 +8,14 @@
  * - The callback never answers JSON: whatever happens, the browser lands in
  *   the game, which reads `?google=…` and shows the next step.
  * - /api/auth/options tells the client whether to show the Google button.
+ * - /start?purpose=export signs the player in at Google again before their
+ *   wallet is exported: the callback then sets a short cookie that says so
+ *   (reauthentication) and sends the browser to /?google=export.
  */
 import { checkString } from "@magic8/engine/shared/validation.js";
 import { serializeCookie } from "../../../platform/http/cookies.js";
 import { validated } from "../../../platform/http/validateBody.js";
-import { FLOW_TTL_MS, GoogleFailure, GoogleOutcome, SIGNUP_TTL_MS } from "../application/GoogleSignIn.js";
+import { FLOW_TTL_MS, GoogleFailure, GoogleOutcome, GooglePurpose, REAUTH_TTL_MS, SIGNUP_TTL_MS } from "../application/GoogleSignIn.js";
 import { publicUser } from "./identityRoutes.js";
 
 /** Each step of a sign-in has its own bucket: one sign-in takes one of each. */
@@ -23,6 +26,29 @@ const ACCOUNT_RATE = Object.freeze({ name: "google-accounts", capacity: 10, refi
 const NAME_RATE = Object.freeze({ name: "google-names", capacity: 30, refillPerSecond: 1, by: /** @type {const} */ ("ip") });
 const ACCOUNT_KEYS = Object.freeze(["account"]);
 const MAX_QUERY_VALUE = 2048;
+
+/**
+ * The cookies of signing in with Google: `__Host-` names over https.
+ * @param {boolean} secure
+ */
+export function googleCookieNames(secure) {
+  const prefix = secure ? "__Host-" : "";
+  return Object.freeze({ flow: `${prefix}m8_google_flow`, signup: `${prefix}m8_google_signup`, reauth: `${prefix}m8_google_reauth` });
+}
+
+/**
+ * Whether a request comes from a player who signed in at Google again in the last ten minutes, and the cookie that
+ * spends it: what exporting the wallet asks for.
+ * @param {{ google: import("../application/GoogleSignIn.js").GoogleSignIn | null, secure: boolean }} deps
+ */
+export function googleReauthentication({ google, secure }) {
+  const { reauth } = googleCookieNames(secure);
+  return Object.freeze({
+    /** @param {ReadonlyMap<string, string>} cookies @returns {string | null} the user id */
+    userOf: (cookies) => google?.reauthenticatedUser(cookies.get(reauth) ?? null) ?? null,
+    spent: () => serializeCookie({ name: reauth, value: "", maxAgeSeconds: 0, secure }),
+  });
+}
 
 /**
  * @param {{
@@ -42,9 +68,7 @@ export function registerGoogleRoutes({ router, google, cookie, clock, logger }) 
   if (google === null) {
     return;
   }
-  const prefix = cookie.secure ? "__Host-" : "";
-  const flowCookie = `${prefix}m8_google_flow`;
-  const signupCookie = `${prefix}m8_google_signup`;
+  const { flow: flowCookie, signup: signupCookie, reauth: reauthCookie } = googleCookieNames(cookie.secure);
   const sessionCookie = (/** @type {{ token: string, expiresAt: number }} */ session) => serializeCookie({ name: cookie.name, value: session.token, maxAgeSeconds: (session.expiresAt - clock.now()) / 1000, secure: cookie.secure });
   const cleared = (/** @type {string} */ name, /** @type {"Strict" | "Lax"} */ sameSite) => serializeCookie({ name, value: "", maxAgeSeconds: 0, secure: cookie.secure, sameSite });
 
@@ -52,8 +76,8 @@ export function registerGoogleRoutes({ router, google, cookie, clock, logger }) 
     method: "GET",
     path: "/api/auth/google/start",
     rateLimit: START_RATE,
-    handler: async () => {
-      const { location, flow } = google.start();
+    handler: async (context) => {
+      const { location, flow } = google.start({ purpose: context.query.get("purpose") === GooglePurpose.EXPORT ? GooglePurpose.EXPORT : GooglePurpose.SIGN_IN });
       return { status: 302, headers: { Location: location }, cookies: [serializeCookie({ name: flowCookie, value: flow, maxAgeSeconds: FLOW_TTL_MS / 1000, secure: cookie.secure, sameSite: "Lax" })] };
     },
   });
@@ -82,6 +106,8 @@ export function registerGoogleRoutes({ router, google, cookie, clock, logger }) 
           return redirect("/", [...cookies, sessionCookie(result.session)]);
         case GoogleOutcome.EXISTING:
           return redirect(`/?google=existing&account=${encodeURIComponent(result.account)}${result.ownKeys ? "&keys=own" : ""}`, cookies);
+        case GoogleOutcome.REAUTHENTICATED:
+          return redirect("/?google=export", [...cookies, serializeCookie({ name: reauthCookie, value: result.reauth, maxAgeSeconds: REAUTH_TTL_MS / 1000, secure: cookie.secure })]);
         case GoogleOutcome.NEW:
           return redirect("/?google=new", [...cookies, serializeCookie({ name: signupCookie, value: result.signup, maxAgeSeconds: SIGNUP_TTL_MS / 1000, secure: cookie.secure })]);
         default:

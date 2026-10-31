@@ -12,8 +12,9 @@ const SUB_PATTERN = /^[\x21-\x7e]{1,255}$/;
 const MAX_EMAIL_LENGTH = 254;
 
 /**
- * @typedef {Readonly<{ sub: string, email: string | null }>} GoogleIdentity
- *   `sub`: Google's stable id of the account; `email`: only when Google verified it
+ * @typedef {Readonly<{ sub: string, email: string | null, authTime: number | null }>} GoogleIdentity
+ *   `sub`: Google's stable id of the account; `email`: only when Google verified it; `authTime`: when the player last
+ *   typed their password at Google (ms), when Google says it
  */
 
 /**
@@ -30,9 +31,9 @@ export function verifiedGoogleIdentity(claims, { clientId, nonce, now }) {
   if (refusal !== undefined) {
     return fail("ID_TOKEN_INVALID", refusal.otherwise);
   }
-  const { email, email_verified: emailVerified } = token;
+  const { email, email_verified: emailVerified, auth_time: authTime } = token;
   const verifiedEmail = emailVerified === true && typeof email === "string" && email.length <= MAX_EMAIL_LENGTH ? email : null;
-  return ok(Object.freeze({ sub: /** @type {string} */ (token.sub), email: verifiedEmail }));
+  return ok(Object.freeze({ sub: /** @type {string} */ (token.sub), email: verifiedEmail, authTime: Number.isSafeInteger(authTime) ? /** @type {number} */ (authTime) * 1000 : null }));
 }
 
 /**

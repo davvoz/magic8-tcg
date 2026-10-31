@@ -28,8 +28,8 @@ export class GoogleOAuthClient {
     this.#timeoutMs = timeoutMs;
   }
 
-  /** @param {{ state: string, nonce: string, codeChallenge: string, redirectUri: string }} request */
-  authorizationUrl({ state, nonce, codeChallenge, redirectUri }) {
+  /** @param {{ state: string, nonce: string, codeChallenge: string, redirectUri: string, reauthenticate?: boolean }} request */
+  authorizationUrl({ state, nonce, codeChallenge, redirectUri, reauthenticate = false }) {
     const url = new URL(AUTHORIZATION_ENDPOINT);
     url.search = new globalThis.URLSearchParams({
       client_id: this.#clientId,
@@ -40,7 +40,8 @@ export class GoogleOAuthClient {
       nonce,
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
-      prompt: "select_account",
+      // Signing in again (before the wallet is exported): Google asks for the password and says when it was given.
+      ...(reauthenticate ? { prompt: "login", max_age: "0" } : { prompt: "select_account" }),
     }).toString();
     return url.href;
   }

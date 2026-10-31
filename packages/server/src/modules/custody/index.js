@@ -5,5 +5,6 @@
  */
 export { CustodialSigner } from "./application/CustodialSigner.js";
 export { KeyCustody, custodyContext } from "./application/KeyCustody.js";
+export { WalletExport } from "./application/WalletExport.js";
 export { PgCustodyRepository } from "./infrastructure/PgCustodyRepository.js";
 export { registerCustodyRoutes } from "./http/custodyRoutes.js";

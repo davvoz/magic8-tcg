@@ -10,6 +10,7 @@ import { describe, it } from "node:test";
 import { fail, ok } from "@magic8/engine/shared/Result.js";
 import { GoogleSignInService, readGoogleReturn } from "../../src/application/identity/GoogleSignInService.js";
 import { IdentityService, IdentityStatus, SignInMethod } from "../../src/application/identity/IdentityService.js";
+import { WalletExport, WalletExportStatus, walletFileName, walletFileText } from "../../src/application/wallet/WalletExport.js";
 import { WalletSwitch } from "../../src/application/wallet/WalletSwitch.js";
 import { HttpCustodyApi } from "../../src/infrastructure/api/HttpCustodyApi.js";
 import { HttpGoogleApi } from "../../src/infrastructure/api/HttpGoogleApi.js";
@@ -166,5 +167,69 @@ describe("HttpGoogleApi", () => {
     assert.deepEqual(calls.map((call) => call.url), ["/api/auth/options", "/api/auth/google/names?name=new.bie", "/api/auth/google/accounts"]);
     assert.deepEqual(JSON.parse(calls[2].init.body), { account: "newbie" });
     assert.equal((await new HttpGoogleApi({ fetch: fetchWith(() => json(200, { name: 1 })).fetch }).nameStatus("x")).error.code, "BAD_RESPONSE");
+  });
+});
+
+describe("WalletExport", () => {
+  const WALLET = Object.freeze({ account: "newbie", masterPassword: "P5master", owner: "5owner", active: "5active", posting: "5posting", memo: "5memo" });
+
+  /** @param {any[]} answers */
+  function exporter(answers) {
+    const trips = [];
+    const copied = [];
+    const saved = [];
+    const walletExport = new WalletExport({
+      api: { exportWallet: async () => answers.shift() ?? fail("X", "x") },
+      reauthenticate: () => trips.push("google"),
+      clipboard: { write: async (text) => (copied.push(text), ok(undefined)) },
+      files: { save: (name, text) => (saved.push({ name, text }), ok(undefined)) },
+    });
+    return { walletExport, trips, copied, saved };
+  }
+
+  it("goes to Google first when the server wants a fresh sign-in, and shows the wallet once back", async () => {
+    const before = exporter([fail("REAUTH_REQUIRED", "sign in again")]);
+    await before.walletExport.open();
+    assert.deepEqual(before.trips, ["google"]);
+    assert.equal(before.walletExport.state.status, WalletExportStatus.OPENING, "the page is leaving");
+
+    const back = exporter([ok(WALLET)]);
+    await back.walletExport.resume();
+    assert.deepEqual(back.walletExport.state, { status: WalletExportStatus.SHOWN, wallet: WALLET, error: null });
+    back.walletExport.close();
+    assert.equal(back.walletExport.state.wallet, null, "the keys go once closed");
+  });
+
+  it("never sends the player to Google twice in a row", async () => {
+    const { walletExport, trips } = exporter([fail("REAUTH_REQUIRED", "sign in again")]);
+    await walletExport.resume();
+    assert.deepEqual(trips, []);
+    assert.equal(walletExport.state.status, WalletExportStatus.FAILED);
+    assert.equal(walletExport.state.error?.code, "REAUTH_REQUIRED");
+  });
+
+  it("copies a key and saves the whole wallet as a file", async () => {
+    const { walletExport, copied, saved } = exporter([ok(WALLET)]);
+    assert.equal(walletExport.download().ok, false, "nothing to save before it is shown");
+    await walletExport.open();
+    await walletExport.copy(WALLET.active);
+    assert.deepEqual(copied, ["5active"]);
+    assert.equal(walletExport.download().ok, true);
+    assert.equal(saved[0].name, walletFileName(WALLET));
+    for (const secret of Object.values(WALLET)) {
+      assert.ok(saved[0].text.includes(secret));
+    }
+    assert.ok(walletFileText(WALLET).includes("Keep this file private"));
+  });
+
+  it("reads the wallet from the server, and the address Google sends the player back to", async () => {
+    const http = fetchWith(() => json(200, { wallet: WALLET }));
+    assert.deepEqual(await new HttpCustodyApi({ fetch: http.fetch }).exportWallet(), { ok: true, value: WALLET });
+    assert.equal(http.calls[0].url, "/api/custody/export");
+    assert.equal((await new HttpCustodyApi({ fetch: fetchWith(() => json(200, { wallet: { account: "x" } })).fetch }).exportWallet()).error.code, "BAD_RESPONSE");
+    assert.deepEqual(readGoogleReturn("?google=export"), { kind: "export" });
+    const visits = [];
+    new GoogleSignInService({ api: /** @type {any} */ ({ startPath: "/api/auth/google/start" }), identity: { adoptGoogleSession: () => undefined }, navigate: (path) => visits.push(path) }).reauthenticate();
+    assert.deepEqual(visits, ["/api/auth/google/start?purpose=export"]);
   });
 });

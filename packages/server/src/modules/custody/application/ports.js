@@ -28,6 +28,7 @@
  * @property {(userId: string) => Promise<KeptAccount | null>} find
  * @property {(userId: string) => Promise<Readonly<{ network: string, account: string, sealed: Uint8Array }> | null>} findSealed
  * @property {(userId: string) => Promise<boolean>} remove false when there was nothing to remove
+ * @property {(userId: string, at: number) => Promise<void>} markExported
  * @property {(memo: string, userId: string, at: number) => Promise<boolean>} claimTransfer false when a transfer with this memo was already signed
  * @property {(memo: string, txId: string) => Promise<void>} recordTransfer
  * @property {(memo: string) => Promise<string | null>} transferOf the id of the transaction already signed for this memo (null: none, or not known yet)
@@ -50,6 +51,6 @@
 
 export const KEYRING_METHODS = Object.freeze(["publicKeyOf"]);
 export const SIGNING_KEYRING_METHODS = Object.freeze(["publicKeyOf", "signMessage", "signTransfer", "signComment"]);
-export const CUSTODY_REPOSITORY_METHODS = Object.freeze(["insert", "find", "findSealed", "remove", "claimTransfer", "recordTransfer", "transferOf", "releaseTransfer"]);
+export const CUSTODY_REPOSITORY_METHODS = Object.freeze(["insert", "find", "findSealed", "remove", "markExported", "claimTransfer", "recordTransfer", "transferOf", "releaseTransfer"]);
 export const PAYMENT_SOURCE_METHODS = Object.freeze(["openPayment"]);
 export const CHAIN_ACCESS_METHODS = Object.freeze(["chainReference", "relayTransfer"]);

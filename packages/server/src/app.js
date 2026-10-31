@@ -43,8 +43,8 @@ import { WebSocketGateway } from "./platform/realtime/WebSocketGateway.js";
 import { presenceHandler, registerSessionMessages } from "./realtimeSession.js";
 import { ConnectionHub } from "./platform/realtime/ConnectionHub.js";
 import { assertImplements } from "./kernel/contracts.js";
-import { AuthService, GoogleSignIn, PgChallengeRepository, PgGoogleIdentityRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, registerGoogleRoutes, registerIdentityRoutes } from "./modules/identity/index.js";
-import { CustodialSigner, KeyCustody, PgCustodyRepository, registerCustodyRoutes } from "./modules/custody/index.js";
+import { AuthService, GoogleSignIn, PgChallengeRepository, PgGoogleIdentityRepository, PgSessionRepository, PgUserRepository, SessionKeyAuditor, identityPolicy, googleReauthentication, registerGoogleRoutes, registerIdentityRoutes } from "./modules/identity/index.js";
+import { CustodialSigner, KeyCustody, PgCustodyRepository, WalletExport, registerCustodyRoutes } from "./modules/custody/index.js";
 import { StarterService, registerStarterRoutes, validateStarterOffer } from "./modules/onboarding/index.js";
 
 /**
@@ -229,7 +229,8 @@ export async function createServerApp(deps) {
   const pings = registerPings({ router, wall: pingWall, images: pingImages, avatars: pingAvatars, wallets, audit, clock });
   // What the server signs for the accounts it keeps: open payments of the shop and the player market, session keys, pings.
   const signer = new CustodialSigner({ custody, keyrings, payments: [marketplace, sales], chain: auth, pings, repository: custodyRepository, audit, clock });
-  registerCustodyRoutes({ router, signer });
+  const walletExport = new WalletExport({ custody, repository: custodyRepository, audit, clock });
+  registerCustodyRoutes({ router, signer, exports: walletExport, reauthentication: googleReauthentication({ google, secure: config.secure }) });
   const readModel = new PgOperationsReadModel(database);
   const runtime = () => ({ connections: hub.size, broadcasters: chain === null ? null : { signers: chain.signers, resourceCredits: chain.rc.levels() } });
   const monitor = new Monitor({ readModel, runtime, clock, logger, policy: alarmPolicy });

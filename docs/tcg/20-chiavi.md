@@ -7,6 +7,8 @@
 
 Modello preso da cur8.fun: la posting key è la chiave di tutti i giorni, la active key si chiede a parte e solo quando serve.
 
+C'è anche un terzo modo, per chi non vuole sapere cosa sia una chiave: **Google**, con un wallet tenuto da KIJAM (29). Le regole qui sotto valgono per chi entra con le proprie chiavi; per chi entra con Google le chiavi stanno sul server e il login ha la scheda *Google* accanto alle altre due.
+
 ## Decisioni
 
 | Decisione | Perché |
@@ -18,7 +20,7 @@ Modello preso da cur8.fun: la posting key è la chiave di tutti i giorni, la act
 | La active key sbloccata resta **in memoria fino alla chiusura della pagina**; all'avvio non si sblocca mai da sola. | Un pagamento dopo l'altro non chiede il PIN ogni volta, ma ogni visita sì. |
 | I trasferimenti firmati nel browser passano dal **server di gioco**, che li inoltra al nodo. | La pagina non parla con i nodi STEEM (la CSP resta `connect-src 'self'`), il failover dei nodi è uno solo. Il server non può cambiare quello che è firmato. |
 | Il logout dimentica tutte le chiavi dell'account (posting e active salvata). Anche un login con Keychain dimentica le chiavi salvate. | Un browser, un giocatore: le chiavi di chi c'era prima non restano. |
-| Si firma **sempre con il metodo del login**, mai con l'altro come ripiego: login con Keychain → Keychain; login con posting key → posting key, e la active key per i pagamenti. Il metodo si ricorda in `magic8.signin`. | Il cookie di sessione sopravvive a un ricaricamento ma non dice con cosa si è entrati. Senza ricordarlo, una sessione la cui posting key non c'è più sembrerebbe di Keychain. |
+| Si firma **sempre con il metodo del login**, mai con l'altro come ripiego: login con Keychain → Keychain; login con posting key → posting key, e la active key per i pagamenti; login con Google → il wallet tenuto da KIJAM (29), anche se il browser ha le chiavi dell'account. Il metodo si ricorda in `magic8.signin`; per le sessioni Google lo dice il server (`/api/me`). | Il cookie di sessione sopravvive a un ricaricamento ma non dice con cosa si è entrati. Senza ricordarlo, una sessione la cui posting key non c'è più sembrerebbe di Keychain. |
 
 ## Il flusso
 

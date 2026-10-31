@@ -146,7 +146,7 @@ export class LoginScene extends Scene {
    */
   #takeGoogleReturn(identity) {
     const back = this.#app.google?.take() ?? null;
-    if (back === null || back.kind === GoogleReturnKind.NEW) {
+    if (back === null || back.kind === GoogleReturnKind.NEW || back.kind === GoogleReturnKind.EXPORT) {
       return null;
     }
     if (back.kind === GoogleReturnKind.ERROR) {

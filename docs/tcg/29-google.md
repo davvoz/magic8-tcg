@@ -1,6 +1,6 @@
 # 29 — Entrare con Google (wallet custodito)
 
-**Stato:** 2026-10-31. Fase 1 (API partner di join.cur8) pubblicata. Fase 2 (server: login Google, creazione dell'account, chiavi custodite) nel repository. Fase 3 (le firme del server) nel repository. Fase 4 (client) scritta e provata, non ancora pubblicata. Fase 5 da fare.
+**Stato:** 2026-10-31. Fase 1 (API partner di join.cur8) pubblicata. Fase 2 (server: login Google, creazione dell'account, chiavi custodite) nel repository. Fase 3 (le firme del server) nel repository. Fase 4 (client) nel repository. Fase 5 (Export wallet, documenti di sicurezza) scritta e provata, non ancora pubblicata. Manca solo la frase nei termini d'uso: il gioco non ha ancora una pagina dei termini.
 
 Chi non conosce le crypto entra con **Continue with Google**, sceglie un nome e gioca: niente chiavi, niente PIN, niente estensioni. Le chiavi del suo account STEEM le crea e le custodisce il server di gioco, che firma al suo posto. Quando vuole, il giocatore le **esporta** dal Profilo e da lì può usarle dove vuole.
 
@@ -29,7 +29,7 @@ Chi vuole tenere le chiavi per sé ha già tutto: un account creato su join.cur8
 
 **Pagare.** Il bottone d'acquisto basta, come oggi: nessun dialogo in più. Il tracker dell'acquisto (shop, ticket, mercato) è lo stesso.
 
-**Export wallet** (Profilo). Un avviso (*Anyone with these keys controls your account and its STEEM. Keep them private.*), poi l'account, la master password e le quattro chiavi, ognuna con *Copy*, e *Download file* (un `.txt` fatto nel browser). Se l'accesso con Google non è recente il gioco lo rifà e torna al Profilo.
+**Export wallet** (il riquadro dell'account, dalla foto in alto a destra, solo per chi è entrato con Google). Google chiede di nuovo la password, poi il gioco torna alla Home e mostra *Your wallet*: un avviso (*Anyone with these keys controls your account and its STEEM. Keep them private: KIJAM will never ask you for them.*), l'account, la master password e le quattro chiavi, ognuna con *Copy*, e *Download file* (`kijam-wallet-<account>.txt`, fatto nel browser). Chiudendo il riquadro, o cambiando schermata, le chiavi spariscono dalla pagina.
 
 **Chi ha già un account join fatto con Google.** Il gioco lo riconosce e mostra il login con la posting key con il suo nome già scritto: *You already have the account @name. Sign in with its posting key or Keychain.* Le sue chiavi non le abbiamo e non le chiediamo.
 
@@ -57,7 +57,9 @@ Modulo nuovo `custody`. Le rotte richiedono una sessione `"google"` di un utente
 | `POST /api/custody/transfers { from, to, amount, asset, memo }` | active | solo se corrisponde esattamente (rete, mittente, destinatario, importo, asset, memo) a un pagamento aperto **del giocatore** e non scaduto: un ordine dello shop ancora da pagare (`marketplace`) o una prenotazione del mercato (`sales`). Ognuno dei due moduli risponde `openPayment(userId, memo)`. Risponde `{ txId }`, come l'inoltro di oggi. Altrimenti `PAYMENT_NOT_OPEN` (409). |
 | `POST /api/custody/messages { message }` | posting | solo il testo d'autorizzazione di una chiave di partita (12), `m8tcg session <partita> <chiave>`; ogni altro testo è `FORBIDDEN`. Il login non serve: la sessione c'è già. Risponde `{ signature }`. |
 | `POST /api/custody/pings { parentAuthor, parentPermlink, permlink, title, body, jsonMetadata }` | posting | l'autore è l'account custodito; il commento si costruisce e si firma sul server, poi passa da `PingService.relay`, gli stessi controlli dei ping firmati nel browser (26): sotto il muro, lunghezza. Risponde `{ txId }`. |
-| `POST /api/custody/export` | — | sessione aperta da Google da al massimo 10 minuti, altrimenti `REAUTH_REQUIRED`. Risponde le chiavi con `Cache-Control: no-store`; segna `exported_at`. |
+| `POST /api/custody/export` | — | sessione Google **e** un nuovo accesso a Google negli ultimi 10 minuti, altrimenti `REAUTH_REQUIRED` (403). Risponde `{ wallet: { account, masterPassword, owner, active, posting, memo } }` con `Cache-Control: no-store`, segna `exported_at`, audit `custody.exported`, e cancella il cookie della prova. |
+
+**Rientrare con Google prima dell'export.** `GET /api/auth/google/start?purpose=export` manda a Google con `prompt=login` e `max_age=0`: Google chiede la password anche se il browser è già collegato, e mette nell'ID token `auth_time`. Al ritorno non si apre una sessione: se l'identità è legata a un utente e `auth_time` è degli ultimi 10 minuti, il server mette il cookie `m8_google_reauth` (cifrato: l'utente e la scadenza, 10 minuti, `Strict`) e manda a `/?google=export`, dove il client chiede le chiavi (`WalletExport.resume`, una volta sola: niente giri infiniti verso Google). Il cookie non è registrato sul server: una sua copia rubata vale fino alla scadenza, non oltre.
 
 **Un pagamento si firma una volta sola.** Prima della trasmissione il server scrive il memo in `custody_transfers` (chiave primaria): una seconda richiesta per lo stesso pagamento riceve `ALREADY_PAID` (409, `details.txId`). La riga si cancella solo se la catena ha rifiutato il trasferimento (`TRANSFER_REJECTED`) o se non si è trasmesso niente (catena irraggiungibile prima della firma): allora si può ripagare. Se invece la trasmissione fallisce senza sapere se il trasferimento è passato, la riga resta e la risposta è `CHAIN_UNAVAILABLE` con `details.txId`: niente doppio pagamento; se il trasferimento non arriva davvero, l'ordine scade e il giocatore ne fa un altro.
 
@@ -101,6 +103,8 @@ Configurazione: `M8_GOOGLE_CLIENT_ID`, `M8_GOOGLE_CLIENT_SECRET`, `M8_JOIN_URL`,
 
 **Dove sta il codice (fase 3).** `SteemKeyring` firma un messaggio, un trasferimento e un commento. Modulo `custody`: `CustodialSigner` (application), `signable.js` (domain: cosa si può firmare), `custodyRoutes.js`, `KeyCustody.keysOf` e `forget`. `MarketplaceService.openPayment`, `SalesService.openPayment`. `GoogleSignIn` controlla la chiave custodita a ogni accesso. Test: `test/custody/custodialSigner.test.js`.
 
+**Dove sta il codice (fase 5).** Server: `GoogleSignIn` (`GooglePurpose.EXPORT`, `reauthenticatedUser`), `googleReauthentication` in `googleRoutes.js`, `WalletExport` (custody). Client: `WalletExport` (application/wallet), `ExportWalletDialog` e il bottone *Export wallet* in `AccountDialog` (shell), `BrowserClipboard` e `BrowserFileSaver` (infrastructure/browser). Test: il caso export in `googleSignIn.test.js` (server), `test/application/googleSignIn.test.js` e `test/rendering/exportWallet.test.js` (client).
+
 ## Cosa cambia nel modello di sicurezza
 
 Finora il server non teneva **mai** chiavi capaci di spostare fondi (05 T23, panoramica §11). Per gli account Google questo non vale più, per scelta:
@@ -123,4 +127,4 @@ Finora il server non teneva **mai** chiavi capaci di spostare fondi (05 T23, pan
 2. **Server** (nel repository): OAuth Google, `google_identities`, creazione dell'account tramite join, `custody_keys` in SecretBox, `sessions.method`.
 3. **Firme** (nel repository): modulo `custody` (trasferimenti dei pagamenti aperti, autorizzazioni di partita, ping), audit; controllo della chiave custodita al login.
 4. **Client** (scritta): scheda Google nel login e scelta del nome, `CustodialWallet`, metodo `"google"` in `IdentityService` e `WalletSwitch`, `method` in `/api/me`.
-5. **Export wallet** nel Profilo, aggiornamento di 05, 20 e della panoramica.
+5. **Export wallet** (scritta) nel riquadro dell'account, con il nuovo accesso a Google; aggiornati 05 (asset, T23, T33, T36, rischio residuo 5), 20 e la panoramica. Da fare fuori dal codice: la frase dei termini d'uso, quando il gioco ne avrà una pagina.

@@ -11,4 +11,4 @@ export { publicUser, registerIdentityRoutes } from "./http/identityRoutes.js";
 export { GoogleSignIn } from "./application/GoogleSignIn.js";
 export { GoogleOAuthClient } from "./infrastructure/GoogleOAuthClient.js";
 export { JoinAccountFactory } from "./infrastructure/JoinAccountFactory.js";
-export { registerGoogleRoutes } from "./http/googleRoutes.js";
+export { googleCookieNames, googleReauthentication, registerGoogleRoutes } from "./http/googleRoutes.js";

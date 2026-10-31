@@ -245,6 +245,39 @@ describe("signing in with Google", () => {
     assert.equal(setup.chain.accounts.has("latecomer"), false);
   });
 
+  it("exports the wallet only after the player signed in at Google again, once per sign-in", async () => {
+    const session = cookie((await signIn({ sub: "sub-new" })).setCookies, "m8_session");
+    const exportWallet = (/** @type {string[]} */ cookies) => call(server.base, "/api/custody/export", { method: "POST", headers: CLIENT_HEADERS, cookies, body: {} });
+    const refused = await exportWallet([session]);
+    assert.equal(refused.status, 403);
+    assert.equal(refused.json.error.code, "REAUTH_REQUIRED");
+
+    /** Signs in at Google again, `authTime` seconds ago or with no auth_time at all. */
+    const reauthenticate = async (/** @type {number | null} */ secondsAgo) => {
+      const start = await call(server.base, "/api/auth/google/start?purpose=export");
+      assert.equal(google.lastRequest?.reauthenticate, true, "Google asks for the password again");
+      const state = new URL(/** @type {string} */ (start.location)).searchParams.get("state");
+      google.claims = { sub: "sub-new", ...(secondsAgo === null ? {} : { auth_time: Math.floor(setup.clock.now() / 1000) - secondsAgo }) };
+      return call(server.base, `/api/auth/google/callback?code=c&state=${state}`, { cookies: [cookie(start.setCookies, "m8_google_flow")] });
+    };
+    assert.equal((await reauthenticate(null)).location, "/?google=error&reason=failed", "Google must say the password was just typed");
+    assert.equal((await reauthenticate(11 * 60)).location, "/?google=error&reason=failed", "too long ago");
+    const back = await reauthenticate(5);
+    assert.equal(back.location, "/?google=export");
+    assert.equal(back.setCookies.has("m8_session"), false, "no new session: only the proof");
+    const proof = cookie(back.setCookies, "m8_google_reauth");
+
+    const exported = await call(server.base, "/api/custody/export", { method: "POST", headers: CLIENT_HEADERS, cookies: [session, proof], body: {} });
+    assert.equal(exported.status, 200);
+    assert.deepEqual(exported.json.wallet, { account: "newbie", ...join.lastKeys });
+    assert.equal(exported.setCookies.get("m8_google_reauth"), "", "the proof is spent");
+    const kept = await setup.database.maybeOne("SELECT exported_at FROM custody_keys WHERE account = 'newbie'");
+    assert.ok(kept.exported_at !== null);
+    assert.equal((await exportWallet([session, proof])).status, 200, "a stolen copy of the proof is not refused by the server alone, so it lives ten minutes");
+    setup.clock.advance(11 * 60 * 1000);
+    assert.equal((await exportWallet([session, proof])).json.error.code, "REAUTH_REQUIRED", "and no longer");
+  });
+
   it("closes Google sessions like any other when the kept posting key leaves the account", async () => {
     const back = await signIn({ sub: "sub-new" });
     const session = [cookie(back.setCookies, "m8_session")];

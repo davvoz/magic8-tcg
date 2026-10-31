@@ -2,7 +2,8 @@
  * HTTP surface of the wallet the server keeps for players who signed in with
  * Google (docs/tcg/29-google.md): a transfer that pays an open payment, the
  * authorisation of a game's session key, a ping. Each answers what the
- * browser's own wallet would have: a transaction id, a signature.
+ * browser's own wallet would have: a transaction id, a signature. And the
+ * export of that wallet, after the player signed in at Google again.
  */
 import { checkString } from "@magic8/engine/shared/validation.js";
 import { Auth } from "../../../platform/http/Router.js";
@@ -14,6 +15,8 @@ const TRANSFER_RATE = Object.freeze({ name: "custody-transfer", capacity: 10, re
 const MESSAGE_RATE = Object.freeze({ name: "custody-message", capacity: 10, refillPerSecond: 10 / 60, by: /** @type {const} */ ("user") });
 /** A ping is shared now and then, at the end of a game (the pings' own relay allows the same). */
 const PING_RATE = Object.freeze({ name: "custody-ping", capacity: 5, refillPerSecond: 1 / 60, by: /** @type {const} */ ("user") });
+/** An export follows a sign-in at Google: a few an hour at most. */
+const EXPORT_RATE = Object.freeze({ name: "custody-export", capacity: 5, refillPerSecond: 1 / 600, by: /** @type {const} */ ("user") });
 
 const TRANSFER_KEYS = Object.freeze(["from", "to", "amount", "asset", "memo"]);
 const MESSAGE_KEYS = Object.freeze(["message"]);
@@ -21,9 +24,26 @@ const PING_KEYS = Object.freeze(["parentAuthor", "parentPermlink", "permlink", "
 const ACCOUNT = Object.freeze({ minLength: 3, maxLength: 16 });
 
 /**
- * @param {{ router: import("../../../platform/http/Router.js").Router, signer: import("../application/CustodialSigner.js").CustodialSigner }} deps
+ * @param {{
+ *   router: import("../../../platform/http/Router.js").Router,
+ *   signer: import("../application/CustodialSigner.js").CustodialSigner,
+ *   exports: import("../application/WalletExport.js").WalletExport,
+ *   reauthentication: { userOf: (cookies: ReadonlyMap<string, string>) => string | null, spent: () => string },
+ * }} deps `reauthentication`: who signed in at Google again lately (identity's cookie), and the cookie that spends it
  */
-export function registerCustodyRoutes({ router, signer }) {
+export function registerCustodyRoutes({ router, signer, exports, reauthentication }) {
+  // The keys, once per sign-in at Google: the answer is never cached, and the proof is spent.
+  router.add({
+    method: "POST",
+    path: "/api/custody/export",
+    auth: Auth.REQUIRED,
+    rateLimit: EXPORT_RATE,
+    handler: async (context) => {
+      const wallet = await exports.export({ principal: context.principal, reauthenticatedUserId: reauthentication.userOf(context.cookies), ip: context.ip });
+      return { status: 200, body: { wallet }, headers: { "Cache-Control": "no-store" }, cookies: [reauthentication.spent()] };
+    },
+  });
+
   router.add({
     method: "POST",
     path: "/api/custody/transfers",

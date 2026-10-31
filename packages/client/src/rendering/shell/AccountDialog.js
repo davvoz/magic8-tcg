@@ -1,6 +1,7 @@
 /**
  * The signed-in account, opened from the player's picture in the top bar:
- * who they are, how they signed in, and Sign out.
+ * who they are, how they signed in, and Sign out; for a Google sign-in,
+ * Export wallet too (docs/tcg/29-google.md).
  */
 import { SignInMethod } from "../../application/identity/IdentityService.js";
 import { AvatarNode } from "../ui/AvatarNode.js";
@@ -17,12 +18,14 @@ const SIZE = Object.freeze({ width: 460, height: 250, compactHeight: 210, avatar
  *   method: string | null,
  *   onSignOut: () => void,
  *   onClose: () => void,
- * }} request `method`: one of SignInMethod
+ *   onExport?: (() => void) | null,
+ * }} request `method`: one of SignInMethod; `onExport`: the wallet KIJAM keeps can be exported (none: no such button)
  * @returns {Modal}
  */
-export function buildAccountDialog({ viewport, user, method, onSignOut, onClose }) {
+export function buildAccountDialog({ viewport, user, method, onSignOut, onClose, onExport = null }) {
   const width = Math.min(SIZE.width, viewport.logicalWidth - 20);
-  const height = viewport.compact === true ? SIZE.compactHeight : SIZE.height;
+  const exportRow = onExport === null ? 0 : SIZE.button + 12;
+  const height = (viewport.compact === true ? SIZE.compactHeight : SIZE.height) + exportRow;
   const modal = new Modal({ id: "account", width: viewport.logicalWidth, height: viewport.logicalHeight, panelWidth: width, panelHeight: height, onDismiss: onClose });
   const { panel } = modal;
   const { inset, avatar } = SIZE;
@@ -37,6 +40,9 @@ export function buildAccountDialog({ viewport, user, method, onSignOut, onClose 
   // Close first, so that it takes the focus: Enter never signs out by accident.
   panel.add(new Button({ id: "account.close", x: side + half + 12, y: buttonY, width: half, height: SIZE.button, text: "Close", onActivate: onClose }));
   panel.add(new Button({ id: "signOut", x: side, y: buttonY, width: half, height: SIZE.button, text: "Sign out", variant: "danger", onActivate: onSignOut }));
+  if (onExport !== null) {
+    panel.add(new Button({ id: "account.export", x: side, y: buttonY - exportRow, width: width - 2 * side, height: SIZE.button, text: "Export wallet", onActivate: onExport }));
+  }
   return modal;
 }
 
