@@ -102,7 +102,6 @@ import { CustodialWallet } from "./infrastructure/wallet/CustodialWallet.js";
 import { BrowserClipboard } from "./infrastructure/browser/BrowserClipboard.js";
 import { BrowserFileSaver } from "./infrastructure/browser/BrowserFileSaver.js";
 import { InputManager } from "./input/InputManager.js";
-import { BarsHold } from "./rendering/canvas/BarsHold.js";
 import { CanvasHost } from "./rendering/canvas/CanvasHost.js";
 import { GameLoop } from "./rendering/canvas/GameLoop.js";
 import { Viewport } from "./rendering/canvas/Viewport.js";
@@ -304,10 +303,8 @@ function buildPresentation(theme, sound) {
       loop.requestRender();
     },
     insets: readSafeArea,
-    // Its padding is the safe area, and it covers the page: when either moves (the phone's bars placed), its box changes.
+    // Its padding is the safe area: when that moves (the phone's bars placed), the probe's box changes with it.
     observed: [document.getElementById("safe-area")].filter((element) => element !== null),
-    // The installed app plays full screen: the bars pulled down pass over the game instead of shrinking it.
-    hold: new BarsHold({ active: () => window.matchMedia?.("(display-mode: fullscreen)").matches === true }),
   });
   const input = new InputManager({ canvas, window, viewport, target: sceneManager });
   host.attach();

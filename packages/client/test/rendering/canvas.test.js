@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { BarsHold } from "../../src/rendering/canvas/BarsHold.js";
 import { CanvasHost } from "../../src/rendering/canvas/CanvasHost.js";
 import { GameLoop } from "../../src/rendering/canvas/GameLoop.js";
 import { COMPACT, LayoutProfile, Viewport } from "../../src/rendering/canvas/Viewport.js";
@@ -175,34 +174,6 @@ describe("CanvasHost", () => {
     assert.deepEqual([observers[0].elements, queries.every((query) => query.handlers.length === 0)], [[], true]);
   });
 
-  it("full screen, keeps the game still while the phone's bars pass over it: the canvas keeps the size of the screen", () => {
-    const canvas = new FakeCanvas(0, 0);
-    const window = new FakeWindow(2);
-    Object.assign(window, { innerWidth: 844, innerHeight: 360 });
-    const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
-    let fullScreen = true;
-    let insets = { top: 24 };
-    let resizes = 0;
-    const host = new CanvasHost({ canvas, viewport, window, insets: () => insets, hold: new BarsHold({ active: () => fullScreen }), onResize: () => (resizes += 1) });
-    host.attach();
-    assert.deepEqual([canvas.style.width, canvas.style.height], ["844px", "360px"], "launched with the bars: what the page has");
-    Object.assign(window, { innerHeight: 390 });
-    insets = { top: 0 };
-    window.dispatch("resize", {});
-    assert.deepEqual([canvas.style.height, canvas.height, resizes], ["390px", 780, 2], "the bars gone: the whole screen");
-
-    const laidOut = viewport.logicalWidth;
-    Object.assign(window, { innerHeight: 340 });
-    insets = { top: 28 };
-    window.dispatch("resize", {});
-    assert.deepEqual([canvas.style.height, canvas.height, viewport.logicalWidth, resizes], ["390px", 780, laidOut, 2], "the shade pulled down: nothing moves, the bars cover the edge");
-
-    fullScreen = false;
-    window.dispatch("resize", {});
-    assert.deepEqual([canvas.style.width, canvas.style.height], ["", ""], "in a browser tab the page sizes the canvas again");
-    host.detach();
-  });
-
   it("throws without a 2D context", () => {
     const canvas = { getContext: () => null };
     assert.throws(() => new CanvasHost({ canvas, viewport: new Viewport({ logicalWidth: 1, logicalHeight: 1 }), window: new FakeWindow() }), /2D context/);
@@ -327,28 +298,5 @@ describe("textUtils", () => {
     assert.equal(cut.font, "15px x", "no smaller than three quarters");
     assert.ok(cut.text.endsWith("…"), cut.text);
     assert.ok(fitText(context, { text: "Leaderboard", font, size: 20, width: 100 }).text.endsWith("…"), "no shrinking allowed: cut at once");
-  });
-});
-
-describe("BarsHold", () => {
-  const reading = (cssWidth, cssHeight, insets = {}) => ({ cssWidth, cssHeight, insets });
-
-  it("holds the largest screen and the smallest safe area while the change is a bar's worth", () => {
-    const hold = new BarsHold({ active: () => true, tolerance: 80 });
-    assert.deepEqual(hold.settle(reading(844, 330, { top: 30 })), reading(844, 330, { top: 30 }));
-    assert.deepEqual(hold.settle(reading(844, 390)), reading(844, 390, { top: 0, right: 0, bottom: 0, left: 0 }), "growth is followed");
-    assert.deepEqual(hold.settle(reading(800, 330, { top: 30, left: 44 })), reading(844, 390, { top: 0, right: 0, bottom: 0, left: 0 }), "the bars pass");
-  });
-
-  it("follows a real change at once: turned, split, or not full screen", () => {
-    let active = true;
-    const hold = new BarsHold({ active: () => active, tolerance: 80 });
-    hold.settle(reading(844, 390));
-    assert.deepEqual(hold.settle(reading(844, 190)), reading(844, 190), "the screen split in two");
-    hold.settle(reading(844, 390));
-    assert.deepEqual(hold.settle(reading(390, 844)), reading(390, 844), "turned");
-    active = false;
-    assert.deepEqual(hold.settle(reading(380, 800)), reading(380, 800), "in a browser tab");
-    assert.equal(hold.active, false);
   });
 });
