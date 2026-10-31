@@ -170,6 +170,8 @@ export class FakeCanvas {
   clientHeight;
   width = 0;
   height = 0;
+  /** Its inline size, as a script sets it. */
+  style = { width: "", height: "" };
   /** @type {Map<string, Function[]>} */
   listeners = new Map();
   context = new FakeContext2D();

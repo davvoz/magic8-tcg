@@ -9,6 +9,9 @@
  * stretches a backing store of the wrong size until the next resize. So the
  * canvas box itself is watched (ResizeObserver), with the elements whose size
  * says the safe area moved, and the screen's pixel density.
+ *
+ * Full screen, the phone's bars only pass over the game (BarsHold): the
+ * canvas is then sized by the script to the held reading, not by the page.
  */
 export class CanvasHost {
   #canvas;
@@ -17,6 +20,10 @@ export class CanvasHost {
   #window;
   #onResize;
   #observed;
+  /** @type {import("./BarsHold.js").BarsHold | null} */
+  #hold;
+  /** Whether the canvas has a size of the script's (held), not the page's. */
+  #pinned = false;
   /** @type {(() => void) | null} */
   #detach = null;
   /** What the last sync read: the same reading again changes nothing. */
@@ -28,13 +35,15 @@ export class CanvasHost {
   /**
    * @param {{
    *   canvas: HTMLCanvasElement, viewport: import("./Viewport.js").Viewport,
-   *   window: Pick<Window, "addEventListener" | "removeEventListener" | "devicePixelRatio"> & { ResizeObserver?: typeof ResizeObserver, matchMedia?: Window["matchMedia"] },
+   *   window: Pick<Window, "addEventListener" | "removeEventListener" | "devicePixelRatio" | "innerWidth" | "innerHeight"> & { ResizeObserver?: typeof ResizeObserver, matchMedia?: Window["matchMedia"] },
    *   onResize?: () => void, insets?: () => Partial<import("./Viewport.js").Insets>, observed?: readonly Element[],
+   *   hold?: import("./BarsHold.js").BarsHold | null,
    * }} deps
    *   `insets`: the screen's unsafe edges (notch, home indicator) in CSS pixels, read at every resize;
-   *   `observed`: other elements whose size changing means the screen did (the safe-area probe)
+   *   `observed`: other elements whose size changing means the screen did (the safe-area probe; the page's size, while the
+   *   canvas has one of its own); `hold`: keeps the screen still while the phone's bars pass (none: every change followed)
    */
-  constructor({ canvas, viewport, window, onResize = () => undefined, insets = () => ({}), observed = [] }) {
+  constructor({ canvas, viewport, window, onResize = () => undefined, insets = () => ({}), observed = [], hold = null }) {
     const context = canvas.getContext("2d");
     if (context === null) {
       throw new Error("CanvasHost: 2D context unavailable");
@@ -46,6 +55,7 @@ export class CanvasHost {
     this.#onResize = onResize;
     this.#insets = insets;
     this.#observed = observed;
+    this.#hold = hold;
   }
 
   get context() {
@@ -85,10 +95,8 @@ export class CanvasHost {
 
   /** Re-reads the CSS size and updates the viewport and backing store, when any of it changed. */
   syncSize() {
-    const cssWidth = this.#canvas.clientWidth;
-    const cssHeight = this.#canvas.clientHeight;
+    const { cssWidth, cssHeight, insets } = this.#measure();
     const devicePixelRatio = this.#window.devicePixelRatio || 1;
-    const insets = this.#insets();
     const reading = JSON.stringify([cssWidth, cssHeight, devicePixelRatio, insets]);
     if (reading === this.#lastReading) {
       return;
@@ -101,6 +109,37 @@ export class CanvasHost {
       this.#canvas.height = height;
     }
     this.#onResize();
+  }
+
+  /**
+   * The screen to lay the game out for: the canvas as the page sizes it, or, held, the window's size settled by the
+   * hold, which the canvas is then given.
+   * @returns {import("./BarsHold.js").ScreenReading}
+   */
+  #measure() {
+    const insets = this.#insets();
+    if (this.#hold?.active !== true) {
+      this.#pin(null);
+      const measured = { cssWidth: this.#canvas.clientWidth, cssHeight: this.#canvas.clientHeight, insets };
+      return this.#hold?.settle(measured) ?? measured;
+    }
+    const settled = this.#hold.settle({ cssWidth: this.#window.innerWidth, cssHeight: this.#window.innerHeight, insets });
+    this.#pin(settled);
+    return settled;
+  }
+
+  /**
+   * Gives the canvas the held size (it then reaches past the page while the bars are shown: they cover that edge), or
+   * back to the page's.
+   * @param {{ cssWidth: number, cssHeight: number } | null} size
+   */
+  #pin(size) {
+    if (size === null && !this.#pinned) {
+      return;
+    }
+    this.#canvas.style.width = size === null ? "" : `${size.cssWidth}px`;
+    this.#canvas.style.height = size === null ? "" : `${size.cssHeight}px`;
+    this.#pinned = size !== null;
   }
 
   /** Canvas position in the page, for pointer coordinate conversion. */
