@@ -296,6 +296,8 @@ function buildPresentation(theme, sound) {
       loop.requestRender();
     },
     insets: readSafeArea,
+    // Its padding is the safe area: when that moves (the phone's bars placed), the probe's box changes with it.
+    observed: [document.getElementById("safe-area")].filter((element) => element !== null),
   });
   const input = new InputManager({ canvas, window, viewport, target: sceneManager });
   host.attach();

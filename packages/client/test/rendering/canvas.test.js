@@ -127,6 +127,53 @@ describe("CanvasHost", () => {
     assert.ok([...window.listeners.values()].every((handlers) => handlers.length === 0));
   });
 
+  it("follows the canvas box and the pixel density even without a window resize (an installed app settling on a phone)", () => {
+    const canvas = new FakeCanvas(844, 300);
+    const probe = { id: "safe-area" };
+    const window = new FakeWindow(2);
+    const observers = [];
+    window.ResizeObserver = class {
+      constructor(callback) {
+        this.callback = callback;
+        this.elements = [];
+        observers.push(this);
+      }
+      observe(element) {
+        this.elements.push(element);
+      }
+      disconnect() {
+        this.elements = [];
+      }
+    };
+    const queries = [];
+    window.matchMedia = function matchMedia(media) {
+      assert.equal(this, window, "called on the window, as the browser needs");
+      const query = { media, handlers: [], addEventListener: (type, handler) => query.handlers.push(handler), removeEventListener: (type, handler) => (query.handlers = query.handlers.filter((candidate) => candidate !== handler)) };
+      queries.push(query);
+      return query;
+    };
+    const viewport = new Viewport({ logicalWidth: 1600, logicalHeight: 900 });
+    let resizes = 0;
+    const host = new CanvasHost({ canvas, viewport, window, observed: [probe], onResize: () => (resizes += 1) });
+    host.attach();
+    assert.deepEqual(observers[0].elements, [canvas, probe]);
+    assert.deepEqual([canvas.width, canvas.height, resizes], [1688, 600, 1]);
+
+    observers[0].callback();
+    assert.equal(resizes, 1, "nothing changed: nothing redone");
+    canvas.clientHeight = 390;
+    observers[0].callback();
+    assert.deepEqual([canvas.height, resizes], [780, 2], "the bars placed: the backing store follows, no resize event needed");
+
+    assert.equal(queries.at(-1).media, "(resolution: 2dppx)");
+    window.devicePixelRatio = 3;
+    queries.at(-1).handlers.forEach((handler) => handler());
+    assert.equal(canvas.height, 780, "a phone draws at 2× at most");
+    assert.equal(queries.at(-1).media, "(resolution: 3dppx)", "asked again for the new density");
+    host.detach();
+    assert.deepEqual([observers[0].elements, queries.every((query) => query.handlers.length === 0)], [[], true]);
+  });
+
   it("throws without a 2D context", () => {
     const canvas = { getContext: () => null };
     assert.throws(() => new CanvasHost({ canvas, viewport: new Viewport({ logicalWidth: 1, logicalHeight: 1 }), window: new FakeWindow() }), /2D context/);
