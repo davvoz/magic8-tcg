@@ -1,7 +1,8 @@
 /**
  * How a creature on the battlefield got to the stats it shows: what the card
- * says, the lasting boosts and penalties, those that last until end of turn,
- * the damage it has taken, and where that leaves it. The match's inspect
+ * says, the lasting boosts and penalties, what the auras in play give it (a
+ * lord's), those that last until end of turn, the damage it has taken, and
+ * where that leaves it. The match's inspect
  * view lists it beside the card, so a 5/3 that was printed 4/4 explains
  * itself. A card whose stats are its printed ones has nothing to explain.
  */
@@ -16,6 +17,8 @@ import { UiNode } from "../ui/UiNode.js";
 
 /** The modifier duration that ends with the turn (CardInstance's ModifierDuration). */
 const END_OF_TURN = "end_of_turn";
+/** A card no aura reaches (or a view from before auras). */
+const NO_BONUS = Object.freeze({ attack: 0, health: 0 });
 
 /**
  * The lines that explain the card's stats, or none when they are the printed ones (or it is not a creature in play).
@@ -25,7 +28,9 @@ const END_OF_TURN = "end_of_turn";
 export function statLines(card) {
   const modifiers = card.modifiers ?? [];
   const damage = card.damage ?? 0;
-  if (card.printedAttack === undefined || card.printedHealth === undefined || (modifiers.length === 0 && damage === 0)) {
+  const auras = card.staticBonus ?? NO_BONUS;
+  const aided = auras.attack !== 0 || auras.health !== 0;
+  if (card.printedAttack === undefined || card.printedHealth === undefined || (modifiers.length === 0 && damage === 0 && !aided)) {
     return [];
   }
   const lasting = sumOf(modifiers.filter((modifier) => modifier.duration !== END_OF_TURN));
@@ -33,6 +38,7 @@ export function statLines(card) {
   return Object.freeze([
     { label: "Printed", value: `${card.printedAttack}/${card.printedHealth}`, colorKey: "textMuted" },
     ...changeLine("Boosts", lasting),
+    ...changeLine("Auras", auras),
     ...changeLine("This turn", thisTurn),
     ...(damage > 0 ? [{ label: "Damage", value: `-${damage}`, colorKey: "danger" }] : []),
     { label: "Now", value: `${card.attack}/${card.health}`, colorKey: "accentLight", bold: true },

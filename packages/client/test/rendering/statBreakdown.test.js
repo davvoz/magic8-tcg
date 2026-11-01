@@ -17,6 +17,14 @@ describe("statLines", () => {
     assert.deepEqual(shown(statLines(card)), ["Printed 4/4", "Boosts +1/+1", "This turn +2/+0", "Damage -2", "Now 7/3"]);
   });
 
+  it("shows what a lord's aura gives, apart from the boosts, even when it is all there is", () => {
+    const lorded = creature({ attack: 5, health: 5, staticBonus: { attack: 1, health: 1 } });
+    assert.deepEqual(shown(statLines(lorded)), ["Printed 4/4", "Auras +1/+1", "Now 5/5"]);
+    const both = creature({ attack: 6, health: 5, modifiers: [{ attack: 1, health: 0, duration: "permanent" }], staticBonus: { attack: 1, health: 1 } });
+    assert.deepEqual(shown(statLines(both)), ["Printed 4/4", "Boosts +1/+0", "Auras +1/+1", "Now 6/5"]);
+    assert.deepEqual(statLines(creature({ staticBonus: { attack: 0, health: 0 } })), [], "no aura reaches it");
+  });
+
   it("shows penalties as such", () => {
     const lines = statLines(creature({ attack: 1, modifiers: [{ attack: -3, health: 0, duration: "permanent" }] }));
     assert.deepEqual(shown(lines), ["Printed 4/4", "Boosts -3/+0", "Now 1/4"]);

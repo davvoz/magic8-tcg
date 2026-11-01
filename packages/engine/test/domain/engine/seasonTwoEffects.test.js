@@ -147,6 +147,16 @@ describe("faction_aura (static)", () => {
     );
   });
 
+  it("shows the bonus on the card's view, apart from its modifiers (the inspect view's Auras line)", () => {
+    const { engine } = createScenario({ p1: { battlefield: ["wildheart_druid", "moss_beetle", "scrap_golem"] } });
+    const views = engine.getSnapshot(null).players[0].battlefield;
+    assert.deepEqual(views.map((view) => [view.definitionId, view.staticBonus, view.modifiers, view.attack, view.health]), [
+      ["wildheart_druid", { attack: 1, health: 1 }, [], 3, 3],
+      ["moss_beetle", { attack: 1, health: 1 }, [], 2, 3],
+      ["scrap_golem", { attack: 0, health: 0 }, [], 1, 2],
+    ]);
+  });
+
   it("leaves the state digest as before: the bonus is derived from the board", () => {
     const { engine } = createScenario({ p1: { battlefield: ["wildheart_druid"] } });
     const card = engine.getStateDigest().players[0].zones.battlefield[0];

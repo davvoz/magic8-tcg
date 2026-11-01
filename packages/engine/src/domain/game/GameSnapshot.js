@@ -27,6 +27,7 @@ export const SPECTATOR = "#spectator";
  *   keywords: readonly string[], text: string, ownerId: string, controllerId: string,
  *   summoningSick: boolean, exhausted: boolean, zone: string,
  *   abilities: readonly AbilityView[], modifiers: readonly ModifierView[],
+ *   staticBonus: Readonly<{ attack: number, health: number }>,
  *   printedAttack: number, printedHealth: number, printedCost: number
  * }>} CardView
  *
@@ -35,7 +36,9 @@ export const SPECTATOR = "#spectator";
  * card costs its owner now (a match condition may change it), `printedCost`
  * what it says. `keywords` include those a condition gave it. `modifiers`: the
  * stat changes on the card, public like everything on the table; the
- * current values already include them (and `damage`).
+ * current values already include them (and `damage`). `staticBonus`: what
+ * the static abilities in play (a lord's aura) give it now, also included,
+ * and kept apart from `modifiers` because it is derived, not recorded.
  * @typedef {Readonly<{ attack: number, health: number, duration: string }>} ModifierView
  *
  * @typedef {Readonly<{
@@ -84,6 +87,7 @@ export function projectCard(card, cost = card.definition.cost) {
     zone: card.zone,
     abilities: definition.abilities.map(projectAbility),
     modifiers: card.modifiers.map((modifier) => ({ ...modifier })),
+    staticBonus: card.staticBonus,
     printedAttack: definition.attack,
     printedHealth: definition.health,
     printedCost: definition.cost,
