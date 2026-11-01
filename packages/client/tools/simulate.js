@@ -11,13 +11,16 @@
  * against the other styles, the style-against-style matrix, and each deck's
  * win rate with each style.
  *
+ * With --ai the AI's own decks (data/decks/ai/, the daily challenges'
+ * characters') play instead of the preconstructed ones.
+ *
  * With --versus=first,second two AIs play each other on every pairing
  * (mirrors included), each seat in turn: it prints the first AI's win rate,
  * overall and with each deck, and how long the AIs took. An AI is written
  * basic[:style] or search:level[:style] (application/match/AiOpponents.js),
  * e.g. --versus=search:5,basic.
  *
- *   node tools/simulate.js [gamesPerPairing=25] [deckId,deckId,...] [--styles | --versus=ai,ai]
+ *   node tools/simulate.js [gamesPerPairing=25] [deckId,deckId,...] [--ai] [--styles | --versus=ai,ai]
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -25,6 +28,7 @@ import { join, resolve } from "node:path";
 import { loadContent } from "../src/application/content/ContentService.js";
 import { deckMix } from "../src/application/decks/deckMix.js";
 import { AI_STYLES, AiStyle } from "@magic8/engine/domain/ai/BasicAi.js";
+import { buildAiDecks } from "@magic8/engine/domain/content/AiDecks.js";
 import { AiOpponentFactory, describeAiSpec, parseAiSpec } from "../src/application/match/AiOpponents.js";
 import { BasicAiController } from "../src/application/match/BasicAiController.js";
 import { MatchSetupService } from "../src/application/match/MatchSetupService.js";
@@ -58,6 +62,15 @@ async function loadBundled(effects) {
     throw new Error(`content invalid: ${content.error.message}`);
   }
   return content.value;
+}
+
+/** The AI's own decks, validated as the game does. */
+function aiDecksOf(content) {
+  const decks = buildAiDecks(listJson("decks/ai", ".deck.json"), content);
+  if (!decks.ok) {
+    throw new Error(`AI decks invalid: ${decks.error.message}`);
+  }
+  return decks.value;
 }
 
 /** BasicAi controllers playing these styles, seat "a" first. */
@@ -320,7 +333,7 @@ async function main() {
   const content = await loadBundled(effects);
   const logger = new MemoryLogger();
   const setup = new MatchSetupService({ content, effects, scheduler: immediateScheduler, logger });
-  const decks = selectDecks(content.preconDecks, decksArg);
+  const decks = selectDecks(flags.includes("--ai") ? aiDecksOf(content) : content.preconDecks, decksArg);
   if (flags.includes("--styles")) {
     await simulateStyles(setup, decks, games);
     return;

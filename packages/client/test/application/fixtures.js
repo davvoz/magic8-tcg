@@ -28,6 +28,9 @@ export function bundledResources() {
 
 export const effects = createCoreEffectRegistry();
 
+/** The AI's own deck files (data/decks/ai/), raw, in file name order. */
+export const bundledAiDecks = () => listJson("decks/ai", ".deck.json");
+
 /** @param {Record<string, unknown>} [overrides] raw resource overrides */
 export async function loadBundledContent(overrides = {}) {
   const result = await loadContent(new StaticContentSource({ ...bundledResources(), ...overrides }), effects);

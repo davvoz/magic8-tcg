@@ -6,7 +6,9 @@
  * The preconstructed decks are the player's own only in offline practice.
  * Signed in, the player plays the decks of their account (the starter they
  * took, the decks they built from owned cards): the other preconstructed
- * decks stay out of their lists and only give the AI something to play.
+ * decks stay out of their lists. The practice AI plays its own decks
+ * (data/decks/ai/, the daily challenges' characters' decks), or the
+ * preconstructed ones when those could not be read.
  */
 import { validateDeck } from "@magic8/engine/domain/decks/DeckValidator.js";
 
@@ -24,16 +26,19 @@ export class DeckSelectionService {
   #repository;
   #logger;
   #showPreconstructed;
+  #aiDecks;
 
   /**
-   * @param {{ content: import("../content/ContentService.js").GameContent, repository: import("../ports/DeckRepository.contract.js").DeckRepository, logger: import("../ports/Logger.contract.js").Logger, showPreconstructed?: () => boolean }} deps
-   *   `showPreconstructed` says whether the preconstructed decks count as the player's (default: always, as offline)
+   * @param {{ content: import("../content/ContentService.js").GameContent, repository: import("../ports/DeckRepository.contract.js").DeckRepository, logger: import("../ports/Logger.contract.js").Logger, showPreconstructed?: () => boolean, aiDecks?: readonly import("@magic8/engine/domain/decks/DeckList.js").DeckList[] }} deps
+   *   `showPreconstructed` says whether the preconstructed decks count as the player's (default: always, as offline);
+   *   `aiDecks`: the AI's own decks (none: the AI plays the preconstructed ones)
    */
-  constructor({ content, repository, logger, showPreconstructed = () => true }) {
+  constructor({ content, repository, logger, showPreconstructed = () => true, aiDecks = [] }) {
     this.#content = content;
     this.#repository = repository;
     this.#logger = logger;
     this.#showPreconstructed = showPreconstructed;
+    this.#aiDecks = aiDecks;
   }
 
   /** @returns {readonly DeckOption[]} the player's decks: preconstructed decks first (offline only), then custom decks */
@@ -52,9 +57,10 @@ export class DeckSelectionService {
     return Object.freeze(this.listDecks().filter((option) => option.report.valid));
   }
 
-  /** @returns {readonly DeckOption[]} decks the practice AI may play: the playable preconstructed decks, whoever is signed in */
+  /** @returns {readonly DeckOption[]} decks the practice AI may play, whoever is signed in: its own, else the preconstructed ones (the playable ones) */
   listRivalDecks() {
-    return Object.freeze(this.#content.preconDecks.map((deck) => this.#option(deck, DeckSource.PRECONSTRUCTED)).filter((option) => option.report.valid));
+    const decks = this.#aiDecks.length > 0 ? this.#aiDecks : this.#content.preconDecks;
+    return Object.freeze(decks.map((deck) => this.#option(deck, DeckSource.PRECONSTRUCTED)).filter((option) => option.report.valid));
   }
 
   /**

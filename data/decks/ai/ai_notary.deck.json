@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "ai_notary",
+  "name": "Bane Pact",
+  "preconstructed": true,
+  "cards": [
+    {
+      "cardId": "grave_rat",
+      "count": 3
+    },
+    {
+      "cardId": "restless_ghoul",
+      "count": 3
+    },
+    {
+      "cardId": "bone_acolyte",
+      "count": 3
+    },
+    {
+      "cardId": "crypt_stalker",
+      "count": 2
+    },
+    {
+      "cardId": "plague_bearer",
+      "count": 2
+    },
+    {
+      "cardId": "soul_leech",
+      "count": 2
+    },
+    {
+      "cardId": "bone_colossus",
+      "count": 2
+    },
+    {
+      "cardId": "dread_wraith",
+      "count": 1
+    },
+    {
+      "cardId": "gravelord",
+      "count": 1
+    },
+    {
+      "cardId": "dark_bargain",
+      "count": 2
+    },
+    {
+      "cardId": "blood_tithe",
+      "count": 1
+    },
+    {
+      "cardId": "runebane_rite",
+      "count": 1
+    },
+    {
+      "cardId": "soul_drain",
+      "count": 3
+    },
+    {
+      "cardId": "wake_the_dead",
+      "count": 1
+    },
+    {
+      "cardId": "withering_curse",
+      "count": 2
+    },
+    {
+      "cardId": "smother",
+      "count": 1
+    }
+  ]
+}

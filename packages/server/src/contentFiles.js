@@ -27,12 +27,13 @@ async function readJsonDirectory(directory) {
 
 /**
  * @param {string} dataDirectory
- * @returns {Promise<Readonly<{ raw: import("@magic8/engine/domain/content/GameContent.js").RawContent, starterOffer: unknown, assets: unknown, market: import("./modules/marketplace/index.js").RawMarketData, ranked: unknown, daily: Readonly<{ roster: unknown, tracks: unknown }> }>>}
+ * @returns {Promise<Readonly<{ raw: import("@magic8/engine/domain/content/GameContent.js").RawContent, starterOffer: unknown, assets: unknown, market: import("./modules/marketplace/index.js").RawMarketData, ranked: unknown, daily: Readonly<{ roster: unknown, tracks: unknown, aiDecks: unknown }> }>>}
+ *   `daily.aiDecks`: the AI's own decks (data/decks/ai/), which the roster's characters play
  */
 export async function readServerContent(dataDirectory) {
   const economy = join(dataDirectory, "economy");
   const daily = join(dataDirectory, "daily");
-  const [raw, starterOffer, assets, rarities, dropTables, pricing, products, ranked, roster, tracks] = await Promise.all([
+  const [raw, starterOffer, assets, rarities, dropTables, pricing, products, ranked, roster, tracks, aiDecks] = await Promise.all([
     readContentDirectory(dataDirectory),
     readJson(join(economy, "starter-offer.json")),
     readJson(join(economy, "assets.json")),
@@ -43,6 +44,7 @@ export async function readServerContent(dataDirectory) {
     readJson(join(dataDirectory, "ranked", "ranked.json")),
     readJson(join(daily, "characters.json")),
     readJson(join(daily, "tracks.json")),
+    readJsonDirectory(join(dataDirectory, "decks", "ai")),
   ]);
-  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, pricing, products }), ranked, daily: Object.freeze({ roster, tracks }) });
+  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, pricing, products }), ranked, daily: Object.freeze({ roster, tracks, aiDecks }) });
 }

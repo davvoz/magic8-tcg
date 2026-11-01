@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "ai_rook",
+  "name": "Hunt Unleashed",
+  "preconstructed": true,
+  "cards": [
+    {
+      "cardId": "kindling_sprite",
+      "count": 2
+    },
+    {
+      "cardId": "flame_scout",
+      "count": 3
+    },
+    {
+      "cardId": "grove_sprite",
+      "count": 2
+    },
+    {
+      "cardId": "charging_ram",
+      "count": 1
+    },
+    {
+      "cardId": "crypt_stalker",
+      "count": 3
+    },
+    {
+      "cardId": "pyre_chanter",
+      "count": 2
+    },
+    {
+      "cardId": "stampeding_boar",
+      "count": 3
+    },
+    {
+      "cardId": "wildheart_druid",
+      "count": 3
+    },
+    {
+      "cardId": "forge_warden",
+      "count": 1
+    },
+    {
+      "cardId": "great_elk",
+      "count": 2
+    },
+    {
+      "cardId": "ember_bolt",
+      "count": 3
+    },
+    {
+      "cardId": "overclock",
+      "count": 1
+    },
+    {
+      "cardId": "reinforce",
+      "count": 2
+    },
+    {
+      "cardId": "overgrowth",
+      "count": 2
+    }
+  ]
+}

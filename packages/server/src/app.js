@@ -6,6 +6,7 @@
  * data-driven offers against it, so a bad data file stops the start.
  */
 import { SearchAi } from "@magic8/engine/domain/ai/search/SearchAi.js";
+import { buildAiDecks } from "@magic8/engine/domain/content/AiDecks.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { ENGINE_VERSION } from "@magic8/engine/version.js";
 import { AuditTrail } from "./kernel/audit/AuditTrail.js";
@@ -373,9 +374,9 @@ async function readWalletBalance(wallet, account, asset, precision) {
 }
 
 /**
- * The daily challenges, from their data (roster and tracks), checked against the game content and the shop's drop tables.
+ * The daily challenges, from their data (roster, tracks and the AI's decks), checked against the game content and the shop's drop tables.
  * @param {{
- *   raw: Readonly<{ roster: unknown, tracks: unknown }>,
+ *   raw: Readonly<{ roster: unknown, tracks: unknown, aiDecks: unknown }>,
  *   gameContent: import("@magic8/engine/domain/content/GameContent.js").GameContent,
  *   dropTables: ReadonlyMap<string, { table: import("@magic8/protocol").DropTable, hash: string }>,
  *   games: GameService, decks: DeckService, inventory: InventoryService, notifications: NotificationService, grants: GrantPublisher,
@@ -385,7 +386,11 @@ async function readWalletBalance(wallet, account, asset, precision) {
  * }} deps
  */
 function buildDaily({ raw, gameContent, dropTables, games, decks, inventory, notifications, grants, audit, clock, random, unitOfWork, logger, database, gate }) {
-  const roster = validateDailyRoster(raw.roster, gameContent);
+  const aiDecks = buildAiDecks(raw.aiDecks, gameContent);
+  if (!aiDecks.ok) {
+    throw new Error(`the AI's decks are invalid: ${aiDecks.error.message}`);
+  }
+  const roster = validateDailyRoster(raw.roster, gameContent, aiDecks.value);
   if (!roster.ok) {
     throw new Error(`daily challenge roster is invalid: ${roster.error.message}`);
   }

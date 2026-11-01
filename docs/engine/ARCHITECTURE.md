@@ -1224,7 +1224,7 @@ Cards (5, none in a precon deck yet): Village Militia (neutral, 2, 2/2, common),
 
 - `damage_faction` (`amount`, `faction`): no target; damages every creature of that faction on the battlefield, both sides, the caster's own included.
 - `reanimate` (`amount`): no target; `EffectContext.reanimateCreatures` takes the top `amount` creatures of the controller's graveyard (the last to arrive first, spells skipped) back to the battlefield. They enter as a played creature does (match conditions, summoning sickness, haste) but fire no `on_play` ability, since they were not played; a full battlefield stops it. New event `CREATURE_REANIMATED { playerId, instanceId, definitionId }`.
-- Static abilities: trigger `static` (creatures only) holds a **continuous** effect, a descriptor with `continuous: true` and `bonus(params, source, creature)` in place of `resolve`. Validation pairs them both ways (a static ability needs a continuous effect, a continuous effect needs `static`), and a continuous effect takes no target. The first one is `faction_aura` (`faction`, `attack`, `health`): the controller's creatures of that faction, the source included. `StaticAbilities.refreshStaticBonuses` recomputes every creature's bonus from the board as the first step of each state-based-action pass, so the bonus is there the moment its source enters and gone the moment it leaves, and a creature that lived only on the bonus health dies in the same pass. Changes are announced as `STATS_MODIFIED` with `duration: "static"`. `CardInstance` holds the bonus apart from its modifiers (the stat getters add it), clears it when the card leaves the battlefield, and copies it on clone. It is derived state, so the **state digest is unchanged**, and checkpoints of games already played still verify. `GameEngine.resume` refreshes it for the search AI's rebuilt worlds.
+- Static abilities: trigger `static` (creatures only) holds a **continuous** effect, a descriptor with `continuous: true` and `bonus(params, source, creature)` in place of `resolve`. Validation pairs them both ways (a static ability needs a continuous effect, a continuous effect needs `static`), and a continuous effect takes no target. The first one is `faction_aura` (`faction`, `attack`, `health`): the controller's creatures of that faction, the source included. `StaticAbilities.refreshStaticBonuses` recomputes every creature's bonus from the board as the first step of each state-based-action pass, so the bonus is there the moment its source enters and gone the moment it leaves, and a creature that lived only on the bonus health dies in the same pass. Changes are announced as `STATS_MODIFIED` with `duration: "static"`. `CardInstance` holds the bonus apart from its modifiers (the stat getters add it), clears it when the card leaves the battlefield, and copies it on clone. It is derived state, so the **state digest is unchanged**, and checkpoints of games already played still verify. `GameEngine.resume` refreshes it for the search AI's rebuilt worlds. The card's view (`GameSnapshot`'s `CardView`) carries the bonus as `staticBonus`, apart from `modifiers`. The search AI rebuilds cards from `modifiers`, then refreshes the bonus itself, so putting the bonus in that list would count it twice. The match's inspect view shows it as its own **Auras** line in the stat breakdown (`StatBreakdown.statLines`). Before that line, a lord-boosted creature showed its raised stats but no breakdown explaining them.
 - Effect params gain the kind `faction`, checked against the content's factions (deck rules); it has no default. `EffectRegistry.validateParams` takes `{ path, factions }` as its last argument.
 
 **Cards** (106 in all; none in a precon deck):
@@ -1278,3 +1278,41 @@ The counter wheel first dealt 3 damage everywhere. That wiped the fragile factio
 - Preview: `?scene=home&news=N` opens page N, settled; `&live=1` plays it.
 
 **Tests:** `application/seasonNews.test.js` covers the bundled file, nine ways to break it, and due/seen per account across visits, seasons and the 8-account cap. `rendering/seasonNews.test.js` covers every page drawing wide and compact at three points of its entrance, the season and change values drawn, sounds (13 flips, one rare reveal for the one epic card, each once), settled silence, and the buttons and their places. `homeScene.test.js` covers the news opening when the account is ready and surviving a rebuild, not coming back once closed, the route opening it at a page, and a rebuild for a phone keeping the page. Reviewed with headless Chrome screenshots of every page, wide and on a phone, and mid-reveal.
+
+### The AI's own decks, with the Season 2 cards (2026-11-01)
+
+**Request:** the AIs, the daily challenge included, did not play the new cards: no AI deck held them. Both the daily challenge and practice should get good, calibrated decks with the new cards.
+
+**Why not the preconstructed decks:** they are also players' decks. They serve as the free starter, as the offline player's decks, and as the shop's decks. Putting Season 2 rares and epics in them would give the new cards away to every new player.
+
+**Data:** `data/decks/ai/ai_<character>.deck.json` holds one deck per daily character, in the deck-list format of the preconstructed decks. The server reads only `data/decks/*.deck.json` as preconstructed decks, so these stay out of that list. Each deck is its character's preconstructed deck with 3–7 cards swapped for new ones of its faction. Ember gets Pyre Chanter and Forest Blaze, Iron gets Foundry Overseer and Cold Iron, Verdant gets Wildheart Druid and Rootbreak, and Arcane gets Dawnlight. Shadow gets Wake the Dead, Smother and the bane rites. In `characters.json`, every character names its AI deck, and every boss builds on one (`{ base: "ai_varek", add: […] }`).
+
+**Engine:** `content/AiDecks.js` `buildAiDecks(raw, content)` validates the files as the preconstructed decks are validated (shape, deck rules). It also refuses an id that another deck already has, preconstructed ones included. A bad file refuses the whole list.
+
+**Server:** `readServerContent` reads `data/decks/ai/` into `daily.aiDecks`. `buildDaily` validates the decks and passes them to `validateDailyRoster(raw, content, aiDecks)`, where a deck id or a `base` may name an AI deck or a preconstructed one. `tools/challenge-balance.js` does the same.
+
+**Client:** the manifest lists the ten files (`aiDecks`). Boot builds them with `buildAiDecks` and hands them to `DeckSelectionService`, whose `listRivalDecks` gives the practice AI its own decks. If they are missing or broken, the practice AI plays the preconstructed decks as before. They never show among the player's decks. `tools/simulate.js --ai` plays them instead of the preconstructed decks.
+
+**Calibration:** in a round robin of the ten decks, each with its character's style and SearchAi level 5 (the AI the challenge and practice use), 30 games per pair:
+
+| Deck | first try | final |
+|---|---|---|
+| Kael · Pyre Vanguard | 49.3% | 46.3% |
+| Sira · Wildfire Chorus | 50.7% | 53.7% |
+| Brunn · Overseer's Foundry | 51.5% | 47.4% |
+| Varek · Legion of the Forge | 44.1% | 47.4% |
+| Morwen · Restless Harvest | 58.5% | 50.7% |
+| Notary · Bane Pact | 54.1% | 57.8% |
+| Elda · Wildheart Grove | 59.6% | 49.6% |
+| Rook · Hunt Unleashed | 36.7% | 45.2% |
+| Ilyra · Dawnlight Conclave | 45.6% | 49.3% |
+| Thessaly · Bastion Reforged | 50.0% | 52.6% |
+
+BasicAi measured the first try very differently: Ember at 60–65%, Arcane at 41–42%. The decks were tuned on SearchAi, the AI that plays them in the game.
+
+- **Corrections:** Rook (too weak) got three Druids, two Pyre Chanters and a Charging Ram in place of weak pumps. Elda's Rootbreak and three Druids beat the Iron decks 83–93%, so she keeps two Druids and gets an Entangle back. Morwen keeps one Wake the Dead, not two. Varek got a third Overseer and Ilyra a second Void Conjurer.
+- **Notary stays above the band.** It beats the two Ember decks 83–97% and goes 48.7% against the other seven. The original Shadow Pact does the same, and lighter Notary variants measured the same (65–67% against a balanced field), so the strength is the Shadow base's. It matches the Season 2 counter wheel, where Shadow beats Ember.
+- **Bosses:** against the ten AI decks, the bosses on the new bases are closer together than before. Iron Colossus went from 43.5% to 51%, Volcanic Wyrm from 54.5% to 61.5%, Worldroot from 52% to 61%, Gravelord from 73.5% to 70.5% and Archmage from 54.5% to 52.5%.
+- **What the player feels:** `challenge-balance.js` measured the Normal track with a beginner (`basic`) holding each starter, 60 games per opponent, old roster against new. A character now wins 40% against the beginner, up from 47%. A boss wins about as often as before (32%, was 31%). A day takes 8.1 games on average, up from 7.5. The characters that got harder are those with a lord: Kael went from 75% to 50%, Brunn from 47% to 25%, Varek from 43% to 32%. Morwen went the other way, from 37% to 52%.
+
+**Tests:** `engine/test/content/aiDecks.test.js` checks that the ten bundled decks are legal and apart from the preconstructed decks, and that a list with an illegal deck, a taken or repeated id, or a malformed file is refused. `deckServices.test.js` checks that the practice AI plays its own decks and that the player never gets them. `daily.test.js` validates the bundled roster with the AI decks and checks that a character plays the AI deck it names.

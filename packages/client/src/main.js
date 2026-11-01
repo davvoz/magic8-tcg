@@ -57,6 +57,7 @@ import { HttpDailyApi } from "./infrastructure/api/HttpDailyApi.js";
 import { MatchSetupService } from "./application/match/MatchSetupService.js";
 import { TutorialService } from "./application/tutorial/TutorialService.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
+import { buildAiDecks } from "@magic8/engine/domain/content/AiDecks.js";
 import { WebAudioOutput } from "./infrastructure/audio/WebAudioOutput.js";
 import { createBrowserAudioContext, followVisibility, unlockOnGesture } from "./infrastructure/audio/browserAudio.js";
 import { createCoreSoundBank } from "./infrastructure/audio/registerCorePatches.js";
@@ -160,6 +161,8 @@ const CONTENT_MANIFEST = Object.freeze({
   illustrations: "data/art/illustrations.json",
   characterArt: "data/art/characters.json",
   seasonNews: "data/ui/season-news.json",
+  // The AI's own decks (the daily challenges' characters'), which the practice AI plays.
+  aiDecks: Object.freeze(["kael", "sira", "brunn", "varek", "morwen", "notary", "elda", "rook", "ilyra", "thessaly"].map((id) => `data/decks/ai/ai_${id}.deck.json`)),
 });
 /** Where the illustration files named in data/art/illustrations.json (and the portraits in characters.json) live. */
 const ART_DIRECTORY = "data/art/";
@@ -443,7 +446,7 @@ async function boot() {
   const firstScreenArt = Promise.all([loading.track(uiArt.preload()), loading.track(tableArt.preload())]);
   loading.say("Shuffling the decks…");
   const track = loading.track.bind(loading);
-  const [rawTheme, content, rawRarities, rawIllustrations, rawCharacterArt, rawSeasonNews] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(source.load("characterArt")), track(source.load("seasonNews")), track(identity.restore()), track(google.refresh())]);
+  const [rawTheme, content, rawRarities, rawIllustrations, rawCharacterArt, rawSeasonNews, rawAiDecks] = await Promise.all([track(source.load("theme")), track(loadContent(source, createCoreEffectRegistry())), track(source.load("rarities")), track(source.load("illustrations")), track(source.load("characterArt")), track(source.load("seasonNews")), track(source.load("aiDecks")), track(identity.restore()), track(google.refresh())]);
   loading.say("Gilding the table…");
   if (!content.ok) {
     showFatal("Content failed to load", content.error.message);
@@ -474,6 +477,7 @@ async function boot() {
   const help = buildHelp(localStore, storageAvailable);
   const onboarding = buildOnboarding(localStore, storageAvailable);
   const seasonNews = buildSeasonNews(rawSeasonNews, content.value, rarities, { localStore, storageAvailable });
+  const aiDecks = buildAiDeckFiles(rawAiDecks, content.value);
   const selectedDeck = buildSelectedDeck(localStore, storageAvailable);
   const browserDecks = new StoredDeckRepository({ store: storageAvailable ? localStore : new InMemoryStore(), logger });
   // Signed in, decks live in the account (only owned cards); otherwise in this browser.
@@ -596,7 +600,7 @@ async function boot() {
   const app = Object.freeze({
     content: content.value,
     // Signed in, the player's decks are the account's; the preconstructed ones are offline practice only.
-    deckSelection: new DeckSelectionService({ content: content.value, repository, logger, showPreconstructed: () => repository.storage === DeckStorage.BROWSER }),
+    deckSelection: new DeckSelectionService({ content: content.value, repository, logger, showPreconstructed: () => repository.storage === DeckStorage.BROWSER, aiDecks }),
     deckBuilding,
     selectedDeck,
     matchSetup,
@@ -837,6 +841,20 @@ function buildSeasonNews(raw, content, { rarities = NO_RARITIES }, { localStore,
     logger.warn("season news unavailable", built.message);
   }
   return new SeasonNewsService({ news: built.ok ? built.value : null, preferences: new StoredSeasonNews({ store, logger }) });
+}
+
+/**
+ * The AI's own decks; without them (a file missing or broken) the practice AI plays the preconstructed decks.
+ * @param {import("@magic8/engine/shared/Result.js").Ok<unknown> | import("@magic8/engine/shared/Result.js").Fail} raw the deck files
+ * @param {import("./application/content/ContentService.js").GameContent} content
+ */
+function buildAiDeckFiles(raw, content) {
+  const built = raw.ok ? buildAiDecks(raw.value, content) : raw;
+  if (!built.ok) {
+    logger.warn("the AI's decks unavailable; it plays the preconstructed ones", built.error.message);
+    return [];
+  }
+  return built.value;
 }
 
 /**

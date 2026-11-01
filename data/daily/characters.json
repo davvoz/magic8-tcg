@@ -7,7 +7,7 @@
       "title": "First into the Fire",
       "faction": "ember",
       "style": "aggressive",
-      "deck": "precon_ember",
+      "deck": "ai_kael",
       "lines": {
         "intro": ["Shields up? Doesn't matter. I hit first.", "You look slow. Let's find out.", "The vanguard never waits. Neither will I."],
         "low": ["Still standing. Still swinging."],
@@ -21,7 +21,7 @@
       "title": "The Spark Dancer",
       "faction": "ember",
       "style": "aggressive",
-      "deck": "precon_wildfire",
+      "deck": "ai_sira",
       "lines": {
         "intro": ["Oh, a new audience! Let's make it bright.", "Do you like fireworks? You will.", "Stand back. Or don't, it's more fun."],
         "low": ["Ooh, now it's getting exciting!"],
@@ -35,7 +35,7 @@
       "title": "Master of the Forge",
       "faction": "iron",
       "style": "balanced",
-      "deck": "precon_foundry",
+      "deck": "ai_brunn",
       "lines": {
         "intro": ["Hmph. Let's see if your work holds up.", "Every gear in its place. Is yours?", "I've no time for sloppy craft. Show me yours."],
         "low": ["A crack in the casting. It happens."],
@@ -49,7 +49,7 @@
       "title": "Keeper of the Line",
       "faction": "iron",
       "style": "defensive",
-      "deck": "precon_iron",
+      "deck": "ai_varek",
       "lines": {
         "intro": ["The line holds. It always holds.", "State your business, challenger.", "Formation! We have company."],
         "low": ["Close ranks! Nobody breaks!"],
@@ -63,7 +63,7 @@
       "title": "The Reaper of Graves",
       "faction": "shadow",
       "style": "balanced",
-      "deck": "precon_harvest",
+      "deck": "ai_morwen",
       "lines": {
         "intro": ["Oh, a visitor. The dead are always glad of company.", "Mind the soil, dear. It remembers.", "Every harvest begins with a little sorrow."],
         "low": ["How lovely. I'll be resting soon."],
@@ -77,7 +77,7 @@
       "title": "Keeper of Contracts",
       "faction": "shadow",
       "style": "balanced",
-      "deck": "precon_shadow",
+      "deck": "ai_notary",
       "lines": {
         "intro": ["Sign here, and here. The terms are very fair.", "Every duel is a contract. Shall we begin?", "I see you read the small print. How rare."],
         "low": ["A minor breach. Easily amended."],
@@ -91,7 +91,7 @@
       "title": "Hermit of the Grove",
       "faction": "verdant",
       "style": "defensive",
-      "deck": "precon_verdant",
+      "deck": "ai_elda",
       "lines": {
         "intro": ["Sit. The grove is in no hurry.", "Roots take time. So will you.", "Hush. Listen to the leaves first."],
         "low": ["Even old trees bend."],
@@ -105,7 +105,7 @@
       "title": "Tracker of the Deep Woods",
       "faction": "verdant",
       "style": "aggressive",
-      "deck": "precon_wildhunt",
+      "deck": "ai_rook",
       "lines": {
         "intro": ["Hunt's on.", "Run.", "I've tracked worse."],
         "low": ["Wounded. Still dangerous."],
@@ -119,7 +119,7 @@
       "title": "First Chair of the Conclave",
       "faction": "arcane",
       "style": "defensive",
-      "deck": "precon_arcane",
+      "deck": "ai_ilyra",
       "lines": {
         "intro": ["You may begin. Try not to embarrass yourself.", "I have read every move you could make. Twice.", "A lesson, then. Take notes."],
         "low": ["An interesting hypothesis. Unproven."],
@@ -133,7 +133,7 @@
       "title": "Warden of the Spire",
       "faction": "arcane",
       "style": "defensive",
-      "deck": "precon_bastion",
+      "deck": "ai_thessaly",
       "lines": {
         "intro": ["Another climber. Let's see how far you get.", "The Spire has outlasted a thousand of you.", "I've watched many fall. Don't rush to join them."],
         "low": ["The walls still stand. Mostly."],
@@ -149,7 +149,7 @@
       "title": "Heart of the Mountain",
       "faction": "ember",
       "style": "aggressive",
-      "deck": { "base": "precon_wildfire", "add": [{ "cardId": "volcanic_wyrm", "count": 2 }, { "cardId": "blazing_titan", "count": 1 }] },
+      "deck": { "base": "ai_sira", "add": [{ "cardId": "volcanic_wyrm", "count": 2 }, { "cardId": "blazing_titan", "count": 1 }] },
       "conditions": [{"name": "Scorched Earth", "text": "At the start of each turn, the player whose turn it is loses 1 life.", "scope": "everyone", "rule": {"kind": "turn_start", "effect": "lose_life", "amount": 1}}],
       "lines": {
         "unlock": ["The mountain rumbles. Something below has woken."],
@@ -165,7 +165,7 @@
       "title": "First Engine of the Foundry",
       "faction": "iron",
       "style": "defensive",
-      "deck": { "base": "precon_iron", "add": [{ "cardId": "iron_colossus", "count": 1 }, { "cardId": "rampart_automaton", "count": 2 }] },
+      "deck": { "base": "ai_varek", "add": [{ "cardId": "iron_colossus", "count": 1 }, { "cardId": "rampart_automaton", "count": 2 }] },
       "conditions": [{"name": "Fortress", "text": "All creatures enter the battlefield with +0/+2.", "scope": "everyone", "rule": {"kind": "enter_stats", "attack": 0, "health": 2}}],
       "lines": {
         "unlock": ["Deep in the foundry, an engine older than the city starts to turn."],
@@ -181,7 +181,7 @@
       "title": "King Beneath",
       "faction": "shadow",
       "style": "balanced",
-      "deck": { "base": "precon_shadow", "add": [{ "cardId": "gravelord", "count": 1 }] },
+      "deck": { "base": "ai_notary", "add": [{ "cardId": "gravelord", "count": 1 }] },
       "conditions": [{"name": "Curse of the Grave", "text": "Spells cost 1 more for everyone.", "scope": "everyone", "rule": {"kind": "cost", "filter": {"type": "spell"}, "amount": 1}}],
       "lines": {
         "unlock": ["The graves are restless tonight. Their king is listening."],
@@ -197,7 +197,7 @@
       "title": "Oldest of the Forest",
       "faction": "verdant",
       "style": "defensive",
-      "deck": { "base": "precon_verdant", "add": [{ "cardId": "worldroot_colossus", "count": 1 }, { "cardId": "thunderhoof_mammoth", "count": 1 }] },
+      "deck": { "base": "ai_elda", "add": [{ "cardId": "worldroot_colossus", "count": 1 }, { "cardId": "thunderhoof_mammoth", "count": 1 }] },
       "conditions": [{"name": "Ancient Forest", "text": "Creatures cost 1 less for everyone.", "scope": "everyone", "rule": {"kind": "cost", "filter": {"type": "creature"}, "amount": -1}}],
       "lines": {
         "unlock": ["The whole forest has gone quiet. Something ancient is paying attention."],
@@ -213,7 +213,7 @@
       "title": "Master of the Spire",
       "faction": "arcane",
       "style": "balanced",
-      "deck": { "base": "precon_arcane", "add": [{ "cardId": "archmage_of_the_spire", "count": 1 }] },
+      "deck": { "base": "ai_ilyra", "add": [{ "cardId": "archmage_of_the_spire", "count": 1 }] },
       "conditions": [{"name": "Forbidden Library", "text": "Everyone draws an extra card at the start of each turn.", "scope": "everyone", "rule": {"kind": "extra_draw", "amount": 1}}],
       "lines": {
         "unlock": ["At the top of the Spire, a light that has not shone for years is burning."],
