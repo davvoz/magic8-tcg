@@ -120,6 +120,35 @@ describe("house players (real bot, real client, real server)", () => {
     assert.equal(alice.logger.entries.filter((entry) => entry.level === "error").length, 0);
   });
 
+  it("plays the house's deck its account is given, without claiming the starter", async () => {
+    const { world, bot, logger } = await worldWithBot("gigi.one");
+    bot.start();
+    await until(() => bot.available, "the bot is online");
+    const grants = await world.setup.database.rows("SELECT g.kind FROM grants g JOIN users u ON u.id = g.user_id WHERE u.account = $1", ["gigi.one"]);
+    assert.deepEqual(grants, [], "a house deck to play: no starter to claim");
+    const [house] = await world.setup.database.rows("SELECT d.id, d.name FROM decks d JOIN users u ON u.id = d.owner_id WHERE u.account = $1", ["gigi.one"]);
+    assert.equal(house.name, "Ember Stampede");
+
+    const alice = await world.player("alice");
+    assert.equal((await alice.lobby.challenge("gigi.one", "casual", alice.deckId)).ok, true);
+    await until(() => alice.keychain.open.length === 1, "the bot accepted: alice is asked to sign the game");
+    alice.keychain.approve();
+    await until(() => alice.online.state.status === "playing", "both signed: the game starts");
+    const gameId = /** @type {string} */ (alice.online.state.session?.gameId);
+    const [seat] = await world.setup.database.rows("SELECT deck_id FROM game_players WHERE game_id = $1 AND account = $2", [gameId, "gigi.one"]);
+    assert.equal(seat.deck_id, house.id, "the bot sits down with the house's deck");
+
+    const stopClock = runClock(world);
+    const aliceAi = new BotPlayer({ style: "balanced", think: () => 0, delay, logger: alice.logger });
+    aliceAi.follow(alice.online.state.session);
+    cleanups.push(async () => aliceAi.stop());
+    await until(() => alice.online.state.status === "over", "the game is played to the end", 120_000);
+    aliceAi.stop();
+    stopClock();
+    await until(() => bot.available, "the bot goes back to the lobby");
+    assert.deepEqual(troubles(logger), []);
+  });
+
   it("joins the queue for a player searching alone", async () => {
     const { world, bot, logger } = await worldWithBot("queuebot");
     const fleetLogger = new MemoryLogger();

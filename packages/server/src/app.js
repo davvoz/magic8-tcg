@@ -19,7 +19,7 @@ import { RateLimiter } from "./platform/http/RateLimiter.js";
 import { Router } from "./platform/http/Router.js";
 import { CatalogService, PgContentRepository, registerCatalogRoutes } from "./modules/catalog/index.js";
 import { InventoryService, PgInventoryRepository, registerCollectionRoutes } from "./modules/collection/index.js";
-import { DeckService, PgDeckRepository, registerDeckRoutes } from "./modules/decks/index.js";
+import { DeckService, PgDeckRepository, registerDeckRoutes, validateHouseDecks } from "./modules/decks/index.js";
 import { EconomyService, formatAmount, parseAmount, validateAssets } from "./modules/economy/index.js";
 import { ChainBroadcaster, ChainOutbox, ChainTracker, GrantPublisher, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
@@ -102,7 +102,15 @@ export async function createServerApp(deps) {
   }
   const currentContent = () => catalog.current().content;
   const inventory = new InventoryService({ repository: new PgInventoryRepository(database), isKnownCard: (id) => currentContent().catalog.has(id), random, clock, unitOfWork });
-  const decks = new DeckService({ repository: new PgDeckRepository(database), ownedCards: (userId) => inventory.activeCounts(userId), content: currentContent, random, clock, unitOfWork });
+  const decks = new DeckService({
+    repository: new PgDeckRepository(database),
+    ownedCards: (userId) => inventory.activeCounts(userId),
+    houseDecks: houseDecksOf({ raw: content.house, gameContent: published.content, users, network: defaultNetwork }),
+    content: currentContent,
+    random,
+    clock,
+    unitOfWork,
+  });
 
   for (const provider of paymentProviders.values()) {
     assertImplements(provider, PAYMENT_PROVIDER_METHODS, "PaymentProvider");
@@ -358,6 +366,31 @@ function buildJackpot({ settings, pools, wallets, paymentProviders, bankFor, cur
   const networks = [...new Set([...pools.values()].map((pool) => pool.network))];
   const prizePayouts = new PrizePayoutWatcher({ repository, cursors, providers: paymentProviders, bankFor, networks, audit, clock, logger });
   return { jackpot, prizePayouts };
+}
+
+/**
+ * The house's decks a user plays: those of their account when it is a house account on the game's own network.
+ * @param {{
+ *   raw: Readonly<{ decks: unknown, accounts: unknown }>,
+ *   gameContent: import("@magic8/engine/domain/content/GameContent.js").GameContent,
+ *   users: { findById: (id: string) => Promise<{ network: string, account: string } | null> },
+ *   network: string,
+ * }} deps
+ * @returns {(userId: string) => Promise<readonly import("@magic8/engine/domain/decks/DeckList.js").DeckList[]>}
+ */
+function houseDecksOf({ raw, gameContent, users, network }) {
+  const validated = validateHouseDecks(raw, gameContent);
+  if (!validated.ok) {
+    throw new Error(`the house players' decks are invalid: ${validated.error.message}`);
+  }
+  const house = validated.value;
+  if (house.size === 0) {
+    return async () => [];
+  }
+  return async (userId) => {
+    const user = await users.findById(userId);
+    return user === null || user.network !== network ? [] : (house.get(user.account) ?? []);
+  };
 }
 
 /**

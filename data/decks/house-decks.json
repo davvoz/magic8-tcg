@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "accounts": {
+    "gigi.one": ["house_ember_stampede"],
+    "fabi.one": ["house_wildheart_herd"],
+    "yuky.skoll": ["house_iron_bastion"]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "house_ember_stampede",
+  "name": "Ember Stampede",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "kindling_sprite", "count": 2 },
+    { "cardId": "ember_imp", "count": 2 },
+    { "cardId": "flame_scout", "count": 3 },
+    { "cardId": "cinder_hound", "count": 2 },
+    { "cardId": "ember_zealot", "count": 3 },
+    { "cardId": "village_militia", "count": 3 },
+    { "cardId": "pyre_chanter", "count": 3 },
+    { "cardId": "ash_raider", "count": 2 },
+    { "cardId": "ember_shaman", "count": 1 },
+    { "cardId": "magma_hurler", "count": 2 },
+    { "cardId": "lava_brute", "count": 2 },
+    { "cardId": "molten_rhino", "count": 2 },
+    { "cardId": "rampaging_ogre", "count": 1 },
+    { "cardId": "ember_bolt", "count": 2 },
+    { "cardId": "quick_strike", "count": 2 },
+    { "cardId": "searing_lash", "count": 1 },
+    { "cardId": "fire_surge", "count": 1 },
+    { "cardId": "forest_blaze", "count": 1 }
+  ]
+}

@@ -19,6 +19,10 @@
  *   (damage_faction) brings what it kills on the enemy side less what it
  *   kills on its own, and stays in hand while that is nothing; a
  *   reanimation spell stays in hand while its graveyard holds no creature.
+ *   Draws count only while the library has cards: a spell played for its
+ *   cards stays in hand once the library is empty (each draw would cost
+ *   life), and no card is played whose draws from the empty library would
+ *   cost the AI its last life.
  * - Attack with creatures that cannot be blocked and killed for free; attack
  *   with everything when unblocked damage would be lethal. Attackers without
  *   vigilance cannot block the enemy's next attack, so they stay home while
@@ -36,6 +40,7 @@ import { Keyword } from "../effects/Keyword.js";
 import { TargetKind, TargetOwner } from "../effects/TargetSpec.js";
 import { TriggerType } from "../effects/TriggerType.js";
 import { GamePhase } from "../game/GamePhase.js";
+import { drawsIntoEmptyLibrary, playDraws } from "./cardViews.js";
 
 /** @typedef {import("../game/GameSnapshot.js").CardView} CardView */
 /** @typedef {ReturnType<import("../game/GameEngine.js").GameEngine["getSnapshot"]>} Snapshot */
@@ -50,7 +55,7 @@ import { GamePhase } from "../game/GamePhase.js";
  * situation is a new version: auto games record the version that played
  * them, so a replay can be checked against the rules of that version.
  */
-export const AI_VERSION = 2;
+export const AI_VERSION = 3;
 
 export const AiStyle = Object.freeze({ AGGRESSIVE: "aggressive", BALANCED: "balanced", DEFENSIVE: "defensive" });
 export const AI_STYLES = Object.freeze(Object.values(AiStyle));
@@ -78,7 +83,6 @@ const DRAIN = "drain";
 const HEAL = "heal";
 const SACRIFICE = "sacrifice";
 const MODIFY_STATS = "modify_stats";
-const DRAW_CARD = "draw_card";
 const DAMAGE_FACTION = "damage_faction";
 const REANIMATE = "reanimate";
 /** What a drawn card is worth, in the attack + health currency of `value`. */
@@ -209,8 +213,21 @@ function isWasted(card, targetOptions, board) {
     isSelfHarm(card, targetOptions, board) ||
     isBadSacrifice(card, targetOptions, board) ||
     isPointlessSweep(card, board) ||
-    isEmptyReanimation(card, board)
+    isEmptyReanimation(card, board) ||
+    isDeadDraw(card, board)
   );
+}
+
+/**
+ * A card whose draws find no card: a spell played for its cards with the
+ * library empty, or any card whose draws past the end of the library would
+ * cost the AI its last life (each costs at least one).
+ * @param {CardView} card
+ * @param {Board} board
+ */
+function isDeadDraw(card, board) {
+  const fatigue = Math.max(0, playDraws(card) - board.me.librarySize);
+  return drawsIntoEmptyLibrary(card, board.me.librarySize) || (fatigue > 0 && fatigue >= board.me.life);
 }
 
 /**
@@ -297,8 +314,8 @@ function isHarmful(ability) {
 
 /**
  * A sacrifice pays off only when the victim is worth at most half of what
- * the card brings (its own body plus the cards it draws): a healthy Bone
- * Colossus is never traded for another one.
+ * the card brings (its own body plus the cards it draws from its library):
+ * a healthy Bone Colossus is never traded for another one.
  * @param {CardView} card
  * @param {readonly (readonly string[])[]} targetOptions
  * @param {Board} board
@@ -320,9 +337,7 @@ function isBadSacrifice(card, targetOptions, board) {
  */
 function sacrificeGain(card, board, victimId) {
   const body = card.type === CardType.CREATURE ? value(card) : 0;
-  const draws = playAbilities(card)
-    .filter((ability) => ability.effect === DRAW_CARD)
-    .reduce((sum, ability) => sum + Number(ability.params?.amount ?? 0), 0);
+  const draws = Math.min(playDraws(card), board.me.librarySize);
   return body + draws * DRAWN_CARD_VALUE + sweepGain(card, board, victimId);
 }
 

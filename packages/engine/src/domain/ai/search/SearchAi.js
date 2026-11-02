@@ -38,7 +38,7 @@ import { TurnPlanner } from "./TurnPlanner.js";
  * Version of the search and its evaluation. Like BasicAi's AI_VERSION: a
  * change to what the AI decides in any situation is a new version.
  */
-export const SEARCH_AI_VERSION = 1;
+export const SEARCH_AI_VERSION = 2;
 
 /** @typedef {import("../AiPolicy.contract.js").Snapshot} Snapshot */
 /** @typedef {Readonly<Record<string, unknown>>} Command */

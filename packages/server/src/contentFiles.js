@@ -1,7 +1,8 @@
 /**
  * Reads everything data-driven the server needs from the repository's
  * data/ directory: the game content bundle, the economy files, the
- * ranked settings and the daily challenges (roster and tracks). Values
+ * ranked settings, the daily challenges (roster and tracks) and the house
+ * players' decks. Values
  * are raw JSON here; the modules validate them when the app is composed.
  */
 import { readFile, readdir } from "node:fs/promises";
@@ -27,13 +28,14 @@ async function readJsonDirectory(directory) {
 
 /**
  * @param {string} dataDirectory
- * @returns {Promise<Readonly<{ raw: import("@magic8/engine/domain/content/GameContent.js").RawContent, starterOffer: unknown, assets: unknown, market: import("./modules/marketplace/index.js").RawMarketData, ranked: unknown, daily: Readonly<{ roster: unknown, tracks: unknown, aiDecks: unknown }> }>>}
- *   `daily.aiDecks`: the AI's own decks (data/decks/ai/), which the roster's characters play
+ * @returns {Promise<Readonly<{ raw: import("@magic8/engine/domain/content/GameContent.js").RawContent, starterOffer: unknown, assets: unknown, market: import("./modules/marketplace/index.js").RawMarketData, ranked: unknown, daily: Readonly<{ roster: unknown, tracks: unknown, aiDecks: unknown }>, house: Readonly<{ decks: unknown, accounts: unknown }> }>>}
+ *   `daily.aiDecks`: the AI's own decks (data/decks/ai/), which the roster's characters play;
+ *   `house`: the house players' decks (data/decks/house/) and who plays which (data/decks/house-decks.json)
  */
 export async function readServerContent(dataDirectory) {
   const economy = join(dataDirectory, "economy");
   const daily = join(dataDirectory, "daily");
-  const [raw, starterOffer, assets, rarities, dropTables, pricing, products, ranked, roster, tracks, aiDecks] = await Promise.all([
+  const [raw, starterOffer, assets, rarities, dropTables, pricing, products, ranked, roster, tracks, aiDecks, houseDecks, houseAccounts] = await Promise.all([
     readContentDirectory(dataDirectory),
     readJson(join(economy, "starter-offer.json")),
     readJson(join(economy, "assets.json")),
@@ -45,6 +47,16 @@ export async function readServerContent(dataDirectory) {
     readJson(join(daily, "characters.json")),
     readJson(join(daily, "tracks.json")),
     readJsonDirectory(join(dataDirectory, "decks", "ai")),
+    readJsonDirectory(join(dataDirectory, "decks", "house")),
+    readJson(join(dataDirectory, "decks", "house-decks.json")),
   ]);
-  return Object.freeze({ raw, starterOffer, assets, market: Object.freeze({ rarities, dropTables, pricing, products }), ranked, daily: Object.freeze({ roster, tracks, aiDecks }) });
+  return Object.freeze({
+    raw,
+    starterOffer,
+    assets,
+    market: Object.freeze({ rarities, dropTables, pricing, products }),
+    ranked,
+    daily: Object.freeze({ roster, tracks, aiDecks }),
+    house: Object.freeze({ decks: houseDecks, accounts: houseAccounts }),
+  });
 }

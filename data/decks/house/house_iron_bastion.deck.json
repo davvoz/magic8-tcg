@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "house_iron_bastion",
+  "name": "Iron Bastion",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "scrap_golem", "count": 2 },
+    { "cardId": "steel_sentinel", "count": 3 },
+    { "cardId": "rivet_hound", "count": 2 },
+    { "cardId": "village_militia", "count": 2 },
+    { "cardId": "rampart_automaton", "count": 3 },
+    { "cardId": "iron_watcher", "count": 3 },
+    { "cardId": "bulwark_engine", "count": 2 },
+    { "cardId": "siege_ram", "count": 2 },
+    { "cardId": "sentry_turret", "count": 2 },
+    { "cardId": "foundry_overseer", "count": 3 },
+    { "cardId": "forge_warden", "count": 2 },
+    { "cardId": "iron_colossus", "count": 2 },
+    { "cardId": "reinforce", "count": 2 },
+    { "cardId": "repair_drones", "count": 1 },
+    { "cardId": "cold_iron", "count": 2 },
+    { "cardId": "salvage", "count": 1 }
+  ]
+}

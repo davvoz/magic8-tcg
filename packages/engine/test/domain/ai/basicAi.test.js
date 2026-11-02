@@ -118,6 +118,23 @@ describe("BasicAi — main phase", () => {
     assert.equal(ai.decide(dead.engine.getSnapshot(P1)).cardId, dead.id(P1, HAND));
   });
 
+  it("keeps a spell played for its cards in hand once its library is empty", () => {
+    for (const spell of ["salvage", "arcane_insight", "harvest", "dark_bargain"]) {
+      const { engine } = createScenario({ p1: { hand: [spell], battlefield: ["ember_imp"], library: [], life: 10, resources: 3 } });
+      assert.deepEqual(ai.decide(engine.getSnapshot(P1)), endPhase(P1), `${spell}: every draw would only cost life`);
+    }
+    const lastCard = createScenario({ p1: { hand: ["salvage"], library: ["ember_imp"], life: 10, resources: 1 } });
+    assert.equal(ai.decide(lastCard.engine.getSnapshot(P1)).cardId, lastCard.id(P1, HAND), "one card still comes from the library");
+  });
+
+  it("plays no card whose draws from an empty library would cost its last life", () => {
+    const dying = createScenario({ p1: { hand: ["astral_owl"], library: [], life: 1, resources: 4 } });
+    assert.deepEqual(ai.decide(dying.engine.getSnapshot(P1)), endPhase(P1));
+
+    const healthy = createScenario({ p1: { hand: ["astral_owl"], library: [], life: 10, resources: 4 } });
+    assert.equal(ai.decide(healthy.engine.getSnapshot(P1)).cardId, healthy.id(P1, HAND), "a 3/2 is worth a point of life");
+  });
+
   it("plays a haste creature first when its attack makes the unblocked damage lethal", () => {
     const { engine, id } = createScenario({ p1: { hand: ["lava_brute", "flame_scout"], battlefield: ["ember_imp"], resources: 6 }, p2: { life: 4 } });
     assert.equal(ai.decide(engine.getSnapshot(P1)).cardId, id(P1, HAND, 1), "the 2/2 haste scout and the imp hit for 4 this turn");
