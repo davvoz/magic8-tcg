@@ -190,19 +190,20 @@ export class PgRankingRepository {
   }
 
   /**
-   * Which of these players played a ranked game by hand that saves them from decay, in [from, to): counted, and not
-   * ended by a concession at or before `turn` (a player who abandons a game concedes it).
+   * How many ranked games by hand that count against decay each of these players played in [from, to): counted, and
+   * not ended by a concession at or before `turn` (a player who abandons a game concedes it).
    * @param {{ season: string, userIds: readonly string[], from: number, to: number, turn: number }} query
-   * @returns {Promise<ReadonlySet<string>>}
+   * @returns {Promise<ReadonlyMap<string, number>>} a player who played none is left out
    */
   async playedRanked({ season, userIds, from, to, turn }) {
     const rows = await this.#db.rows(
-      `SELECT DISTINCT user_id FROM rating_changes
+      `SELECT user_id, count(*)::int AS games FROM rating_changes
         WHERE season = $1 AND user_id = ANY($2::uuid[]) AND mode = 'ranked' AND counted AND finished_at >= $3 AND finished_at < $4
-          AND NOT (end_reason = 'concede' AND end_turn <= $5)`,
+          AND NOT (end_reason = 'concede' AND end_turn <= $5)
+        GROUP BY user_id`,
       [season, userIds, toTimestamp(from), toTimestamp(to), turn],
     );
-    return new Set(rows.map((row) => row.user_id));
+    return new Map(rows.map((row) => [row.user_id, row.games]));
   }
 
   /**

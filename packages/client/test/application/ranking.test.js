@@ -38,7 +38,7 @@ describe("HttpRankingApi", () => {
   it("reads the standing and the leaderboard, and refuses malformed answers", async () => {
     const answers = { "/api/ranking/me": STANDING, "/api/ranking/leaderboard": BOARD };
     const api = new HttpRankingApi({ fetch: async (url) => json(200, answers[new URL(url, "http://x").pathname]) });
-    assert.deepEqual((await api.standing()).value, STANDING);
+    assert.deepEqual((await api.standing()).value, { ...STANDING, decay: null }, "nothing to lose today");
     assert.deepEqual((await api.leaderboard()).value, BOARD);
     answers["/api/ranking/me"] = { ...STANDING, practiceGamesNeeded: undefined };
     assert.equal((await api.standing()).value.practiceGamesNeeded, 0, "an older server opens ranked play with casual games only");
@@ -54,6 +54,19 @@ describe("HttpRankingApi", () => {
     assert.equal((await api.leaderboard()).value.entries[0].provisional, false, "an older server sends ranked entries only");
     answers["/api/ranking/leaderboard"] = { season: null, entries: [] };
     assert.deepEqual((await api.leaderboard()).value, { season: null, entries: [] }, "no season running");
+  });
+
+  it("reads what today's decay asks of the player, and leaves out a malformed one", async () => {
+    const at = Date.UTC(2026, 10, 3);
+    let answer = { ...STANDING, rank: 2, decay: { points: 15, games: 2, played: 0, safe: false, at } };
+    const api = new HttpRankingApi({ fetch: async () => json(200, answer) });
+    assert.deepEqual((await api.standing()).value.decay, { points: 15, games: 2, played: 0, safe: false, at });
+    answer = { ...STANDING, decay: { points: 5, safe: true, at } };
+    assert.deepEqual((await api.standing()).value.decay, { points: 5, games: 1, played: 0, safe: true, at }, "an older server asks for one game");
+    answer = { ...STANDING, decay: { points: "15", games: 2, played: 0, safe: false, at } };
+    const standing = await api.standing();
+    assert.equal(standing.ok, true, "the standing stands");
+    assert.equal(standing.value.decay, null);
   });
 });
 
@@ -100,12 +113,18 @@ describe("RankingService (client)", () => {
 
   it("warns a player among the first that a day without a ranked game costs rating", () => {
     const base = { loading: false, leaderboard: null, error: null };
-    const leader = { ...STANDING, rank: 1, decay: { points: 50, safe: false, at: Date.UTC(2026, 9, 28) } };
-    assert.equal(standingText({ ...base, standing: leader }), "Season 1: rating 1612 (#1), 8–4 in 12 game(s).\nPlay a ranked game by 00:00 UTC or lose 50 rating.");
-    assert.equal(shortStandingText({ ...base, standing: leader }), "Rating 1612 · #1\nPlay ranked today or −50");
-    const safe = { ...leader, decay: { ...leader.decay, safe: true } };
-    assert.equal(standingText({ ...base, standing: safe }), "Season 1: rating 1612 (#1), 8–4 in 12 game(s).\nSafe today: you played a ranked game.");
+    const leader = { ...STANDING, rank: 1, decay: { points: 50, games: 3, played: 0, safe: false, at: Date.UTC(2026, 9, 28) } };
+    assert.equal(standingText({ ...base, standing: leader }), "Season 1: rating 1612 (#1), 8–4 in 12 game(s).\nPlay 3 ranked games today or lose 50 rating.");
+    assert.equal(shortStandingText({ ...base, standing: leader }), "Rating 1612 · #1\nPlay 3 ranked today or −50");
+    const halfway = { ...leader, decay: { ...leader.decay, played: 2 } };
+    assert.equal(standingText({ ...base, standing: halfway }), "Season 1: rating 1612 (#1), 8–4 in 12 game(s).\nPlay 3 ranked games today (2 played) or lose 50 rating.");
+    assert.equal(shortStandingText({ ...base, standing: halfway }), "Rating 1612 · #1\nPlay 1 more ranked today or −50");
+    const safe = { ...leader, decay: { ...leader.decay, played: 3, safe: true } };
+    assert.equal(standingText({ ...base, standing: safe }), "Season 1: rating 1612 (#1), 8–4 in 12 game(s).", "the day's games played: nothing more to say");
     assert.equal(shortStandingText({ ...base, standing: safe }), "Rating 1612 · #1\n8–4 in 12 game(s)");
+    const third = { ...STANDING, rank: 3, decay: { points: 5, safe: false, at: Date.UTC(2026, 9, 28) } };
+    assert.equal(standingText({ ...base, standing: third }), "Season 1: rating 1612 (#3), 8–4 in 12 game(s).\nPlay a ranked game today or lose 5 rating.", "an older server asks for one game");
+    assert.equal(shortStandingText({ ...base, standing: third }), "Rating 1612 · #3\nPlay ranked today or −5");
   });
 });
 

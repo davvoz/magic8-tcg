@@ -22,7 +22,7 @@
 
 **La regola:**
 
-- Ogni giorno UTC, i primi tre rating **assestati** della stagione che quel giorno **non hanno giocato una classificata a mano valida** perdono: **1° −50, 2° −15, 3° −5** (`decay.places`).
+- Ogni giorno UTC, i primi tre rating **assestati** della stagione devono giocare un minimo di classificate a mano valide: **1° almeno 3, 2° almeno 2, 3° almeno 1** (`decay.games`, dal 2026-11-02; prima bastava una per tutti). Chi quel giorno ne gioca meno perde: **1° −50, 2° −15, 3° −5** (`decay.places`).
 - **Valida:** una partita `ranked` (coda o sfida diretta, anche contro un bot, doc 25), che ha contato per il rating (non oltre il limite per coppia) e che **non è finita con una resa entro il turno `earlyConcedeTurn`** (2), di chiunque dei due. Chi abbandona una partita la perde per resa, quindi anche l'abbandono rapido non salva. Vinta o persa non importa.
 - **Le partite automatiche non salvano** (doc 23).
 - Le posizioni sono quelle della classifica **a mezzanotte, prima del deterioramento del giorno**. Se primo e secondo sono vicini e nessuno dei due gioca, possono scambiarsi il posto ogni giorno: è voluto, chi gioca li supera.
@@ -35,16 +35,16 @@
 - Ogni giorno si tratta **una sola volta**, anche con più processi: chi inserisce la riga in `rating_decay_days` (migrazione 024) lo fa, gli altri saltano. I rating si bloccano nello stesso ordine di quando si registra una partita, così non c'è deadlock.
 - Ogni perdita è in `rating_decays` (append-only: giorno, posto, punti, rating prima e dopo) e arriva al giocatore come notifica `ranking.decay` (doc 15).
 - **Prima di chiudere il jackpot** di una stagione finita, il modulo jackpot fa girare il deterioramento: i premi si calcolano sempre dopo l'ultimo giorno.
-- `GET /api/ranking/me` restituisce `decay`: `{ points, safe, at }` se il giocatore oggi è fra i primi tre (`safe` se ha già giocato una partita valida, `at` la mezzanotte del controllo), altrimenti `null`. La lobby avvisa: *Play a ranked game by 00:00 UTC or lose 50 rating.* Anche la scheda Season della Home e le info *Ranked games* lo dicono.
+- `GET /api/ranking/me` restituisce `decay`: `{ points, games, played, safe, at }` se il giocatore oggi è fra i primi tre (`games` le partite valide richieste al suo posto, `played` quelle giocate oggi, `safe` se `played >= games`, `at` la mezzanotte del controllo), altrimenti `null`. La lobby avvisa: *Play 3 ranked games today (2 played) or lose 50 rating.* (in breve *Play 1 more ranked today or −50*). Anche la scheda Season della Home e le info *Ranked games* lo dicono. **Indicatore** (`online/DecayMeter`): una pillola piatta (niente sfumature né bagliori) nella Ranked (sotto la riga della posizione, su telefono sotto i ticket), nella classifica di Season, sulla scheda Season della Home su PC (sopra il pulsante) e, sulla Home del telefono, nella barra in alto in breve (un tocco apre la Ranked). Dentro, un pallino per ogni partita richiesta — vuoto con il bordo rosso: da giocare; verde: giocata — e cosa manca, con la perdita in rosso (*Play 2 more ranked today or −50*; in breve solo *−50*). Appena le partite richieste sono state giocate, pillola e riga di testo spariscono fino al giorno dopo. La pillola è lunga quanto il suo contenuto.
 - **Ricalcolo dalla catena:** le posizioni dipendono solo dai rating, e le partite di ogni giorno sono sulla catena. Il turno in cui una partita è finita invece non è nel record `m8tcg_result` (03 §9): per sapere se una resa era "entro il turno 2" serve la storia della partita, che il server mostra.
 
 **Configurazione** (`data/ranked/ranked.json`; senza `decay`, nessun deterioramento):
 
 ```json
-"decay": { "from": "2026-10-27T00:00:00Z", "places": [50, 15, 5] }
+"decay": { "from": "2026-10-27T00:00:00Z", "places": [50, 15, 5], "games": [3, 2, 1] }
 ```
 
-`from` deve essere una mezzanotte UTC; `places` da 1 a 10 valori, punti da 0 a 1000 (0: quel posto non perde niente).
+`from` deve essere una mezzanotte UTC; `places` da 1 a 10 valori, punti da 0 a 1000 (0: quel posto non perde niente); `games` un valore per ogni posto di `places`, da 1 a 20 partite (senza `games`, 1 per ogni posto).
 
 ## Coda classificata
 

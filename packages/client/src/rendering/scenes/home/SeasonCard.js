@@ -3,22 +3,27 @@
  * left, the places and who holds them, JackpotPanel; a phone's narrow card
  * keeps the amount and the time left), where the player stands — their
  * season in figures where there is room (a wide screen: SeasonStats), else
- * a line — and the way to the leaderboard.
+ * a line — what today's rating decay asks of them among the season's
+ * first (DecayMeter, over the button), and the way to the leaderboard.
  */
 import { countdownText, describeJackpot } from "../../../application/jackpot/describeJackpot.js";
 import { JACKPOT_HEIGHT, JackpotPanel } from "../jackpot/JackpotPanel.js";
 import { Label } from "../../ui/Label.js";
+import { DecayMeter } from "../online/DecayMeter.js";
 import { HomeCard } from "./HomeCard.js";
 import { SeasonStats } from "./SeasonStats.js";
 
 /** The least room the player's figures are shown in, and the gap above them. */
 const STATS = Object.freeze({ least: 150, gap: 14 });
+/** Today's decay meter over the button, wide and on a phone, and the most of the card's width it takes. */
+const DECAY = Object.freeze({ wide: 30, compact: 20, width: 460 });
 
 /**
  * What the card shows.
  * @typedef {Readonly<{ kind: "locked", reason: string }>
- *   | Readonly<{ kind: "open", season: string | null, jackpot: import("../../../application/ports/JackpotApi.contract.js").Jackpot | null, now: () => number, standing: string, figures?: import("../../../application/ports/RankingApi.contract.js").Standing | null }>} SeasonView
- *   `standing`: where the player stands, in a line; `figures`: their season's standing, once they play ranked in it
+ *   | Readonly<{ kind: "open", season: string | null, jackpot: import("../../../application/ports/JackpotApi.contract.js").Jackpot | null, now: () => number, standing: string, figures?: import("../../../application/ports/RankingApi.contract.js").Standing | null, decay?: import("../../../application/ports/RankingApi.contract.js").Decay | null }>} SeasonView
+ *   `standing`: where the player stands, in a line; `figures`: their season's standing, once they play ranked in it;
+ *   `decay`: what today's rating decay asks of them (null: nothing, or the day's games are played)
  */
 
 export class SeasonCard extends HomeCard {
@@ -48,8 +53,23 @@ export class SeasonCard extends HomeCard {
       const { inset, line, sizes } = this.metrics;
       this.add(new Label({ id: "home.season.standing", x: inset, y: Math.min(this.cursor, this.footTop - line), width: this.inner, height: line, text: view.standing, size: sizes.text, weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     }
+    this.#buildDecay(view.decay ?? null);
     const news = onNews === null ? [] : [{ id: "home.season.news", text: "What's new", onActivate: onNews }];
     this.addActions([...news, { ...open, enabled: canOpen }]);
+  }
+
+  /**
+   * Today's decay, where the note over the buttons would be (this card has none).
+   * @param {import("../../../application/ports/RankingApi.contract.js").Decay | null} decay
+   */
+  #buildDecay(decay) {
+    if (decay === null) {
+      return;
+    }
+    const { inset, button, gap } = this.metrics;
+    const height = this.compact ? DECAY.compact : DECAY.wide;
+    const y = this.height - inset - button - gap - height;
+    this.add(new DecayMeter({ id: "home.season.decay", x: this.left, y, width: Math.min(this.inner, DECAY.width), height, decay }));
   }
 
   /**

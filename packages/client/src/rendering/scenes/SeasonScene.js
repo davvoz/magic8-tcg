@@ -2,14 +2,16 @@
  * The Season section's screen: the ranked leaderboard of the current
  * season on the left — settled ratings ranked first, then provisional ones
  * (listed with no rank yet), each with the player's profile picture, the
- * player's own line lit and where they stand above it; a line opens that
+ * player's own line lit and where they stand above it — with, among the
+ * season's first, what today's rating decay asks of them (DecayMeter); a line opens that
  * player's season in a dialog (their figures, and the way to their games). On the right, the season's jackpot (the amount, the time
  * left, what each paying place wins and who holds it now), how ranked play
  * works (the entries, a game, the jackpot) and the way into a ranked game:
  * the screen's gold button, or locked with what is missing.
  *
  * On a phone the jackpot is a banner and how ranked works is told in a few
- * words under it (where the player stands is their lit line in the list).
+ * words under it (where the player stands is their lit line in the list,
+ * today's decay over it).
  */
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { ShopStatus } from "../../application/shop/ShopService.js";
@@ -24,8 +26,9 @@ import { ScrollList } from "../ui/ScrollList.js";
 import { TextBlock } from "../ui/TextBlock.js";
 import { screenLayout } from "./deckBuilder/layout.js";
 import { JACKPOT_HEIGHT, JackpotPanel } from "./jackpot/JackpotPanel.js";
+import { DecayMeter } from "./online/DecayMeter.js";
 import { rankedGuideFor } from "./online/rankedGuideFor.js";
-import { standingText } from "./lobby/lobbyText.js";
+import { decayAtRisk, standingText } from "./lobby/lobbyText.js";
 import { SceneId } from "./sceneIds.js";
 import { buildPlayerSeasonDialog } from "./season/PlayerSeasonDialog.js";
 import { SectionScene } from "./SectionScene.js";
@@ -34,13 +37,15 @@ const LIST_ID = "season.list";
 /** The leaderboard's share of the width the two columns share. */
 const LIST_SHARE = 0.56;
 /** Sizes, wide and compact (a phone in landscape). */
-const WIDE = Object.freeze({ titleY: 14, title: 36, standing: 30, listGap: 10, gap: 16, guide: 236, note: 26, button: 56 });
-const COMPACT = Object.freeze({ titleY: 6, title: 28, standing: 0, listGap: 6, gap: 6, guide: 0, note: 40, button: 46 });
+const WIDE = Object.freeze({ titleY: 14, title: 36, standing: 30, decay: 30, listGap: 10, gap: 16, guide: 236, note: 26, button: 56 });
+const COMPACT = Object.freeze({ titleY: 6, title: 28, standing: 0, decay: 28, listGap: 6, gap: 6, guide: 0, note: 40, button: 46 });
 /** The least room the guide is drawn in, wide and on a phone (a short window leaves it out). */
 const GUIDE_MIN = Object.freeze({ wide: 160, compact: 120 });
 /** A wide screen's guide: its caption's height, and the most its plates take. */
 const GUIDE_CAPTION = 24;
 const GUIDE_PLATES = 160;
+/** The most today's decay meter takes of the leaderboard's width. */
+const DECAY_WIDTH = 460;
 
 export class SeasonScene extends SectionScene {
   #app;
@@ -187,9 +192,14 @@ export class SeasonScene extends SectionScene {
     const width = column.width - 2 * inset;
     panel.add(new Label({ id: "season.title", x: screen.titleInset, y: m.titleY, width: width - 2 * (screen.titleInset - inset), height: m.title, text: "Leaderboard", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left" }));
     let y = m.titleY + m.title + m.listGap;
+    const decay = decayAtRisk(state.standing);
     if (m.standing > 0) {
-      panel.add(new TextBlock({ id: "season.standing", x: inset, y, width, height: m.standing, text: standingText(state), size: "body", colorKey: "text", align: "left" }));
+      panel.add(new TextBlock({ id: "season.standing", x: inset, y, width, height: m.standing, text: standingText(state, { withDecay: decay === null }), size: "body", colorKey: "text", align: "left" }));
       y += m.standing + m.listGap;
+    }
+    if (decay !== null) {
+      panel.add(new DecayMeter({ id: "season.decay", x: inset, y, width: Math.min(width, DECAY_WIDTH), height: m.decay, decay }));
+      y += m.decay + m.listGap;
     }
     const list = panel.add(new ScrollList({ id: LIST_ID, x: inset, y, width, height: columns.height - y - inset }));
     return this.#fill(list, state);

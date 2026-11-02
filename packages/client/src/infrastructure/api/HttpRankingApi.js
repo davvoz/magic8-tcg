@@ -48,7 +48,21 @@ function standing(value) {
     return null;
   }
   const { rating, deviation, provisional, rank, games, wins, losses, draws, eligible, casualGamesNeeded } = value;
-  return Object.freeze({ season: parsedSeason, rating, deviation, provisional, rank, games, wins, losses, draws, eligible, casualGamesNeeded, practiceGamesNeeded });
+  return Object.freeze({ season: parsedSeason, rating, deviation, provisional, rank, games, wins, losses, draws, eligible, casualGamesNeeded, practiceGamesNeeded, decay: decay(value.decay) });
+}
+
+/**
+ * What today's rating decay asks of the player; null when nothing (or left out, or malformed: the standing stands
+ * without it). An older server sends neither `games` nor `played`.
+ * @param {any} value
+ * @returns {import("../../application/ports/RankingApi.contract.js").Decay | null}
+ */
+function decay(value) {
+  if (!isObject(value) || !isCount(value.points) || typeof value.safe !== "boolean" || !Number.isSafeInteger(value.at)) {
+    return null;
+  }
+  const { points, safe, at, games = 1, played = 0 } = value;
+  return isCount(games) && games > 0 && isCount(played) ? Object.freeze({ points, games, played, safe, at }) : null;
 }
 
 /**

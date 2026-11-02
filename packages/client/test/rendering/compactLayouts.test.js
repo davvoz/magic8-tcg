@@ -225,9 +225,10 @@ function withPendingPurchase(app) {
  * @param {any} app
  * @param {{ eligible?: boolean, auto?: boolean }} [options]
  */
-function withRankedPlay(app, { eligible = true, auto = false } = {}) {
+function withRankedPlay(app, { eligible = true, auto = false, decay = false } = {}) {
   const season = { id: "season-1", name: "Season 1" };
-  const standing = { season, rating: 1612, deviation: 80, provisional: false, rank: 4, games: 12, wins: 8, losses: 4, draws: 0, eligible, casualGamesNeeded: eligible ? 0 : 3, practiceGamesNeeded: eligible ? 0 : 3 };
+  const leading = decay ? { rank: 1, decay: { points: 50, games: 3, played: 1, safe: false, at: Date.now() + 3_600_000 } } : {};
+  const standing = { season, rating: 1612, deviation: 80, provisional: false, rank: 4, games: 12, wins: 8, losses: 4, draws: 0, eligible, casualGamesNeeded: eligible ? 0 : 3, practiceGamesNeeded: eligible ? 0 : 3, ...leading };
   const ranking = new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season, entries: [] }) } });
   const entries = new EntryService({ api: { entries: async () => ok([{ kind: "ranked", balance: 3, perGame: 1, season: season.id }]) } });
   const connection = { connect: () => undefined, close: () => undefined, status: "open", request: async () => ok({ t: "auto.status", d: { state: "idle", waiting: 2 } }), subscribe: () => () => undefined, onStatus: () => () => undefined };
@@ -306,6 +307,7 @@ const SCREENS = Object.freeze([
   { name: "play, casual or ranked", make: (s, app) => new PlayScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => (scene.root.findById("play.online.play")?.activate(), assert.ok(scene.modal?.findById("choice.ranked.play"))) },
   { name: "home, with the guide", make: (s, app) => new HomeScene(s, app), before: (app) => withGuide(app), after: (scene) => assert.ok(scene.root.findById("home.next")) },
   { name: "home, without the guide", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app), withGuide(app).dismiss()), after: (scene) => assert.equal(scene.root.findById("home.next"), null) },
+  { name: "home, today's decay", make: (s, app) => new HomeScene(s, app), before: (app) => (withRankedPlay(app, { decay: true }), withGuide(app).dismiss()), shows: "shell.decay" },
   { name: "home, a purchase on its way", make: (s, app) => new HomeScene(s, app), before: (app) => (withPendingPurchase(app), void app.shop.load().then(() => app.shop.buy({ productId: "core_booster", quantity: 1, asset: "STEEM" }))), shows: "shell.arrival" },
   { name: "home, account dialog", make: (s, app) => new HomeScene(s, app), after: (scene) => (scene.findNode("profile")?.activate(), assert.ok(scene.overlay?.findById("signOut"))) },
   { name: "home, settings", make: (s, app) => new HomeScene(s, app), before: (app) => Object.assign(app, { audio: fakeAudio() }), after: (scene) => (scene.findNode("settings")?.activate(), assert.ok(scene.overlay?.findById("audio.music.up")), assert.ok(scene.overlay?.findById("settings.about.3"))) },
@@ -326,6 +328,7 @@ const SCREENS = Object.freeze([
   { name: "starter", make: (s, app) => new StarterScene(s, app), starter: false },
   { name: "notifications", make: (s, app) => new NotificationsScene(s, app) },
   { name: "season", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => (assert.ok(scene.root.findById("season.jackpot")), assert.equal(scene.root.findById("season.play")?.isEffectivelyEnabled, true)) },
+  { name: "season, today's decay", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app, { decay: true }), withJackpot(app)), shows: "season.decay" },
   { name: "season, ranked locked", make: (s, app) => new SeasonScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("season.play.note")) },
   { name: "season, how ranked works", make: (s, app) => new SeasonScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => assert.ok(scene.root.findById("season.guide.steps"), "told on the screen itself, a phone's too") },
   { name: "casual lobby", make: (s, app) => new CasualScene(s, app), after: (scene) => assert.ok(scene.root.findById("casual.steps")) },
@@ -334,6 +337,7 @@ const SCREENS = Object.freeze([
   { name: "notifications, a challenge open", make: (s, app) => new NotificationsScene(s, app), before: withChallenge("casual"), after: (scene) => assert.ok(scene.root.findById("notifications.challenge.answer.c1")) },
   { name: "casual lobby, ranked locked", make: (s, app) => new CasualScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.equal(scene.root.findById("online.unlockHint"), null, "nothing of ranked play in the casual lobby") },
   { name: "ranked lobby", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app), after: (scene) => (assert.ok(scene.root.findById("online.tickets")), assert.ok(scene.root.findById("ranked.buy"))) },
+  { name: "ranked lobby, today's decay", make: (s, app) => new RankedScene(s, app), before: (app) => (withRankedPlay(app, { decay: true }), withJackpot(app)), shows: "ranked.decay" },
   { name: "ranked lobby, the season's prize", make: (s, app) => new RankedScene(s, app), before: (app) => (withRankedPlay(app), withJackpot(app)), after: (scene) => assertInside(scene.root.findById("ranked.prize")) },
   { name: "ranked lobby, locked", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { eligible: false }), after: (scene) => assert.ok(scene.root.findById("online.unlock")) },
   { name: "ranked lobby, live", make: (s, app) => new RankedScene(s, app), before: (app) => withRankedPlay(app, { auto: true }), after: (scene) => assert.ok(scene.root.findById("online.mode.live")) },

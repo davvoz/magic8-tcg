@@ -206,17 +206,19 @@ describe("describeNotification", () => {
     assert.match(describe_("auto.refunded", { reason: "failed" }).body, /could not be played/);
   });
 
-  it("words rating decay: the place, the day, the rating and why", () => {
-    const decayed = describe_("ranking.decay", { season: "Season 1", day: "2026-10-27", place: 1, points: 50, before: 1812, after: 1762 });
+  it("words rating decay: the place, the day, the games, the rating and why", () => {
+    const decayed = describe_("ranking.decay", { season: "Season 1", day: "2026-10-27", place: 1, points: 50, games: 3, played: 2, before: 1812, after: 1762 });
     assert.deepEqual(
       [decayed.title, decayed.body, decayed.target, decayed.tone],
       [
-        "−50 rating: a day without ranked",
-        "You were 1st in Season 1 and played no ranked game on 2026-10-27 (UTC). Rating 1812 → 1762. The top 3 lose rating each day they do not play a ranked game by hand.",
+        "−50 rating: too few ranked games",
+        "You were 1st in Season 1 and played only 2 of the 3 ranked games you needed on 2026-10-27 (UTC). Rating 1812 → 1762. Each day the 1st must play 3 ranked games by hand, the 2nd 2 and the 3rd 1, or lose rating.",
         NotificationTarget.RANKED,
         "bad",
       ],
     );
+    assert.match(describe_("ranking.decay", { place: 2, points: 15, games: 2, played: 0 }).body, /played none of the 2 ranked games you needed/);
+    assert.match(describe_("ranking.decay", { place: 3, points: 5 }).body, /played no ranked game on/, "an older notification asked for one game");
   });
 });
 

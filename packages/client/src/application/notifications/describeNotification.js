@@ -74,8 +74,8 @@ const DESCRIBERS = Object.freeze({
     const place = ["1st", "2nd", "3rd"][Number(data.place) - 1] ?? `#${data.place ?? "?"}`;
     const rating = Number.isFinite(data.before) && Number.isFinite(data.after) ? ` Rating ${data.before} → ${data.after}.` : "";
     return text({
-      title: `−${data.points ?? "?"} rating: a day without ranked`,
-      body: `You were ${place} in ${data.season ?? "the season"} and played no ranked game on ${data.day ?? "that day"} (UTC).${rating} The top 3 lose rating each day they do not play a ranked game by hand.`,
+      title: `−${data.points ?? "?"} rating: too few ranked games`,
+      body: `You were ${place} in ${data.season ?? "the season"} and played ${decayedGames(data)} on ${data.day ?? "that day"} (UTC).${rating} Each day the 1st must play 3 ranked games by hand, the 2nd 2 and the 3rd 1, or lose rating.`,
       target: NotificationTarget.RANKED,
       tone: "bad",
     });
@@ -226,4 +226,17 @@ function cardsSentence(cards, name) {
 function moneyOf(data) {
   const asset = String(data.asset ?? "");
   return (typeof data.amount === "string" ? moneyText(data.amount, asset) : `? ${asset}`).trim();
+}
+
+/**
+ * The ranked games a decayed player played of those they needed: "only 2 of the 3 ranked games you needed" (an older
+ * notification gives neither, and asked for one).
+ * @param {Readonly<Record<string, any>>} data
+ */
+function decayedGames(data) {
+  const games = Number.isInteger(data.games) ? data.games : 1;
+  if (Number.isInteger(data.played) && data.played > 0) {
+    return `only ${data.played} of the ${games} ranked games you needed`;
+  }
+  return games === 1 ? "no ranked game" : `none of the ${games} ranked games you needed`;
 }

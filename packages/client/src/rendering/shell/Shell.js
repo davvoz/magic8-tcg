@@ -8,8 +8,11 @@
  *
  * It follows what the bar shows — the player signing in or out, their
  * account loading, unread notifications (and challenges open), their wallet and entries, a purchase paid and on its
- * way (ArrivalChip: from any screen, back to the one that follows it) — and
- * lays itself out again on each change, and when the screen changes shape.
+ * way (ArrivalChip: from any screen, back to the one that follows it), and
+ * on a phone's Home what today's rating decay asks of a player among the
+ * season's first (a brief DecayMeter, leading to Ranked: there the card
+ * that shows it on a wide Home is not) — and lays itself out again on each
+ * change, and when the screen changes shape.
  * The wallet and the entries are read once when nothing is known of them.
  * A screen may put buttons of its own in the bar (`setActions`), left of
  * the player's things: Play's live games and the player's own games.
@@ -21,6 +24,8 @@ import { shopTrack } from "../../application/shop/ShopService.js";
 import { AccountStatus } from "../../application/account/AccountService.js";
 import { IdentityStatus, SignInMethod } from "../../application/identity/IdentityService.js";
 import { WalletExportStatus } from "../../application/wallet/WalletExport.js";
+import { DecayMeter } from "../scenes/online/DecayMeter.js";
+import { decayAtRisk } from "../scenes/lobby/lobbyText.js";
 import { SceneId } from "../scenes/sceneIds.js";
 import { Button } from "../ui/Button.js";
 import { Icon } from "../ui/icons.js";
@@ -46,8 +51,11 @@ const WIDTHS = Object.freeze({
   wide: Object.freeze({ wallet: 250, entries: 210, profile: 240, signIn: 150, arrival: 190 }),
   compact: Object.freeze({ wallet: 140, entries: 112, profile: 0, signIn: 110, arrival: 96 }),
 });
-/** What gives way first when the bar is short of room: the entries, then the wallet, the screen's own buttons, a purchase on its way. */
-const DROP = Object.freeze({ entries: 1, wallet: 2, action: 3, arrival: 4 });
+/**
+ * What gives way first when the bar is short of room: the entries, today's decay, then the wallet, the screen's own
+ * buttons, a purchase on its way.
+ */
+const DROP = Object.freeze({ entries: 1, decay: 1.5, wallet: 2, action: 3, arrival: 4 });
 /** A screen's own button in the bar: its width with its caption (a phone shows the icon alone, square). */
 const ACTION_WIDTH = 190;
 /** A bar button's room besides its caption (the icon, the gap, the plate's ornate ends), and a caption's width per character. */
@@ -145,25 +153,36 @@ export class Shell {
         }),
       );
     }
+    // Today's decay changes (a game played, a place lost): the bar changes only then, not at each read of the standing.
+    this.#rebuildOnChange([app.ranking], () => this.#decayKey());
     // A purchase comes on its way or arrives: the bar changes only then, not at each step of it.
-    let arriving = this.#arrivalKey();
-    for (const service of [app.shop, app.sales]) {
-      if (typeof service?.subscribe === "function") {
-        this.#unsubscribes.push(
-          service.subscribe(() => {
-            if (this.#arrivalKey() !== arriving) {
-              arriving = this.#arrivalKey();
-              rebuild();
-            }
-          }),
-        );
-      }
-    }
+    this.#rebuildOnChange([app.shop, app.sales], () => this.#arrivalKey());
     // The exported wallet shows over whatever screen the player is on (back from signing in at Google again: Home).
     if (typeof app.walletExport?.subscribe === "function") {
       this.#unsubscribes.push(app.walletExport.subscribe((state) => this.#showExport(state)));
     }
     this.#rebuild();
+  }
+
+  /**
+   * Follows these services (those that can be followed), laying the bar out again only when what `key` says of it changes.
+   * @param {ReadonlyArray<{ subscribe?: (listener: () => void) => () => void } | undefined>} services
+   * @param {() => string} key
+   */
+  #rebuildOnChange(services, key) {
+    let shown = key();
+    for (const service of services) {
+      if (typeof service?.subscribe === "function") {
+        this.#unsubscribes.push(
+          service.subscribe(() => {
+            if (key() !== shown) {
+              shown = key();
+              this.#rebuild();
+            }
+          }),
+        );
+      }
+    }
   }
 
   /** Stops following the services (the scene is left). */
@@ -382,6 +401,33 @@ export class Shell {
     return [{ id: "shell.arrival", width, drop: DROP.arrival, make: (box) => new ArrivalChip({ id: "shell.arrival", ...box, compact, track: arrival.track, now: this.#now, onActivate: opens }) }];
   }
 
+  /**
+   * On a phone's Home, what today's rating decay asks of a signed-in player among the season's first, in brief: it
+   * opens Ranked.
+   * @param {number} height the bar's controls'
+   * @param {boolean} compact
+   * @returns {import("./TopBar.js").BarControl[]}
+   */
+  #decayControls(height, compact) {
+    const decay = this.#decay();
+    if (!compact || this.#scene !== SceneId.HOME || decay === null) {
+      return [];
+    }
+    const opens = this.#host.services.hasScene(SceneId.RANKED) ? () => this.#openFromBar(SceneId.RANKED) : null;
+    return [{ id: "shell.decay", width: DecayMeter.briefWidth(decay, height), drop: DROP.decay, make: (box) => new DecayMeter({ id: "shell.decay", ...box, decay, brief: true, onActivate: opens }) }];
+  }
+
+  /** What today's decay asks of the signed-in player while they have games left to play, or null. */
+  #decay() {
+    return this.#signedIn() ? decayAtRisk(this.#app.ranking?.state?.standing ?? null) : null;
+  }
+
+  /** What the bar shows of today's decay: what it says, or nothing. */
+  #decayKey() {
+    const decay = this.#decay();
+    return decay === null ? "" : `${decay.points}|${decay.games}|${decay.played}`;
+  }
+
   /** What the bar shows of a purchase on its way: where it is followed, or nothing. */
   #arrivalKey() {
     return this.#arrival()?.scene ?? "";
@@ -393,7 +439,8 @@ export class Shell {
   }
 
   /**
-   * The bar's controls, left to right: the screen's own, wallet, entries, notifications, settings, the account.
+   * The bar's controls, left to right: the screen's own, today's decay (a phone's Home), wallet, entries, notifications,
+   * settings, the account.
    * @param {boolean} compact
    * @returns {import("./TopBar.js").BarControl[]}
    */
@@ -409,6 +456,7 @@ export class Shell {
     }));
     const signedIn = this.#signedIn();
     const { balance, entries, notifications } = this.#app;
+    controls.push(...this.#decayControls(square, compact));
     controls.push(...this.#arrivalControls(widths.arrival, compact));
     if (signedIn && balance?.state !== undefined) {
       controls.push({ id: "shell.wallet", width: widths.wallet, drop: DROP.wallet, make: (box) => new Chip({ id: "shell.wallet", ...box, label: compact ? "" : "Wallet", value: walletText(balance), valueKey: "accentLight", glyph: Glyph.STEEM }) });

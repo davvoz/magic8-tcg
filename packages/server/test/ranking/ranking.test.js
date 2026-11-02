@@ -241,12 +241,12 @@ describe("rating decay", () => {
   const decaying = () =>
     world({
       seasons: [{ id: SEASON, name: "Beta season", startsAt: "2026-09-01T00:00:00Z", endsAt: "2026-09-26T00:00:00Z" }],
-      decay: { from: "2026-09-24T00:00:00Z", places: [50, 15, 5] },
+      decay: { from: "2026-09-24T00:00:00Z", places: [50, 15, 5], games: [3, 2, 1] },
     });
   const ratingOf = async (setup, user) => (await setup.app.ranking.ratingOf(user.user.id)).rating;
   const decays = (setup) => setup.database.rows("SELECT to_char(day, 'YYYY-MM-DD') AS day, user_id, place, points FROM rating_decays ORDER BY day, place");
 
-  it("takes rating each day from the first three that played no ranked game by hand, once a day, until the season ends", async () => {
+  it("takes rating each day from the first three that played too few ranked games by hand, once a day, until the season ends", async () => {
     const { setup, player } = await decaying();
     const [alice, bob, carol, dave] = await Promise.all(["alice", "bob", "carol", "dave"].map((account) => player(account)));
     await setRating(setup, alice, 1800);
@@ -259,8 +259,8 @@ describe("rating decay", () => {
     await recordGame(setup, alice, dave, { mode: "auto" });
     await recordGame(setup, carol, dave);
     const warned = await setup.app.ranking.standing(alice.user.id);
-    assert.deepEqual(warned.decay, { points: 50, safe: false, at: Date.UTC(2026, 8, 25) }, "the leader is told what the day will cost");
-    assert.deepEqual((await setup.app.ranking.standing(carol.user.id)).decay, { points: 5, safe: true, at: Date.UTC(2026, 8, 25) }, "a whole ranked game saves the day");
+    assert.deepEqual(warned.decay, { points: 50, games: 3, played: 0, safe: false, at: Date.UTC(2026, 8, 25) }, "the leader is told what the day will cost");
+    assert.deepEqual((await setup.app.ranking.standing(carol.user.id)).decay, { points: 5, games: 1, played: 1, safe: true, at: Date.UTC(2026, 8, 25) }, "a whole ranked game saves the 3rd's day");
     assert.equal((await setup.app.ranking.standing(dave.user.id)).decay, null, "4th: nothing to lose");
     const before = await Promise.all([alice, bob, carol].map((user) => ratingOf(setup, user)));
 
@@ -271,7 +271,7 @@ describe("rating decay", () => {
     assert.equal(await setup.app.ranking.decay(), 0, "once a day");
     assert.deepEqual(await Promise.all([alice, bob, carol].map((user) => ratingOf(setup, user))), [before[0] - 50, before[1] - 15, before[2]], "an auto game and an early concession save nobody");
     const [notice] = await setup.database.rows("SELECT data FROM notifications WHERE user_id = $1 AND kind = 'ranking.decay'", [alice.user.id]);
-    assert.deepEqual(notice.data, { season: "Beta season", day: "2026-09-24", place: 1, points: 50, before: Math.round(before[0]), after: Math.round(before[0] - 50) });
+    assert.deepEqual(notice.data, { season: "Beta season", day: "2026-09-24", place: 1, points: 50, games: 3, played: 0, before: Math.round(before[0]), after: Math.round(before[0] - 50) });
 
     // Nobody plays on 2026-09-25, the season's last day; nothing decays after the season.
     setup.clock.advance(3 * DAY);
@@ -291,6 +291,33 @@ describe("rating decay", () => {
     assert.equal((await setup.app.ranking.standing(alice.user.id)).decay, null, "no season, no decay");
   });
 
+  it("asks 3 ranked games of the 1st, 2 of the 2nd and 1 of the 3rd", async () => {
+    const { setup, player } = await decaying();
+    const [alice, bob, carol, dave, erin] = await Promise.all(["alice", "bob", "carol", "dave", "erin"].map((account) => player(account)));
+    await setRating(setup, alice, 1800);
+    await setRating(setup, bob, 1700);
+    await setRating(setup, carol, 1600);
+    await setRating(setup, dave, 1400);
+    await setRating(setup, erin, 1400);
+
+    await recordGame(setup, alice, dave);
+    await recordGame(setup, dave, alice);
+    assert.deepEqual((await setup.app.ranking.standing(alice.user.id)).decay, { points: 50, games: 3, played: 2, safe: false, at: Date.UTC(2026, 8, 25) }, "two games are not enough for the 1st");
+    await recordGame(setup, alice, erin);
+    assert.equal((await setup.app.ranking.standing(alice.user.id)).decay.safe, true, "the third one is");
+    await recordGame(setup, bob, dave);
+    assert.deepEqual((await setup.app.ranking.standing(bob.user.id)).decay, { points: 15, games: 2, played: 1, safe: false, at: Date.UTC(2026, 8, 25) });
+    await recordGame(setup, erin, carol);
+    assert.equal((await setup.app.ranking.standing(carol.user.id)).decay.safe, true, "one is enough for the 3rd, won or lost");
+    const before = await Promise.all([alice, bob, carol].map((user) => ratingOf(setup, user)));
+
+    setup.clock.advance(Date.UTC(2026, 8, 25, 0, 10) - setup.clock.now());
+    assert.equal(await setup.app.ranking.decay(), 1);
+    assert.deepEqual(await Promise.all([alice, bob, carol].map((user) => ratingOf(setup, user))), [before[0], before[1] - 15, before[2]]);
+    const [notice] = await setup.database.rows("SELECT data FROM notifications WHERE user_id = $1 AND kind = 'ranking.decay'", [bob.user.id]);
+    assert.deepEqual([notice.data.place, notice.data.games, notice.data.played], [2, 2, 1]);
+  });
+
   it("takes the places from the leaderboard before the day's decay, and leaves provisional ratings alone", async () => {
     const { setup, player } = await decaying();
     const [alice, bob, carol] = await Promise.all(["alice", "bob", "carol"].map((account) => player(account)));
@@ -306,7 +333,10 @@ describe("rating decay", () => {
   it("checks the decay settings", () => {
     const ranked = (decay) => ({ ...structuredClone(bundledRanked), decay });
     assert.equal(validateRankedSettings(ranked(undefined)).value.decay, null, "left out: no decay");
-    assert.deepEqual(validateRankedSettings(ranked({ from: "2026-10-27T00:00:00Z", places: [50, 15, 5] })).value.decay, { from: Date.UTC(2026, 9, 27), places: [50, 15, 5] });
+    assert.deepEqual(validateRankedSettings(ranked({ from: "2026-10-27T00:00:00Z", places: [50, 15, 5] })).value.decay, { from: Date.UTC(2026, 9, 27), places: [50, 15, 5], games: [1, 1, 1] }, "games left out: one each");
+    assert.deepEqual(validateRankedSettings(ranked({ from: "2026-10-27T00:00:00Z", places: [50, 15, 5], games: [3, 2, 1] })).value.decay.games, [3, 2, 1]);
+    assert.equal(validateRankedSettings(ranked({ from: "2026-10-27T00:00:00Z", places: [50, 15, 5], games: [3, 2] })).ok, false, "one value for each place");
+    assert.equal(validateRankedSettings(ranked({ from: "2026-10-27T00:00:00Z", places: [50], games: [0] })).ok, false, "at least one game");
     assert.equal(validateRankedSettings(ranked({ from: "2026-10-27T10:00:00Z", places: [50] })).ok, false, "a day starts at midnight");
     assert.equal(validateRankedSettings(ranked({ from: "2026-10-27T00:00:00Z", places: [] })).ok, false);
     assert.equal(validateRankedSettings(ranked({ from: "2026-10-27T00:00:00Z", places: [-1] })).ok, false);

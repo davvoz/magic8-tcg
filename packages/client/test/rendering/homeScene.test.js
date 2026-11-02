@@ -182,6 +182,28 @@ describe("HomeScene, signed in", () => {
 });
 
 describe("HomeScene on a wide screen", () => {
+  it("shows a leader what today's decay asks of them on the season's card, over its button", async () => {
+    const leader = { ...STANDING, rank: 1, games: 12, wins: 8, losses: 4, eligible: true, casualGamesNeeded: 0, practiceGamesNeeded: 0, decay: { points: 50, games: 3, played: 0, safe: false, at: NOW + 3_600_000 } };
+    const home = world({ standing: leader });
+    home.scene.enter({});
+    await signIn(home);
+    const meter = byId(home.scene, "home.season.decay");
+    assert.equal(meter.text, "Play 3 ranked today or −50");
+    assert.ok(meter.bounds.y + meter.bounds.height <= byId(home.scene, "home.season.open").bounds.y, "over the button");
+    const stats = byId(home.scene, "home.season.stats");
+    assert.ok(stats === null || stats.bounds.y + stats.bounds.height <= meter.bounds.y, "under the figures");
+  });
+
+  it("shows no decay meter to a player outside the first places, nor to one who played the day's games", async () => {
+    const eligible = { ...STANDING, eligible: true, casualGamesNeeded: 0, practiceGamesNeeded: 0 };
+    for (const standing of [eligible, { ...eligible, rank: 1, decay: { points: 50, games: 3, played: 3, safe: true, at: NOW + 3_600_000 } }]) {
+      const home = world({ standing });
+      home.scene.enter({});
+      await signIn(home);
+      assert.equal(byId(home.scene, "home.season.decay"), null);
+    }
+  });
+
   it("has Play across Decks and Market, its picture beside its words, and the season's card down the right", async () => {
     const home = world();
     home.scene.enter({});
@@ -207,6 +229,36 @@ describe("HomeScene on a wide screen", () => {
 
 describe("HomeScene on a phone", () => {
   const PHONE = Object.freeze({ cssWidth: 667, cssHeight: 375 });
+  const LEADER = Object.freeze({ ...STANDING, rank: 2, games: 12, wins: 8, losses: 4, eligible: true, casualGamesNeeded: 0, practiceGamesNeeded: 0, decay: { points: 15, games: 2, played: 0, safe: false, at: NOW + 3_600_000 } });
+
+  it("puts today's decay in the bar, in brief, leading to Ranked: the season's card that shows it on a wide screen is not here", async () => {
+    const home = world({ size: PHONE, standing: LEADER });
+    home.scene.enter({});
+    await signIn(home);
+    const meter = byId(home.scene, "shell.decay");
+    assert.equal(meter.text, "−15");
+    const logo = byId(home.scene, "shell.logo").bounds;
+    assert.ok(meter.bounds.x >= logo.x + logo.width, "right of the logo");
+    assert.ok(meter.bounds.x + meter.bounds.width <= byId(home.scene, "settings").bounds.x, "left of the player's things");
+    meter.activate();
+    assert.equal(home.navigated.at(-1).id, SceneId.RANKED);
+  });
+
+  it("keeps today's decay out of the bar on a wide screen, and for a player outside the first places", async () => {
+    const wide = world({ standing: LEADER });
+    wide.scene.enter({});
+    await signIn(wide);
+    assert.equal(byId(wide.scene, "shell.decay"), null, "the season's card shows it");
+    assert.ok(byId(wide.scene, "home.season.decay"));
+    const fourth = world({ size: PHONE, standing: { ...LEADER, rank: 4, decay: null } });
+    fourth.scene.enter({});
+    await signIn(fourth);
+    assert.equal(byId(fourth.scene, "shell.decay"), null);
+    const safe = world({ size: PHONE, standing: { ...LEADER, decay: { ...LEADER.decay, played: 2, safe: true } } });
+    safe.scene.enter({});
+    await signIn(safe);
+    assert.equal(byId(safe.scene, "shell.decay"), null, "the day's games played");
+  });
 
   it("has the four other sections as cards side by side, each opening its screen", async () => {
     const home = world({ size: PHONE });
