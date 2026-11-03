@@ -73,7 +73,7 @@ const RARE_REVEAL = Object.freeze({ topRarities: 3, delayMs: 650, gain: 1.15, st
  * @typedef {Readonly<{
  *   line: number, tabs: { top: number, height: number, gap: number }, filterTop: number, listTop: { plain: number, filtered: number }, filterButton: boolean,
  *   priceWidth: number, quantity: { height: number, width: number }, buy: { height: number, width: number }, rowGap: number, compactPurchase: boolean,
- *   single: { card: { width: number, height: number }, legendColumn: number, legend: boolean, nameHeight: number },
+ *   single: { card: { width: number, height: number }, nameHeight: number },
  *   deckThumb: { width: number, gap: number, rarity: number }, top: { title: number, titleHeight: number, description: number, content: number }, descriptionLines: number,
  *   reveal: { width: number, height: number, row: number, gap: number, packGap: number, title: number, button: number, serial: number },
  *   cart: { width: number, height: number, footer: number, perRow: number, gap: number, tile: number, fan: number, step: { width: number, height: number }, remove: number, title: number },
@@ -93,7 +93,7 @@ const WIDE = Object.freeze({
   buy: Object.freeze({ height: 60, width: 420 }),
   rowGap: 0,
   compactPurchase: false,
-  single: Object.freeze({ card: Object.freeze({ width: 300, height: 442 }), legendColumn: 120, legend: true, nameHeight: 40 }),
+  single: Object.freeze({ card: Object.freeze({ width: 300, height: 442 }), nameHeight: 40 }),
   /** A deck's cards as thumbnails: the card, "copies × price each", its rarity. */
   deckThumb: Object.freeze({ width: 84, gap: 12, rarity: 20 }),
   top: Object.freeze({ title: 14, titleHeight: 40, description: 62, content: 150 }),
@@ -116,7 +116,7 @@ const COMPACT = Object.freeze({
   buy: Object.freeze({ height: 46, width: 0 }),
   rowGap: 6,
   compactPurchase: true,
-  single: Object.freeze({ card: Object.freeze({ width: 112, height: 157 }), legendColumn: 0, legend: false, nameHeight: 34 }),
+  single: Object.freeze({ card: Object.freeze({ width: 112, height: 157 }), nameHeight: 34 }),
   deckThumb: Object.freeze({ width: 56, gap: 8, rarity: 16 }),
   top: Object.freeze({ title: 8, titleHeight: 34, description: 42, content: 88 }),
   descriptionLines: 2,
@@ -742,8 +742,7 @@ export class ShopScene extends SectionScene {
   }
 
   /**
-   * A single: the card at full size; beside it its rarity, how many you own
-   * and the price list by rarity.
+   * A single: the card at full size; beside it its rarity and how many you own.
    * @param {Panel} panel
    * @param {SingleOffer} offer
    * @returns {Button | null} the Buy button (none while a purchase is under way)
@@ -767,9 +766,7 @@ export class ShopScene extends SectionScene {
     if (owned !== null) {
       panel.add(new Label({ id: "shop.owned", x, y: rarityY + LINE, width, height: LINE, text: owned === 0 ? "Not in your collection yet" : `You own ${owned}`, size: "small", align: "left", colorKey: "textMuted" }));
     }
-    if (SINGLE.legend) {
-      this.#buildPriceLegend(panel, { x, y: rarityY + 2 * LINE + 16, width }, offer.rarity);
-    } else if (card !== undefined) {
+    if (compact && card !== undefined) {
       panel.add(new Label({ x, y: rarityY + 2 * LINE + 4, width, height: LINE, text: "Tap the card to read it", size: "small", align: "left", colorKey: "accent", fit: true }));
     }
     return this.#buildPurchase(panel, offer.product);
@@ -791,47 +788,6 @@ export class ShopScene extends SectionScene {
     }
     const lines = [[rarityLabel(rarity), ...(owned === null ? [] : [ownedText(owned)])].join(" · "), `Price: ${priceText(offer.product)}`];
     panel.add(new Hotspot({ id: "shop.cardInfo", ...area, onActivate: () => this.openModal(buildCardInfoModal({ viewport: this.services.viewport, card, rarity, lines, onClose: () => this.closeModal() })) }));
-  }
-
-  /**
-   * What a single costs, by rarity (the server's price list).
-   * @param {Panel} panel
-   * @param {{ x: number, y: number, width: number }} area
-   * @param {string | null} current the rarity of the card shown
-   */
-  #buildPriceLegend(panel, { x, y, width }, current) {
-    const priceList = this.#shop().state.listing?.priceList;
-    if (priceList === undefined) {
-      return;
-    }
-    const { line: LINE } = this.#m;
-    const column = this.#m.single.legendColumn;
-    /** @type {readonly { width: number, align: CanvasTextAlign }[]} */
-    const columns = [
-      { width: width - column, align: "left" },
-      { width: column, align: "right" },
-    ];
-    panel.add(new Label({ x, y, width, height: LINE, text: `Single prices (${priceList.asset})`, size: "small", weight: "bold", align: "left", colorKey: "accentLight" }));
-    /** @type {{ text: string, colorKey: string, weight: "normal" | "bold" }[][]} */
-    const rows = [
-      ["Rarity", "Price"].map((text) => ({ text, colorKey: "textMuted", weight: /** @type {const} */ ("normal") })),
-      ...priceList.singles.map((price) => {
-        /** @type {"normal" | "bold"} */
-        const weight = price.rarity === current ? "bold" : "normal";
-        return [
-          { text: price.rarity, colorKey: rarityColor(price.rarity), weight },
-          { text: price.price, colorKey: "text", weight },
-        ];
-      }),
-    ];
-    rows.forEach((cells, row) => {
-      let cellX = x;
-      cells.forEach((cell, index) => {
-        const { width: cellWidth, align } = columns[index];
-        panel.add(new Label({ x: cellX, y: y + (row + 1) * LINE, width: cellWidth, height: LINE, text: cell.text, size: "small", align, colorKey: cell.colorKey, weight: cell.weight }));
-        cellX += cellWidth;
-      });
-    });
   }
 
   /**

@@ -167,7 +167,7 @@ describe("ShopScene", () => {
     assert.equal(byId(scene, "shop.card.pyre_drake").text, "2.5 STEEM");
     assert.equal(byId(scene, "shop.rarity").text, "Rare");
     assert.ok(byId(scene, "shop.owned"), "a signed-in player sees how many they own");
-    assert.ok(rendered(scene).includes("Single prices (STEEM)"));
+    assert.ok(!rendered(scene).includes("Single prices"), "no price list by rarity: the card's own price is on its row and Buy");
     assert.equal(byId(scene, "shop.buy").text, "Buy for 2.5 STEEM");
     assert.equal(byId(scene, "shop.finish.foil"), null, "one kind of copy only");
 
