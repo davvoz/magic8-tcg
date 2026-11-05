@@ -4,7 +4,8 @@
  * lit in gold, puts first what ranked play needs:
  *
  * - the season and the player's standing (their rating crest once they
- *   play it);
+ *   play it) and, among the season's first, what today's rating decay asks
+ *   of them (DecayMeter: the ranked games to play, or that they are safe);
  * - the ranked entries they hold, drawn as the stack of tickets they are,
  *   with what one costs and the button to get more right there (a dialog:
  *   no trip to the shop, EntryPurchaseDialog);
@@ -15,7 +16,7 @@
  *   something is missing, what gets it (casual games, entries).
  *
  * On a phone the panel keeps the tickets with their button, the standing in
- * short, the ways to play, the status and the big button. While nothing is
+ * short, today's decay, the ways to play, the status and the big button. While nothing is
  * going on, how ranked works (RankedGuide) takes the status's place; the
  * whole of it, in words, is the Info screen's Ranked topic, which the bar's
  * How ranked works opens. The leaderboard is reached from the season's prize
@@ -41,9 +42,10 @@ import { EntryPurchaseDialog } from "./entries/EntryPurchaseDialog.js";
 import { EntryTickets } from "./entries/EntryTickets.js";
 import { PrizeShowcase, SHOWCASE_HEIGHT } from "./jackpot/PrizeShowcase.js";
 import { ActiveKeyDialog } from "./ActiveKeyDialog.js";
-import { casualGamesText, shortStandingText, standingText } from "./lobby/lobbyText.js";
+import { casualGamesText, decayAtRisk, shortStandingText, standingText } from "./lobby/lobbyText.js";
 import { LobbyScene } from "./lobby/LobbyScene.js";
 import { PlayKind } from "./online/lobbyIcons.js";
+import { DecayMeter } from "./online/DecayMeter.js";
 import { jackpotAmountText, rankedGuideFor, rankedPriceText } from "./online/rankedGuideFor.js";
 import { RatingCrest } from "./online/RatingCrest.js";
 import { StepList, StepState } from "./online/StepList.js";
@@ -59,12 +61,13 @@ const RankedWay = Object.freeze({ LIVE: "live", AUTO: "auto" });
 const WIDE = Object.freeze({
   crest: Object.freeze({ width: 62, height: 72, y: 24, inset: 8 }),
   standingY: 52,
+  decay: Object.freeze({ y: 74, height: 26, width: 440 }),
   band: Object.freeze({ y: 102, height: 124, pad: 12, caption: 22, count: 40, button: 160 }),
   ready: Object.freeze({ caption: 24, row: 33, trail: 170 }),
   gap: 12,
 });
 /** The phone's row of tickets: its height, the button beside it and the gap after it. */
-const COMPACT = Object.freeze({ tickets: 46, button: 76, gap: 6 });
+const COMPACT = Object.freeze({ tickets: 46, button: 76, gap: 6, decay: 28 });
 /** The least room how ranked works needs in the panel (else the status is shown). */
 const GUIDE_ROOM = Object.freeze({ least: 120 });
 /** What the auto list says before the player joins it, wide and on a phone. */
@@ -387,10 +390,29 @@ export class RankedScene extends LobbyScene {
     const titleInset = this.screen.titleInset;
     panel.add(new Label({ id: "online.season", x: titleInset, y: this.metrics.titleY, width: textWidth - (titleInset - inset), height: 36, text: ranking?.state.standing?.season?.name ?? "Ranked game", size: "subheading", weight: "bold", colorKey: "accentLight", align: "left", fit: true }));
     if (ranking !== undefined) {
-      panel.add(new TextBlock({ id: "online.standing", x: inset, y: WIDE.standingY, width: textWidth, height: 2 * 20, text: standingText(ranking.state), size: "small", colorKey: this.rankedLocked() ? "accent" : "textMuted" }));
+      // Today's decay, under a line of standing, where the standing's second line would be.
+      const decay = WIDE.decay;
+      const meter = this.#buildDecay(panel, { x: inset, y: decay.y, width: Math.min(textWidth, decay.width), height: decay.height });
+      const text = standingText(ranking.state, { withDecay: !meter });
+      panel.add(new TextBlock({ id: "online.standing", x: inset, y: WIDE.standingY, width: textWidth, height: (meter ? 1 : 2) * 20, text, size: "small", colorKey: this.rankedLocked() ? "accent" : "textMuted" }));
     }
     const bandBottom = this.#buildBand(panel, width, WIDE.band.y);
     return this.#buildReady(panel, width, bandBottom + WIDE.gap);
+  }
+
+  /**
+   * What today's rating decay asks of the player, when they are among the season's first and have games left to play.
+   * @param {import("../ui/Panel.js").Panel} panel
+   * @param {{ x: number, y: number, width: number, height: number }} frame
+   * @returns {boolean} whether it is shown
+   */
+  #buildDecay(panel, frame) {
+    const decay = decayAtRisk(this.app.ranking?.state.standing ?? null);
+    if (decay === null) {
+      return false;
+    }
+    panel.add(new DecayMeter({ ...frame, decay }));
+    return true;
   }
 
   /**
@@ -516,13 +538,24 @@ export class RankedScene extends LobbyScene {
   }
 
   /**
+   * On a phone: the tickets held (or the standing in short), then what today's rating decay asks of the player.
+   * @param {import("../ui/Panel.js").Panel} panel
+   * @param {number} width
+   * @returns {number} where what follows starts
+   */
+  #buildHeadCompact(panel, width) {
+    const y = this.#buildTicketsCompact(panel, width);
+    return this.#buildDecay(panel, { x: this.screen.inset, y, width, height: COMPACT.decay }) ? y + COMPACT.decay + COMPACT.gap : y;
+  }
+
+  /**
    * On a phone: the tickets held — their stack, how many and what one costs — with the button to buy more; nothing
    * else there. While tickets are free (or not known yet), the standing in short instead.
    * @param {import("../ui/Panel.js").Panel} panel
    * @param {number} width
    * @returns {number} where what follows starts
    */
-  #buildHeadCompact(panel, width) {
+  #buildTicketsCompact(panel, width) {
     const inset = this.screen.inset;
     const ranked = this.app.entries?.ranked ?? null;
     const y = this.metrics.top;

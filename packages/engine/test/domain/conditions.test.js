@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { MAX_LEVEL } from "../../src/domain/ai/search/DifficultyScale.js";
 import { SearchAi } from "../../src/domain/ai/search/SearchAi.js";
 import { PerspectiveWorld } from "../../src/domain/ai/search/PerspectiveWorld.js";
 import { createCoreCommandRegistry } from "../../src/domain/commands/registerCoreCommands.js";
@@ -120,7 +121,8 @@ describe("match conditions — data", () => {
     const { engine, id } = createScenario({ p1: { hand: ["lava_brute"], battlefield: ["ember_imp"], resources: 3 }, conditions });
     const world = new PerspectiveWorld({ rules, catalog, effects }).build(engine.getSnapshot(P1));
     assert.deepEqual(world.getSnapshot(P1).conditions, engine.getSnapshot(P1).conditions);
-    const move = new SearchAi({ rules, catalog, effects }).decide(engine.getSnapshot(P1));
+    // No misjudgement: playing the brute before combat or after scores the same, and noise would pick between them.
+    const move = new SearchAi({ rules, catalog, effects, level: MAX_LEVEL }).decide(engine.getSnapshot(P1));
     assert.deepEqual(move, playCard(P1, id(P1, HAND)), "it knows the brute costs 3 here");
     engine.execute(move);
     assert.deepEqual(world.getSnapshot(P1).players[0].battlefield[0].keywords, seen(engine).battlefield[0].keywords);

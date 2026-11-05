@@ -20,9 +20,10 @@
  *   periodic catch-up records any game that was missed (a restart, a failed
  *   write). Recording is idempotent, so both paths can see the same game.
  * - Rating decay: after each UTC day of a season, the first settled ratings
- *   (`decay.places`) lose points unless they played a ranked game by hand
- *   that day that counted and was not given up early (an auto game does not
- *   save them). The places are taken from the leaderboard before any of the
+ *   (`decay.places`) lose points unless they played enough ranked games by
+ *   hand that day (`decay.games`: 3 for the 1st, 2 for the 2nd, 1 for the
+ *   3rd) that counted and were not given up early (an auto game does not
+ *   count). The places are taken from the leaderboard before any of the
  *   day's decay; each day is decayed once (rating_decay_days), and before a
  *   season's jackpot is settled.
  */
@@ -389,12 +390,13 @@ export class RankingService {
   }
 
   /**
-   * What today's decay will take from a player at `rank` (null when nothing): the points, and whether a ranked game
-   * they played today already saves them.
+   * What today's decay will take from a player at `rank` (null when nothing): the points, the ranked games by hand
+   * that save them, how many they played today, and whether those already save them.
    * @param {import("../domain/RankedSettings.js").Season} season
    * @param {string} userId
    * @param {number} rank
-   * @returns {Promise<Readonly<{ points: number, safe: boolean, at: number }> | null>} `at`: when the day is decayed (its end)
+   * @returns {Promise<Readonly<{ points: number, games: number, played: number, safe: boolean, at: number }> | null>} `at`: when the day
+   *   is decayed (its end)
    */
   async #decayToday(season, userId, rank) {
     const decay = this.#settings.decay;
@@ -403,8 +405,10 @@ export class RankingService {
     if (decay === null || points === 0 || !this.#decays(season, today)) {
       return null;
     }
-    const played = await this.#repository.playedRanked({ season: season.id, userIds: [userId], from: today, to: today + DAY_MS, turn: this.#settings.fairPlay.earlyConcedeTurn });
-    return Object.freeze({ points, safe: played.has(userId), at: today + DAY_MS });
+    const games = decay.games[rank - 1];
+    const counts = await this.#repository.playedRanked({ season: season.id, userIds: [userId], from: today, to: today + DAY_MS, turn: this.#settings.fairPlay.earlyConcedeTurn });
+    const played = counts.get(userId) ?? 0;
+    return Object.freeze({ points, games, played, safe: played >= games, at: today + DAY_MS });
   }
 
   /**
@@ -446,12 +450,12 @@ export class RankingService {
   }
 
   /**
-   * One day's decay, once: the places as the leaderboard has them now, each losing its points unless it played.
+   * One day's decay, once: the places as the leaderboard has them now, each losing its points unless it played its games.
    * @param {import("../domain/RankedSettings.js").Season} season
    * @param {number} midnight
    */
   async #decayDay(season, midnight) {
-    const { places } = /** @type {import("../domain/RankedSettings.js").Decay} */ (this.#settings.decay);
+    const { places, games } = /** @type {import("../domain/RankedSettings.js").Decay} */ (this.#settings.decay);
     const day = dayOf(midnight);
     const at = this.#clock.now();
     const decayed = await this.#unitOfWork(async () => {
@@ -466,14 +470,25 @@ export class RankingService {
         to: midnight + DAY_MS,
         turn: this.#settings.fairPlay.earlyConcedeTurn,
       });
-      const idle = leaders.filter((leader) => places[leader.rank - 1] > 0 && !played.has(leader.userId));
+      /** @param {{ userId: string }} leader */
+      const playedBy = (leader) => played.get(leader.userId) ?? 0;
+      const idle = leaders.filter((leader) => places[leader.rank - 1] > 0 && playedBy(leader) < games[leader.rank - 1]);
       // Lock in the order record() does: a game ending now never deadlocks with the decay.
       for (const leader of [...idle].sort((left, right) => (left.userId < right.userId ? -1 : 1))) {
         const points = places[leader.rank - 1];
         const before = await this.#repository.lock({ season: season.id, userId: leader.userId, account: leader.account, ...DEFAULT_RATING, at });
         const after = before.rating - points;
         await this.#repository.applyDecay({ season: season.id, day, userId: leader.userId, place: leader.rank, points, before: before.rating, after, at });
-        await this.#notifications.notify(leader.userId, NotificationKind.RATING_DECAY, { season: season.name, day, place: leader.rank, points, before: Math.round(before.rating), after: Math.round(after) });
+        await this.#notifications.notify(leader.userId, NotificationKind.RATING_DECAY, {
+          season: season.name,
+          day,
+          place: leader.rank,
+          points,
+          games: games[leader.rank - 1],
+          played: playedBy(leader),
+          before: Math.round(before.rating),
+          after: Math.round(after),
+        });
       }
       return idle;
     });

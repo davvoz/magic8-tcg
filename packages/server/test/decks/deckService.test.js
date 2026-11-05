@@ -2,13 +2,19 @@
  * DeckService: ownership, drafts, playability, optimistic concurrency, limits.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { describe, it } from "node:test";
 
 import { AppError } from "../../src/kernel/AppError.js";
-import { uuidV4 } from "../../src/kernel/random.js";
+import { isUuid, uuidV4 } from "../../src/kernel/random.js";
+import { validateHouseDecks } from "../../src/modules/decks/index.js";
 import { buildTestApp, deterministicRandom } from "../helpers.js";
 
 const PRINTING = Object.freeze({ edition: "core-1" });
+const DATA = resolve(import.meta.dirname, "../../../../data");
+/** @param {{ cardId: string }} a @param {{ cardId: string }} b */
+const byCard = (a, b) => (a.cardId < b.cardId ? -1 : 1);
 
 async function userIn(setup, account) {
   return setup.users.findOrCreate({ network: "steem", account }, setup.clock.now(), uuidV4(deterministicRandom(`user:${account}`)));
@@ -124,5 +130,85 @@ describe("DeckService: editing", () => {
     const after = await setup.app.decks.get(user.id, deck.id);
     assert.equal(after.playable, false);
     assert.deepEqual(after.problems.map((problem) => [problem.code, problem.cardId]), [["NOT_OWNED", input.cards[0].cardId]]);
+  });
+});
+
+describe("DeckService: the house's decks", () => {
+  const houseFile = (name) => JSON.parse(readFileSync(join(DATA, "decks", "house", name), "utf8"));
+  const content = (setup) => setup.app.catalog.current().content;
+
+  it("stores a house account's deck among its own, playable without the cards, under the same id every time", async () => {
+    const setup = await buildTestApp();
+    const bot = await userIn(setup, "gigi.one");
+    const file = houseFile("house_ember_stampede.deck.json");
+    const [deck] = (await setup.app.decks.list(bot.id)).decks;
+    assert.equal(deck.name, file.name);
+    assert.equal(deck.playable, true, JSON.stringify(deck.problems));
+    assert.ok(isUuid(deck.id));
+    assert.deepEqual([...deck.cards].sort(byCard), [...file.cards].sort(byCard));
+    assert.deepEqual(await setup.app.decks.get(bot.id, deck.id), deck);
+    const list = await setup.app.decks.playableDeckList(bot.id, deck.id);
+    assert.equal(list.totalCards, file.cards.reduce((sum, entry) => sum + entry.count, 0));
+    assert.deepEqual((await setup.app.decks.list(bot.id)).decks, [deck], "read again: the same deck, not a second one");
+    const rows = await setup.database.rows("SELECT id FROM decks WHERE owner_id = $1", [bot.id]);
+    assert.deepEqual(rows.map((row) => row.id), [deck.id], "a stored deck: games and the queue refer to it");
+  });
+
+  it("brings a stored house deck back in line with its data", async () => {
+    const setup = await buildTestApp();
+    const bot = await userIn(setup, "gigi.one");
+    const [deck] = (await setup.app.decks.list(bot.id)).decks;
+    await setup.database.query("UPDATE decks SET name = 'Old name' WHERE id = $1", [deck.id]);
+    await setup.database.query("DELETE FROM deck_cards WHERE deck_id = $1 AND definition_id = $2", [deck.id, deck.cards[0].cardId]);
+    const [again] = (await setup.app.decks.list(bot.id)).decks;
+    assert.equal(again.name, deck.name);
+    assert.deepEqual([...again.cards].sort(byCard), [...deck.cards].sort(byCard));
+    assert.equal(again.playable, true);
+  });
+
+  it("keeps a house deck out of everyone else's hands and out of reach of edits", async () => {
+    const setup = await buildTestApp();
+    const bot = await userIn(setup, "gigi.one");
+    const [deck] = (await setup.app.decks.list(bot.id)).decks;
+    const { user, input } = await ownerOfPrecon(setup, "alice");
+    assert.deepEqual((await setup.app.decks.list(user.id)).decks, []);
+    await assert.rejects(setup.app.decks.get(user.id, deck.id), failsWith("NOT_FOUND"));
+    await assert.rejects(setup.app.decks.update(bot.id, deck.id, deck.version, input), failsWith("FORBIDDEN"));
+    await assert.rejects(setup.app.decks.remove(bot.id, deck.id), failsWith("FORBIDDEN"));
+    assert.equal((await setup.app.decks.get(bot.id, deck.id)).name, deck.name);
+  });
+
+  it("gives every bundled house deck to an account, each legal and using cards of the new season", async () => {
+    const setup = await buildTestApp();
+    const raw = { decks: ["house_ember_stampede", "house_iron_bastion", "house_wildheart_herd"].map((id) => houseFile(`${id}.deck.json`)), accounts: JSON.parse(readFileSync(join(DATA, "decks", "house-decks.json"), "utf8")) };
+    const house = validateHouseDecks(raw, content(setup));
+    assert.equal(house.ok, true, JSON.stringify(house));
+    assert.deepEqual([...house.value.values()].flat().map((deck) => deck.id).sort(), raw.decks.map((deck) => deck.id).sort());
+    const seasonTwo = ["pyre_chanter", "forest_blaze", "wildheart_druid", "rootbreak", "foundry_overseer", "cold_iron"];
+    for (const deck of raw.decks) {
+      assert.ok(deck.cards.some((entry) => seasonTwo.includes(entry.cardId)), `${deck.id} plays a card of the new season`);
+    }
+  });
+
+  it("refuses an illegal deck, an unknown deck or a malformed account", async () => {
+    const setup = await buildTestApp();
+    const legal = houseFile("house_iron_bastion.deck.json");
+    const accounts = (map) => ({ schemaVersion: 1, accounts: map });
+    const tooMany = structuredClone(legal);
+    tooMany.cards[0].count = 4;
+    const cases = [
+      [{ decks: [tooMany], accounts: accounts({}) }, "breaks deck rules"],
+      [{ decks: [legal, legal], accounts: accounts({}) }, "another house deck has this id"],
+      [{ decks: [legal], accounts: accounts({ "gigi.one": ["house_nothing"] }) }, "is not a house deck"],
+      [{ decks: [legal], accounts: accounts({ "Not An Account": [legal.id] }) }, "not an account name"],
+      [{ decks: [legal], accounts: accounts({ "gigi.one": [] }) }, "at least 1"],
+      [{ decks: [legal], accounts: { accounts: {} } }, "schemaVersion"],
+    ];
+    for (const [raw, problem] of cases) {
+      const house = validateHouseDecks(raw, content(setup));
+      assert.equal(house.ok, false);
+      assert.ok(house.error.details.problems.some((message) => message.includes(problem)), `${house.error.details.problems} ⊅ ${problem}`);
+    }
+    assert.equal(validateHouseDecks({ decks: [], accounts: accounts({}) }, content(setup)).value.size, 0, "no house account is fine");
   });
 });

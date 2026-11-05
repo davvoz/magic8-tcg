@@ -30,6 +30,7 @@ import { digestState } from "./StateDigest.js";
 import { resolveCombatDamage } from "../combat/CombatSystem.js";
 import { EffectQueue } from "../effects/EffectQueue.js";
 import { resolvePending } from "../effects/Resolution.js";
+import { refreshStaticBonuses } from "../effects/StaticAbilities.js";
 
 /**
  * @typedef {import("../../shared/Result.js").Ok<Readonly<{ events: readonly Readonly<Record<string, unknown>>[], version: number }>> | import("../../shared/Result.js").Fail} CommandResult
@@ -81,10 +82,12 @@ export class GameEngine {
    * An engine already under way from a prepared state, mid-game: no first
    * turn to enter. For the search AI, which rebuilds a game from what one
    * player sees (ai/search/PerspectiveWorld.js); never for a real match.
+   * Static abilities are brought up to date with the prepared board.
    * @param {{ state: import("./GameState.js").GameState, rules: import("./GameRules.js").GameRules, catalog: import("../cards/CardCatalog.js").CardCatalog, effects: import("../effects/EffectRegistry.js").EffectRegistry, commands: import("../commands/CommandRegistry.js").CommandRegistry }} deps
    * @returns {GameEngine}
    */
   static resume({ state, rules, catalog, effects, commands }) {
+    refreshStaticBonuses(state, effects);
     const engine = new GameEngine({ state, rules, catalog, effects, commands, turnManager: GameEngine.createTurnManager(rules, createResourceSystem(rules)) });
     engine.#started = true;
     return engine;

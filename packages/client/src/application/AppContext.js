@@ -39,6 +39,7 @@
  * @property {import("./audio/AudioService.js").AudioService} [audio] the game's sound and its settings; absent in tools and previews
  * @property {import("./help/HelpSettings.js").HelpSettings} [help] whether the match help is on; absent in tools and previews
  * @property {import("./onboarding/OnboardingProgress.js").OnboardingProgress} [onboarding] the first-time guide's steps done in this browser; absent in tools and previews
+ * @property {import("./season/SeasonNewsService.js").SeasonNewsService} [seasonNews] the season's news and who has seen it here; absent in tools and when there is none
  */
 
 export const APP_CONTEXT_KEYS = Object.freeze(["content", "deckSelection", "deckBuilding", "matchSetup", "createSeed", "logger", "environment"]);

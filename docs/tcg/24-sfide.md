@@ -42,26 +42,28 @@ Uno per ogni mazzo precostruito, più un boss per fazione. Il titolo è un epite
 
 | Personaggio | Mazzo | Stile | Carattere |
 |---|---|---|---|
-| Kael, *First into the Fire* | Ember Vanguard | Aggressive | soldato impaziente, attacca per primo e chiede dopo |
-| Sira, *The Spark Dancer* | Ember Wildfire | Aggressive | piromane allegra, gioca per lo spettacolo |
-| Master Brunn, *Master of the Forge* | Iron Foundry | Balanced | fabbro brontolone, rispetta solo il lavoro fatto bene |
-| Captain Varek, *Keeper of the Line* | Iron Legion | Defensive | ufficiale rigido, tiene la linea a ogni costo |
-| Morwen, *The Reaper of Graves* | Grave Harvest | Balanced | becchina gentile e inquietante |
-| The Notary, *Keeper of Contracts* | Shadow Pact | Balanced | mercante d'anime cortese, parla di contratti |
-| Elda, *Hermit of the Grove* | Verdant Grove | Defensive | eremita paziente, lascia crescere la foresta |
-| Rook, *Tracker of the Deep Woods* | Wild Hunt | Aggressive | cacciatore di poche parole |
-| Magistra Ilyra, *First Chair of the Conclave* | Arcane Conclave | Defensive | studiosa sprezzante, ti corregge mentre giochi |
-| Thessaly, *Warden of the Spire* | Spire Bastion | Defensive | guardiana stanca, ha visto cadere molti sfidanti |
+| Kael, *First into the Fire* | Pyre Vanguard (da Ember Vanguard) | Aggressive | soldato impaziente, attacca per primo e chiede dopo |
+| Sira, *The Spark Dancer* | Wildfire Chorus (da Ember Wildfire) | Aggressive | piromane allegra, gioca per lo spettacolo |
+| Master Brunn, *Master of the Forge* | Overseer's Foundry (da Iron Foundry) | Balanced | fabbro brontolone, rispetta solo il lavoro fatto bene |
+| Captain Varek, *Keeper of the Line* | Legion of the Forge (da Iron Legion) | Defensive | ufficiale rigido, tiene la linea a ogni costo |
+| Morwen, *The Reaper of Graves* | Restless Harvest (da Grave Harvest) | Balanced | becchina gentile e inquietante |
+| The Notary, *Keeper of Contracts* | Bane Pact (da Shadow Pact) | Balanced | mercante d'anime cortese, parla di contratti |
+| Elda, *Hermit of the Grove* | Wildheart Grove (da Verdant Grove) | Defensive | eremita paziente, lascia crescere la foresta |
+| Rook, *Tracker of the Deep Woods* | Hunt Unleashed (da Wild Hunt) | Aggressive | cacciatore di poche parole |
+| Magistra Ilyra, *First Chair of the Conclave* | Dawnlight Conclave (da Arcane Conclave) | Defensive | studiosa sprezzante, ti corregge mentre giochi |
+| Thessaly, *Warden of the Spire* | Bastion Reforged (da Spire Bastion) | Defensive | guardiana stanca, ha visto cadere molti sfidanti |
 
 **Boss**, uno per fazione, ciascuno con un precostruito della fazione e la sua carta simbolo in più (misurati in fase 5, vedi *Bilanciamento*):
 
 | Boss | Fazione | Mazzo |
 |---|---|---|
-| Il Wyrm Vulcanico | Ember | Ember Wildfire + 2 Volcanic Wyrm + 1 Blazing Titan |
-| Il Colosso di Ferro | Iron | Iron Legion + 1 Iron Colossus (3 in tutto) + 2 Rampart Automaton |
-| Il Signore delle Tombe | Shadow | Shadow Pact + 1 Gravelord |
-| La Radice del Mondo | Verdant | Verdant Grove + 1 Worldroot Colossus (2 in tutto) + 1 Thunderhoof Mammoth |
-| L'Arcimago della Guglia | Arcane | Arcane Conclave + 1 Archmage of the Spire (2 in tutto) |
+| Il Wyrm Vulcanico | Ember | Wildfire Chorus + 2 Volcanic Wyrm (3 in tutto) + 1 Blazing Titan |
+| Il Colosso di Ferro | Iron | Legion of the Forge + 1 Iron Colossus (3 in tutto) + 2 Rampart Automaton |
+| Il Signore delle Tombe | Shadow | Bane Pact + 1 Gravelord (2 in tutto) |
+| La Radice del Mondo | Verdant | Wildheart Grove + 1 Worldroot Colossus (2 in tutto) + 1 Thunderhoof Mammoth |
+| L'Arcimago della Guglia | Arcane | Dawnlight Conclave + 1 Archmage of the Spire (2 in tutto) |
+
+**I mazzi dell'IA** (dalla Season 2, 2026-11-01). Personaggi e boss non giocano più i precostruiti, ma i mazzi dell'IA in `data/decks/ai/`: ciascuno è il precostruito del personaggio con 3–7 carte della Season 2 della sua fazione. Gli stessi mazzi li gioca l'IA della Practice. I precostruiti restano com'erano, perché sono anche gli starter gratuiti, i mazzi offline e i mazzi dello shop. I mazzi sono calibrati fra loro con l'IA search di livello 5: tutti fra il 45% e il 54%, tranne The Notary al 58%, che domina i mazzi Ember. Numeri e scelte sono in `docs/engine/ARCHITECTURE.md`, nella sezione *The AI's own decks*.
 
 I boss sono il ponte verso la futura campagna: la storia potrà partire da loro.
 
@@ -181,7 +183,7 @@ Le partite delle sfide si giocano **sul server**, come quelle online, con l'IA a
 
 | Parte | Cosa fa |
 |---|---|
-| `DailyRoster` | Personaggi e boss da `data/daily/characters.json`, controllati all'avvio: ogni mazzo dev'essere legale. Un mazzo è l'id di un precostruito, oppure `{ base, add }` (un precostruito con carte in più) o `{ cards }`. |
+| `DailyRoster` | Personaggi e boss da `data/daily/characters.json`, controllati all'avvio: ogni mazzo dev'essere legale. Un mazzo è l'id di un mazzo dell'AI (`data/decks/ai/`) o di un precostruito, oppure `{ base, add }` (uno di questi con carte in più) o `{ cards }`. |
 | `DailyTracks` | I due percorsi da `data/daily/tracks.json`: livelli dell'IA e tabella del pacchetto, controllati contro la scala dei livelli e le tabelle dello shop. |
 | `DailySchedule` | Gli avversari di un giorno, funzione pura della data: ogni processo del server è d'accordo senza salvare niente. |
 | `DailyChallengeService` | Le sfide del giorno: vedere, scegliere il percorso, giocare. Quando una partita finisce (o viene annullata prima di iniziare) la chiude una volta sola e fa avanzare la giornata. |

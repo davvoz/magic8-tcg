@@ -8,6 +8,8 @@
  *   /tools/preview/?scene=home&eligible=0    ...a player new to ranked play, so the guide is not over (onlineWorld.js lists the other options)
  *   /tools/preview/?scene=home&done=2        ...with that many of the guide's milestones kept here (tutorial, challenge, online game)
  *   /tools/preview/?scene=home&hidden=1      ...with the guide hidden
+ *   /tools/preview/?scene=home&news=0        ...with the season's news open on that page (data/ui/season-news.json), settled
+ *   /tools/preview/?scene=home&news=0&live=1 ...playing its entrance, as a player sees it
  *   /tools/preview/?scene=play               Play, in the same world as Home
  *   /tools/preview/?scene=season             Season (the leaderboard, the jackpot, how ranked works), in the same world as Home
  *   /tools/preview/?scene=mydecks            the player's decks (the Decks section)
@@ -64,6 +66,9 @@ import { GamePhase } from "@magic8/engine/domain/game/GamePhase.js";
 import { ok } from "@magic8/engine/shared/Result.js";
 import { dailyServices } from "./dailyWorld.js";
 import { Milestone, OnboardingProgress } from "../../src/application/onboarding/OnboardingProgress.js";
+import { buildCardRarities } from "../../src/application/content/CardRarities.js";
+import { buildSeasonNews } from "../../src/application/season/SeasonNews.js";
+import { SeasonNewsService } from "../../src/application/season/SeasonNewsService.js";
 import { IdentityStatus } from "../../src/application/identity/IdentityService.js";
 import { onlineServices } from "./onlineWorld.js";
 import { FetchContentSource } from "../../src/infrastructure/config/FetchContentSource.js";
@@ -105,6 +110,8 @@ const MANIFEST = Object.freeze({
   theme: "/data/ui/theme.json",
   illustrations: "/data/art/illustrations.json",
   characterArt: "/data/art/characters.json",
+  seasonNews: "/data/ui/season-news.json",
+  rarities: "/data/economy/rarities.json",
 });
 const SEED = 20260921;
 const MAX_STEPS_PER_TURN = 40;
@@ -364,13 +371,13 @@ const PLAIN_SCENES = Object.freeze({ home: SceneId.HOME, play: SceneId.PLAY, sea
 /**
  * @param {import("../../src/rendering/scenes/SceneManager.js").SceneManager} sceneManager
  * @param {import("../../src/application/AppContext.js").AppContext} app
- * @param {{ scene: string, turns: number, inspect: boolean, deckId: string | null, topic: string | null, say: string | null, share: boolean, over: boolean }} request
+ * @param {{ scene: string, turns: number, inspect: boolean, deckId: string | null, topic: string | null, say: string | null, share: boolean, over: boolean, news: number | null, live: boolean }} request
  */
 async function show(sceneManager, app, request) {
   const { scene, inspect, topic } = request;
   const plain = PLAIN_SCENES[/** @type {keyof typeof PLAIN_SCENES} */ (scene)];
   if (plain !== undefined) {
-    sceneManager.navigate(plain);
+    sceneManager.navigate(plain, scene === "home" && request.news !== null ? { news: { page: request.news, settled: !request.live } } : {});
   } else if (scene === "info") {
     sceneManager.navigate(SceneId.INFO, topic === null ? {} : { topic });
   } else if (scene === "editor") {
@@ -384,6 +391,22 @@ async function show(sceneManager, app, request) {
   } else {
     sceneManager.navigate(SceneId.HOME);
   }
+}
+
+/**
+ * The season's news, as the game reads it, and the cards' rarities its show colours by; nothing is remembered as seen.
+ * @param {FetchContentSource} source
+ * @param {import("../../src/application/AppContext.js").AppContext["content"]} content
+ */
+async function newsServices(source, content) {
+  const [rawNews, rawRarities] = await Promise.all([source.load("seasonNews"), source.load("rarities")]);
+  const rarities = rawRarities.ok ? buildCardRarities(rawRarities.value, content.catalog) : null;
+  const known = { catalog: content.catalog, factions: content.deckRules.factions, rarities: rarities?.ok ? rarities.value.order : [] };
+  const news = rawNews.ok ? buildSeasonNews(rawNews.value, known) : null;
+  if (news !== null && !news.ok) {
+    logger.warn("season news unavailable", news.message);
+  }
+  return { seasonNews: new SeasonNewsService({ news: news?.ok ? news.value : null, preferences: { load: () => null, save: () => undefined } }), ...(rarities?.ok ? { rarities: rarities.value } : {}) };
 }
 
 /**
@@ -586,6 +609,8 @@ async function boot() {
     daily: { opponents: query.get("opponents"), stage: optionalCount(query, "stage") },
     press: query.get("press"),
     home: { done: countParam(query, "done", 0), hidden: query.get("hidden") === "1" },
+    news: optionalCount(query, "news"),
+    live: query.get("live") === "1",
   };
   const source = new FetchContentSource(MANIFEST, (url, init) => fetch(url, init));
   const [rawTheme, content, rawIllustrations, rawCharacterArt] = await Promise.all([source.load("theme"), loadContent(source, createCoreEffectRegistry()), source.load("illustrations"), source.load("characterArt")]);
@@ -596,7 +621,7 @@ async function boot() {
   if (!theme.ok) {
     throw new Error(theme.error.message);
   }
-  const app = await appFor(request, content.value);
+  const app = request.news === null ? await appFor(request, content.value) : Object.freeze({ ...(await appFor(request, content.value)), ...(await newsServices(source, content.value)) });
   const illustrations = await loadIllustrations(request.procedural || !rawIllustrations.ok ? null : rawIllustrations.value, content.value.catalog);
   const characterArt = await loadIllustrations(request.procedural || !rawCharacterArt.ok ? null : rawCharacterArt.value, ANY_ID, "characters");
   const tableArt = request.procedural ? undefined : await loadTableArt();

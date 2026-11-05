@@ -32,6 +32,7 @@ export const LogKind = Object.freeze({
 /** @type {Readonly<Record<string, LogKindValue>>} */
 const KINDS = Object.freeze({
   [GameEventType.CARD_PLAYED]: LogKind.PLAY,
+  [GameEventType.CREATURE_REANIMATED]: LogKind.PLAY,
   [GameEventType.ATTACKERS_DECLARED]: LogKind.COMBAT,
   [GameEventType.BLOCKERS_DECLARED]: LogKind.COMBAT,
   [GameEventType.DAMAGE_DEALT]: LogKind.DAMAGE,
@@ -70,6 +71,7 @@ const DESCRIBERS = Object.freeze({
   [GameEventType.CARD_RETURNED]: (event, names) => `${names(event.targetId)} returned to ${names(event.playerId)}'s hand`,
   [GameEventType.CARD_MILLED]: (event, names) => `${names(event.playerId)} milled ${names(event.instanceId)}`,
   [GameEventType.CREATURE_DIED]: (event, names) => `${names(event.instanceId)} died`,
+  [GameEventType.CREATURE_REANIMATED]: (event, names) => `${names(event.instanceId)} rose from ${names(event.playerId)}'s graveyard`,
   [GameEventType.CARD_DISCARDED]: (event, names) => `${names(event.playerId)} discarded ${names(event.instanceId)}`,
   [GameEventType.HEALED]: (event, names) => `${names(event.targetId)} healed ${event.amount}`,
   [GameEventType.FATIGUE_DAMAGE]: (event, names) => `${names(event.playerId)} took ${event.amount} fatigue damage`,

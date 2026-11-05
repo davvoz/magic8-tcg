@@ -54,12 +54,13 @@ const JACKPOT = Object.freeze({
 const ELIGIBLE = Object.freeze({ season: { id: "season-1", name: "Season 1" }, rating: 1500, deviation: 350, provisional: true, rank: null, games: 0, wins: 0, losses: 0, draws: 0, eligible: true, casualGamesNeeded: 0, practiceGamesNeeded: 0 });
 
 /**
- * @param {{ lobby?: "casual" | "ranked", lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, shop?: boolean, auto?: boolean, jackpot?: object, params?: object }} [options]
+ * @param {{ lobby?: "casual" | "ranked", lobbyReplies?: Record<string, (d: any) => unknown>, ranked?: { balance: number, perGame: number }, eligible?: boolean, standing?: object, shop?: boolean, auto?: boolean, jackpot?: object, params?: object }} [options]
  *   `lobby`: which lobby (casual by default); `lobbyReplies`: the scripted server's answers to the lobby's requests;
  *   `ranked`: the player holds these entries (and may play ranked unless `eligible` is false); `shop`: a shop selling
- *   ranked entries at 1 STEEM, paid with a wallet that approves; `jackpot`: the season's jackpot, as its service has read it
+ *   ranked entries at 1 STEEM, paid with a wallet that approves; `jackpot`: the season's jackpot, as its service has read it;
+ *   `standing`: what changes in the player's standing (their place, today's decay)
  */
-async function harness({ lobby: which = "casual", lobbyReplies, ranked, eligible = true, shop: withShop = false, auto = false, jackpot: pot, params = {} } = {}) {
+async function harness({ lobby: which = "casual", lobbyReplies, ranked, eligible = true, standing, shop: withShop = false, auto = false, jackpot: pot, params = {} } = {}) {
   const listeners = new Set();
   const statusListeners = new Set();
   const requests = [];
@@ -94,7 +95,7 @@ async function harness({ lobby: which = "casual", lobbyReplies, ranked, eligible
   const navigated = [];
   const services = { theme, viewport, logger: new MemoryLogger(), requestRender: () => undefined, navigate: (id, navigation) => navigated.push({ id, params: navigation }), hasScene: () => true };
   const lobby = lobbyReplies === undefined ? undefined : new LobbyService({ connection, scheduler: { delay: () => new Promise(() => undefined) }, now: () => 0, logger: new MemoryLogger() });
-  const { ranking, entries } = rankedPlay(ranked, eligible);
+  const { ranking, entries } = rankedPlay(ranked, eligible, standing);
   const account = { state: { account: "alice" }, refresh: async () => undefined };
   const { shop, market, transfers } = shopFor(withShop, account);
   const autoList = auto ? new AutoListService({ connection, randomHex: (bytes) => "cd".repeat(bytes), logger: new MemoryLogger() }) : undefined;
@@ -113,12 +114,13 @@ const LOBBIES = Object.freeze({ casual: CasualScene, ranked: RankedScene });
  * The player's standing and ranked entries: none without `ranked`; a standing that may play ranked unless `eligible` is false.
  * @param {{ balance: number, perGame: number } | undefined} ranked
  * @param {boolean} eligible
+ * @param {object} [changes] what changes in the standing
  */
-function rankedPlay(ranked, eligible) {
+function rankedPlay(ranked, eligible, changes = {}) {
   if (ranked === undefined) {
     return { ranking: undefined, entries: undefined };
   }
-  const standing = eligible ? ELIGIBLE : { ...ELIGIBLE, eligible: false, casualGamesNeeded: 2, practiceGamesNeeded: 2 };
+  const standing = { ...(eligible ? ELIGIBLE : { ...ELIGIBLE, eligible: false, casualGamesNeeded: 2, practiceGamesNeeded: 2 }), ...changes };
   return {
     ranking: new RankingService({ api: { standing: async () => ok(standing), leaderboard: async () => ok({ season: ELIGIBLE.season, entries: [] }) } }),
     entries: new EntryService({ api: { entries: async () => ok([{ kind: "ranked", ...ranked, season: "season-1" }]) } }),
@@ -212,6 +214,26 @@ describe("RankedScene", () => {
     find.activate();
     await flush();
     assert.deepEqual(requests.find((request) => request.t === "queue.join").d, { mode: "ranked", deckId: DECK });
+  });
+
+  it("shows the leader what today's decay asks of them, under a line of standing", async () => {
+    const leader = { rank: 1, provisional: false, games: 12, wins: 8, losses: 4, rating: 1612, decay: { points: 50, games: 3, played: 1, safe: false, at: 86_400_000 } };
+    const { scene } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true, standing: leader });
+    const meter = byId(scene, "ranked.decay");
+    assert.equal(meter.text, "Play 2 more ranked today or −50");
+    assert.equal(meter.safe, false);
+    assert.equal(byId(scene, "online.standing").text, "Season 1: rating 1612 (#1), 8–4 in 12 game(s).", "the meter says the rest");
+    const band = byId(scene, "ranked.band");
+    assert.ok(meter.bounds.y + meter.bounds.height <= band.bounds.y, "over the tickets");
+  });
+
+  it("shows no decay meter outside the first places, nor once the day's games are played", async () => {
+    const { scene } = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true });
+    assert.equal(byId(scene, "ranked.decay"), null);
+    const safe = { rank: 1, provisional: false, games: 12, wins: 8, losses: 4, rating: 1612, decay: { points: 50, games: 3, played: 3, safe: true, at: 86_400_000 } };
+    const done = await harness({ lobby: "ranked", ranked: { balance: 3, perGame: 1 }, shop: true, standing: safe });
+    assert.equal(byId(done.scene, "ranked.decay"), null);
+    assert.equal(byId(done.scene, "online.standing").text, "Season 1: rating 1612 (#1), 8–4 in 12 game(s).");
   });
 
   it("shows how ranked works again once a refused challenge's word has been up a while, or the player has left", async () => {

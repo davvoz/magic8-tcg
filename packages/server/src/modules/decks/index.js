@@ -5,3 +5,4 @@
 export { DeckService } from "./application/DeckService.js";
 export { PgDeckRepository } from "./infrastructure/PgDeckRepository.js";
 export { registerDeckRoutes } from "./http/deckRoutes.js";
+export { validateHouseDecks } from "./domain/houseDecks.js";

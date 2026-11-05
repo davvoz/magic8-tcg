@@ -110,10 +110,9 @@ class ManualKeychain {
 
 /**
  * The server, and a way to bring players in (each signed in, with a deck, their client online).
- * @param {{ content?: object, clientTimeScale?: number }} [options] `content`: the server's data, when a test changes it (e.g. a ranked season with an entry fee);
- *   `clientTimeScale`: how much faster than real time the clients' connection timers run (heartbeat, timeouts, reconnection delays)
+ * @param {{ content?: object }} [options] `content`: the server's data, when a test changes it (e.g. a ranked season with an entry fee)
  */
-export async function onlineWorld({ content, clientTimeScale = 1 } = {}) {
+export async function onlineWorld({ content } = {}) {
   const setup = await buildTestApp({ signedMoves: true, ...(content === undefined ? {} : { content }) });
   const server = await listen(setup.app);
   // What the server's jobs do while a client waits for an order: the chain makes payments final, they are settled and fulfilled.
@@ -149,7 +148,7 @@ export async function onlineWorld({ content, clientTimeScale = 1 } = {}) {
       sockets.push(socket);
       return socket;
     };
-    const connection = new WebSocketConnection({ url: "unused", createSocket, timers: { setTimeout: (fn, ms) => setTimeout(fn, ms / clientTimeScale), clearTimeout: (handle) => clearTimeout(handle) }, logger });
+    const connection = new WebSocketConnection({ url: "unused", createSocket, timers: { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (handle) => clearTimeout(handle) }, logger });
     const request = connection.request.bind(connection);
     connection.request = (t, d) => {
       sent.push(t);

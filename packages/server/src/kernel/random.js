@@ -4,7 +4,7 @@
  *
  * @typedef {{ bytes: (length: number) => Uint8Array }} SecureRandom
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 const MAX_BYTES = 1024;
 
@@ -31,7 +31,22 @@ export function base64Url(bytes) {
  * @param {SecureRandom} random
  */
 export function uuidV4(random) {
-  const bytes = random.bytes(16);
+  return formatUuid(random.bytes(16));
+}
+
+/**
+ * A UUID that is always the same for the same name: the id of something
+ * that is not stored, so that it reads like every other id. Shaped as a
+ * version 4 UUID, which every id check here accepts.
+ * @param {string} name
+ */
+export function uuidFromName(name) {
+  return formatUuid(createHash("sha256").update(name, "utf8").digest().subarray(0, 16));
+}
+
+/** @param {Uint8Array} source 16 bytes */
+function formatUuid(source) {
+  const bytes = Uint8Array.from(source);
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = Buffer.from(bytes).toString("hex");

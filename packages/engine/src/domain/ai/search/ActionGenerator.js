@@ -10,12 +10,14 @@
  *   each alone, all but each, the strongest and the weakest few).
  *
  * Choices that cannot differ are generated once: two copies of a card in
- * hand, two identical creatures as targets. Blocks are not generated here
+ * hand, two identical creatures as targets. A spell played for its cards
+ * with none left in the library is not generated: it can only cost life,
+ * and a weak level's misjudgement should not make it look worth it. Blocks are not generated here
  * (BlockPlanner improves them step by step instead).
  */
 import { declareAttackers, endPhase, endTurn, playCard } from "../../commands/commandFactories.js";
 import { GamePhase } from "../../game/GamePhase.js";
-import { playerTargetedAbilities } from "../cardViews.js";
+import { drawsIntoEmptyLibrary, playerTargetedAbilities } from "../cardViews.js";
 
 /** @typedef {import("../AiPolicy.contract.js").Snapshot} Snapshot */
 /** @typedef {import("../../game/GameSnapshot.js").CardView} CardView */
@@ -54,11 +56,11 @@ export class ActionGenerator {
   #plays(snapshot) {
     const me = /** @type {string} */ (snapshot.perspectivePlayerId);
     const legal = /** @type {NonNullable<Snapshot["legalMoves"]>} */ (snapshot.legalMoves);
-    const hand = snapshot.players.find((player) => player.id === me)?.hand ?? [];
+    const player = snapshot.players.find((candidate) => candidate.id === me);
     const seen = new Set();
     const plays = [];
-    for (const card of hand) {
-      if (!legal.playableCardIds.includes(card.instanceId) || seen.has(card.definitionId)) {
+    for (const card of player?.hand ?? []) {
+      if (!legal.playableCardIds.includes(card.instanceId) || seen.has(card.definitionId) || drawsIntoEmptyLibrary(card, player?.librarySize ?? 0)) {
         continue;
       }
       seen.add(card.definitionId);

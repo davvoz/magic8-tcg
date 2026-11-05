@@ -5,7 +5,7 @@
  *
  * A finished game is a win or a loss, far beyond any material (a quicker
  * win and a later loss rank higher). Otherwise the score is material (life,
- * creatures, cards in hand, each side's) plus the outlook of the next
+ * creatures, cards in hand and in the library, each side's) plus the outlook of the next
  * combats: the damage the enemy would get through next, and the damage the
  * player would. Everything is weighted by the AI's character
  * (EvaluationWeights).
@@ -13,6 +13,11 @@
  * Life counts on a curve: a point of life is worth more the less is left,
  * so the AI trades life freely at 20 and guards it at 5, and burns the
  * enemy's face when it is low rather than when it is high.
+ *
+ * The cards left in a library count on a curve too: each is a draw that
+ * does not cost life yet, worth little while the library is thick and much
+ * once fatigue is near, so the AI does not draw cards only to discard them
+ * and spares its last ones.
  */
 import { AttackForecast } from "./AttackForecast.js";
 import { CardValuer } from "./CardValuer.js";
@@ -26,6 +31,8 @@ export const WIN_SCORE = 10000;
 const DRAW_SCORE = -WIN_SCORE / 10;
 /** Scale of the life curve: one point of life at 20 is worth about 0.7, at 5 about 1.4. */
 const LIFE_SCALE = 6.3;
+/** Scale of the library curve: one card of 25 left is worth about 0.3, of 4 about 0.8, the last one 3. */
+const LIBRARY_SCALE = 3;
 
 export class PositionEvaluator {
   #weights;
@@ -64,9 +71,10 @@ export class PositionEvaluator {
     const weights = this.#weights;
     const valuer = this.#valuer;
     const life = weights.life * lifeValue(me.life) - weights.enemyLife * lifeValue(enemy.life);
-    const board = weights.board * sum(me.battlefield, (card) => valuer.creature(card)) - weights.enemyBoard * sum(enemy.battlefield, (card) => valuer.creature(card));
+    const board = weights.board * sum(me.battlefield, (card) => valuer.creature(card, me.librarySize)) - weights.enemyBoard * sum(enemy.battlefield, (card) => valuer.creature(card, enemy.librarySize));
     const hand = weights.hand * sum(me.hand ?? [], (card) => valuer.inHand(card)) - weights.enemyHand * enemy.handSize * valuer.unknownInHand;
-    return life + board + hand;
+    const library = weights.hand * libraryValue(me.librarySize) - weights.enemyHand * libraryValue(enemy.librarySize);
+    return life + board + hand + library;
   }
 
   /**
@@ -98,6 +106,11 @@ function outcome(snapshot, playerId) {
 /** @param {number} life */
 function lifeValue(life) {
   return LIFE_SCALE * Math.sqrt(Math.max(0, life));
+}
+
+/** @param {number} size cards left in a library */
+function libraryValue(size) {
+  return LIBRARY_SCALE * Math.sqrt(size);
 }
 
 /**

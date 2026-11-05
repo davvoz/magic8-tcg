@@ -209,10 +209,11 @@ export class MatchPresenter {
     const duration = animate ? this.#animation.mediumMs : 0;
     const impacts = animate ? this.#impactsOf(events) : new Map();
     this.#impacts = impacts;
+    const risen = new Set(events.filter((event) => event.type === GameEventType.CREATURE_REANIMATED).map((event) => event.instanceId));
     for (const player of snapshot.players) {
       for (const card of [...player.battlefield, ...(player.hand ?? [])]) {
         this.#cards.set(card.instanceId, card);
-        this.#place(card, layout, duration);
+        this.#place(card, layout, duration, risen.has(card.instanceId));
       }
     }
     this.#sendOff(layout, animate ? this.#animation.longMs : 0, impacts);
@@ -478,15 +479,16 @@ export class MatchPresenter {
    * @param {CardView} card
    * @param {BoardLayout} layout
    * @param {number} duration
+   * @param {boolean} fromGraveyard it has just been brought back from the graveyard
    */
-  #place(card, layout, duration) {
+  #place(card, layout, duration, fromGraveyard) {
     const target = layout.cards[card.instanceId];
     const existing = this.#visuals.get(card.instanceId);
     if (existing !== undefined) {
       existing.moveTo(target, duration);
       return;
     }
-    const origin = this.#originFor(card, layout);
+    const origin = this.#originFor(card, layout, fromGraveyard);
     const visual = new CardVisual(card.instanceId, { ...origin, alpha: duration === 0 ? 1 : 0.2 });
     visual.moveTo(target, duration);
     this.#visuals.set(card.instanceId, visual);
@@ -494,13 +496,15 @@ export class MatchPresenter {
 
   /**
    * New cards come from the controller's hand (opponent plays) or from the
-   * owner's HUD, which stands for the library (draws).
+   * owner's HUD, which stands for the library (draws) and the graveyard
+   * (creatures brought back).
    * @param {CardView} card
    * @param {BoardLayout} layout
+   * @param {boolean} fromGraveyard
    */
-  #originFor(card, layout) {
+  #originFor(card, layout, fromGraveyard) {
     const seat = card.controllerId === layout.me.id ? layout.me : layout.opponent;
-    const fromHand = card.zone === ZoneType.BATTLEFIELD && seat === layout.opponent;
+    const fromHand = !fromGraveyard && card.zone === ZoneType.BATTLEFIELD && seat === layout.opponent;
     const area = fromHand ? seat.hand : seat.hud;
     const size = layout.cards[card.instanceId];
     return { x: area.x + (area.width - size.width) / 2, y: area.y + (area.height - size.height) / 2, width: size.width, height: size.height };

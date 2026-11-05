@@ -37,7 +37,7 @@ Molte cose succedono mentre il giocatore guarda altrove o non è collegato: le c
 | `sale.payment_problem` | compratore | il trasferimento non paga l'acquisto (importo, valuta, mittente, ritardo) |
 | `auto.finished` | entrambi | la partita della lista automatica è stata giocata: avversario, esito, stili, rating prima e dopo (23) |
 | `auto.refunded` | giocatore | il biglietto automatico si è chiuso senza partita (stagione finita, partita impossibile): l'ingresso è tornato (23) |
-| `ranking.decay` | giocatore | fra i primi tre, un giorno senza classificata a mano gli è costato rating: stagione, giorno, posto, punti, rating prima e dopo (09) |
+| `ranking.decay` | giocatore | fra i primi tre, un giorno con meno classificate a mano del richiesto (3 il 1°, 2 il 2°, 1 il 3°) gli è costato rating: stagione, giorno, posto, punti, partite richieste e giocate, rating prima e dopo (09) |
 
 ## Conservazione
 

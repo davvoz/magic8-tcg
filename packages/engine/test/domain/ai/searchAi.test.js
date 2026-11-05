@@ -95,10 +95,28 @@ describe("SearchAi — its own turn", () => {
 
   it("burns the enemy's face when that wins, even with a creature to shoot", () => {
     const { engine } = createScenario({ p1: { hand: ["ember_bolt"], resources: 2 }, p2: { life: 3, battlefield: ["lava_brute"] } });
-    const move = searchAi().decide(engine.getSnapshot(P1));
+    // No misjudgement: burning now and after combat win alike, and noise would pick between them.
+    const move = searchAi({ level: MAX_LEVEL }).decide(engine.getSnapshot(P1));
     assert.deepEqual(move, playCard(P1, move.cardId, [P2]));
     assert.equal(engine.execute(move).ok, true);
     assert.equal(engine.getSnapshot(P1).winnerId, P1);
+  });
+
+  it("never casts a spell for its cards into an empty library, however much it misjudges", () => {
+    for (const spell of ["salvage", "arcane_insight", "harvest"]) {
+      const { engine } = createScenario({ p1: { hand: [spell], library: [], life: 10, resources: 3 } });
+      const moves = playTurn(engine, searchAi({ level: MIN_LEVEL }));
+      assert.ok(moves.every((move) => move.type !== CommandType.PLAY_CARD), `${spell}: every draw would only cost life`);
+      assert.equal(engine.getSnapshot(P1).players[0].life, 10);
+    }
+  });
+
+  it("does not draw cards only to discard them at the hand limit", () => {
+    const full = createScenario({ p1: { hand: ["salvage", ...Array(9).fill("lava_brute")], library: Array(4).fill("ember_imp"), resources: 1 } });
+    assert.deepEqual(playTurn(full.engine, searchAi({ level: MAX_LEVEL })).filter((move) => move.type === CommandType.PLAY_CARD), []);
+
+    const roomy = createScenario({ p1: { hand: ["salvage"], library: Array(4).fill("ember_imp"), resources: 1 } });
+    assert.equal(playTurn(roomy.engine, searchAi({ level: MAX_LEVEL })).filter((move) => move.type === CommandType.PLAY_CARD).length, 1);
   });
 
   it("attacks for the win", () => {

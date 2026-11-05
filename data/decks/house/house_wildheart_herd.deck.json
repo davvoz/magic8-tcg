@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "house_wildheart_herd",
+  "name": "Wildheart Herd",
+  "preconstructed": true,
+  "cards": [
+    { "cardId": "moss_beetle", "count": 2 },
+    { "cardId": "grove_sprite", "count": 3 },
+    { "cardId": "root_tender", "count": 2 },
+    { "cardId": "charging_ram", "count": 3 },
+    { "cardId": "thornback_bear", "count": 2 },
+    { "cardId": "wildheart_druid", "count": 3 },
+    { "cardId": "stampeding_boar", "count": 3 },
+    { "cardId": "elder_treant", "count": 2 },
+    { "cardId": "rampaging_ogre", "count": 2 },
+    { "cardId": "great_elk", "count": 2 },
+    { "cardId": "oakheart_warden", "count": 1 },
+    { "cardId": "thunderhoof_mammoth", "count": 1 },
+    { "cardId": "wild_growth", "count": 2 },
+    { "cardId": "overgrowth", "count": 2 },
+    { "cardId": "entangle", "count": 2 },
+    { "cardId": "rootbreak", "count": 2 }
+  ]
+}

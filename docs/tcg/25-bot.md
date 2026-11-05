@@ -12,13 +12,13 @@ Il gioco è giovane: chi entra non trova quasi mai qualcuno con cui giocare. I *
 - **entrano in coda** quando un giocatore la aspetta da solo da un po';
 - a fine partita guardano il risultato qualche secondo e tornano in lobby.
 
-Per il server sono giocatori come gli altri: nessuna regola, tabella o messaggio nuovo. Usano la stessa API del browser (HTTP e WebSocket) e lo stesso codice del client (`OnlineService`, `LobbyService`, chiavi di sessione WebCrypto).
+Per il server sono giocatori come gli altri, con una sola eccezione: i **mazzi della casa** (sotto). Nessuna tabella o messaggio nuovo. Usano la stessa API del browser (HTTP e WebSocket) e lo stesso codice del client (`OnlineService`, `LobbyService`, chiavi di sessione WebCrypto).
 
 ## Come si comporta un bot
 
 | Momento | Cosa fa | Perché |
 |---|---|---|
-| Avvio | Accede firmando la sfida di login con la chiave posting. Se l'account non ha un mazzo giocabile, prende il mazzo iniziale gratuito: un precostruito diverso per ogni bot. Poi apre il WebSocket. | Come un nuovo giocatore. |
+| Avvio | Accede firmando la sfida di login con la chiave posting. Se l'account non ha un mazzo giocabile (né suo né della casa), prende il mazzo iniziale gratuito: un precostruito diverso per ogni bot. Poi apre il WebSocket. | Come un nuovo giocatore. |
 | Sfida ricevuta | Dopo 2–5 s la accetta con uno dei suoi mazzi giocabili, scelto a caso. Se non può (ranked senza ingressi, non ancora idoneo, limite della coppia) la **rifiuta subito**, e il log dice perché. | Chi sfida non resta un minuto ad aspettare. |
 | Partita trovata | Firma la chiave di sessione dopo 1–2,5 s (protocollo v2, 12). | È l'accettazione della partita, come con Keychain. |
 | Durante la partita | Prima di ogni mossa pensa per `M8_BOT_THINK_MS` (default 1,2–3,2 s); prima della sua prima mossa aspetta 3 s in più, il tempo della moneta. Ogni bot ha uno **stile** fisso (`aggressive`, `balanced`, `defensive`, 23). | L'avversario vede le mosse una per volta. Il turno dura 90 s. |
@@ -26,6 +26,23 @@ Per il server sono giocatori come gli altri: nessuna regola, tabella o messaggio
 | Fine partita | Dopo 4–8 s torna in lobby. | Come chi guarda la schermata di fine. |
 | Connessione persa | Si ricollega da solo e riprende la partita in corso, con una nuova chiave di sessione firmata. Se la sessione è scaduta, rifà l'accesso. | Sempre online. |
 | Account aperto altrove | Se qualcuno apre l'account del bot in un browser, il bot lascia il posto per **30 minuti**, poi torna (e chiude l'altra scheda). | Così l'operatore può usare l'account, per esempio per comprare ingressi ranked. |
+
+## I mazzi della casa
+
+Col solo mazzo iniziale un bot gioca sempre la stessa partita. Ogni account della casa ha quindi anche un suo mazzo, adatto al suo stile e con qualche carta della stagione:
+
+| Account | Mazzo | Stile | Carte nuove | Parole chiave |
+|---|---|---|---|---|
+| `gigi.one` | Ember Stampede | aggressivo | Pyre Chanter, Forest Blaze | haste, trample, vigilance |
+| `fabi.one` | Wildheart Herd | aggressivo (verde che corre) | Wildheart Druid, Rootbreak | trample, haste, vigilance |
+| `yuky.skoll` | Iron Bastion | difensivo | Foundry Overseer, Cold Iron | vigilance, trample |
+
+- **Dati:** le liste sono in `data/decks/house/` (stesso formato dei precostruiti); chi gioca quale in `data/decks/house-decks.json` (account → fino a 5 mazzi). Il server le controlla all'avvio: un mazzo illegale o un account scritto male lo fermano.
+- **Senza possedere le carte.** Un mazzo della casa è giocabile anche se l'account non ha le carte: nessuna carta viene coniata, niente va sulla chain. I record delle partite contengono comunque la lista del mazzo (12), quindi restano verificabili.
+- **Un mazzo salvato come gli altri.** Ogni volta che l'account legge i suoi mazzi, il server salva o riallinea ai dati i mazzi della casa fra i suoi (l'id è un UUID fisso, ricavato da account e mazzo), perché coda e partite si riferiscono a un mazzo salvato. Non si possono modificare né cancellare (`FORBIDDEN`).
+- **Solo per quell'account, sulla rete del gioco.** Un altro utente non li vede, nemmeno con lo stesso nome su un'altra rete.
+- Il bot sceglie a caso fra i suoi mazzi giocabili: mazzo iniziale (se l'aveva già preso) e mazzo della casa.
+- **Forza:** in simulazione (BasicAi contro BasicAi, 50 partite contro ogni mazzo iniziale) vincono il 53–60% contro i mazzi iniziali, che fra loro stanno intorno al 50%.
 
 ## La coda
 
@@ -68,6 +85,8 @@ Una configurazione sbagliata ferma il processo con un messaggio che nomina la va
   - Alice sfida il bot, che accetta, firma e gioca la partita fino alla fine (le mosse firmate dal bot sono registrate), poi torna in lobby.
   - Alice è in coda da sola: un bot entra in coda e viene abbinato con lei.
   - Il proprietario apre l'account del bot in un browser: il bot si sposta, poi torna.
+  - Un account della casa (`gigi.one`) non prende il mazzo iniziale, accetta una sfida col suo mazzo della casa e la gioca fino alla fine.
+- `packages/server/test/decks/deckService.test.js`: i mazzi della casa (salvati, giocabili senza le carte, riallineati ai dati, non modificabili, invisibili agli altri) e il controllo dei dati.
 - `packages/bots/test/fleet.test.js`: chi viene aiutato in coda, quando, e mai un bot.
 - `packages/bots/test/config.test.js`: le variabili.
 

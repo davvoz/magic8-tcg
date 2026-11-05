@@ -24,17 +24,27 @@ const TARGETING_VALUES = Object.freeze(Object.values(Targeting));
 /**
  * @typedef {{ kind: "integer", min: number, max: number, default?: number }} IntegerParamSchema
  * @typedef {{ kind: "enum", values: readonly string[], default?: string }} EnumParamSchema
- * @typedef {IntegerParamSchema | EnumParamSchema} ParamSchema
+ * @typedef {{ kind: "faction" }} FactionParamSchema one of the content's factions (deck rules), not a fixed list
+ * @typedef {IntegerParamSchema | EnumParamSchema | FactionParamSchema} ParamSchema
+ *
+ * @typedef {Readonly<{ attack: number, health: number }>} StatBonus
+ *
+ * @typedef {object} ParamScope
+ * @property {string} path where the params sit, for issues
+ * @property {readonly string[]} [factions] what `faction` params may name
  *
  * @typedef {object} EffectDescriptor
  * @property {string} type
  * @property {string} targeting One of `Targeting`.
  * @property {readonly string[]} [targetKinds] Target kinds this effect accepts (defaults to all) when targeting is required.
  * @property {Readonly<Record<string, ParamSchema>>} params
- * @property {(context: import("./EffectContext.js").EffectContext) => void} resolve Applies the effect at resolution time.
+ * @property {(context: import("./EffectContext.js").EffectContext) => void} [resolve] Applies the effect at resolution time (one-shot effects).
+ * @property {boolean} [continuous] Holds while its source is on the battlefield (a static ability) instead of resolving once.
+ * @property {(params: Readonly<Record<string, number | string>>, source: import("../cards/CardInstance.js").CardInstance, creature: import("../cards/CardInstance.js").CardInstance) => StatBonus | null} [bonus]
+ *   What a continuous effect gives `creature` while `source` is on the battlefield; null when it does not touch it.
  */
 
-const PARAM_KINDS = Object.freeze(["integer", "enum"]);
+const PARAM_KINDS = Object.freeze(["integer", "enum", "faction"]);
 
 export class EffectRegistry {
   /** @type {Map<string, EffectDescriptor>} */
@@ -77,10 +87,10 @@ export class EffectRegistry {
    * @param {import("../../shared/validation.js").Issues} issues
    * @param {string} type A registered effect type.
    * @param {unknown} rawParams
-   * @param {string} path
+   * @param {ParamScope} scope
    * @returns {Readonly<Record<string, number | string>> | undefined}
    */
-  validateParams(issues, type, rawParams, path) {
+  validateParams(issues, type, rawParams, { path, factions = [] }) {
     const descriptor = this.#descriptors.get(type);
     if (descriptor === undefined) {
       return issues.add(path, `unknown effect "${type}"`);
@@ -94,7 +104,7 @@ export class EffectRegistry {
     const normalised = {};
     let valid = true;
     for (const key of schemaKeys) {
-      const value = validateParam(issues, descriptor.params[key], object[key], `${path}.${key}`);
+      const value = validateParam(issues, descriptor.params[key], object[key], { path: `${path}.${key}`, factions });
       if (value === undefined) {
         valid = false;
       } else {
@@ -109,16 +119,19 @@ export class EffectRegistry {
  * @param {import("../../shared/validation.js").Issues} issues
  * @param {ParamSchema} schema
  * @param {unknown} value
- * @param {string} path
+ * @param {ParamScope} scope
  * @returns {number | string | undefined}
  */
-function validateParam(issues, schema, value, path) {
-  const effective = value === undefined ? schema.default : value;
+function validateParam(issues, schema, value, { path, factions = [] }) {
+  const effective = value === undefined && schema.kind !== "faction" ? schema.default : value;
   if (effective === undefined) {
     return issues.add(path, "required parameter is missing");
   }
   if (schema.kind === "integer") {
     return checkInteger(issues, effective, path, { min: schema.min, max: schema.max });
+  }
+  if (schema.kind === "faction") {
+    return checkEnum(issues, effective, path, factions);
   }
   return checkEnum(issues, effective, path, schema.values);
 }
@@ -128,8 +141,11 @@ function assertDescriptor(descriptor) {
   if (typeof descriptor?.type !== "string" || descriptor.type.length === 0) {
     throw new TypeError("EffectRegistry: descriptor.type must be a non-empty string");
   }
-  if (typeof descriptor.resolve !== "function") {
-    throw new TypeError(`EffectRegistry: "${descriptor.type}" must implement resolve()`);
+  if (descriptor.continuous === true ? typeof descriptor.bonus !== "function" : typeof descriptor.resolve !== "function") {
+    throw new TypeError(`EffectRegistry: "${descriptor.type}" must implement ${descriptor.continuous === true ? "bonus()" : "resolve()"}`);
+  }
+  if (descriptor.continuous === true && descriptor.targeting !== Targeting.NONE) {
+    throw new TypeError(`EffectRegistry: continuous effect "${descriptor.type}" cannot take a target`);
   }
   assertTargeting(descriptor);
   assertParamSchemas(descriptor);

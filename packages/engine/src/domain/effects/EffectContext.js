@@ -7,6 +7,7 @@
  */
 import { GameEventType } from "../game/GameEventType.js";
 import { ZoneType } from "../game/ZoneType.js";
+import { Keyword } from "./Keyword.js";
 import { materialiseTargets } from "./TargetResolver.js";
 
 export class EffectContext {
@@ -135,6 +136,33 @@ export class EffectContext {
       milled += 1;
     }
     return milled;
+  }
+
+  /**
+   * Returns up to `amount` creatures from the top of the player's graveyard
+   * (the most recent first) to their battlefield, skipping spells and
+   * stopping when the battlefield is full. They enter as a played creature
+   * does (match conditions, summoning sickness) without firing their play
+   * abilities.
+   * @param {import("../game/Player.js").Player} player
+   * @param {number} amount
+   * @returns {number} creatures actually returned
+   */
+  reanimateCreatures(player, amount) {
+    const chosen = player.graveyard.cards.filter((card) => card.isCreature).reverse().slice(0, amount);
+    let returned = 0;
+    for (const card of chosen) {
+      if (player.creatures.length >= this.rules.maxBattlefieldCreatures) {
+        break;
+      }
+      player.graveyard.remove(card.instanceId);
+      player.battlefield.add(card);
+      this.state.conditions.applyOnEnter(card);
+      card.summoningSick = this.rules.combat.summoningSickness && !card.hasKeyword(Keyword.HASTE);
+      this.emit(GameEventType.CREATURE_REANIMATED, { playerId: player.id, instanceId: card.instanceId, definitionId: card.definitionId });
+      returned += 1;
+    }
+    return returned;
   }
 
   /**

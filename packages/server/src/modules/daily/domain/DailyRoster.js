@@ -9,8 +9,9 @@
  * game content at startup: every deck must be legal, so a character can
  * never sit down with a deck the rules refuse.
  *
- * A deck is written as a preconstructed deck's id, or as `{ base, add }`: a
- * preconstructed deck with some cards added (a boss's), or `{ cards }`.
+ * A deck is written as a deck's id (one of the AI's own decks, data/decks/ai/,
+ * or a preconstructed one), or as `{ base, add }`: such a deck with some
+ * cards added (a boss's), or `{ cards }`.
  *
  * An opponent may bring conditions to the table (a boss's): rules that hold
  * for that game only (the engine's match conditions), each with a name and a
@@ -86,16 +87,18 @@ export class DailyRoster {
 /**
  * @param {unknown} raw
  * @param {import("@magic8/engine/domain/content/GameContent.js").GameContent} content
+ * @param {readonly DeckList[]} [aiDecks] the AI's own decks, which a deck may name besides the preconstructed ones
  * @returns {import("@magic8/engine/shared/Result.js").Ok<DailyRoster> | import("@magic8/engine/shared/Result.js").Fail}
  */
-export function validateDailyRoster(raw, content) {
+export function validateDailyRoster(raw, content, aiDecks = []) {
   const issues = new Issues();
   const object = checkObject(issues, raw, "roster", ROSTER_KEYS);
   if (object === undefined) {
     return issues.toResult(undefined);
   }
   checkInteger(issues, object.schemaVersion, "roster.schemaVersion", { min: 1, max: 1 });
-  const read = (key, boss) => checkArrayOf(issues, object[key], `roster.${key}`, { minLength: 1, maxLength: MAX_OPPONENTS, item: (item, path) => opponentOf(issues, item, path, { content, boss }) });
+  const decks = [...aiDecks, ...content.preconDecks];
+  const read = (key, boss) => checkArrayOf(issues, object[key], `roster.${key}`, { minLength: 1, maxLength: MAX_OPPONENTS, item: (item, path) => opponentOf(issues, item, path, { content, decks, boss }) });
   const characters = read("characters", false);
   const bosses = read("bosses", true);
   if (characters !== undefined && bosses !== undefined) {
@@ -108,10 +111,11 @@ export function validateDailyRoster(raw, content) {
  * @param {Issues} issues
  * @param {unknown} raw
  * @param {string} path
- * @param {{ content: import("@magic8/engine/domain/content/GameContent.js").GameContent, boss: boolean }} context
+ * @param {{ content: import("@magic8/engine/domain/content/GameContent.js").GameContent, decks: readonly DeckList[], boss: boolean }} context
+ *   `decks`: those a deck may be named by
  * @returns {Opponent | undefined}
  */
-function opponentOf(issues, raw, path, { content, boss }) {
+function opponentOf(issues, raw, path, { content, decks, boss }) {
   const object = checkObject(issues, raw, path, OPPONENT_KEYS);
   if (object === undefined) {
     return undefined;
@@ -123,7 +127,7 @@ function opponentOf(issues, raw, path, { content, boss }) {
     title: text("title", { minLength: 1, maxLength: MAX_TEXT_LENGTH }),
     faction: checkEnum(issues, object.faction, `${path}.faction`, content.deckRules.factions),
     style: checkEnum(issues, object.style, `${path}.style`, AI_STYLES),
-    deck: deckOf(issues, object.deck, `${path}.deck`, { content, name: typeof object.name === "string" ? object.name : "deck" }),
+    deck: deckOf(issues, object.deck, `${path}.deck`, { content, decks, name: typeof object.name === "string" ? object.name : "deck" }),
     lines: linesOf(issues, object.lines, `${path}.lines`, boss),
     conditions: conditionsOf(issues, object.conditions, `${path}.conditions`),
   };
@@ -137,11 +141,11 @@ function opponentOf(issues, raw, path, { content, boss }) {
  * @param {Issues} issues
  * @param {unknown} raw
  * @param {string} path
- * @param {{ content: import("@magic8/engine/domain/content/GameContent.js").GameContent, name: string }} context
+ * @param {{ content: import("@magic8/engine/domain/content/GameContent.js").GameContent, decks: readonly DeckList[], name: string }} context
  * @returns {DeckList | undefined}
  */
-function deckOf(issues, raw, path, { content, name }) {
-  const entries = typeof raw === "string" ? preconEntries(issues, raw, path, content) : composedEntries(issues, raw, path, content);
+function deckOf(issues, raw, path, { content, decks, name }) {
+  const entries = typeof raw === "string" ? namedEntries(issues, raw, path, decks) : composedEntries(issues, raw, path, decks);
   if (entries === undefined) {
     return undefined;
   }
@@ -157,17 +161,17 @@ function deckOf(issues, raw, path, { content, name }) {
  * @param {Issues} issues
  * @param {unknown} raw
  * @param {string} path
- * @param {import("@magic8/engine/domain/content/GameContent.js").GameContent} content
+ * @param {readonly DeckList[]} decks those a base may name
  */
-function composedEntries(issues, raw, path, content) {
+function composedEntries(issues, raw, path, decks) {
   const object = checkObject(issues, raw, path, DECK_KEYS);
   if (object === undefined) {
     return undefined;
   }
   if ((object.base === undefined) === (object.cards === undefined)) {
-    return issues.add(path, "write either a base preconstructed deck (with cards to add) or the whole list of cards");
+    return issues.add(path, "write either a base deck (with cards to add) or the whole list of cards");
   }
-  const base = object.base === undefined ? [] : preconEntries(issues, object.base, `${path}.base`, content);
+  const base = object.base === undefined ? [] : namedEntries(issues, object.base, `${path}.base`, decks);
   const cards = entriesOf(issues, object.cards ?? object.add ?? [], `${path}.${object.cards === undefined ? "add" : "cards"}`);
   return base === undefined || cards === undefined ? undefined : [...base, ...cards];
 }
@@ -176,12 +180,12 @@ function composedEntries(issues, raw, path, content) {
  * @param {Issues} issues
  * @param {unknown} id
  * @param {string} path
- * @param {import("@magic8/engine/domain/content/GameContent.js").GameContent} content
+ * @param {readonly DeckList[]} decks the AI's and the preconstructed ones
  */
-function preconEntries(issues, id, path, content) {
-  const deck = content.preconDecks.find((candidate) => candidate.id === id);
+function namedEntries(issues, id, path, decks) {
+  const deck = decks.find((candidate) => candidate.id === id);
   if (deck === undefined) {
-    return issues.add(path, `"${String(id)}" is not a preconstructed deck`);
+    return issues.add(path, `"${String(id)}" is neither an AI deck nor a preconstructed one`);
   }
   return deck.entries.map((entry) => ({ cardId: entry.cardId, count: entry.count }));
 }

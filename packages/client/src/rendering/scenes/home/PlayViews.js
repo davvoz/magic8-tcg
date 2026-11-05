@@ -7,6 +7,7 @@
 import { AccountStatus } from "../../../application/account/AccountService.js";
 import { IdentityStatus } from "../../../application/identity/IdentityService.js";
 import { Milestone } from "../../../application/onboarding/OnboardingProgress.js";
+import { decayAtRisk, rankedLeft } from "../lobby/lobbyText.js";
 import { jackpotAmountText } from "../online/rankedGuideFor.js";
 import { SceneId } from "../sceneIds.js";
 
@@ -136,8 +137,19 @@ export class PlayViews {
     const jackpot = this.#app.jackpot;
     const { standing, error } = ranking.state;
     const season = standing?.season?.name ?? jackpot?.state.jackpot?.season.name ?? null;
-    const mine = this.signedIn ? { standing: standingLine(standing, error), figures: figuresOf(standing) } : { standing: "Sign in to take part in the season.", figures: null };
-    return { kind: "open", season, jackpot: jackpot?.state.jackpot ?? null, now: () => jackpot?.now() ?? this.#now(), ...mine };
+    return { kind: "open", season, jackpot: jackpot?.state.jackpot ?? null, now: () => jackpot?.now() ?? this.#now(), ...this.#mine(standing, error) };
+  }
+
+  /**
+   * The player's own part of the season card: where they stand, their figures and today's decay.
+   * @param {import("../../../application/ports/RankingApi.contract.js").Standing | null} standing
+   * @param {string | null} error
+   */
+  #mine(standing, error) {
+    if (!this.signedIn) {
+      return { standing: "Sign in to take part in the season.", figures: null, decay: null };
+    }
+    return { standing: standingLine(standing, error), figures: figuresOf(standing), decay: decayAtRisk(standing) };
   }
 }
 
@@ -183,7 +195,7 @@ function standingLine(standing, error) {
     return `You: provisional · rating ${standing.rating}`;
   }
   const decay = standing.decay ?? null;
-  const warning = decay !== null && !decay.safe ? ` · play ranked today or −${decay.points}` : "";
+  const warning = decay !== null && !decay.safe ? ` · ${rankedLeft(decay).toLowerCase()} today or −${decay.points}` : "";
   return `You: #${standing.rank} · rating ${standing.rating}${warning}`;
 }
 

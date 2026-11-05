@@ -38,6 +38,13 @@ export class CardInstance {
   #modifiers = [];
   /** Keywords given while on the battlefield (a match condition), beyond the printed ones. @type {string[]} */
   #granted = [];
+  /**
+   * What static abilities on the battlefield give it right now (a lord's +1/+1).
+   * Derived from the board and recomputed by StaticAbilities, so it is not
+   * part of the state digest.
+   * @type {{ attack: number, health: number }}
+   */
+  #staticBonus = { attack: 0, health: 0 };
 
   /**
    * @param {{ instanceId: string, definition: import("./CardDefinition.js").CardDefinition, ownerId: string, controllerId?: string, zone: string }} fields
@@ -59,11 +66,28 @@ export class CardInstance {
   }
 
   get attack() {
-    return Math.max(0, this.definition.attack + this.#sum("attack"));
+    return Math.max(0, this.definition.attack + this.#sum("attack") + this.#staticBonus.attack);
   }
 
   get maxHealth() {
-    return this.definition.health + this.#sum("health");
+    return this.definition.health + this.#sum("health") + this.#staticBonus.health;
+  }
+
+  /** @returns {Readonly<{ attack: number, health: number }>} */
+  get staticBonus() {
+    return Object.freeze({ ...this.#staticBonus });
+  }
+
+  /**
+   * @param {{ attack: number, health: number }} bonus what static abilities give it now
+   * @returns {boolean} whether it changed
+   */
+  setStaticBonus(bonus) {
+    if (bonus.attack === this.#staticBonus.attack && bonus.health === this.#staticBonus.health) {
+      return false;
+    }
+    this.#staticBonus = { attack: bonus.attack, health: bonus.health };
+    return true;
   }
 
   get health() {
@@ -154,6 +178,7 @@ export class CardInstance {
       this.damage = 0;
       this.#modifiers = [];
       this.#granted = [];
+      this.#staticBonus = { attack: 0, health: 0 };
       this.summoningSick = false;
       this.exhausted = false;
     }
@@ -173,6 +198,7 @@ export class CardInstance {
     copy.exhausted = this.exhausted;
     copy.#modifiers = this.#modifiers.map((modifier) => ({ ...modifier }));
     copy.#granted = [...this.#granted];
+    copy.#staticBonus = { ...this.#staticBonus };
     return copy;
   }
 

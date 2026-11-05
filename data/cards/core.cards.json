@@ -1630,7 +1630,7 @@
       "name": "Thunderhoof Mammoth",
       "type": "creature",
       "faction": "verdant",
-      "cost": 6,
+      "cost": 8,
       "attack": 6,
       "health": 6,
       "keywords": [
@@ -1741,6 +1741,284 @@
         "vigilance"
       ],
       "text": "Vigilance. A hundred years of standing guard, and it has only just begun."
+    },
+    {
+      "id": "rustbane_rite",
+      "name": "Rustbane Rite",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "sacrifice",
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        },
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 2,
+            "faction": "iron"
+          }
+        }
+      ],
+      "text": "Sacrifice a friendly creature. Deal 2 damage to every Iron creature."
+    },
+    {
+      "id": "rootbane_rite",
+      "name": "Rootbane Rite",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "sacrifice",
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        },
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 2,
+            "faction": "verdant"
+          }
+        }
+      ],
+      "text": "Sacrifice a friendly creature. Deal 2 damage to every Verdant creature."
+    },
+    {
+      "id": "cinderbane_rite",
+      "name": "Cinderbane Rite",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "sacrifice",
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        },
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 2,
+            "faction": "ember"
+          }
+        }
+      ],
+      "text": "Sacrifice a friendly creature. Deal 2 damage to every Ember creature."
+    },
+    {
+      "id": "runebane_rite",
+      "name": "Runebane Rite",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 2,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "sacrifice",
+          "target": {
+            "kind": "creature",
+            "owner": "ally",
+            "count": 1
+          }
+        },
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 2,
+            "faction": "arcane"
+          }
+        }
+      ],
+      "text": "Sacrifice a friendly creature. Deal 2 damage to every Arcane creature."
+    },
+    {
+      "id": "wake_the_dead",
+      "name": "Wake the Dead",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 3,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "reanimate",
+          "params": {
+            "amount": 2
+          }
+        }
+      ],
+      "text": "Return the top two creatures of your graveyard to the battlefield."
+    },
+    {
+      "id": "wildheart_druid",
+      "name": "Wildheart Druid",
+      "type": "creature",
+      "faction": "verdant",
+      "cost": 4,
+      "attack": 2,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "static",
+          "effect": "faction_aura",
+          "params": {
+            "faction": "verdant",
+            "attack": 1,
+            "health": 1
+          }
+        }
+      ],
+      "text": "Your Verdant creatures, this one included, get +1/+1."
+    },
+    {
+      "id": "forest_blaze",
+      "name": "Forest Blaze",
+      "type": "spell",
+      "faction": "ember",
+      "cost": 4,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 4,
+            "faction": "verdant"
+          }
+        }
+      ],
+      "text": "Deal 4 damage to every Verdant creature."
+    },
+    {
+      "id": "rootbreak",
+      "name": "Rootbreak",
+      "type": "spell",
+      "faction": "verdant",
+      "cost": 4,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 4,
+            "faction": "iron"
+          }
+        }
+      ],
+      "text": "Deal 4 damage to every Iron creature."
+    },
+    {
+      "id": "cold_iron",
+      "name": "Cold Iron",
+      "type": "spell",
+      "faction": "iron",
+      "cost": 4,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 3,
+            "faction": "arcane"
+          }
+        }
+      ],
+      "text": "Deal 3 damage to every Arcane creature."
+    },
+    {
+      "id": "dawnlight",
+      "name": "Dawnlight",
+      "type": "spell",
+      "faction": "arcane",
+      "cost": 4,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 2,
+            "faction": "shadow"
+          }
+        }
+      ],
+      "text": "Deal 2 damage to every Shadow creature."
+    },
+    {
+      "id": "smother",
+      "name": "Smother",
+      "type": "spell",
+      "faction": "shadow",
+      "cost": 4,
+      "abilities": [
+        {
+          "trigger": "on_cast",
+          "effect": "damage_faction",
+          "params": {
+            "amount": 2,
+            "faction": "ember"
+          }
+        }
+      ],
+      "text": "Deal 2 damage to every Ember creature."
+    },
+    {
+      "id": "foundry_overseer",
+      "name": "Foundry Overseer",
+      "type": "creature",
+      "faction": "iron",
+      "cost": 5,
+      "attack": 3,
+      "health": 4,
+      "abilities": [
+        {
+          "trigger": "static",
+          "effect": "faction_aura",
+          "params": {
+            "faction": "iron",
+            "attack": 0,
+            "health": 2
+          }
+        }
+      ],
+      "text": "Your Iron creatures, this one included, get +0/+2."
+    },
+    {
+      "id": "pyre_chanter",
+      "name": "Pyre Chanter",
+      "type": "creature",
+      "faction": "ember",
+      "cost": 3,
+      "attack": 2,
+      "health": 2,
+      "abilities": [
+        {
+          "trigger": "static",
+          "effect": "faction_aura",
+          "params": {
+            "faction": "ember",
+            "attack": 1,
+            "health": 0
+          }
+        }
+      ],
+      "text": "Your Ember creatures, this one included, get +1/+0."
     }
   ]
 }

@@ -15,7 +15,8 @@
  * what a game played by hand would (20 when left out). Rating decay
  * (`decay`, left out: none): from the UTC day `decay.from`, each day the
  * season's first settled ratings lose `decay.places[i]` points (1st, 2nd…)
- * unless they played a ranked game by hand that day.
+ * unless they played `decay.games[i]` ranked games by hand that day (1 each
+ * when left out).
  *
  * The seasons of the file are only the first calendar: the server copies them
  * into the database once, then operators change the calendar from the admin
@@ -44,6 +45,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Most places rating decay may reach, and most points a place may lose in a day. */
 const MAX_DECAY_PLACES = 10;
 const MAX_DECAY_POINTS = 1000;
+/** Most ranked games by hand a place may need to play in a day to keep its rating. */
+const MAX_DECAY_GAMES = 20;
 
 /**
  * @typedef {Readonly<{ id: string, name: string, startsAt: number, endsAt: number | null, prizePool: string | null, entryFee: number }>} Season `endsAt` as written in the data (see seasonEnd); `prizePool` an id of `prizePools`;
@@ -56,8 +59,9 @@ const MAX_DECAY_POINTS = 1000;
  *   auto: Readonly<{ ratingWeightPercent: number }>,
  *   decay: Decay | null,
  * }>} RankedSettings
- * @typedef {Readonly<{ from: number, places: readonly number[] }>} Decay `from`: the first UTC day (its midnight) that
- *   decays; `places[i]`: what the season's (i+1)-th settled rating loses a day without a ranked game by hand
+ * @typedef {Readonly<{ from: number, places: readonly number[], games: readonly number[] }>} Decay `from`: the first UTC day
+ *   (its midnight) that decays; `places[i]`: what the season's (i+1)-th settled rating loses a day it plays fewer than
+ *   `games[i]` ranked games by hand
  */
 
 /**
@@ -109,7 +113,7 @@ function checkDecay(issues, value) {
   if (value === undefined || value === null) {
     return null;
   }
-  const decay = checkObject(issues, value, "ranked.decay", ["from", "places"]);
+  const decay = checkObject(issues, value, "ranked.decay", ["from", "places", "games"]);
   if (decay === undefined) {
     return undefined;
   }
@@ -122,7 +126,29 @@ function checkDecay(issues, value) {
     maxLength: MAX_DECAY_PLACES,
     item: (item, path) => checkInteger(issues, item, path, { min: 0, max: MAX_DECAY_POINTS }),
   });
-  return from === undefined || places === undefined || from % DAY_MS !== 0 ? undefined : Object.freeze({ from, places: Object.freeze(places) });
+  const games = places === undefined ? undefined : checkDecayGames(issues, decay.games, places.length);
+  return from === undefined || places === undefined || games === undefined || from % DAY_MS !== 0
+    ? undefined
+    : Object.freeze({ from, places: Object.freeze(places), games: Object.freeze(games) });
+}
+
+/**
+ * The ranked games by hand each decaying place must play in a day: one value for each of the `places`; left out, 1 each.
+ * @param {Issues} issues
+ * @param {unknown} value
+ * @param {number} places
+ * @returns {number[] | undefined}
+ */
+function checkDecayGames(issues, value, places) {
+  if (value === undefined) {
+    return Array.from({ length: places }, () => 1);
+  }
+  const games = checkArrayOf(issues, value, "ranked.decay.games", {
+    minLength: places,
+    maxLength: places,
+    item: (item, path) => checkInteger(issues, item, path, { min: 1, max: MAX_DECAY_GAMES }),
+  });
+  return games;
 }
 
 /**

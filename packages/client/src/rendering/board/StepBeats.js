@@ -41,6 +41,7 @@ const MOVES = Object.freeze({
   [GameEventType.CARD_MILLED]: (event) => ({ id: event.instanceId, playerId: event.playerId, zone: ZoneType.GRAVEYARD }),
   [GameEventType.CREATURE_DIED]: (event) => ({ id: event.instanceId, playerId: event.playerId, zone: ZoneType.GRAVEYARD }),
   [GameEventType.CARD_RETURNED]: (event) => ({ id: event.targetId, playerId: event.playerId, zone: ZoneType.HAND }),
+  [GameEventType.CREATURE_REANIMATED]: (event) => ({ id: event.instanceId, playerId: event.playerId, zone: ZoneType.BATTLEFIELD }),
 });
 
 /** How the events that change a card's numbers change them. @type {Readonly<Record<string, (card: CardView, event: GameEvent) => CardView>>} */

@@ -12,7 +12,7 @@ import { AI_STYLES, AiStyle } from "../BasicAi.js";
 /**
  * - life / enemyLife: own and enemy life (on a curve: life is worth more when low, see PositionEvaluator)
  * - board / enemyBoard: own and enemy creatures (CardValuer)
- * - hand / enemyHand: own cards in hand and the enemy's unknown ones
+ * - hand / enemyHand: own cards in hand and the enemy's unknown ones, and the cards left in each library
  * - threat: per point of damage the enemy's next attack would get through
  * - lethalThreat: when that damage would kill
  * - pressure: per point of damage its own next attack would get through

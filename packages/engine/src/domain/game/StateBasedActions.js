@@ -1,8 +1,10 @@
 /**
  * Checks that run after every command and every effect resolution until the
- * state is stable: lethally damaged creatures die, players at zero life lose.
+ * state is stable: static abilities are brought up to date with the board,
+ * lethally damaged creatures die, players at zero life lose.
  * Bounded so a pathological loop can never hang the engine.
  */
+import { refreshStaticBonuses } from "../effects/StaticAbilities.js";
 import { GameEndReason, GameEventType } from "./GameEventType.js";
 
 const MAX_PASSES = 100;
@@ -21,7 +23,7 @@ export function runStateBasedActions(state, context) {
     if (passes >= MAX_PASSES) {
       throw new RangeError("StateBasedActions: did not settle");
     }
-    changed = buryLethallyDamaged(state, context, died) || checkLifeTotals(state, context);
+    changed = refreshStaticBonuses(state, context.effects, context.events) || buryLethallyDamaged(state, context, died) || checkLifeTotals(state, context);
     passes += 1;
   }
   return Object.freeze(died);

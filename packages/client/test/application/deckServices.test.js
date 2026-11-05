@@ -10,7 +10,8 @@ import { StaticContentSource } from "../../src/infrastructure/config/StaticConte
 import { MemoryLogger } from "../../src/infrastructure/logging/MemoryLogger.js";
 import { InMemoryStore } from "../../src/infrastructure/persistence/InMemoryStore.js";
 import { StoredDeckRepository } from "../../src/infrastructure/persistence/StoredDeckRepository.js";
-import { bundledResources, effects, loadBundledContent } from "./fixtures.js";
+import { buildAiDecks } from "@magic8/engine/domain/content/AiDecks.js";
+import { bundledAiDecks, bundledResources, effects, loadBundledContent } from "./fixtures.js";
 
 const content = await loadBundledContent();
 
@@ -56,7 +57,7 @@ describe("ContentService", () => {
   it("produces a frozen bundle with catalog, rules and precon decks", () => {
     assert.ok(Object.isFrozen(content));
     assert.equal(content.preconDecks.length, 10);
-    assert.equal(content.catalog.size, 93);
+    assert.equal(content.catalog.size, 106);
     assert.equal(content.gameRules.startingLife, 20);
   });
 });
@@ -177,5 +178,15 @@ describe("DeckSelectionService", () => {
     assert.ok(selection.listRivalDecks().every((option) => option.source === DeckSource.PRECONSTRUCTED));
     signedIn = false;
     assert.equal(selection.listDecks().length, content.preconDecks.length + 1, "offline: the preconstructed decks are the player's too");
+  });
+
+  it("gives the practice AI its own decks when there are any, and never to the player", () => {
+    const logger = new MemoryLogger();
+    const repository = new StoredDeckRepository({ store: new InMemoryStore(), logger });
+    const aiDecks = /** @type {any} */ (buildAiDecks(bundledAiDecks(), content)).value;
+    const selection = new DeckSelectionService({ content, repository, logger, aiDecks });
+    assert.deepEqual(selection.listRivalDecks().map((option) => option.deck.id), aiDecks.map((deck) => deck.id));
+    assert.ok(selection.listRivalDecks().every((option) => option.report.valid));
+    assert.ok(selection.listDecks().every((option) => !option.deck.id.startsWith("ai_")), "the player's decks stay theirs");
   });
 });

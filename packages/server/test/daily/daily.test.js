@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { SearchAi } from "@magic8/engine/domain/ai/search/SearchAi.js";
+import { buildAiDecks } from "@magic8/engine/domain/content/AiDecks.js";
 import { drawPack, GameMode, parseGrantRecord } from "@magic8/protocol";
 import { uuidV4 } from "../../src/kernel/random.js";
 import { DailySchedule, Rotation, aiAccountOf, dayOf, validateDailyRoster, validateDailyTracks } from "../../src/modules/daily/index.js";
@@ -72,7 +73,10 @@ describe("the daily schedule", () => {
   it("brings the same two characters and a boss to everyone, and others the next day", async () => {
     const { content } = await world();
     const bundled = await bundledContent();
-    const roster = /** @type {import("../../src/modules/daily/index.js").DailyRoster} */ (validateDailyRoster(bundled.daily.roster, content).value);
+    const aiDecks = /** @type {any} */ (buildAiDecks(bundled.daily.aiDecks, content)).value;
+    const roster = /** @type {import("../../src/modules/daily/index.js").DailyRoster} */ (validateDailyRoster(bundled.daily.roster, content, aiDecks).value);
+    const kael = /** @type {any} */ (roster.find("kael"));
+    assert.deepEqual(kael.deck.entries, aiDecks.find((deck) => deck.id === "ai_kael").entries, "a character plays the AI deck it names");
     const schedule = new DailySchedule(roster);
     const today = schedule.forDay("2026-10-15");
     assert.deepEqual(today.map((opponent) => opponent.id), new DailySchedule(roster).forDay("2026-10-15").map((opponent) => opponent.id));
@@ -105,7 +109,7 @@ describe("the daily schedule", () => {
     broken.bosses[2].conditions = [{ name: "Doom", text: "Nothing good.", scope: "everyone", rule: { kind: "doom", amount: 1 } }];
     broken.bosses[3].conditions = [{ name: "Mine", text: "Only mine.", scope: "opponent", rule: { kind: "extra_draw", amount: 1, players: ["s1"] } }];
     broken.bosses[1].deck = { base: "precon_iron", add: [{ cardId: "iron_colossus", count: 3 }] };
-    const roster = validateDailyRoster(broken, content);
+    const roster = validateDailyRoster(broken, content, /** @type {any} */ (buildAiDecks(bundled.daily.aiDecks, content)).value);
     assert.equal(roster.ok, false);
     const problems = roster.error.details.problems.join("\n");
     assert.match(problems, /precon_nowhere/);

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "ai_morwen",
+  "name": "Restless Harvest",
+  "preconstructed": true,
+  "cards": [
+    {
+      "cardId": "grave_rat",
+      "count": 3
+    },
+    {
+      "cardId": "restless_ghoul",
+      "count": 3
+    },
+    {
+      "cardId": "bone_acolyte",
+      "count": 2
+    },
+    {
+      "cardId": "plague_bearer",
+      "count": 3
+    },
+    {
+      "cardId": "wandering_sellsword",
+      "count": 2
+    },
+    {
+      "cardId": "stone_guardian",
+      "count": 2
+    },
+    {
+      "cardId": "bone_colossus",
+      "count": 3
+    },
+    {
+      "cardId": "giant_of_the_hills",
+      "count": 1
+    },
+    {
+      "cardId": "gravelord",
+      "count": 2
+    },
+    {
+      "cardId": "dark_bargain",
+      "count": 3
+    },
+    {
+      "cardId": "quick_strike",
+      "count": 1
+    },
+    {
+      "cardId": "blood_tithe",
+      "count": 2
+    },
+    {
+      "cardId": "rootbane_rite",
+      "count": 1
+    },
+    {
+      "cardId": "rustbane_rite",
+      "count": 1
+    },
+    {
+      "cardId": "wake_the_dead",
+      "count": 1
+    }
+  ]
+}

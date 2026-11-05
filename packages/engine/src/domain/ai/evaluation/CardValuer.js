@@ -2,7 +2,8 @@
  * What a card is worth, in one currency for the whole evaluation: roughly
  * "points of attack and health". A creature on the battlefield is worth its
  * lasting stats (a buff until end of turn is not), its keywords and the
- * abilities it will still fire (on death, at turn start); a card in hand is
+ * abilities it will still fire (on death, at turn start; a draw only while
+ * its controller's library has cards to give); a card in hand is
  * worth a flat amount plus a little per point of cost, since what matters is
  * that it is an option. An unknown card is worth an average card in hand.
  */
@@ -46,6 +47,8 @@ const EFFECT_VALUE = Object.freeze({
   destroy: () => 4,
   return_to_hand: () => 2.5,
   sacrifice: () => -1,
+  damage_faction: (params) => amount(params),
+  reanimate: (params) => 3 * amount(params),
 });
 
 /** @param {Readonly<Record<string, number | string>>} params */
@@ -57,12 +60,13 @@ export class CardValuer {
   /**
    * A creature on the battlefield, by its lasting stats.
    * @param {CardView} card
+   * @param {number} [librarySize] its controller's: draws from an empty library are worth nothing
    */
-  creature(card) {
+  creature(card, librarySize = Number.POSITIVE_INFINITY) {
     const temporary = card.modifiers.filter((modifier) => modifier.duration === ModifierDuration.END_OF_TURN);
     const attack = Math.max(0, card.attack - temporary.reduce((sum, modifier) => sum + modifier.attack, 0));
     const health = Math.max(0, card.health - temporary.reduce((sum, modifier) => sum + modifier.health, 0));
-    return VALUE.attack * attack + VALUE.health * health + VALUE.body + this.#keywords(card, attack) + this.#lingeringAbilities(card);
+    return VALUE.attack * attack + VALUE.health * health + VALUE.body + this.#keywords(card, attack) + this.#lingeringAbilities(card, librarySize);
   }
 
   /**
@@ -91,18 +95,26 @@ export class CardValuer {
 
   /**
    * Abilities still to fire while the creature is in play: on death once, at turn start every turn.
+   * A static ability adds nothing here: what it gives already shows in the stats of the creatures it lifts.
    * @param {CardView} card
+   * @param {number} librarySize
    */
-  #lingeringAbilities(card) {
+  #lingeringAbilities(card, librarySize) {
     if (card.type !== CardType.CREATURE) {
       return 0;
     }
-    return card.abilities.reduce((sum, ability) => sum + lingeringValue(ability), 0);
+    return card.abilities.reduce((sum, ability) => sum + lingeringValue(ability, librarySize), 0);
   }
 }
 
-/** @param {AbilityView} ability */
-function lingeringValue(ability) {
+/**
+ * @param {AbilityView} ability
+ * @param {number} librarySize
+ */
+function lingeringValue(ability, librarySize) {
+  if (ability.effect === "draw_card" && librarySize === 0) {
+    return 0;
+  }
   const value = EFFECT_VALUE[ability.effect]?.(ability.params) ?? 0;
   if (ability.trigger === TriggerType.ON_DEATH) {
     return value;

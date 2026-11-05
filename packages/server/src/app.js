@@ -6,6 +6,7 @@
  * data-driven offers against it, so a bad data file stops the start.
  */
 import { SearchAi } from "@magic8/engine/domain/ai/search/SearchAi.js";
+import { buildAiDecks } from "@magic8/engine/domain/content/AiDecks.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { ENGINE_VERSION } from "@magic8/engine/version.js";
 import { AuditTrail } from "./kernel/audit/AuditTrail.js";
@@ -18,7 +19,7 @@ import { RateLimiter } from "./platform/http/RateLimiter.js";
 import { Router } from "./platform/http/Router.js";
 import { CatalogService, PgContentRepository, registerCatalogRoutes } from "./modules/catalog/index.js";
 import { InventoryService, PgInventoryRepository, registerCollectionRoutes } from "./modules/collection/index.js";
-import { DeckService, PgDeckRepository, registerDeckRoutes } from "./modules/decks/index.js";
+import { DeckService, PgDeckRepository, registerDeckRoutes, validateHouseDecks } from "./modules/decks/index.js";
 import { EconomyService, formatAmount, parseAmount, validateAssets } from "./modules/economy/index.js";
 import { ChainBroadcaster, ChainOutbox, ChainTracker, GrantPublisher, ManifestWatcher, PUBLICATION_READER_METHODS, PgChainRepository, PgOutboxRepository, RcMonitor, TRANSACTION_PROVIDER_METHODS } from "./modules/chain/index.js";
 import { DEFAULT_MARKETPLACE_POLICY, FulfilmentService, MarketplaceService, PackEpochService, PaymentSettlement, PgMarketplaceRepository, buildMarketCatalog, registerMarketplaceRoutes } from "./modules/marketplace/index.js";
@@ -101,7 +102,15 @@ export async function createServerApp(deps) {
   }
   const currentContent = () => catalog.current().content;
   const inventory = new InventoryService({ repository: new PgInventoryRepository(database), isKnownCard: (id) => currentContent().catalog.has(id), random, clock, unitOfWork });
-  const decks = new DeckService({ repository: new PgDeckRepository(database), ownedCards: (userId) => inventory.activeCounts(userId), content: currentContent, random, clock, unitOfWork });
+  const decks = new DeckService({
+    repository: new PgDeckRepository(database),
+    ownedCards: (userId) => inventory.activeCounts(userId),
+    houseDecks: houseDecksOf({ raw: content.house, gameContent: published.content, users, network: defaultNetwork }),
+    content: currentContent,
+    random,
+    clock,
+    unitOfWork,
+  });
 
   for (const provider of paymentProviders.values()) {
     assertImplements(provider, PAYMENT_PROVIDER_METHODS, "PaymentProvider");
@@ -360,6 +369,31 @@ function buildJackpot({ settings, pools, wallets, paymentProviders, bankFor, cur
 }
 
 /**
+ * The house's decks a user plays: those of their account when it is a house account on the game's own network.
+ * @param {{
+ *   raw: Readonly<{ decks: unknown, accounts: unknown }>,
+ *   gameContent: import("@magic8/engine/domain/content/GameContent.js").GameContent,
+ *   users: { findById: (id: string) => Promise<{ network: string, account: string } | null> },
+ *   network: string,
+ * }} deps
+ * @returns {(userId: string) => Promise<readonly import("@magic8/engine/domain/decks/DeckList.js").DeckList[]>}
+ */
+function houseDecksOf({ raw, gameContent, users, network }) {
+  const validated = validateHouseDecks(raw, gameContent);
+  if (!validated.ok) {
+    throw new Error(`the house players' decks are invalid: ${validated.error.message}`);
+  }
+  const house = validated.value;
+  if (house.size === 0) {
+    return async () => [];
+  }
+  return async (userId) => {
+    const user = await users.findById(userId);
+    return user === null || user.network !== network ? [] : (house.get(user.account) ?? []);
+  };
+}
+
+/**
  * What `account` holds of `asset` on the chain, in units; null when the wallet cannot tell.
  * @param {import("./modules/identity/application/ports.js").WalletProvider | undefined} wallet
  * @param {string} account
@@ -373,9 +407,9 @@ async function readWalletBalance(wallet, account, asset, precision) {
 }
 
 /**
- * The daily challenges, from their data (roster and tracks), checked against the game content and the shop's drop tables.
+ * The daily challenges, from their data (roster, tracks and the AI's decks), checked against the game content and the shop's drop tables.
  * @param {{
- *   raw: Readonly<{ roster: unknown, tracks: unknown }>,
+ *   raw: Readonly<{ roster: unknown, tracks: unknown, aiDecks: unknown }>,
  *   gameContent: import("@magic8/engine/domain/content/GameContent.js").GameContent,
  *   dropTables: ReadonlyMap<string, { table: import("@magic8/protocol").DropTable, hash: string }>,
  *   games: GameService, decks: DeckService, inventory: InventoryService, notifications: NotificationService, grants: GrantPublisher,
@@ -385,7 +419,11 @@ async function readWalletBalance(wallet, account, asset, precision) {
  * }} deps
  */
 function buildDaily({ raw, gameContent, dropTables, games, decks, inventory, notifications, grants, audit, clock, random, unitOfWork, logger, database, gate }) {
-  const roster = validateDailyRoster(raw.roster, gameContent);
+  const aiDecks = buildAiDecks(raw.aiDecks, gameContent);
+  if (!aiDecks.ok) {
+    throw new Error(`the AI's decks are invalid: ${aiDecks.error.message}`);
+  }
+  const roster = validateDailyRoster(raw.roster, gameContent, aiDecks.value);
   if (!roster.ok) {
     throw new Error(`daily challenge roster is invalid: ${roster.error.message}`);
   }

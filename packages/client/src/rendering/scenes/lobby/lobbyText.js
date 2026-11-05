@@ -71,10 +71,12 @@ export function matchedText(state) {
 }
 
 /**
- * One line about the player's ranked standing.
+ * One line about the player's ranked standing, and what today's decay asks of them (unless `withDecay` is false: a
+ * DecayMeter shows it beside).
  * @param {import("../../../application/ranking/RankingService.js").RankingState} state
+ * @param {{ withDecay?: boolean }} [options]
  */
-export function standingText(state) {
+export function standingText(state, { withDecay = true } = {}) {
   const standing = state.standing;
   if (standing === null) {
     return state.error === null ? "Loading your ranked standing…" : `Ranked standing unavailable: ${state.error}`;
@@ -86,15 +88,40 @@ export function standingText(state) {
     const practice = standing.practiceGamesNeeded > 0 ? `, or ${standing.practiceGamesNeeded} more practice game(s) vs AI` : "";
     return `Ranked opens after ${standing.casualGamesNeeded} more casual game(s)${practice}.`;
   }
+  const line = seasonLine(standing, standing.season);
+  const decay = withDecay ? decayAtRisk(standing) : null;
+  return decay === null ? line : `${line}\n${decayText(decay)}`;
+}
+
+/**
+ * "Season 1: rating 1612 (#1), 8–4 in 12 game(s)."
+ * @param {import("../../../application/ports/RankingApi.contract.js").Standing} standing
+ * @param {import("../../../application/ports/RankingApi.contract.js").Season} season
+ */
+function seasonLine(standing, season) {
   const draws = standing.draws > 0 ? `–${standing.draws}` : "";
   const record = `${standing.wins}–${standing.losses}${draws}`;
   const place = standing.provisional ? "provisional" : `#${standing.rank}`;
-  const line = `${standing.season.name}: rating ${standing.rating} (${place}), ${record} in ${standing.games} game(s).`;
-  const decay = standing.decay ?? null;
-  if (decay === null) {
-    return line;
-  }
-  return decay.safe ? `${line}\nSafe today: you played a ranked game.` : `${line}\nPlay a ranked game by 00:00 UTC or lose ${decay.points} rating.`;
+  return `${season.name}: rating ${standing.rating} (${place}), ${record} in ${standing.games} game(s).`;
+}
+
+/**
+ * What today's decay asks of the player while they still have ranked games to play; null when it asks nothing, or they
+ * played them all (then nothing is shown of it).
+ * @param {import("../../../application/ports/RankingApi.contract.js").Standing | null} standing
+ */
+export function decayAtRisk(standing) {
+  const decay = standing?.decay ?? null;
+  return decay === null || decay.safe ? null : decay;
+}
+
+/**
+ * What today's decay asks of the player.
+ * @param {import("../../../application/ports/RankingApi.contract.js").Decay} decay
+ */
+function decayText(decay) {
+  const played = (decay.played ?? 0) > 0 ? ` (${decay.played} played)` : "";
+  return `Play ${rankedGames(decay.games ?? 1)} today${played} or lose ${decay.points} rating.`;
 }
 
 /**
@@ -115,8 +142,29 @@ export function shortStandingText(state) {
   const draws = standing.draws > 0 ? `–${standing.draws}` : "";
   const place = standing.provisional ? "new" : `#${standing.rank}`;
   const decay = standing.decay ?? null;
-  const below = decay !== null && !decay.safe ? `Play ranked today or −${decay.points}` : `${standing.wins}–${standing.losses}${draws} in ${standing.games} game(s)`;
+  const below = decay !== null && !decay.safe ? `${rankedLeft(decay)} today or −${decay.points}` : `${standing.wins}–${standing.losses}${draws} in ${standing.games} game(s)`;
   return `Rating ${standing.rating} · ${place}\n${below}`;
+}
+
+/**
+ * "a ranked game", "3 ranked games".
+ * @param {number} count
+ */
+function rankedGames(count) {
+  return count === 1 ? "a ranked game" : `${count} ranked games`;
+}
+
+/**
+ * What is left to play today to keep the rating, in short: "Play ranked", "Play 3 ranked", "Play 2 more ranked".
+ * @param {import("../../../application/ports/RankingApi.contract.js").Decay} decay
+ */
+export function rankedLeft(decay) {
+  const played = decay.played ?? 0;
+  const left = (decay.games ?? 1) - played;
+  if (played > 0) {
+    return `Play ${left} more ranked`;
+  }
+  return left > 1 ? `Play ${left} ranked` : "Play ranked";
 }
 
 /**

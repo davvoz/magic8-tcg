@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import { BasicAi, AiStyle } from "@magic8/engine/domain/ai/BasicAi.js";
 import { SearchAi } from "@magic8/engine/domain/ai/search/SearchAi.js";
 import { createCoreCommandRegistry } from "@magic8/engine/domain/commands/registerCoreCommands.js";
+import { buildAiDecks } from "@magic8/engine/domain/content/AiDecks.js";
 import { buildGameContent } from "@magic8/engine/domain/content/GameContent.js";
 import { createCoreEffectRegistry } from "@magic8/engine/domain/effects/registerCoreEffects.js";
 import { SEATS, createGameEngine } from "@magic8/protocol";
@@ -43,7 +44,8 @@ const effects = createCoreEffectRegistry();
 const files = await readServerContent(DATA);
 const content = unwrap(buildGameContent(files.raw, effects), "content");
 const rawRoster = options.roster === null ? files.daily.roster : JSON.parse(readFileSync(options.roster, "utf8"));
-const roster = unwrap(validateDailyRoster(rawRoster, content), "roster");
+const aiDecks = unwrap(buildAiDecks(files.daily.aiDecks, content), "AI decks");
+const roster = unwrap(validateDailyRoster(rawRoster, content, aiDecks), "roster");
 const tracks = unwrap(validateDailyTracks(files.daily.tracks, { hasDropTable: () => true }), "tracks");
 const starters = /** @type {{ choices: string[] }} */ (files.starterOffer).choices
   .filter((id) => options.decks === null || options.decks.includes(id))

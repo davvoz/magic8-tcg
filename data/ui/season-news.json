@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "season-2",
+  "eyebrow": "Season 2",
+  "name": "Rites & Ruin",
+  "accent": "shadow",
+  "pages": [
+    {
+      "kind": "intro",
+      "text": "Old pacts break. New ones are sealed in blood, root and flame. Thirteen new cards, three new ways to play, and a wheel of counters that turns every faction against another.",
+      "cardIds": ["wildheart_druid", "wake_the_dead", "smother"]
+    },
+    {
+      "kind": "features",
+      "title": "New ways to play",
+      "items": [
+        { "name": "Lords", "text": "While a lord stands, every creature of its faction you control is stronger, the lord included. Bring it down and the whole army shrinks.", "cardId": "wildheart_druid" },
+        { "name": "Faction sweeps", "text": "Spells that strike every creature of one faction at once, on both sides of the table. Know what your opponent plays.", "cardId": "rustbane_rite" },
+        { "name": "Back from the grave", "text": "Wake the Dead returns the last two creatures that fell to your graveyard. They rise without their entry abilities.", "cardId": "wake_the_dead" }
+      ]
+    },
+    {
+      "kind": "cards",
+      "title": "13 new cards",
+      "text": "In every booster from today.",
+      "cardIds": [
+        "wildheart_druid",
+        "foundry_overseer",
+        "pyre_chanter",
+        "wake_the_dead",
+        "rustbane_rite",
+        "rootbane_rite",
+        "cinderbane_rite",
+        "runebane_rite",
+        "forest_blaze",
+        "rootbreak",
+        "cold_iron",
+        "dawnlight",
+        "smother"
+      ]
+    },
+    {
+      "kind": "cycle",
+      "title": "The counter wheel",
+      "text": "Every faction now holds an answer to another. Fire burns the grove, roots crack iron, cold iron silences spells, light banishes the dead, and darkness smothers the flame.",
+      "steps": [
+        { "faction": "ember", "cardId": "forest_blaze" },
+        { "faction": "verdant", "cardId": "rootbreak" },
+        { "faction": "iron", "cardId": "cold_iron" },
+        { "faction": "arcane", "cardId": "dawnlight" },
+        { "faction": "shadow", "cardId": "smother" }
+      ]
+    },
+    {
+      "kind": "changes",
+      "title": "Balance changes",
+      "items": [
+        { "cardId": "thunderhoof_mammoth", "tag": "nerf", "text": "Too much trample, too soon. Now a late-game legend.", "before": { "cost": 6, "rarity": "rare" }, "after": { "cost": 8, "rarity": "legendary" } }
+      ]
+    }
+  ]
+}
